@@ -33,6 +33,10 @@ def make_book_handler(book,manifest,anna_port):
     class BookHandler(search.Handler):
         def __init__(self,*args,**kwargs):
             SimpleHTTPRequestHandler.__init__(self,*args,directory=str(book),**kwargs)
+        def handle(self):
+            # Reader navigation may cancel an in-flight frame/resource response.
+            try:super().handle()
+            except (BrokenPipeError,ConnectionResetError):pass
         def redirect(self,url):
             self.send_response(302);self.send_header('Location',url);self.send_header('Content-Length','0');self.end_headers()
         def list_directory(self,path):
@@ -47,6 +51,7 @@ def make_book_handler(book,manifest,anna_port):
                 if not entry:self.send_error(404,'Unknown entry');return
                 if path.startswith('/anna/'):
                     self.redirect(f'http://127.0.0.1:{anna_port}/?entry='+quote(eid));return
+                if not entry['locatable']:self.send_error(422,'Entry has no source content range; inspect anna extraction evidence');return
                 target=quote(entry['path'],safe='/')+'#'+quote(entry['fragment'])
                 if parse_qs(u.query).get('reader')==['1']:
                     target='index.htm?page='+quote(target,safe='')

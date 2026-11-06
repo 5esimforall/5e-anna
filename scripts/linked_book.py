@@ -44,7 +44,7 @@ def text_slice(doc,a,b):
 def inject(raw,payload,encoding='utf-8'):
     # ASCII-only JSON also works for GB18030 pages. Original bytes remain untouched.
     data=json.dumps(payload,ensure_ascii=True,separators=(',',':')).replace('<','\\u003c')
-    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script src="/anna-assets/links.js"></script><!-- /anna-link-layer -->'
+    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script src="/anna-assets/link-labels.js"></script><script src="/anna-assets/links.js"></script><!-- /anna-link-layer -->'
     # Append after the document: the HTML parser handles trailing script elements;
     # binding paths refer to the original body before these extra siblings.
     return raw+addition
@@ -66,7 +66,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
     inputs={p.relative_to(source).as_posix():fingerprint(p) for p in source.rglob('*') if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}
     actual_pages={p for p in inputs if p.startswith('topics/') and Path(p).suffix.lower() in {'.html','.htm'}}
     if actual_pages!=set(pages) or any(inputs.get(p)!=v['sha256'] for p,v in pages.items()):raise ValueError('原文与数据库快照不一致，请运行 make build')
-    report={'definitions':len(entries),'clickable_definitions':0,'linked_references':0,'empty_definitions':[],'unresolved':[]}
+    report={'definitions':len(entries),'clickable_definitions':0,'linked_references':0,'empty_definitions':[],'unlocatable_definitions':[],'unresolved':[]}
     manifest={'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
     # Resolve original anchors by source position when the extractor did not retain them on a title.
     position_cache={}
@@ -108,7 +108,9 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                     if first:title=text_slice(doc,first[0],min(first[1],first[0]+120))
                 if body is None:report['empty_definitions'].append(e['id'])
                 definitions.append({'id':e['id'],'name':e['name'],'body':body,'title':title})
-                manifest['entries'][e['id']]={'path':path,'fragment':'anna-'+e['id']}
+                locatable=bool((body and body['text'].strip()) or (title and title['text'].strip()))
+                if not locatable:report['unlocatable_definitions'].append(e['id'])
+                manifest['entries'][e['id']]={'path':path,'fragment':'anna-'+e['id'],'locatable':locatable}
                 if title and title['text'].strip():report['clickable_definitions']+=1
             for a in doc.body.find_all('a',href=True):
                 dest=resolve_link(path,a['href'])
@@ -126,6 +128,10 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             doc.close()
         assets=stage/'anna-assets';assets.mkdir(exist_ok=True)
         shutil.copyfile(PROJECT/'book/links.js',assets/'links.js')
+        shutil.copyfile(PROJECT/'book/reader.js',assets/'reader.js')
+        shell=stage/'index.htm'
+        if shell.is_file():shell.write_bytes(shell.read_bytes()+MARKER+b'<script src="/anna-assets/reader.js"></script>')
+        shutil.copyfile(PROJECT/'web/link-labels.js',assets/'link-labels.js')
         for p in stage.rglob('*'):
             if p.is_file():manifest['outputs'][p.relative_to(stage).as_posix()]=fingerprint(p)
         (stage/'anna-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False))

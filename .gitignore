@@ -10,3 +10,7 @@ __pycache__/
 
 # 本地原文全文搜索缓存
 .cache/
+
+# Browser regression dependencies, reports and screenshots
+node_modules/
+output/

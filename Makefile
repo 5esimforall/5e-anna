@@ -10,7 +10,7 @@ BOOK_PORT ?= 8002
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := help
-.PHONY: help clone serve open update status index clean anna build inventory test audit check up linked
+.PHONY: help clone serve open update status index clean anna build inventory test audit check up linked test-unit test-browser browser-setup
 
 help:
 	@echo "anna 与共享不全书镜像（DnD 上层可使用相同命令）"
@@ -23,7 +23,9 @@ help:
 	@echo "  make up        同时启动 anna 与链接版（Ctrl-C 同时停止）"
 	@echo "  make linked    由现有数据库生成链接版（校验原文快照）"
 	@echo "  make inventory 盘点原文页面与目录"
-	@echo "  make test      运行完整测试（需已生成分析数据）"
+	@echo "  make test      运行单元测试和浏览器回归（需先构建数据）"
+	@echo "  make test-unit / test-browser  分别运行单元 / 浏览器测试"
+	@echo "  make browser-setup  安装锁定的浏览器测试依赖（首次运行）"
 	@echo "  make audit     审计数据库和导出文件"
 	@echo "  make check     运行测试与审计"
 	@echo "  make update    显式拉取原文更新并刷新搜索索引；分析数据需 make build"
@@ -89,7 +91,9 @@ build: clone
 inventory: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/inventory.py
 
-test:
+test: test-unit test-browser
+
+test-unit:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m unittest discover -s tests
 
 audit:
@@ -102,3 +106,11 @@ linked:
 
 up:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --anna-port "$(ANNA_PORT)" --book-port "$(BOOK_PORT)"
+
+# Test services use separate localhost ports and stop automatically.
+browser-setup:
+	@npm ci --ignore-scripts --cache .cache/npm
+	@PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/.cache/ms-playwright" npx --no-install playwright install chromium
+
+test-browser:
+	@WEB_DIR="$(WEB_PATH)" PYTHON="$(PYTHON)" npm run test:browser

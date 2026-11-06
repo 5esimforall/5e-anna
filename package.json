@@ -1,0 +1,13 @@
+{
+  "name": "5e-anna-browser-tests",
+  "private": true,
+  "scripts": {
+    "test:browser": "playwright test",
+    "test:browser:report": "playwright show-report output/playwright/report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "pixelmatch": "8.0.0",
+    "pngjs": "7.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>Link range fixture</title>
+<style>body{font:18px sans-serif;margin:24px}h2{margin:24px 0}table{border-collapse:collapse}td{border:1px solid;padding:12px}#spacer{height:900px}#wrapper{margin-top:30px}.narrow{width:150px}</style>
+<script>
+// Same kind of DOM relocation performed by the book's table-enhancement script.
+addEventListener('DOMContentLoaded', () => {
+  const table = document.querySelector('table'), wrapper = document.createElement('div');
+  wrapper.id='wrapper'; table.before(wrapper); wrapper.append(table);
+  document.querySelector('#reflow').onclick=()=>wrapper.classList.toggle('narrow');
+});
+</script>
+<body><h2 id="Alpha">甲 😀 Alpha</h2><p>Alpha description with <b>nested markup</b>.</p>
+<button id="reflow">重排表格</button><table><tr><td id="cell">长剑 Longsword</td><td>1d8 damage</td></tr></table>
+<div id="spacer"></div><h2 id="Beta">乙 Beta</h2><p>Second definition.</p><p><a href="#Alpha">甲 😀 Alpha</a></p>
+</body></html>

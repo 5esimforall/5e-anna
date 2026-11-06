@@ -6,10 +6,11 @@ BRANCH ?= pages
 PORT ?= 8000
 HOST ?= 127.0.0.1
 ANNA_PORT ?= 8001
+BOOK_PORT ?= 8002
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := help
-.PHONY: help clone serve open update status index clean anna build inventory test audit check
+.PHONY: help clone serve open update status index clean anna build inventory test audit check up linked
 
 help:
 	@echo "anna 与共享不全书镜像（DnD 上层可使用相同命令）"
@@ -18,7 +19,9 @@ help:
 	@echo "  make open      在浏览器打开原文"
 	@echo "  make index     重建原文全文搜索索引"
 	@echo "  make anna      分析查询页 http://127.0.0.1:$(ANNA_PORT)"
-	@echo "  make build     从原文全量重建分析数据"
+	@echo "  make build     从同一原文生成数据库与 5echm-anna"
+	@echo "  make up        同时启动 anna 与链接版（Ctrl-C 同时停止）"
+	@echo "  make linked    由现有数据库生成链接版（校验原文快照）"
 	@echo "  make inventory 盘点原文页面与目录"
 	@echo "  make test      运行完整测试（需已生成分析数据）"
 	@echo "  make audit     审计数据库和导出文件"
@@ -26,7 +29,7 @@ help:
 	@echo "  make update    显式拉取原文更新并刷新搜索索引；分析数据需 make build"
 	@echo "  make status    查看原文版本和搜索索引状态"
 	@echo "  make clean     删除共享原文镜像及搜索缓存（影响其他引用方）"
-	@echo "  变量: WEB_DIR=原文路径 PORT=8000 HOST=127.0.0.1 ANNA_PORT=8001 PYTHON=解释器"
+	@echo "  变量: WEB_DIR=原文路径 PORT=8000 HOST=127.0.0.1 ANNA_PORT=8001 BOOK_PORT=8002 PYTHON=解释器"
 	@echo "  WEB_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web"
 
 clone:
@@ -81,6 +84,7 @@ anna:
 
 build: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/build.py
+	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
 
 inventory: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/inventory.py
@@ -92,3 +96,9 @@ audit:
 	@"$(PYTHON)" scripts/audit.py
 
 check: test audit
+
+linked:
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/linked_book.py
+
+up:
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --anna-port "$(ANNA_PORT)" --book-port "$(BOOK_PORT)"

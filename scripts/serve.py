@@ -138,6 +138,7 @@ def csv_export(rows, view=''):
 
 class Handler(BaseHTTPRequestHandler):
     db_path=DB
+    book_url=None
     def log_message(self,*args): pass
     def send(self,body,kind='application/json; charset=utf-8',status=200,download=False):
         if not isinstance(body,bytes): body=json.dumps(body,ensure_ascii=False).encode()
@@ -157,7 +158,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             with closing(connect(self.db_path)) as db:
-                if url.path=='/api/meta': self.send(meta(db))
+                if url.path=='/api/meta': self.send({**meta(db),'book_url':self.book_url})
                 elif url.path=='/api/facets': self.send(browse.facets(db,first(p,'view')))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))

@@ -10,9 +10,8 @@ import json
 import re
 import subprocess
 
-ROOT = Path(__file__).resolve().parents[2]
-WEB = ROOT / '5echm-web'
-OUT = ROOT / '5e-anna/data'
+from paths import PROJECT, WEB
+OUT = PROJECT / 'data'
 
 def clean(s):
     return re.sub(r'\s+', ' ', unescape(re.sub(r'<[^>]*>', '', s))).strip()

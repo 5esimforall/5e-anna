@@ -7,7 +7,7 @@ from html_extract import Document,resolve_link,split_name,key
 from build import parse_one,normalize_value,observation_fields
 from source_extract import SourceRegistry
 
-WEB=Path(__file__).resolve().parents[2]/'5echm-web'
+from paths import WEB
 
 class StructureTests(unittest.TestCase):
     def test_omitted_td(self):

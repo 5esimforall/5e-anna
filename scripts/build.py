@@ -21,8 +21,7 @@ from html_extract import Document, Candidate, compact, key, digest, split_name, 
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
-PROJECT=Path(__file__).resolve().parents[1]
-DEFAULT_WEB=PROJECT.parent/'5echm-web'
+from paths import PROJECT, WEB as DEFAULT_WEB
 INDEX_FIELDS={
     '物品名':'name','怪物名':'name','法术名':'name','稀有度':'rarity','类别':'item_type','子类别':'item_subtypes',
     '同调':'attunement','同调条件':'attunement_requirements','来源':'source_code','体型':'size','类型':'creature_type',

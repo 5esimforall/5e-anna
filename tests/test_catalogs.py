@@ -14,7 +14,7 @@ from build import Build,parse_one
 from html_extract import split_name
 from browse import schema
 from audit import audit
-WEB=Path(__file__).resolve().parents[2]/'5echm-web'
+from paths import WEB
 
 class CatalogTests(unittest.TestCase):
     def parse(self,path):

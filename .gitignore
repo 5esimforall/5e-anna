@@ -7,3 +7,6 @@ __pycache__/
 # 本地构建与系统缓存
 .build-*/
 .DS_Store
+
+# 本地原文全文搜索缓存
+.cache/

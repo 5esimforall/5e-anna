@@ -1,0 +1,101 @@
+"""Read-only API regression tests against the generated corpus."""
+import csv
+import io
+import json
+import sqlite3
+import sys
+import threading
+import unittest
+from contextlib import closing
+from http.client import HTTPConnection
+from pathlib import Path
+from urllib.parse import urlencode
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from serve import DB, Handler, ThreadingHTTPServer, connect, query, detail, meta, csv_export
+
+@unittest.skipUnless(DB.exists(),'Build the dataset first')
+class WebTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        cls.thread=threading.Thread(target=cls.server.serve_forever,daemon=True);cls.thread.start()
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown();cls.server.server_close();cls.thread.join()
+    def setUp(self):self.db=connect()
+    def tearDown(self):self.db.close()
+    def request(self,path,headers=None):
+        c=HTTPConnection('127.0.0.1',self.server.server_port)
+        c.request('GET',path,headers=headers or {});r=c.getresponse();body=r.read();status=r.status;kind=r.getheader('Content-Type');c.close();return status,kind,body
+    def test_readonly(self):
+        with self.assertRaises(sqlite3.OperationalError):self.db.execute('DELETE FROM entries')
+    def test_defaults_and_pages(self):
+        r=query(self.db,{})
+        self.assertEqual(r['total'],self.db.execute("SELECT count(*) FROM entries WHERE type!='section'").fetchone()[0])
+        a={e['id'] for e in r['rows']};b={e['id'] for e in query(self.db,{'page':['2']})['rows']}
+        self.assertEqual(len(a),150);self.assertFalse(a&b)
+        self.assertEqual(query(self.db,{'page':['999999999']})['page'],r['pages'])
+    def test_phb_feats_and_intersection(self):
+        sid=self.db.execute("select id from sources where name='玩家手册2024'").fetchone()[0]
+        p={'view':['专长'],'source':[sid],'ruleset':['5r']}
+        self.assertEqual(query(self.db,p)['total'],75)
+        p['ruleset']=['5e'];self.assertEqual(query(self.db,p)['total'],0)
+    def test_name_literal_and_case(self):
+        self.assertEqual(query(self.db,{'q':["%' OR 1=1 --"]})['total'],0)
+        self.assertEqual(query(self.db,{'q':['alert']})['total'],query(self.db,{'q':['ALERT']})['total'])
+    def test_fields_and_conflicts(self):
+        rows=query(self.db,{'view':['法术'],'field':['school'],'value':['塑能']})['rows']
+        self.assertTrue(rows);self.assertTrue(all('塑能' in str(r['fields']['school']) for r in rows))
+        rows=query(self.db,{'conflict':['1']})['rows'];self.assertTrue(rows);self.assertTrue(all(r['field_conflicts'] for r in rows))
+    def test_detail_evidence(self):
+        eid=query(self.db,{'q':['Medium Armor Master'],'ruleset':['5r']})['rows'][0]['id']
+        d=detail(self.db,eid);self.assertTrue(d['body']);self.assertTrue(d['facts'])
+        for f in d['facts']:
+            if 'excerpt' in f:
+                ev=f['evidence'];a,b=ev['span'];text=self.db.execute('select text from pages where path=?',(ev['path'],)).fetchone()[0]
+                self.assertEqual(f['excerpt'],text[a:min(b,a+1200)])
+    def test_invalid_query(self):
+        for p in [{'view':['entries; DROP TABLE entries']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'page':['nan']}]:
+            with self.assertRaises(ValueError):query(self.db,p)
+        with self.assertRaises(LookupError):detail(self.db,'absent')
+    def test_export_all_not_one_page(self):
+        data=query(self.db,{'view':['专长']},export=True)
+        output=csv_export(data['rows']).decode('utf-8-sig')
+        self.assertEqual(len(list(csv.reader(io.StringIO(output))))-1,data['total'])
+        row=data['rows'][0].copy();row['name_en']='=1+1'
+        self.assertIn("'=1+1",csv_export([row]).decode('utf-8-sig'))
+    def test_http_and_host_guard(self):
+        self.assertEqual(self.request('/')[0],200)
+        self.assertEqual(self.request('/api/meta')[0],200)
+        self.assertEqual(self.request('/api/entries?view=invalid')[0],400)
+        self.assertEqual(self.request('/api/entries',{'Host':'attacker.example'})[0],403)
+        self.assertEqual(self.request('/../scripts/serve.py')[0],404)
+        self.assertEqual(self.request('/source?path=/etc/passwd')[0],404)
+    def test_source_highlights(self):
+        e=query(self.db,{})['rows'][0]
+        url='/source?'+urlencode({'path':e['page_path'],'start':e['start'],'end':e['end']})
+        status,kind,body=self.request(url)
+        self.assertEqual(status,200);self.assertIn(b'<mark id="evidence">',body)
+        self.assertIn('text/html',kind)
+    def test_mount_and_animal_catalog_views(self):
+        mounts=query(self.db,{'view':['坐骑']})
+        self.assertEqual(mounts['total'],20)
+        self.assertEqual(sum(e['ruleset']=='5e' for e in mounts['rows']),12)
+        self.assertEqual(sum(e['ruleset']=='5r' for e in mounts['rows']),8)
+        self.assertFalse(any(e['name_en'] in {'Flying Snake','Wolf','Warhorse Skeleton'} for e in mounts['rows']))
+        offers=query(self.db,{'view':['动物购置']})
+        self.assertEqual(offers['total'],19)
+        self.assertTrue(all(e['type']=='animal_offer' for e in offers['rows']))
+        horse=next(e for e in mounts['rows'] if e['name_en']=='Warhorse' and e['ruleset']=='5r')
+        d=detail(self.db,horse['id'])
+        self.assertTrue(any(r['predicate']=='catalog_offer' for r in d['relations']))
+        data=self.request('/api/entries?'+urlencode({'view':'动物购置'}))
+        self.assertEqual(data[0],200)
+        self.assertEqual(json.loads(data[2])['total'],19)
+
+    def test_metadata(self):
+        m=meta(self.db);self.assertEqual(len(m['views']),24);self.assertIn('动物购置',{v['name'] for v in m['views']})
+        self.assertEqual(len(m['sources']),155)
+        self.assertTrue(all(s['count']==0 for s in m['sources'] if s['coverage']=='catalog_only'))
+
+if __name__=='__main__':unittest.main()

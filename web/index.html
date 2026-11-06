@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>5e anna · 条目速查</title><meta name="description" content="按法术、生物与物品分别筛选的本地只读速查表">
+  <link rel="stylesheet" href="/style.css"><script src="/detail.js" defer></script><script src="/app.js" defer></script>
+</head>
+<body>
+<header class="topbar"><a class="brand" href="/"><span class="brand-icon">a</span>5e anna <span>条目速查</span></a><span id="snapshot" class="muted">本地 · 只读</span></header>
+<div class="workspace">
+  <aside class="sidebar"><div class="side-title">速查目录</div><nav id="views" aria-label="分类视图">正在读取…</nav></aside>
+  <main>
+    <div class="heading-row"><h1 id="title">全部条目</h1><span id="view-total" class="muted"></span><span class="heading-note">自动提取 · 未经全量核验</span></div>
+    <form id="search-form" class="toolbar">
+      <label class="searchbox"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="搜索中文名 / 英文名" aria-label="搜索条目名称" autocomplete="off"><kbd>/</kbd></label>
+      <button type="button" id="toggle-filters" aria-controls="filter-panel" aria-expanded="true">筛选 <span id="filter-count"></span> ▾</button>
+      <button type="button" id="reset">重置</button><button type="button" id="export" disabled>导出 CSV</button>
+    </form>
+    <section id="filter-panel" aria-label="筛选条件">
+      <div class="filter-hint">同组多选取并集，不同组取交集。<span>全选包含未提取项；“否”不包含未知或冲突。</span></div>
+      <div id="domain-filters"></div>
+      <details id="source-details"><summary>来源与版本 <span id="common-count"></span></summary>
+        <div id="common-filters"></div>
+        <div class="source-search-row"><input id="source-search" type="search" placeholder="筛选书名 / 缩写" aria-label="筛选来源选项"><span class="muted">只过滤选项；不改变选择</span></div>
+        <div id="source-filters"></div>
+      </details>
+      <details id="audit-details"><summary>分类依据与旧版标记 <span id="audit-count"></span></summary><div id="audit-filters"></div>
+        <div class="audit-toggles"><label><input id="conflict" type="checkbox">仅字段冲突</label><label><input id="sections" type="checkbox">包含未分类段落</label><span class="muted">未见标记不代表新版；原文明示不等于已核实。</span></div>
+      </details>
+    </section>
+    <div id="active-filters" class="active-filters" aria-label="已选筛选"></div>
+    <div class="results-bar">
+      <span id="result-count" role="status" aria-live="polite">正在查询…</span>
+      <div class="result-actions"><label>排序 <select id="sort" aria-label="排序字段"></select></label><button id="direction" aria-label="切换排序方向">升序 ↑</button><label>每页 <select id="page-size" aria-label="每页条数"><option>50</option><option selected>150</option><option>300</option></select></label><button id="prev" aria-label="上一页" disabled>‹</button><span id="page"></span><button id="next" aria-label="下一页" disabled>›</button></div>
+    </div>
+    <div id="error" role="alert" hidden></div>
+    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden>没有匹配条目。可移除下方已选条件，或重置筛选。</div></div>
+    <div class="bottom-bar"><span id="range"></span><span>— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据</span><div><button id="bottom-prev" disabled>上一页</button><button id="bottom-next" disabled>下一页</button></div></div>
+  </main>
+</div>
+<dialog id="detail"><div class="detail-top"><span>条目详情</span><button id="close-detail" class="icon-button" aria-label="关闭详情">×</button></div><div id="detail-content"></div></dialog>
+<noscript>查询页需要 JavaScript；终端也可使用 query.py 查询。</noscript>
+</body></html>

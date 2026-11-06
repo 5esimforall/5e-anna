@@ -283,7 +283,7 @@ class Build:
             legacy='entry_marked' if c['legacy_direct'] or index_legacy else 'source_archived' if archived else 'unmarked'
             status='原文明示' if c['classification_rule'].endswith('_signature') or c['classification_rule'].endswith('_table') or c['classification_rule'] in {'index_or_statblock','spell_fields','stat_fields','item_descriptor','feat_descriptor','poison_descriptor','level_heading','level_statement','background_fields','species_fields','class_structure','name_label','equipment_table'} else '上下文推得' if c['type']!='section' else '未分类段落'
             e={'id':eid,'entity_id':entity,'identity_status':'provisional','name':compact(c['name']),'name_zh':zh,'name_en':en,'type':c['type'],
-                'type_label':TYPE_LABELS[c['type']],'page_path':path,'start':c['start'],'end':c['end'],'locator':locator,'anchors':c['anchors'],
+                'type_label':TYPE_LABELS[c['type']],'page_path':path,'start':c['start'],'title_end':c['title_end'],'end':c['end'],'locator':locator,'anchors':c['anchors'],
                 'body_hash':c['body_hash'],'source_ids':owners,'source_names':[self.sources[s]['name'] for s in owners],
                 'ruleset':ruleset,'ruleset_status':'上下文推得' if ruleset!='待核' else '待核','legacy':legacy,
             'classification_status':status,'classification_rule':c['classification_rule'],'boundary_rule':c['boundary_rule'],

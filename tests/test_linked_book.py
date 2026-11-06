@@ -1,0 +1,61 @@
+import json
+from pathlib import Path
+import sqlite3
+import sys
+import tempfile
+import unittest
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from html_extract import Document
+from linked_book import text_slice,inject,build_book,fingerprint,MARKER
+
+class DOMBindingTests(unittest.TestCase):
+    def test_offsets_unicode_whitespace_and_markup(self):
+        d=Document('topics/test.htm','<h2>甲 😀 <b>名字</b></h2><p> A\n  B&nbsp;C</p>')
+        a=d.text.index('😀');b=d.text.index('名字')+2
+        r=text_slice(d,a,b)
+        self.assertEqual(r['text'],'😀 名字')
+        self.assertEqual(r['a'][1],2)
+        self.assertEqual(r['b'][1],2)
+        d.close()
+    def test_original_bytes_unchanged(self):
+        for raw in [b'<body><p style="color:red">A &amp; B</p></body>', '<body>中文</body>'.encode('gb18030')]:
+            result=inject(raw,{'definitions':[{'name':'</script>中文'}]})
+            self.assertEqual(result.split(MARKER)[0],raw)
+            self.assertNotIn(b'</script>\\u',result)
+            self.assertIn(b'\\u003c/script>',result)
+
+class LinkedBuildTests(unittest.TestCase):
+    def fixture(self,root):
+        source=root/'source';(source/'topics').mkdir(parents=True)
+        page=source/'topics/test.htm'
+        page.write_text('<h2 id="Spell">甲 Alpha</h2><p>定义</p><p><a href="#Spell">甲 Alpha</a></p><p><a href="#missing">未知</a></p>')
+        (source/'style.css').write_text('h2 {color:red}')
+        d=Document('topics/test.htm',page.read_text());c=d.candidates()[0]
+        e={'id':'ver_test','name':'甲 Alpha','name_zh':'甲','name_en':'Alpha','page_path':'topics/test.htm','anchors':['Spell'],'start':c.start,'title_end':c.title_end,'end':c.end,'type':'spell','is_primary':True}
+        db=root/'catalog.sqlite';conn=sqlite3.connect(db)
+        conn.executescript('CREATE TABLE metadata(key,value); CREATE TABLE pages(path,sha256,text); CREATE TABLE entries(data);')
+        conn.execute('insert into metadata values(?,?)',('summary',json.dumps({'full_scan':True})))
+        conn.execute('insert into pages values(?,?,?)',('topics/test.htm',fingerprint(page),d.text))
+        conn.execute('insert into entries values(?)',(json.dumps(e),));conn.commit();conn.close();d.close()
+        return source,db
+    def test_copy_bindings_references_and_rebuild(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'book'
+            manifest,report=build_book(source,db,out)
+            self.assertEqual(report['definitions'],1);self.assertEqual(report['linked_references'],1)
+            self.assertEqual(report['unresolved'][0]['href'],'#missing')
+            self.assertEqual((out/'style.css').read_bytes(),(source/'style.css').read_bytes())
+            self.assertEqual((out/'topics/test.htm').read_bytes().split(MARKER)[0],(source/'topics/test.htm').read_bytes())
+            m2,_=build_book(source,db,out);self.assertEqual(manifest,m2)
+            self.assertFalse((root/'book.previous').exists())
+    def test_stale_source_rejected_and_previous_output_preserved(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'book'
+            build_book(source,db,out);before=(out/'anna-manifest.json').read_bytes()
+            (source/'topics/test.htm').write_text('changed')
+            with self.assertRaisesRegex(ValueError,'快照'):build_book(source,db,out)
+            self.assertEqual(before,(out/'anna-manifest.json').read_bytes())
+    def test_source_output_overlap_rejected(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root)
+            with self.assertRaises(ValueError):build_book(source,db,source/'nested')

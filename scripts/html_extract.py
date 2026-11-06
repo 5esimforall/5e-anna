@@ -90,6 +90,7 @@ class Document:
         self.title=compact(self.soup.title.get_text(' ',strip=True)) if self.soup.title else PurePosixPath(path).stem
         self.body=self.soup.body or self.soup
         self.ranges={}
+        self.text_nodes=[]
         self.elements=[]
         self.anchors={}
         parts=[]
@@ -101,7 +102,9 @@ class Document:
             if isinstance(node,(Comment,Doctype)):return
             if isinstance(node,NavigableString):
                 # Whitespace is canonicalized before offsets are assigned.
+                start=size
                 add(re.sub(r'\s+',' ',str(node)))
+                self.text_nodes.append((start,size,node))
                 return
             if not isinstance(node,Tag) or node.name in IGNORED:
                 return

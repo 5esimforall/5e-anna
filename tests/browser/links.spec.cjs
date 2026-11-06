@@ -71,16 +71,18 @@ for(const [name,path] of visuals)for(const width of [1280,390]){
   });
 }
 
-test('definition → anna → reader → same definition; reload and top-level return',async({page,context},testInfo)=>{
+test('definition → new anna tab → reader → same definition; original pages retained',async({page,context},testInfo)=>{
   const s=cases.spell;
   await page.goto(topic(book,s.path)+'#'+s.anchor);await ready(page);
   const title=page.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true});
-  await title.click();
-  await expect(page).toHaveURL(new RegExp(`:${port+1}/\\?.*entry=${s.id}`));
-  await expect(page.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
-  await attach(testInfo,'anna-definition.png',await page.screenshot(),'image/png');
+  const originalURL=page.url();
+  const entryPromise=context.waitForEvent('page');await title.click();const entry=await entryPromise;
+  await expect(entry).toHaveURL(new RegExp(`:${port+1}/\\?.*entry=${s.id}`));
+  await expect(page).toHaveURL(originalURL);
+  await expect(entry.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
+  await attach(testInfo,'anna-definition.png',await entry.screenshot(),'image/png');
   const popupPromise=context.waitForEvent('page');
-  await page.getByRole('link',{name:'查看不全书定义 ↗',exact:true}).click();
+  await entry.getByRole('link',{name:'查看不全书定义 ↗',exact:true}).click();
   const reader=await popupPromise;await reader.waitForLoadState('load');
   const frame=reader.frameLocator('#content');
   await expect(frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true})).toBeVisible();
@@ -92,22 +94,53 @@ test('definition → anna → reader → same definition; reload and top-level r
   await expect(frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true})).toBeVisible();
   expect(await frame.locator('#Shield').evaluate(e=>e.getBoundingClientRect().top)).toBeLessThan(80);
   await attach(testInfo,'reader-definition.png',await reader.screenshot(),'image/png');
+  const readerURL=reader.url();const returnPromise=context.waitForEvent('page');
   await frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true}).click();
-  await expect(reader).toHaveURL(new RegExp(`:${port+1}/\\?.*entry=${s.id}`));
-  await expect(reader.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
+  const returned=await returnPromise;
+  await expect(returned).toHaveURL(new RegExp(`:${port+1}/\\?.*entry=${s.id}`));
+  await expect(returned.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
+  await expect(reader).toHaveURL(readerURL);
 });
 
-test('existing reference stays in linked book and reaches the exact target',async({page},testInfo)=>{
+test('existing reference reaches the exact target in the current page',async({page},testInfo)=>{
   const ref=cases.reference;
   await page.goto(topic(book,cases.reference_source));await ready(page);
   const link=page.getByRole('link',{name:'查看定义: '+ref.text,exact:true}).first();
   // A reference in a long table must be keyboard-reachable without a guessed coordinate.
+  await expect(link).toHaveAttribute('target','_self');
   await link.focus();await link.click();
   await expect(page).toHaveURL(topic(book,ref.path)+'#'+ref.fragment);await ready(page);
   const anchor=page.locator(`anna-links a[href="/anna/entry/${ref.id}"]`).first();
   await expect(anchor).toBeVisible();
   const box=await anchor.boundingBox();expect(box.y).toBeGreaterThanOrEqual(0);expect(box.y).toBeLessThan(80);
   await attach(testInfo,'reference-target.png',await page.screenshot(),'image/png');
+});
+
+test('formatted mention navigates in the current page and exposes evidence in anna',async({page},testInfo)=>{
+  const m=cases.mention;
+  await page.goto(topic(book,m.path));await ready(page);
+  const link=page.getByRole('link',{name:'查看定义: '+m.text,exact:true}).first();
+  await expect(link).toHaveAttribute('target','_self');
+  await link.focus();await expect(link).toBeFocused();await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(topic(book,m.target.path)+'#'+m.target.fragment);await ready(page);
+  await page.goto(anna+'/?entry='+m.entry_id);
+  await page.getByRole('tab',{name:/概念线索/}).click();
+  const detail=await (await page.request.get(anna+'/api/entry?id='+m.entry_id)).json();
+  const pending=detail.concept_observations.find(o=>o.status==='review' && o.candidate_entries.length);
+  expect(pending).toBeTruthy();
+  const candidateCard=page.locator('article.fact').filter({has:page.locator('strong').filter({hasText:pending.text})}).first();
+  await candidateCard.getByText(`候选定义 (${pending.candidate_entries.length})`,{exact:true}).click();
+  const candidate=pending.candidate_entries[0];
+  await expect(candidateCard.getByRole('button',{name:candidate.name+' · '+candidate.ruleset,exact:true})).toBeVisible();
+  const mention=page.locator('article.fact').filter({has:page.getByRole('button',{name:m.text,exact:true})}).first();
+  await expect(mention).toContainText('格式标记');await expect(mention).toContainText('正文提及');
+  await mention.getByText('发现依据',{exact:true}).click();
+  await expect(mention.locator('pre')).toContainText('topics/style.css');
+  await expect(mention.locator('pre')).toContainText(m.evidence.stylesheet_sha256);
+  await page.setViewportSize({width:390,height:800});
+  await attach(testInfo,'concept-mention-evidence.png',await page.screenshot(),'image/png');
+  await mention.getByRole('button',{name:m.text,exact:true}).click();
+  await expect(page).toHaveURL(new RegExp('entry='+m.target_id));
 });
 
 test('fixture table links track moved nodes, focus, scrolling and narrow reflow',async({page},testInfo)=>{

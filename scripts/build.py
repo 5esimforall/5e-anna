@@ -551,6 +551,8 @@ class Build:
             if name=='奖励':where+=" OR (type='feat' AND json_extract(fields,'$.feat_category')='传奇恩惠')"
             db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         for name,(where,_) in EXTRA_VIEWS.items():db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
+        from concepts import build_concepts
+        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages)
         summary={'snapshot_commit':self.commit,'input_html_files':total_inputs,'processed_html_files':len(self.pages),'full_scan':len(self.pages)==total_inputs,
             'page_roles':dict(Counter(p['role'] for p in self.pages.values())),'parse_status':dict(Counter(p['parse_status'] for p in self.pages.values())),
             'sources':len(sources),'source_coverage':dict(Counter(s['coverage'] for s in sources)), 'versions':len(self.entries),
@@ -558,7 +560,7 @@ class Build:
             'classification_status':dict(Counter(e['classification_status'] for e in self.entries)),'ruleset':dict(Counter(e['ruleset'] for e in self.entries if e['type']!='section')),
             'legacy':dict(Counter(e['legacy'] for e in self.entries if e['type']!='section')),'index_rows':len(self.observations),
             'index_rows_linked':len({o for e in self.entries for o in e['observation_ids']}),'facts':len(self.facts),'relations':len(self.relations),'raw_tables':len(self.tables),
-            'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in self.reviews)),
+            'concept_definitions':concept_coverage['definitions'],'concept_observations':concept_coverage['observations'],'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in self.reviews)),
             'validation':validation,'runtime_seconds':round(elapsed,2),'identity_policy':'provisional locator identities; no name-based merge',
             'parser':'beautifulsoup4/html5lib','pipeline_sha256':sha256(b''.join(p.read_bytes() for p in sorted((PROJECT/'scripts').glob('*.py')))).hexdigest()}
         manifest=sha256('\n'.join(p+':'+self.pages[p]['sha256'] for p in sorted(self.pages)).encode()).hexdigest()

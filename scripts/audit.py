@@ -15,6 +15,37 @@ def connect(path):
     return db
 
 
+def audit_concepts(db,folder):
+    """Validate occurrence accounting independently of semantic review completion."""
+    errors=[];ids=set();outcomes=Counter()
+    pages=dict(db.execute('SELECT path,length(text) FROM pages'))
+    entries={r[0] for r in db.execute('SELECT id FROM entries')}
+    for row in db.execute('SELECT id,page_path,start,end,signal,status,target_id,data FROM concept_observations'):
+        mid,path,a,b,signal,status,target,raw=row;o=json.loads(raw);ids.add(mid);outcomes[(signal,status)]+=1
+        if not 0<=a<=b<=pages.get(path,-1):errors.append(mid+': invalid range')
+        if [mid,path,a,b,signal,status,target]!=[o[k] for k in ('id','path','start','end','signal','status','target_id')]:errors.append(mid+': data mismatch')
+        if any(c not in entries for c in o['candidates']):errors.append(mid+': missing candidate')
+        if status=='resolved':
+            if not target or o['candidates']!=[target]:errors.append(mid+': invalid resolved target')
+        elif target is not None:errors.append(mid+': unresolved target')
+        if signal=='format' and status=='resolved' and (o['role']!='mention' or not o['evidence'].get('stylesheet_sha256')):
+            errors.append(mid+': missing format provenance')
+    exported=set();p=Path(folder)/'concept_observations.jsonl'
+    if p.exists():
+        with p.open() as f:
+            for line in f:
+                mid=json.loads(line)['id']
+                if mid in exported:errors.append(mid+': duplicate export')
+                exported.add(mid)
+    if ids!=exported:errors.append('concept_observations.jsonl: IDs mismatch')
+    coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
+    if coverage['observations']!=len(ids):errors.append('coverage: total mismatch')
+    expected={(s,status):n for s,values in coverage['outcomes'].items() for status,n in values.items()}
+    if dict(outcomes)!=expected:errors.append('coverage: outcome mismatch')
+    return {'observations':len(ids),'errors':errors,'outcomes':coverage['outcomes'],
+            'gap_counts':{k:len(v) for k,v in coverage['gaps'].items()}}
+
+
 def audit(db_path,baseline=None):
     db=connect(db_path)
     summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
@@ -32,6 +63,7 @@ def audit(db_path,baseline=None):
     reasons=dict(db.execute('SELECT reason,count(*) FROM review_queue GROUP BY reason'))
     catalog_reviews=[json.loads(r[0]) for r in db.execute("SELECT data FROM review_queue WHERE reason IN ('animal_statblock_unresolved','mount_example_unresolved','catalog_table_unhandled','catalog_row_layout_unresolved') ORDER BY reason,target")]
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
+    concepts=audit_concepts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone() else None
     old_counts={};changes=[];same_manifest=None
     if baseline:
         old=connect(baseline)
@@ -53,7 +85,7 @@ def audit(db_path,baseline=None):
         'integrity_check':db.execute('PRAGMA integrity_check').fetchone()[0],
         'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),'csv_sql_mismatches':mismatches,
         'views':view_counts,'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
-        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'change_counts':dict(Counter(c['change'] for c in changes))}
+        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,'change_counts':dict(Counter(c['change'] for c in changes))}
     db.close();return result,changes
 
 
@@ -93,7 +125,7 @@ def main():
     p.add_argument('--db',type=Path,default=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite')
     p.add_argument('--baseline',type=Path);p.add_argument('--output',type=Path)
     a=p.parse_args();result,changes=audit(a.db,a.baseline);export_report(a.output or a.db.parent,result,changes)
-    print(json.dumps({k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','csv_sql_mismatches','change_counts']},ensure_ascii=False,indent=2))
-    if result['parse_errors'] or result['foreign_key_errors'] or result['csv_sql_mismatches'] or result['integrity_check']!='ok':raise SystemExit(1)
+    print(json.dumps({k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','csv_sql_mismatches','concepts','change_counts']},ensure_ascii=False,indent=2))
+    if result['parse_errors'] or result['foreign_key_errors'] or result['csv_sql_mismatches'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']):raise SystemExit(1)
 
 if __name__=='__main__':main()

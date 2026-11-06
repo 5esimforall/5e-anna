@@ -80,6 +80,28 @@ class LinkedBuildTests(unittest.TestCase):
             root=Path(td);source,db=self.fixture(root)
             with self.assertRaises(ValueError):build_book(source,db,source/'nested')
 
+    def test_formatted_reference_and_style_snapshot_guard(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'book'
+            page=source/'topics/test.htm';page.write_text(page.read_text()+'<p><u>格式引用</u> 未核引用</p>')
+            css=source/'topics/style.css';css.write_text('/* source convention */')
+            doc=Document('topics/test.htm',page.read_text());a,b=doc.span(doc.soup.u)
+            conn=sqlite3.connect(db)
+            conn.execute('UPDATE pages SET sha256=?,text=?',(fingerprint(page),doc.text))
+            conn.executescript('CREATE TABLE concept_observations(page_path,status,signal,data);')
+            for status in ['resolved','review','ambiguous']:
+                conn.execute('INSERT INTO concept_observations VALUES(?,?,?,?)',('topics/test.htm',status,'format',json.dumps({'start':a,'end':b,'target_id':'ver_test' if status=='resolved' else None})))
+            conn.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'discovery_inputs':{'topics/style.css':fingerprint(css),'webhelpcontents.htm':None}})))
+            conn.commit();conn.close();doc.close()
+            _,report=build_book(source,db,out)
+            self.assertEqual(report['linked_references'],2)  # one href + one resolved mark
+            raw=(out/'topics/test.htm').read_bytes();self.assertEqual(raw.split(MARKER)[0],page.read_bytes())
+            data=json.loads(raw.split(b'id="anna-bindings">')[1].split(b'</script>')[0])
+            self.assertEqual(data['references'][-1]['range']['text'],'格式引用')
+            css.write_text('changed convention')
+            with self.assertRaisesRegex(ValueError,'概念发现依据'):build_book(source,db,out)
+            self.assertEqual((out/'topics/test.htm').read_bytes(),raw)
+
 
 class LinkRuntimeTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'),'Node is needed for the link-layer fixture')

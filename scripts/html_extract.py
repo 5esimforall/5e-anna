@@ -406,6 +406,7 @@ def classify(c:Candidate, text, context, primary=False):
     if re.match(r'^(?:吸入|服用|损伤|接触)型毒药',descriptor):return 'poison','poison_descriptor'
     if re.search(r'[（(【]状态[）)】]',name) and not name.startswith(('状态','【状态】')):return 'condition','name_label'
     if re.search(r'[（(【]动作[）)】]',name):return 'action','name_label'
+    if c.method in {'heading','colored_heading','word_heading'} and not primary and re.search(r'/装备/(?:词条|精通词条)\.htm',path):return 'rule','property_definition'
     if re.search(r'术语汇编',path) and c.method=='heading':return 'rule','context_heading'
     if primary and class_context and zh not in CLASSES and re.search(r'\d+\s*级|第[三六十]级',text):return 'subclass','context_heading'
     if class_context and not primary and en and not re.search(r'作为|成为|职业特性|子职业|特性表|法术列表|扩展法术',name):

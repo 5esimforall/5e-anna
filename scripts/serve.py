@@ -121,6 +121,16 @@ def detail(db, eid):
             if snippet: f['excerpt']=snippet[0]
         e['facts'].append(f)
     e['relations']=[dict(r) for r in db.execute('SELECT predicate,object_id,target_label,status FROM relations WHERE subject_id=? ORDER BY predicate,target_label',(eid,))]
+    e['concept_observations']=[]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
+        e['concept_observations']=[json.loads(r[0]) for r in db.execute("SELECT data FROM concept_observations WHERE page_path=? AND start>=? AND end<=? ORDER BY start,signal",(e['page_path'],e['start'],e['end']))]
+        ids=sorted({cid for o in e['concept_observations'] if not o['target_id'] for cid in o['candidates']})
+        candidates={}
+        for start in range(0,len(ids),400):
+            batch=ids[start:start+400]
+            candidates.update((r['id'],dict(r)) for r in db.execute('SELECT id,name,ruleset FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
+        for o in e['concept_observations']:
+            o['candidate_entries']=[candidates[cid] for cid in o['candidates'] if cid in candidates] if not o['target_id'] else []
     e['reviews']=[json.loads(r[0]) for r in db.execute('SELECT data FROM review_queue WHERE target IN (?,?) ORDER BY priority,reason',(eid,e['page_path']))]
     return e
 

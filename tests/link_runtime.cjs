@@ -14,8 +14,9 @@ class Element {
 }
 const body=new Element('body'), html=new Element('html');html.lang='zh-CN';
 const node={nodeType:3,length:5,isConnected:true,parentElement:body}; body.childNodes=[node];
+const refNode={nodeType:3,length:5,isConnected:true,parentElement:body};body.childNodes.push(refNode);
 const spec={a:[[0],0],b:[[0],5],text:'Alpha'};
-const payload={definitions:[{id:'ver_a',name:'Alpha',body:spec,title:spec}],references:[]};
+const payload={definitions:[{id:'ver_a',name:'Alpha',body:spec,title:spec}],references:[{id:'ver_a',range:{a:[[1],0],b:[[1],5],text:'Alpha'}}]};
 const document={body,documentElement:html,readyState:'complete',
   getElementById:()=>({textContent:JSON.stringify(payload)}),createElement:tag=>new Element(tag),
   createRange:()=>{rangeCount++;return {
@@ -35,7 +36,11 @@ vm.runInContext(fs.readFileSync(__dirname+'/../book/links.js','utf8'),context);
 function flush(){while(raf.length)raf.shift()()}
 flush();
 const root=html.childNodes[0].shadowRoot,group=root.childNodes[1],anchor=group.childNodes[0];
-assert.equal(anchor.href,'/anna/entry/ver_a');assert.equal(anchor.target,'_top');assert.equal(anchor.style.top,'100px');
+assert.equal(anchor.href,'/anna/entry/ver_a');assert.equal(anchor.style.top,'100px');
+const reference=root.childNodes[2].childNodes[0];assert.equal(reference.href,'/definition/ver_a');
+assert.equal(anchor.target,'_blank');assert.equal(anchor.rel,'noopener');
+assert.equal(anchor['aria-description'],'在新标签页打开');
+assert.equal(reference.target,'_self');assert.equal(reference['aria-description'],undefined);
 root.activeElement=anchor;window.scrollBy(0,50);flush();
 assert.equal(group.childNodes[0],anchor,'scroll must retain keyboard focus');
 assert.equal(anchor.style.top,'50px','focused hit area must still follow content');

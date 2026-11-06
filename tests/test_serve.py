@@ -54,6 +54,18 @@ class WebTests(unittest.TestCase):
             if 'excerpt' in f:
                 ev=f['evidence'];a,b=ev['span'];text=self.db.execute('select text from pages where path=?',(ev['path'],)).fetchone()[0]
                 self.assertEqual(f['excerpt'],text[a:min(b,a+1200)])
+    def test_concept_observations_are_scoped_and_keep_evidence(self):
+        row=self.db.execute("SELECT e.id FROM entries e JOIN concept_observations m ON m.page_path=e.page_path AND m.start>=e.start AND m.end<=e.end WHERE e.type='spell' AND m.signal='format' AND m.status='resolved' LIMIT 1").fetchone()
+        self.assertIsNotNone(row);d=detail(self.db,row[0]);self.assertTrue(d['concept_observations'])
+        for m in d['concept_observations']:
+            self.assertEqual(m['path'],d['page_path'])
+            self.assertTrue(d['start']<=m['start']<=m['end']<=d['end'])
+            if m['signal']=='format' and m['status']=='resolved':
+                self.assertEqual(len(m['evidence']['stylesheet_sha256']),64)
+                self.assertEqual(m['candidates'],[m['target_id']])
+            if not m['target_id']:
+                self.assertEqual([c['id'] for c in m['candidate_entries']],m['candidates'])
+                self.assertTrue(all(c['name'] for c in m['candidate_entries']))
     def test_invalid_query(self):
         for p in [{'view':['entries; DROP TABLE entries']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'page':['nan']}]:
             with self.assertRaises(ValueError):query(self.db,p)

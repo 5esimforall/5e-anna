@@ -56,7 +56,13 @@
         if (!a) {
           a = document.createElement('a'); link.anchors.push(a);
           a.href = link.href; a.setAttribute('aria-label', link.label); a.dataset.kind = link.kind;
-          if (link.kind === 'definition') a.target = '_top';
+          a.target = link.kind === 'definition' ? '_blank' : '_self';
+          a.title = link.label;
+          if (link.kind === 'definition') {
+            a.rel = 'noopener';
+            a.setAttribute('aria-description', labels.newTab);
+            a.title += ' · ' + labels.newTab;
+          }
           a.style.zIndex = link.kind === 'definition' ? '2' : '1';
           a.tabIndex = i === 0 ? 0 : -1;
           if (i > 0) a.setAttribute('aria-hidden', 'true');

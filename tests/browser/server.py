@@ -36,13 +36,16 @@ def fixture():
 def cases(manifest):
     with closing(sqlite3.connect(up.serve.DB)) as db:
         spell=json.loads(db.execute("SELECT data FROM entries WHERE name_en='Shield' AND ruleset='5r' AND page_path='topics/玩家手册2024/法术详述/1环.htm'").fetchone()[0])
+        row=db.execute("SELECT m.data,e.id FROM concept_observations m JOIN entries e ON e.page_path=m.page_path AND m.start>=e.start AND m.end<=e.end WHERE m.status='resolved' AND m.signal='format' AND e.type='spell' AND m.page_path='topics/玩家手册2024/法术详述/1环.htm' ORDER BY m.start LIMIT 1").fetchone()
+        mention=json.loads(row[0]);mention['entry_id']=row[1]
+        mention['target']=manifest['entries'][mention['target_id']]
     path='topics/速查/合作万器大全.htm'
     raw=(BOOK/path).read_text()
     data=json.loads(raw.split('id="anna-bindings">',1)[1].split('</script>',1)[0])
     reference=data['references'][0]
     return {'spell':{'id':spell['id'],'path':spell['page_path'],'anchor':'Shield','name':spell['name']},
             'reference':{'path':path,'id':reference['id'],'text':reference['range']['text'],**manifest['entries'][reference['id']]},
-            'reference_source':path}
+            'reference_source':path,'mention':mention}
 
 
 def main():

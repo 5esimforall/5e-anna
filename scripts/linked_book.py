@@ -1,6 +1,7 @@
 """Generate a byte-preserving source copy plus DOM range bindings. Never serialize source HTML."""
 import argparse
 from collections import defaultdict
+from contextlib import closing
 from hashlib import sha256
 import html
 import json
@@ -52,17 +53,24 @@ def inject(raw,payload,encoding='utf-8'):
 def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output=BOOK):
     source=Path(source).resolve();output=Path(output).resolve();db_path=Path(db_path).resolve()
     if output==source or source in output.parents or output in source.parents:raise ValueError('链接版与原文目录必须分离')
-    db=sqlite3.connect(db_path.as_uri()+'?mode=ro',uri=True)
-    summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
-    if not summary['full_scan']:raise ValueError('链接版需要完整数据库')
-    pages={p:{'sha256':h,'text':t} for p,h,t in db.execute('SELECT path,sha256,text FROM pages')}
-    entries={};by_page=defaultdict(list);anchors=defaultdict(list)
-    for raw, in db.execute('SELECT data FROM entries'):
-        e=json.loads(raw)
-        if 'title_end' not in e:raise ValueError('请先重新生成数据库：缺少 title_end')
-        entries[e['id']]=e;by_page[e['page_path']].append(e)
-        for a in e['anchors']:anchors[(e['page_path'],a)].append(e)
-    db.close()
+    with closing(sqlite3.connect(db_path.as_uri()+'?mode=ro',uri=True)) as db:
+        summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
+        if not summary['full_scan']:raise ValueError('链接版需要完整数据库')
+        pages={p:{'sha256':h,'text':t} for p,h,t in db.execute('SELECT path,sha256,text FROM pages')}
+        entries={};by_page=defaultdict(list);anchors=defaultdict(list)
+        for raw, in db.execute('SELECT data FROM entries'):
+            e=json.loads(raw)
+            if 'title_end' not in e:raise ValueError('请先重新生成数据库：缺少 title_end')
+            entries[e['id']]=e;by_page[e['page_path']].append(e)
+            for a in e['anchors']:anchors[(e['page_path'],a)].append(e)
+        mentions=defaultdict(list)
+        if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
+            coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
+            for path,expected in coverage['discovery_inputs'].items():
+                actual=fingerprint(source/path) if (source/path).exists() else None
+                if actual!=expected:raise ValueError('概念发现依据与数据库快照不一致，请运行 make build：'+path)
+            for path,raw in db.execute("SELECT page_path,data FROM concept_observations WHERE status='resolved' AND signal='format'"):
+                mentions[path].append(json.loads(raw))
     inputs={p.relative_to(source).as_posix():fingerprint(p) for p in source.rglob('*') if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}
     actual_pages={p for p in inputs if p.startswith('topics/') and Path(p).suffix.lower() in {'.html','.htm'}}
     if actual_pages!=set(pages) or any(inputs.get(p)!=v['sha256'] for p,v in pages.items()):raise ValueError('原文与数据库快照不一致，请运行 make build')
@@ -123,6 +131,10 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                     r=text_slice(doc,*span)
                     if r:references.append({'id':target['id'],'range':r});report['linked_references']+=1
                 else:report['unresolved'].append({'path':path,'href':a['href'],'label':compact(a.get_text(' ',strip=True))})
+            for mention in mentions[path]:
+                r=text_slice(doc,mention['start'],mention['end'])
+                if r:
+                    references.append({'id':mention['target_id'],'range':r});report['linked_references']+=1
             if definitions or references:
                 (stage/path).write_bytes(inject((source/path).read_bytes(),{'definitions':definitions,'references':references},encoding))
             doc.close()

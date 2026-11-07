@@ -8,6 +8,7 @@ import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from html_extract import Document
+from review_store import load_events
 from linked_book import text_slice,inject,build_book,fingerprint,MARKER
 
 class DOMBindingTests(unittest.TestCase):
@@ -39,7 +40,19 @@ class LinkedBuildTests(unittest.TestCase):
         conn.executescript('CREATE TABLE metadata(key,value); CREATE TABLE pages(path,sha256,text); CREATE TABLE entries(data);')
         conn.execute('insert into metadata values(?,?)',('summary',json.dumps({'full_scan':True})))
         conn.execute('insert into pages values(?,?,?)',('topics/test.htm',fingerprint(page),d.text))
-        conn.execute('insert into entries values(?)',(json.dumps(e),));conn.commit();conn.close();d.close()
+        conn.execute('insert into entries values(?)',(json.dumps(e),))
+        conn.execute('CREATE TABLE effective_references(id,page_path,start,signal,status,can_link,data)')
+        for i,tag in enumerate(d.body.find_all('a',href=True)):
+            a,b=d.span(tag);resolved=tag['href']=='#Spell'
+            ref={'id':f'reference_{i}','path':'topics/test.htm','start':a,'end':b,'text':tag.get_text(),
+                 'signal':'explicit','status':'resolved' if resolved else 'unresolved','can_link':resolved,
+                 'target_id':'ver_test' if resolved else None,'reason':'explicit_locator','evidence':{'href':tag['href']}}
+            conn.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?)',
+                         (ref['id'],ref['path'],a,'explicit',ref['status'],int(resolved),json.dumps(ref)))
+        log=root/'decisions.jsonl'
+        conn.execute('INSERT INTO metadata VALUES(?,?)',('review_snapshot',json.dumps({'path':str(log),'sha256':load_events(log)[1],'events':0})))
+        conn.execute('INSERT INTO metadata VALUES(?,?)',('reference_coverage','{}'))
+        conn.commit();conn.close();d.close()
         return source,db
     def test_copy_bindings_references_and_rebuild(self):
         with tempfile.TemporaryDirectory() as td:
@@ -69,7 +82,9 @@ class LinkedBuildTests(unittest.TestCase):
             e=json.loads(conn.execute('SELECT data FROM entries').fetchone()[0])
             e.update(start=0,end=len(doc.text),title_end=0,anchors=[])
             conn.execute('UPDATE entries SET data=?',(json.dumps(e),))
-            conn.execute('UPDATE pages SET sha256=?,text=?',(fingerprint(page),doc.text));conn.commit();conn.close();doc.close()
+            conn.execute('UPDATE pages SET sha256=?,text=?',(fingerprint(page),doc.text))
+            conn.execute('DELETE FROM effective_references')
+            conn.commit();conn.close();doc.close()
             manifest,report=build_book(source,db,out)
             self.assertFalse(manifest['entries']['ver_test']['locatable'])
             self.assertEqual(report['unlocatable_definitions'],['ver_test'])
@@ -92,6 +107,9 @@ class LinkedBuildTests(unittest.TestCase):
             for status in ['resolved','review','ambiguous']:
                 conn.execute('INSERT INTO concept_observations VALUES(?,?,?,?)',('topics/test.htm',status,'format',json.dumps({'start':a,'end':b,'target_id':'ver_test' if status=='resolved' else None})))
             conn.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'discovery_inputs':{'topics/style.css':fingerprint(css),'webhelpcontents.htm':None}})))
+            ref={'id':'format_reference','path':'topics/test.htm','start':a,'end':b,'text':'格式引用','signal':'format',
+                 'status':'resolved','target_id':'ver_test','can_link':True}
+            conn.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?)',('format_reference','topics/test.htm',a,'format','resolved',1,json.dumps(ref)))
             conn.commit();conn.close();doc.close()
             _,report=build_book(source,db,out)
             self.assertEqual(report['linked_references'],2)  # one href + one resolved mark

@@ -9,6 +9,7 @@ import threading
 from urllib.parse import parse_qs,quote,unquote,urlsplit
 from linked_book import BOOK,fingerprint
 from paths import PROJECT,WEB
+from review_store import load_events
 import serve
 import serve_5echm as search
 
@@ -18,6 +19,9 @@ def validate_bundle(source,db,book):
     manifest_path=book/'anna-manifest.json'
     if not manifest_path.is_file():raise ValueError('链接版不存在，请运行 make build')
     m=json.loads(manifest_path.read_text())
+    reviewed=m.get('review_snapshot')
+    if not reviewed or load_events(reviewed['path'])[1]!=reviewed['sha256']:
+        raise ValueError('审核日志与发布快照不匹配，请运行 make build')
     if m['source_root']!=str(source) or not Path(db).is_file() or fingerprint(db)!=m['database_sha256']:
         raise ValueError('数据库与链接版不匹配，请运行 make build')
     actual={p.relative_to(source).as_posix():p for p in source.rglob('*') if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}
@@ -30,6 +34,8 @@ def validate_bundle(source,db,book):
 
 
 def make_book_handler(book,manifest,anna_port):
+    published=(Path(book)/'anna-manifest.json').stat()
+    signature=(published.st_ino,published.st_size,published.st_mtime_ns)
     class BookHandler(search.Handler):
         def __init__(self,*args,**kwargs):
             SimpleHTTPRequestHandler.__init__(self,*args,directory=str(book),**kwargs)
@@ -44,6 +50,12 @@ def make_book_handler(book,manifest,anna_port):
         def do_GET(self):
             if self.headers.get('Host','') not in {f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'}:
                 self.send_error(403);return
+            try:
+                current=(Path(book)/'anna-manifest.json').stat()
+                changed=(current.st_ino,current.st_size,current.st_mtime_ns)!=signature
+            except FileNotFoundError: changed=True
+            if changed:
+                self.send_error(409,'Book rebuilt; restart make up');return
             u=urlsplit(self.path);path=unquote(u.path)
             if path.startswith('/definition/') or path.startswith('/anna/entry/'):
                 eid=path.rsplit('/',1)[-1]
@@ -71,6 +83,8 @@ def create_servers(db,book,manifest,anna_port,book_port):
     if anna_port==book_port and anna_port!=0:raise ValueError('两个站点必须使用不同端口')
     class AnnaHandler(serve.Handler):pass
     AnnaHandler.db_path=Path(db)
+    stat=Path(db).stat()
+    AnnaHandler.db_signature=(stat.st_ino,stat.st_size,stat.st_mtime_ns)
     first=ThreadingHTTPServer(('127.0.0.1',anna_port),AnnaHandler)
     try:
         BookHandler=make_book_handler(book,manifest,first.server_port)

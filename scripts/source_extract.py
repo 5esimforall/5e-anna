@@ -106,6 +106,21 @@ class SourceRegistry:
         for sid,source in self.sources.items():
             source['paths']=sorted(path for path,ids in self.page_sources.items() if sid in ids)
             if source['paths']:source['coverage']='toc_located'
+        # Publication role survives moving an edition into the archive. Match catalog
+        # publication families using both English identity and abbreviation stem.
+        def abbreviation_stems(row):
+            return {re.sub(r'\d+$','',key(a)) for a in re.split(r'[、,，;/]',row['abbreviations']) if key(a) and re.search('[A-Za-z]',a)}
+        core_rows=[r for r in self.catalog if r['level']=='publication' and '核心' in r['section']]
+        roles={}
+        for row in self.catalog:
+            family=[r for r in core_rows if key(row['name_en'])==key(r['name_en']) and abbreviation_stems(row)&abbreviation_stems(r)]
+            if row['level']=='publication' and family:
+                roles[row['id']]={'rule':'catalog_publication_family','status':'上下文推得',
+                    'catalog_entry':row['evidence'],'core_family_entries':[r['evidence'] for r in family]}
+        for source in self.sources.values():
+            evidence=[roles[cid] for cid in source['catalog_ids'] if cid in roles]
+            source['reference_role']='core_rules' if evidence else 'other'
+            source['reference_role_evidence']=evidence
         self.aliases=defaultdict(set)
         for sid,s in self.sources.items():
             for a in [s['name']]+s['aliases']:

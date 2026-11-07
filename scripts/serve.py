@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Loopback-only, read-only browser for the extracted SQLite catalog; stdlib only."""
+"""Loopback-only, read-only browser for the extracted SQLite catalog."""
 from __future__ import annotations
 import argparse
 import csv
@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 import browse
+from references import query_references, query_decisions
+from review_store import load_events
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / 'data/extracted/catalog.sqlite'
@@ -103,7 +105,10 @@ def meta(db):
     sources = []
     for r in db.execute('SELECT s.data,count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id LEFT JOIN entries e ON e.id=es.entry_id AND e.type!=\'section\' GROUP BY s.id ORDER BY s.name'):
         s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'count':r['n']})
-    return {'summary':summary,'types':TYPES,'fields':{**FIELDS,**browse.LABELS},'sources':sources,
+    review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
+    review = json.loads(review[0]) if review else None
+    if review: review['pending_rebuild'] = load_events(review['path'])[1] != review['sha256']
+    return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.LABELS},'sources':sources,
             'views':[{'name':v,'count':db.execute('SELECT count(*) FROM "'+v.replace('"','""')+'"').fetchone()[0]} for v in views(db)]}
 
 
@@ -132,6 +137,18 @@ def detail(db, eid):
         for o in e['concept_observations']:
             o['candidate_entries']=[candidates[cid] for cid in o['candidates'] if cid in candidates] if not o['target_id'] else []
     e['reviews']=[json.loads(r[0]) for r in db.execute('SELECT data FROM review_queue WHERE target IN (?,?) ORDER BY priority,reason',(eid,e['page_path']))]
+    e['effective_references']=[]
+    if db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():
+        e['effective_references']=[json.loads(r[0]) for r in db.execute(
+            'SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id',
+            (e['page_path'],e['start'],e['end']))]
+        ids=sorted({cid for r in e['effective_references'] if not r['target_id'] for cid in r['candidates']})
+        candidates={}
+        for start in range(0,len(ids),400):
+            batch=ids[start:start+400]
+            candidates.update((r['id'],dict(r)) for r in db.execute('SELECT id,name,ruleset FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
+        for ref in e['effective_references']:
+            ref['candidate_entries']=[candidates[cid] for cid in ref['candidates'] if cid in candidates]
     return e
 
 
@@ -149,6 +166,7 @@ def csv_export(rows, view=''):
 class Handler(BaseHTTPRequestHandler):
     db_path=DB
     book_url=None
+    db_signature=None
     def log_message(self,*args): pass
     def send(self,body,kind='application/json; charset=utf-8',status=200,download=False):
         if not isinstance(body,bytes): body=json.dumps(body,ensure_ascii=False).encode()
@@ -164,6 +182,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send({'error':'仅限本机访问'},status=403); return
         url=urlsplit(self.path); p=parse_qs(url.query)
         try:
+            if self.db_signature is not None:
+                stat=Path(self.db_path).stat()
+                if (stat.st_ino,stat.st_size,stat.st_mtime_ns)!=self.db_signature:
+                    self.send({'error':'数据库已重建，请重启 make up 以同步链接版。'},status=409);return
             static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
@@ -172,6 +194,11 @@ class Handler(BaseHTTPRequestHandler):
                 elif url.path=='/api/facets': self.send(browse.facets(db,first(p,'view')))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))
+                elif url.path=='/api/references': self.send(query_references(db,path=first(p,'path'),reference_id=first(p,'id'),
+                    status=first(p,'status'),signal=first(p,'signal'),review_status=first(p,'review_status'),
+                    limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
+                elif url.path=='/api/review-decisions': self.send(query_decisions(db,status=first(p,'status'),
+                    limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
                 elif url.path=='/api/export': self.send(csv_export(query(db,p,export=True)['rows'],first(p,'view')),'text/csv; charset=utf-8',download=True)
                 elif url.path=='/source':
                     row=db.execute('SELECT text FROM pages WHERE path=?',(first(p,'path'),)).fetchone()

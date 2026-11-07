@@ -22,6 +22,7 @@ from source_extract import SourceRegistry
 from table_extract import extract_tables
 
 from paths import PROJECT, WEB as DEFAULT_WEB
+from review_store import DEFAULT_DECISIONS, require_current, pipeline_hash
 INDEX_FIELDS={
     '物品名':'name','怪物名':'name','法术名':'name','稀有度':'rarity','类别':'item_type','子类别':'item_subtypes',
     '同调':'attunement','同调条件':'attunement_requirements','来源':'source_code','体型':'size','类型':'creature_type',
@@ -510,7 +511,7 @@ class Build:
             assert sha256((self.web/path).read_bytes()).hexdigest()==page['sha256'],('Source changed during build',path)
         return {'input_accounting':'pass','unique_ids':'pass','evidence_ranges':'pass','raw_evidence':'pass','foreign_keys':'pass','source_unchanged':'pass'}
 
-    def export(self,out,validation,total_inputs,elapsed):
+    def export(self,out,validation,total_inputs,elapsed,decision_path=DEFAULT_DECISIONS):
         out.mkdir(parents=True,exist_ok=True)
         db=sqlite3.connect(out/'catalog.sqlite')
         db.execute('PRAGMA foreign_keys=ON')
@@ -555,6 +556,9 @@ class Build:
         for name,(where,_) in EXTRA_VIEWS.items():db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         from concepts import build_concepts
         concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources)
+        from references import build_references
+        reference_coverage=build_references(db,self.web,out,decision_path)
+        reviews=[json.loads(row[0]) for row in db.execute('SELECT data FROM review_queue ORDER BY reason,target,id')]
         summary={'snapshot_commit':self.commit,'input_html_files':total_inputs,'processed_html_files':len(self.pages),'full_scan':len(self.pages)==total_inputs,
             'page_roles':dict(Counter(p['role'] for p in self.pages.values())),'parse_status':dict(Counter(p['parse_status'] for p in self.pages.values())),
             'sources':len(sources),'source_coverage':dict(Counter(s['coverage'] for s in sources)), 'versions':len(self.entries),
@@ -562,9 +566,10 @@ class Build:
             'classification_status':dict(Counter(e['classification_status'] for e in self.entries)),'ruleset':dict(Counter(e['ruleset'] for e in self.entries if e['type']!='section')),
             'legacy':dict(Counter(e['legacy'] for e in self.entries if e['type']!='section')),'index_rows':len(self.observations),
             'index_rows_linked':len({o for e in self.entries for o in e['observation_ids']}),'facts':len(self.facts),'relations':len(self.relations),'raw_tables':len(self.tables),
-            'concept_definitions':concept_coverage['definitions'],'concept_observations':concept_coverage['observations'],'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in self.reviews)),
+            'concept_definitions':concept_coverage['definitions'],'concept_observations':concept_coverage['observations'],'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in reviews)),
+            'reference_coverage':reference_coverage,
             'validation':validation,'runtime_seconds':round(elapsed,2),'identity_policy':'provisional locator identities; no name-based merge',
-            'parser':'beautifulsoup4/html5lib','pipeline_sha256':sha256(b''.join(p.read_bytes() for p in sorted((PROJECT/'scripts').glob('*.py')))).hexdigest()}
+            'parser':'beautifulsoup4/html5lib','pipeline_sha256':pipeline_hash()}
         manifest=sha256('\n'.join(p+':'+self.pages[p]['sha256'] for p in sorted(self.pages)).encode()).hexdigest()
         summary['input_manifest_sha256']=manifest
         db.execute('INSERT INTO metadata VALUES(?,?)',('summary',dumps(summary)))
@@ -572,14 +577,14 @@ class Build:
         assert not db.execute('PRAGMA foreign_key_check').fetchall()
         assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         db.close()
-        csv_write(out/'sources.csv',sources,['id','name','origin','release_status','source_type','ruleset_hint','archived','setting','coverage','aliases','paths','catalog_ids','evidence'])
+        csv_write(out/'sources.csv',sources,['id','name','origin','release_status','source_type','reference_role','reference_role_evidence','ruleset_hint','archived','setting','coverage','aliases','paths','catalog_ids','evidence'])
         csv_write(out/'source_catalog.csv',self.registry.catalog,['id','section','name_zh','name_en','abbreviations','aliases','level','ruleset_hint','evidence'])
         csv_write(out/'pages.csv',self.pages.values(),['path','title','role','parse_status','encoding','sha256','characters','source_ids','source_method','toc_nodes','error'])
         fields=['id','entity_id','name','name_zh','name_en','type','ruleset','ruleset_status','legacy','classification_status','source_names','page_path','locator','start','end','fields','field_conflicts']
         csv_write(out/'entries.csv',self.entries,fields)
         for name,types in VIEW_TYPES.items():csv_write(out/'views'/f'{name}.csv',[e for e in self.entries if e['type'] in types or (name=='奖励' and e['type']=='feat' and e['fields'].get('feat_category')=='传奇恩惠')],fields)
         for name,(_,match) in EXTRA_VIEWS.items():csv_write(out/'views'/f'{name}.csv',[e for e in self.entries if match(e)],fields)
-        csv_write(out/'review_queue.csv',self.reviews,['id','target','reason','priority','detail','evidence'])
+        csv_write(out/'review_queue.csv',reviews,['id','target','reason','priority','detail','evidence'])
         csv_write(out/'identity_candidates.csv',self.identity_candidates,['group_id','type','english_key','entry_ids','names','source_names','status','body_hashes'])
         csv_write(out/'relations.csv',self.relations,['id','subject_id','predicate','object_id','target_label','target_locator','evidence','status'])
         jsonl_write(out/'facts.jsonl',self.facts)
@@ -613,6 +618,7 @@ def publish(stage,dest):
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',type=Path,default=DEFAULT_WEB);ap.add_argument('--output',type=Path,default=PROJECT/'data/extracted')
+    ap.add_argument('--decisions',type=Path,default=DEFAULT_DECISIONS)
     ap.add_argument('--workers',type=int,default=min(4,os.cpu_count() or 1));ap.add_argument('--limit',type=int,help='development only; summary explicitly marks partial scans')
     args=ap.parse_args()
     started=time.monotonic();b=Build(args.source)
@@ -634,7 +640,10 @@ def main():
                 if i%500==0:print(f'正文：{i}/{len(paths)}；候选：{len(b.entries)}',flush=True)
     b.finish();validation=b.validate(paths)
     with tempfile.TemporaryDirectory(prefix='.build-',dir=PROJECT) as tmp:
-        summary=b.export(Path(tmp),validation,total,time.monotonic()-started)
+        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,args.decisions)
+        b.validate(paths)
+        with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
+            require_current(staged_db,args.decisions)
         publish(Path(tmp),args.output)
     print(json.dumps(summary,ensure_ascii=False,indent=2))
 

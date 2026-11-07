@@ -32,10 +32,10 @@ def format_kind(tag):
                   'creature' if bold else 'spell' if inner else 'magic_item' if outer else 'concept')
     return kinds.pop() if len(kinds)==1 else 'ambiguous'
 
-def style_profile(source):
+def style_profile(source,relative_path='topics/style.css'):
     """Read the source's documented convention; a changed/missing rule is not trusted."""
-    path=Path(source)/'topics/style.css'
-    if not path.exists():return None
+    path=Path(source)/relative_path
+    if not path.is_file():return None
     raw=path.read_bytes();css=raw.decode('utf-8',errors='replace')
     expected={'concept':('下划线→术语格式',{'u'}),
               'spell':('下划线+斜体→法术格式',{'u em','u i'}),
@@ -46,7 +46,7 @@ def style_profile(source):
         m=re.search(r'/\*\s*'+re.escape(comment)+r'\s*\*/\s*([^{}]+)\{([^{}]+)\}',css)
         if not m or {compact(s).lower() for s in m[1].split(',')}!=selectors:continue
         rules[kind]={'selectors':sorted(selectors),'declarations':compact(m[2]),'annotation':comment}
-    return {'id':'source_underline_v1','path':'topics/style.css','sha256':sha256(raw).hexdigest(),'rules':rules,'supported':len(rules)==len(expected)}
+    return {'id':'source_underline_v1','path':relative_path,'sha256':sha256(raw).hexdigest(),'rules':rules,'supported':len(rules)==len(expected)}
 
 def format_evidence(tag,profile,linked):
     # Ordered paths preserve outer/inner nesting and partial or conflicting markup.
@@ -59,6 +59,35 @@ def format_evidence(tag,profile,linked):
             'stylesheet_path':profile['path'] if profile and linked else None,
             'stylesheet_sha256':profile['sha256'] if profile and linked else None}
 
+def reference_spans(text,start,end,kind,resolver):
+    """Split verified name lists, never treat a markup element as a single rule identity."""
+    def known(a,b):
+        ids=resolver.names.get(key(compact(text[a:b])),set())
+        wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
+        return any(resolver.entries[i]['type'] in wanted for i in ids)
+    if known(start,end):return [(start,end)]  # punctuation may be part of a real name
+    parts=[];begin=start;stack=[];pairs={'(':')','（':'）','[':']','【':'】','「':'」','“':'”'}
+    def append(a,b):
+        while a<b and text[a].isspace():a+=1
+        while b>a and text[b-1].isspace():b-=1
+        if a<b:parts.append((a,b))
+    for i in range(start,end):
+        ch=text[i]
+        if ch in pairs:stack.append(pairs[ch]);continue
+        if stack:
+            if ch==stack[-1]:stack.pop()
+            continue
+        punctuation=ch in '，、；;,'
+        # Preserve numeric/parenthesized qualifiers instead of linking a stripped base name.
+        if punctuation and re.match(r'\s*(?:[+−-]?\d|[（(])',text[i+1:end]):punctuation=False
+        bilingual_boundary=(ch.isspace() and i>begin and re.match(r'[A-Za-z*]',text[i-1])
+                            and re.match(r'\s*[\u3400-\u9fff]',text[i:end]))
+        if punctuation or bilingual_boundary:append(begin,i);begin=i+1
+    append(begin,end)
+    # Unrecognized fragments retain their own outcomes only when a list is evidenced
+    # by at least two known names. Never link the whole mark to its final English name.
+    return parts if len(parts)>1 and sum(known(a,b) for a,b in parts)>=2 else [(start,end)]
+
 class Resolver:
     def __init__(self,entries,sources=()):
         self.sources={s["id"]:s for s in sources};self.local_definitions=defaultdict(list)
@@ -67,14 +96,26 @@ class Resolver:
             self.pages[e['page_path']].append(e)
             for n in aliases(e):self.names[key(n)].add(e['id'])
             for a in e.get('anchors',[]):self.anchors[(e['page_path'],a)].add(e['id'])
-        self.indexed=set()
+        self.indexed=set();self.feature_scopes={}
+        for e in entries:
+            if e['type']!='class_feature':continue
+            scope=e;parent=e;seen={e['id']}
+            while parent.get('parent_id') in self.entries and parent['parent_id'] not in seen:
+                parent=self.entries[parent['parent_id']];seen.add(parent['id'])
+                if scope is e:scope=parent
+                if parent['type'] in {'class','subclass'}:
+                    scope=parent;break
+            self.feature_scopes[e['id']]=scope
     def locator(self,path,fragment):
         ids=self.anchors.get((path,fragment),set()) if fragment else set()
         return sorted(ids)
     def resolve(self,label,kind,path,position=None):
+        excluded_features=[]
         def result(candidates,reason,status=None):
             ids=sorted(e['id'] for e in candidates)
-            return {'targets':ids,'reason':reason,'status':status or ('resolved' if len(ids)==1 else 'ambiguous' if ids else 'unresolved')}
+            result={'targets':ids,'reason':reason,'status':status or ('resolved' if len(ids)==1 else 'ambiguous' if ids else 'unresolved')}
+            if excluded_features:result['resolution_evidence']={'out_of_scope_feature_ids':excluded_features}
+            return result
         local=[d for d in self.local_definitions[path] if d['kind']==kind and key(label) in d['name_keys'] and position is not None and d['scope'][0]<=position<d['scope'][1]]
         if local:
             size=min(d['scope'][1]-d['scope'][0] for d in local)
@@ -86,6 +127,13 @@ class Resolver:
         wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
         def matches_kind(e):return e['type'] in wanted or kind=='concept' and e.get('table_span') and e['type']=='lore'
         candidates=[self.entries[i] for i in ids if matches_kind(self.entries[i])]
+        for e in candidates:
+            if e['type']!='class_feature':continue
+            scope=self.feature_scopes[e['id']]
+            if position is None or scope['page_path']!=path or not scope['start']<=position<scope['end']:
+                excluded_features.append(e['id'])
+        candidates=[e for e in candidates if e['id'] not in excluded_features]
+        if not candidates and excluded_features:return result([], 'feature_out_of_scope','review')
         if not candidates:
             return result([self.entries[i] for i in ids],'type_mismatch' if ids else 'no_definition','review' if ids else 'unresolved')
         local=self.pages.get(path,[]);sources={s for e in local for s in e.get('source_ids',[])}
@@ -94,7 +142,7 @@ class Resolver:
         if same_page:return result(same_page,'same_page')
         if len(rules)==1:candidates=[e for e in candidates if e['ruleset'] in rules]
         else:return result(candidates,'unknown_ruleset','review')
-        if not candidates:return result([self.entries[i] for i in ids if matches_kind(self.entries[i])],'ruleset_mismatch','review')
+        if not candidates:return result([self.entries[i] for i in ids if matches_kind(self.entries[i]) and i not in excluded_features],'ruleset_mismatch','review')
         same_source=[e for e in candidates if sources.intersection(e.get('source_ids',[]))]
         if same_source:
             return result(same_source,'same_source')
@@ -102,12 +150,12 @@ class Resolver:
         # Restrict to catalogued core sources, never arbitrary same-edition supplements.
         context_sources=[self.sources[s] for s in sorted(sources) if s in self.sources]
         if context_sources and all(s['ruleset_hint'] in rules for s in context_sources):
-            core=[e for e in candidates if any(self.sources.get(s,{}).get('group')=='核心规则' and self.sources[s]['ruleset_hint'] in rules for s in e['source_ids'])]
+            core=[e for e in candidates if any(self.sources.get(s,{}).get('reference_role')=='core_rules' and self.sources[s]['ruleset_hint'] in rules for s in e['source_ids'])]
             if core:
                 found=result(core,'source_core_rules')
-                found['resolution_evidence']={'status':'上下文推得','rule':'source_ruleset_core_dependency',
+                found.setdefault('resolution_evidence',{}).update({'status':'上下文推得','rule':'source_ruleset_core_dependency',
                     'sources':[{'id':s['id'],'ruleset':s['ruleset_hint'],'evidence':s['evidence']} for s in context_sources],
-                    'target_source_ids':sorted({sid for e in core for sid in e['source_ids']})}
+                    'target_sources':[{'id':sid,'role_evidence':self.sources.get(sid,{}).get('reference_role_evidence',[])} for sid in sorted({sid for e in core for sid in e['source_ids']})]})
                 return found
         # Core glossary is an explicitly curated definition registry for that ruleset.
         core=[e for e in candidates if '/术语汇编/' in e['page_path'] and e['id'] in self.indexed]
@@ -151,14 +199,23 @@ def build_concepts(db,source,out,entries,pages,sources=()):
         doc.close()
     terms=sorted({n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2},key=lambda n:(-len(n),n))
     pattern=re.compile('|'.join(re.escape(n) for n in terms),re.I) if terms else None
-    profile=style_profile(source);page_coverage=[]
+    profiles={};page_coverage=[];discovery_inputs={'webhelpcontents.htm'}
     for path,page in sorted(pages.items()):
         if page.get('parse_status')!='ok':continue
         doc=Document(path,read_page(Path(source)/path)[0]);occupied=[]
         titles=[(e['start'],e['title_end']) for e in resolver.pages[path]]
         def in_title(a,b):return any(x<=a and b<=y for x,y in titles)
-        linked=any(resolve_link(path,t.get('href',''))==('topics/style.css','') and 'stylesheet' in t.get('rel',[]) for t in doc.soup.find_all('link',href=True))
-        trusted=bool(profile and profile['supported'] and linked);marked=0
+        stylesheet_paths=[]
+        for link in doc.soup.find_all('link',href=True):
+            dest=resolve_link(path,link['href'])
+            if 'stylesheet' not in link.get('rel',[]) or not dest:continue
+            css_path=dest[0]
+            if css_path not in stylesheet_paths:stylesheet_paths.append(css_path)
+            discovery_inputs.add(css_path)
+            if css_path not in profiles:profiles[css_path]=style_profile(source,css_path)
+        supported=[profiles[p] for p in stylesheet_paths if profiles[p] and profiles[p]['supported']]
+        profile=supported[0] if supported else None
+        linked=bool(profile);trusted=bool(supported);marked=0
         # A named object defined inside a subfeature points to that subfeature's rule paragraph.
         # This is a scoped definition binding, not a global alias for an external item.
         if trusted:
@@ -184,15 +241,22 @@ def build_concepts(db,source,out,entries,pages,sources=()):
             marked+=1
             a,b=doc.span(tag);occupied.append((a,b));label=compact(doc.text[a:b]);kind=format_kind(tag)
             evidence=format_evidence(tag,profile,linked)
+            evidence['stylesheets']=[{'path':p,'sha256':profiles[p]['sha256'] if profiles[p] else None,'supported':bool(profiles[p] and profiles[p]['supported'])} for p in stylesheet_paths]
+            evidence['format_mark_id']='mark_'+digest(path,a,b)
+            evidence['format_mark_span']=[a,b]
             if in_title(a,b):observe(path,a,b,label,'format',kind,reason='definition_title',status='excluded',role='definition',evidence=evidence);continue
             if tag.find_parent('a',href=True) or tag.find('a',href=True):
                 observe(path,a,b,label,'format',kind,reason='explicit_link',status='excluded',role='explicit_reference',evidence=evidence);continue
             if any({'example','ex-right'}.intersection(p.get('class',[])) for p in tag.parents):
                 observe(path,a,b,label,'format',kind,reason='example_context',status='review',role='example',evidence=evidence);continue
-            if not trusted:resolution={'reason':'unknown_style','status':'review'}
-            elif kind=='ambiguous':resolution={'reason':'mixed_format','status':'review'}
-            else:resolution=resolver.resolve(label,kind,path,a)
-            observe(path,a,b,label,'format',kind,**resolution,evidence=evidence)
+            spans=reference_spans(doc.text,a,b,kind,resolver) if trusted and kind!='ambiguous' else [(a,b)]
+            for start,end in spans:
+                part_evidence=dict(evidence)
+                if len(spans)>1:part_evidence['segmentation']='verified_name_list'
+                if not trusted:resolution={'reason':'unknown_style','status':'review'}
+                elif kind=='ambiguous':resolution={'reason':'mixed_format','status':'review'}
+                else:resolution=resolver.resolve(compact(doc.text[start:end]),kind,path,start)
+                observe(path,start,end,compact(doc.text[start:end]),'format',kind,**resolution,evidence=part_evidence)
         page_coverage.append({'path':path,'book':path.split('/')[1],'profile_applies':trusted,'format_count':marked})
         # Unclassified boundaries and definitional prose remain visible as candidates, not invented definitions.
         for e in resolver.pages[path]:
@@ -238,8 +302,8 @@ def build_concepts(db,source,out,entries,pages,sources=()):
         outcomes=stats['outcomes'].setdefault(o['signal'],{});outcomes[o['status']]=outcomes.get(o['status'],0)+1
     report={'local_definitions':len(local_definitions),'definitions':len(definition_ids),'observations':len(observations),'quickref_paths':sorted(quick_paths),'registry_paths':sorted(registry_paths),
             'outcomes':{signal:dict((status,n) for (s,status),n in counts.items() if s==signal) for signal,_ in counts},
-            'by_book':by_book,'style_profiles':[profile] if profile else [],
-            'discovery_inputs':{p:sha256((Path(source)/p).read_bytes()).hexdigest() if (Path(source)/p).exists() else None for p in ('topics/style.css','webhelpcontents.htm')},
+            'by_book':by_book,'format_marks':sum(p['format_count'] for p in page_coverage),'style_profiles':[profiles[p] for p in sorted(profiles) if profiles[p] and profiles[p]['rules']],
+            'discovery_inputs':{p:sha256((Path(source)/p).read_bytes()).hexdigest() if (Path(source)/p).exists() else None for p in sorted(discovery_inputs)},
             'review_reasons':dict(Counter(o['reason'] for o in observations if o['status'] in {'review','unresolved','ambiguous'})),
             'gaps':{'index_without_target':[o['id'] for o in observations if o['signal']=='index' and o['status']!='resolved'],
                     'marked_without_target':[o['id'] for o in observations if o['signal']=='format' and o['status'] not in {'resolved','excluded'}],

@@ -11,9 +11,10 @@ import shutil
 import sqlite3
 import tempfile
 from urllib.parse import quote
-from html_extract import Document, compact, key, resolve_link, split_name
+from html_extract import Document
 from build import read_page
 from paths import PROJECT, WEB
+from review_store import require_current, load_events
 
 BOOK=PROJECT/'data/5echm-anna'
 MARKER=b'<!-- anna-link-layer -->'
@@ -45,7 +46,7 @@ def text_slice(doc,a,b):
 def inject(raw,payload,encoding='utf-8'):
     # ASCII-only JSON also works for GB18030 pages. Original bytes remain untouched.
     data=json.dumps(payload,ensure_ascii=True,separators=(',',':')).replace('<','\\u003c')
-    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script src="/anna-assets/link-labels.js"></script><script src="/anna-assets/links.js"></script><!-- /anna-link-layer -->'
+    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script charset="utf-8" src="/anna-assets/link-labels.js"></script><script charset="utf-8" src="/anna-assets/links.js"></script><!-- /anna-link-layer -->'
     # Append after the document: the HTML parser handles trailing script elements;
     # binding paths refer to the original body before these extra siblings.
     return raw+addition
@@ -57,47 +58,29 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
         summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
         if not summary['full_scan']:raise ValueError('链接版需要完整数据库')
         pages={p:{'sha256':h,'text':t} for p,h,t in db.execute('SELECT path,sha256,text FROM pages')}
-        entries={};by_page=defaultdict(list);anchors=defaultdict(list)
+        entries={};by_page=defaultdict(list)
         for raw, in db.execute('SELECT data FROM entries'):
             e=json.loads(raw)
             if 'title_end' not in e:raise ValueError('请先重新生成数据库：缺少 title_end')
             entries[e['id']]=e;by_page[e['page_path']].append(e)
-            for a in e['anchors']:anchors[(e['page_path'],a)].append(e)
+        review_snapshot=require_current(db)
         mentions=defaultdict(list)
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
             coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
             for path,expected in coverage['discovery_inputs'].items():
                 actual=fingerprint(source/path) if (source/path).exists() else None
                 if actual!=expected:raise ValueError('概念发现依据与数据库快照不一致，请运行 make build：'+path)
-            for path,raw in db.execute("SELECT page_path,data FROM concept_observations WHERE status='resolved' AND signal='format'"):
-                mentions[path].append(json.loads(raw))
+        for path,raw in db.execute("SELECT page_path,data FROM effective_references WHERE can_link=1 ORDER BY page_path,start,id"):
+            mentions[path].append(json.loads(raw))
+        reference_coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='reference_coverage'").fetchone()[0])
+        unresolved=[json.loads(raw) for raw, in db.execute("SELECT data FROM effective_references WHERE signal='explicit' AND status IN ('review','unresolved','ambiguous')")]
     inputs={p.relative_to(source).as_posix():fingerprint(p) for p in source.rglob('*') if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}
     actual_pages={p for p in inputs if p.startswith('topics/') and Path(p).suffix.lower() in {'.html','.htm'}}
     if actual_pages!=set(pages) or any(inputs.get(p)!=v['sha256'] for p,v in pages.items()):raise ValueError('原文与数据库快照不一致，请运行 make build')
     report={'definitions':len(entries),'clickable_definitions':0,'linked_references':0,'empty_definitions':[],'unlocatable_definitions':[],'unresolved':[]}
-    manifest={'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
-    # Resolve original anchors by source position when the extractor did not retain them on a title.
-    position_cache={}
-    def resolve_target(path,fragment,label):
-        candidates=by_page.get(path,[])
-        direct=anchors.get((path,fragment),[]) if fragment else []
-        if len(direct)==1:return direct[0]
-        if fragment:
-            if path not in position_cache:
-                if path not in pages:return None
-                raw,_,_=read_page(source/path);d=Document(path,raw)
-                position_cache[path]={a:[d.span(t)[0] for t in ts] for a,ts in d.anchors.items()};d.close()
-            positions=position_cache[path].get(fragment,[])
-            if len(positions)!=1:return None
-            containing=[e for e in candidates if e['start']<=positions[0]<e['end']]
-            if containing:
-                size=min(e['end']-e['start'] for e in containing)
-                candidates=[e for e in containing if e['end']-e['start']==size]
-            else:return None
-        else:
-            exact=[e for e in candidates if key(label) in {key(e['name']),key(e['name_zh']),key(e['name_en'])} - {''}]
-            candidates=exact or [e for e in candidates if e['is_primary'] and e['type']!='section']
-        return candidates[0] if len(candidates)==1 else None
+    report['unresolved']=[{'path':r['path'],'href':r['evidence']['href'],'label':r['text'],'reference_id':r['id'],'reason':r['reason']} for r in unresolved]
+    report['reference_coverage']=reference_coverage
+    manifest={'review_snapshot':review_snapshot,'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.linked-',dir=output.parent) as tmp:
         stage=Path(tmp)
@@ -120,21 +103,10 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                 if not locatable:report['unlocatable_definitions'].append(e['id'])
                 manifest['entries'][e['id']]={'path':path,'fragment':'anna-'+e['id'],'locatable':locatable}
                 if title and title['text'].strip():report['clickable_definitions']+=1
-            for a in doc.body.find_all('a',href=True):
-                dest=resolve_link(path,a['href'])
-                if not dest or not dest[0].startswith('topics/'):continue
-                target=resolve_target(*dest,compact(a.get_text(' ',strip=True)))
-                span=doc.span(a)
-                # A link in a definition title serves the definition, not its old reference.
-                if any(e['start']<=span[0] and span[1]<=e['title_end'] for e in by_page[path]):continue
-                if target:
-                    r=text_slice(doc,*span)
-                    if r:references.append({'id':target['id'],'range':r});report['linked_references']+=1
-                else:report['unresolved'].append({'path':path,'href':a['href'],'label':compact(a.get_text(' ',strip=True))})
             for mention in mentions[path]:
                 r=text_slice(doc,mention['start'],mention['end'])
-                if r:
-                    references.append({'id':mention['target_id'],'range':r});report['linked_references']+=1
+                if not r:raise ValueError('有效引用无法绑定原文：'+mention['id'])
+                references.append({'id':mention['target_id'],'reference_id':mention['id'],'range':r});report['linked_references']+=1
             if definitions or references:
                 (stage/path).write_bytes(inject((source/path).read_bytes(),{'definitions':definitions,'references':references},encoding))
             doc.close()
@@ -142,12 +114,14 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
         shutil.copyfile(PROJECT/'book/links.js',assets/'links.js')
         shutil.copyfile(PROJECT/'book/reader.js',assets/'reader.js')
         shell=stage/'index.htm'
-        if shell.is_file():shell.write_bytes(shell.read_bytes()+MARKER+b'<script src="/anna-assets/reader.js"></script>')
+        if shell.is_file():shell.write_bytes(shell.read_bytes()+MARKER+b'<script charset="utf-8" src="/anna-assets/reader.js"></script>')
         shutil.copyfile(PROJECT/'web/link-labels.js',assets/'link-labels.js')
         for p in stage.rglob('*'):
             if p.is_file():manifest['outputs'][p.relative_to(stage).as_posix()]=fingerprint(p)
         (stage/'anna-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False))
         (stage/'anna-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
+        if load_events(review_snapshot['path'])[1]!=review_snapshot['sha256']:
+            raise ValueError('审核日志在生成期间变化，请运行 make build')
         # Only replace a known generated directory; leave arbitrary user directories alone.
         if output.exists() and not (output/'anna-manifest.json').is_file():raise ValueError('拒绝覆盖非生成目录：'+str(output))
         previous=output.with_name(output.name+'.previous')

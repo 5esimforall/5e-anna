@@ -14,3 +14,7 @@ __pycache__/
 # Browser regression dependencies, reports and screenshots
 node_modules/
 output/
+
+# Local advisory locks; review decisions themselves are versioned inputs.
+/reviews/*.lock
+/reviews/.review-*

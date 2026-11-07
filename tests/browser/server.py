@@ -19,6 +19,8 @@ import up
 import serve_5echm as search
 
 PORT=int(os.environ.get('ANNA_E2E_PORT','18380'))
+DB=Path(os.environ.get('ANNA_E2E_DB',up.serve.DB)).resolve()
+BOOK=Path(os.environ.get('ANNA_E2E_BOOK',BOOK)).resolve()
 
 
 def fixture():
@@ -34,7 +36,7 @@ def fixture():
 
 
 def cases(manifest):
-    with closing(sqlite3.connect(up.serve.DB)) as db:
+    with closing(sqlite3.connect(DB)) as db:
         spell=json.loads(db.execute("SELECT data FROM entries WHERE name_en='Shield' AND ruleset='5r' AND page_path='topics/玩家手册2024/法术详述/1环.htm'").fetchone()[0])
         row=db.execute("SELECT m.data,e.id FROM concept_observations m JOIN entries e ON e.page_path=m.page_path AND m.start>=e.start AND m.end<=e.end WHERE m.status='resolved' AND m.signal='format' AND e.type='spell' AND m.page_path='topics/玩家手册2024/法术详述/1环.htm' ORDER BY m.start LIMIT 1").fetchone()
         mention=json.loads(row[0]);mention['entry_id']=row[1]
@@ -49,7 +51,7 @@ def cases(manifest):
 
 
 def main():
-    manifest=up.validate_bundle(WEB,up.serve.DB,BOOK)
+    manifest=up.validate_bundle(WEB,DB,BOOK)
     data=json.dumps(cases(manifest),ensure_ascii=False).encode()
     raw,linked=fixture()
     class OriginalHandler(SimpleHTTPRequestHandler):
@@ -69,7 +71,7 @@ def main():
         def list_directory(self,path):self.send_error(404);return None
     servers=[];threads=[];stop=threading.Event()
     try:
-        servers=list(up.create_servers(up.serve.DB,BOOK,manifest,PORT+1,PORT+2))
+        servers=list(up.create_servers(DB,BOOK,manifest,PORT+1,PORT+2))
         servers.append(ThreadingHTTPServer(('127.0.0.1',PORT),OriginalHandler))
         search.WEB=WEB;search.CACHE=PROJECT/'.cache/browser-search.pkl'
         servers[1].RequestHandlerClass.entries=search.build_index(quiet=True)

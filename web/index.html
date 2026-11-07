@@ -6,15 +6,16 @@
   <link rel="stylesheet" href="/style.css"><script src="/link-labels.js" defer></script><script src="/detail.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body>
+<a class="skip-link" href="#q" data-ui="skipSearch"></a>
 <header class="topbar"><a class="brand" href="/"><span class="brand-icon">a</span>5e anna <span>条目速查</span></a><span id="snapshot" class="muted">本地 · 只读</span></header>
 <div class="workspace">
   <aside class="sidebar"><div class="side-title">速查目录</div><nav id="views" aria-label="分类视图">正在读取…</nav></aside>
-  <main>
+  <main id="query-main">
     <div class="heading-row"><h1 id="title">全部条目</h1><span id="view-total" class="muted"></span><span class="heading-note">自动提取 · 未经全量核验</span></div>
     <form id="search-form" class="toolbar">
-      <label class="searchbox"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="搜索中文名 / 英文名" aria-label="搜索条目名称" autocomplete="off"><kbd>/</kbd></label>
+      <label class="searchbox"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="q" type="search" placeholder="搜索中文名 / 英文名" aria-label="搜索条目名称" autocomplete="off"><kbd>/</kbd></label>
       <button type="button" id="toggle-filters" aria-controls="filter-panel" aria-expanded="true">筛选 <span id="filter-count"></span> ▾</button>
-      <button type="button" id="reset">重置</button><button type="button" id="export" disabled>导出 CSV</button>
+      <button type="button" id="reset" class="quiet-button">重置</button><button type="button" id="export" class="quiet-button" disabled>导出 CSV</button>
     </form>
     <section id="filter-panel" aria-label="筛选条件">
       <div class="filter-hint">同组多选取并集，不同组取交集。<span>全选包含未提取项；“否”不包含未知或冲突。</span></div>
@@ -34,10 +35,14 @@
       <div class="result-actions"><label>排序 <select id="sort" aria-label="排序字段"></select></label><button id="direction" aria-label="切换排序方向">升序 ↑</button><label>每页 <select id="page-size" aria-label="每页条数"><option>50</option><option selected>150</option><option>300</option></select></label><button id="prev" aria-label="上一页" disabled>‹</button><span id="page"></span><button id="next" aria-label="下一页" disabled>›</button></div>
     </div>
     <div id="error" role="alert" hidden></div>
-    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden>没有匹配条目。可移除下方已选条件，或重置筛选。</div></div>
+    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden><strong data-ui="emptyTitle"></strong><span data-ui="emptyHint"></span></div></div>
     <div class="bottom-bar"><span id="range"></span><span>— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据</span><div><button id="bottom-prev" disabled>上一页</button><button id="bottom-next" disabled>下一页</button></div></div>
   </main>
+  <dialog id="detail" aria-labelledby="reader-title">
+    <div class="detail-top"><span id="reader-title" data-ui="readerTitle"></span><div class="detail-tools"><span id="detail-position"></span><button id="entry-prev" data-ui-label="previousEntry" disabled>‹</button><button id="entry-next" data-ui-label="nextEntry" disabled>›</button><button id="close-detail" class="icon-button" data-ui-label="closeDetail" autofocus>×</button></div></div>
+    <div id="detail-content" tabindex="-1"></div>
+    <div class="detail-footer" data-ui="readerHint"></div>
+  </dialog>
 </div>
-<dialog id="detail"><div class="detail-top"><span>条目详情</span><button id="close-detail" class="icon-button" aria-label="关闭详情">×</button></div><div id="detail-content"></div></dialog>
 <noscript>查询页需要 JavaScript；终端也可使用 query.py 查询。</noscript>
 </body></html>

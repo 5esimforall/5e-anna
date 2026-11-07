@@ -7,11 +7,17 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
+  <script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css"><script src="/link-labels.js" defer></script><script src="/detail.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#q" data-ui="skipSearch"></a>
-<header class="topbar"><a class="brand" href="/"><img class="brand-logo" src="/anna-logo.png" width="36" height="36" alt="">5e anna <span>条目速查</span></a><span id="snapshot" class="muted">本地 · 只读</span></header>
+<header class="topbar">
+  <a class="brand" href="/"><img class="brand-logo" src="/anna-logo.png" width="36" height="36" alt="">5e anna <span>条目速查</span></a>
+  <div class="topbar-actions"><span id="snapshot" class="muted">本地 · 只读</span>
+    <label class="theme-control" hidden><span id="theme-label"></span><select id="theme"><option value="system"></option><option value="light"></option><option value="dark"></option></select></label>
+  </div>
+</header>
 <div class="workspace">
   <aside class="sidebar"><div class="side-title">速查目录</div><nav id="views" aria-label="分类视图">正在读取…</nav></aside>
   <main id="query-main">

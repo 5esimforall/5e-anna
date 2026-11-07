@@ -124,6 +124,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status,200);self.assertIn(b'<mark id="evidence">',body)
         self.assertIn('text/html',kind)
         self.assertIn(b'href="/favicon.ico"',body)
+        self.assertLess(body.index(b'src="/theme.js"'),body.index(b'href="/style.css"'))
+    def test_theme_bootstrap(self):
+        status,kind,body=self.request('/theme.js')
+        self.assertEqual((status,kind),(200,'text/javascript; charset=utf-8'))
+        self.assertIn(b'prefers-color-scheme',body)
+        self.assertEqual(self.request('/theme.js',{'Host':'attacker.example'})[0],403)
+        page=self.request('/')[2]
+        self.assertLess(page.index(b'src="/theme.js"'),page.index(b'href="/style.css"'))
+        self.assertIn(b'id="theme"',page)
     def test_mount_and_animal_catalog_views(self):
         mounts=query(self.db,{'view':['坐骑']})
         self.assertEqual(mounts['total'],20)

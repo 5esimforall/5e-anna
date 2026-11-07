@@ -10,14 +10,29 @@
     catch { return 'system'; }
   };
   const labels = {
-    zh: {theme: '外观', system: '跟随系统', light: '浅色', dark: '深色'},
-    en: {theme: 'Appearance', system: 'System', light: 'Light', dark: 'Dark'}
+    zh: {system: '跟随系统', light: '浅色', dark: '深色', switchTo: '切换为{next}（当前：{current}）', reset: 'Shift+点击 / Shift+Enter / Shift+空格：跟随系统'},
+    en: {system: 'System', light: 'Light', dark: 'Dark', switchTo: 'Switch to {next} (current: {current})', reset: 'Shift+click / Shift+Enter / Shift+Space: follow system'}
   };
+  const ui = labels[root.lang.startsWith('en') ? 'en' : 'zh'];
   let preference = read();
   let control;
   function apply() {
     root.dataset.theme = preference === 'system' ? (system.matches ? 'dark' : 'light') : preference;
-    if (control) control.value = preference;
+    if (control) {
+      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      const label = ui.switchTo.replace('{next}', ui[next]).replace('{current}', ui[preference]);
+      control.dataset.preference = preference;
+      control.setAttribute('aria-label', label);
+      control.title = label + '\n' + ui.reset;
+    }
+  }
+  function choose(value) {
+    preference = normalize(value);
+    try {
+      if (preference === 'system') localStorage.removeItem(key);
+      else localStorage.setItem(key, preference);
+    } catch { /* Storage can be disabled; switching still works for this page. */ }
+    apply();
   }
   apply();
   system.addEventListener('change', apply);
@@ -29,19 +44,15 @@
   document.addEventListener('DOMContentLoaded', () => {
     control = document.querySelector('#theme');
     if (!control) return; // Source-text pages share the theme, without the query toolbar.
-    const ui = labels[root.lang.startsWith('en') ? 'en' : 'zh'];
-    document.querySelector('#theme-label').textContent = ui.theme;
-    control.setAttribute('aria-label', ui.theme);
-    for (const option of control.options) option.textContent = ui[option.value];
     apply();
-    control.closest('label').hidden = false;
-    control.addEventListener('change', () => {
-      preference = normalize(control.value);
-      try {
-        if (preference === 'system') localStorage.removeItem(key);
-        else localStorage.setItem(key, preference);
-      } catch { /* Storage can be disabled; switching still works for this page. */ }
-      apply();
+    control.hidden = false;
+    control.addEventListener('click', event => {
+      choose(event.shiftKey ? 'system' : root.dataset.theme === 'dark' ? 'light' : 'dark');
+    });
+    control.addEventListener('keydown', event => {
+      if (!event.shiftKey || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      choose('system');
     });
   });
 })();

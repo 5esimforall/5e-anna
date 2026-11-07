@@ -309,7 +309,6 @@ async function init(){
   const saved=history.state?.anna;restoringUi=true;
   try{
     metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
-    $('#snapshot').textContent=`${fmt(metadata.summary.processed_html_files)} 页 · ${metadata.summary.snapshot_commit.slice(0,7)} · 本地只读`;
     metadata.views.sort((a,b)=>viewOrder.indexOf(a.name)-viewOrder.indexOf(b.name));
     $('#views').innerHTML=[{name:'',count:metadata.summary.typed_versions},...metadata.views].map(v=>`<button data-view="${esc(v.name)}">${esc(v.name||'全部条目')}<span>${fmt(v.count)}</span></button>`).join('');
     // Preserve older bookmarked single-attribute queries.

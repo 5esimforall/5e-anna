@@ -133,6 +133,9 @@ class WebTests(unittest.TestCase):
         page=self.request('/')[2]
         self.assertLess(page.index(b'src="/theme.js"'),page.index(b'href="/style.css"'))
         self.assertIn(b'id="theme"',page)
+        self.assertIn(b'<button class="theme-button"',page)
+        self.assertNotIn(b'id="snapshot"',page)
+        self.assertNotIn(b'class="theme-control"',page)
     def test_mount_and_animal_catalog_views(self):
         mounts=query(self.db,{'view':['坐骑']})
         self.assertEqual(mounts['total'],20)

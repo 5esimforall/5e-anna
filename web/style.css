@@ -95,9 +95,11 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--anna-line); co
 .brand-logo { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
 .brand>span:last-child { font-size: 12px; font-weight: 400; color: var(--anna-secondary); margin-left: 10px; letter-spacing: 1px; }
 .topbar-actions { display: flex; align-items: center; gap: 16px; }
-.topbar-actions>.muted { font-size: 11px; }
-.theme-control { display: flex; align-items: center; gap: 7px; color: var(--anna-secondary); font-size: 12px; white-space: nowrap; }
-.theme-control select { min-width: 100px; font-size: 12px; }
+.theme-button { display: inline-grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; padding: 0; border-color: transparent; border-radius: 6px; background: transparent; color: var(--anna-secondary); }
+.theme-button svg { display: none; width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.theme-button[data-preference=system] .theme-icon-system,
+.theme-button[data-preference=light] .theme-icon-light,
+.theme-button[data-preference=dark] .theme-icon-dark { display: block; }
 .workspace { display: grid; grid-template-columns: var(--anna-sidebar) minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }
 .sidebar { min-height: 0; overflow: auto; padding: 23px 12px; border-right: 1px solid var(--anna-line); }
 .side-title { font-size: 11px; color: var(--anna-muted); letter-spacing: 1px; padding: 0 12px 14px; }
@@ -281,7 +283,6 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 }
 @media(max-width:760px) {
   .topbar { padding: 0 16px; height: 52px; }
-  .topbar-actions>.muted { display: none; }
   .workspace { display: block; height: auto; min-height: 0; }
   .sidebar { padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--anna-line); }
   .side-title { display: none; }
@@ -302,7 +303,7 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .detail-footer { padding-bottom: max(8px,env(safe-area-inset-bottom)); }
 }
 @media(max-width:480px) {
-  .brand>span:last-child, .theme-control>span { display: none; }
+  .brand>span:last-child { display: none; }
 }
 @media(prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }

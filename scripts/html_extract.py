@@ -166,6 +166,38 @@ class Document:
                         'legacy':bool(tr.select('.legacy')) or bool(LEGACY.search(vals[0] if vals else ''))})
         return out
 
+    def named_tables(self):
+        """Pair a caption/standalone marked line with its adjacent data table, not nearby prose."""
+        title_tags=HEADINGS|{'u','b','strong'}
+        def short_title(tag):
+            name=compact(self.text_of(tag))
+            return (1<len(name)<=120 and not re.search(r'[。；！？!?]',name) and not FIELD_TITLE.fullmatch(name)
+                    and not re.fullmatch(r'(?:\d+)?[dD]\d+(?:\s*[-+]\s*\d+)?|\d+(?:[-–~～]\d+)?',name))
+        for table in self.body.find_all('table'):
+            if table.find_parent('table') or table.find_parent(class_=['stat-block','statblock']):continue
+            rows=[r for r in table.find_all('tr') if r.find_parent('table') is table]
+            if len(rows)<2 or not any(len(r.find_all(['td','th'],recursive=False))>=2 for r in rows):continue
+            caption=table.find('caption',recursive=False)
+            if caption and short_title(caption) and self.span(caption)[1]<=self.span(rows[0])[0]:
+                yield caption,self.span(table);continue
+            # html5lib may retain the table inside a paragraph or move it outside.
+            # Only the immediate previous visible sibling can supply a title.
+            previous=table.previous_sibling
+            while previous is not None and (isinstance(previous,Comment) or isinstance(previous,NavigableString) and not str(previous).strip() or isinstance(previous,Tag) and previous.name=='br'):
+                previous=previous.previous_sibling
+            if not isinstance(previous,Tag) or previous.name=='table':continue
+            ta,tb=self.span(table);matches=[]
+            for tag in [previous]+list(previous.find_all(list(title_tags))):
+                if tag.name not in title_tags or tag.find_parent(['td','th','table']) or not short_title(tag):continue
+                a,b=self.span(tag)
+                if b>ta or compact(self.text[b:ta]):continue
+                line_start=self.text.rfind('\n',0,a)+1
+                if compact(self.text[line_start:a]):continue
+                matches.append(tag)
+            # Nested wrappers of the same title share a range; separate titles remain ambiguous.
+            spans={self.span(t) for t in matches}
+            if len(spans)==1:yield matches[0],(ta,tb)
+
     def candidates(self, observations=()):
         items=[]
         def add(tag,name=None,rank=4,method='heading',anchor='',kind='',ob=None,end=None):
@@ -206,6 +238,43 @@ class Document:
                 if block.name=='p' and 'border-bottom' in block.get('style','').lower():continue
                 if not (tag.find(['b','strong']) or tag.find_parent(['b','strong']) or re.search('[A-Za-z]{3}',txt)):continue
                 add(tag,rank=4,method='colored_heading')
+        # Level-prefixed inline headings in class/subclass prose, regardless of color.
+        class_context=bool(re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/(?:角色职业|职业|子职|子职业)/',self.path))
+        if class_context:
+            for block in self.body.find_all('p'):
+                if block.find_parent(['table','li']):continue
+                ba,bb=self.span(block)
+                headings=[]
+                for tag in block.find_all(['u','b','strong']):
+                    a,b=self.span(tag);name=compact(self.text[a:b])
+                    if compact(self.text[ba:a]):continue
+                    if re.match(r'^\d+\s*级\s*[:：]',name) and split_name(name)[1] and not re.search(r'[。；！？]',name):
+                        if not any(c.start==a and c.title_end==b for c in items):
+                            add(tag,rank=4,method='level_inline_heading')
+                        headings.append(tag)
+                        break
+                if not headings:continue
+                for tag in block.find_all(['b','strong']):
+                    a,b=self.span(tag);name=compact(self.text[a:b]).rstrip('。:：')
+                    if a<=self.span(headings[0])[1] or compact(self.text[ba:a].split('\n')[-1]):continue
+                    zh,en=split_name(name)
+                    if zh and en and len(name)<120 and not re.search(r'[。；！？]',name):
+                        add(tag,name=name,rank=5,method='feature_inline_heading',end=bb)
+            # Inline children stop at a sibling; their enclosing feature stops at the next heading.
+            children=[c for c in items if c.method=='feature_inline_heading']
+            for c in children:
+                c.explicit_end=min([c.explicit_end]+[x.start for x in children if c.start<x.start<c.explicit_end])
+        # Named tables reuse a heading at the same location, or become bounded child entries.
+        for tag,table_span in self.named_tables():
+            a,b=self.span(tag)
+            existing=next((c for c in items if c.start==a and c.title_end==b),None)
+            if existing:
+                existing.fields['table_span']=list(table_span)
+                continue
+            preceding=[c for c in items if c.start<a and (c.explicit_end is None or c.explicit_end>a)]
+            parent=max(preceding,key=lambda c:c.start) if preceding else None
+            add(tag,rank=parent.rank+1 if parent else 2,method='table_caption',end=table_span[1])
+            if items and items[-1].tag is tag:items[-1].fields['table_span']=list(table_span)
         # Stat blocks are atomic records, regardless of inner action headings.
         for tag in self.body.select('.stat-block, .statblock'):
             title=tag.find(list(HEADINGS))
@@ -284,6 +353,7 @@ class Document:
                 same.anchors=list(dict.fromkeys(same.anchors+c.anchors))
                 same.kinds=list(dict.fromkeys(same.kinds+c.kinds))
                 same.observations+=c.observations
+                same.fields.update(c.fields)
                 same.start=min(same.start,c.start);same.title_end=max(same.title_end,c.title_end)
                 same.rank=min(same.rank,c.rank)
                 if c.explicit_end:same.explicit_end=max(c.explicit_end,same.explicit_end or 0)
@@ -302,7 +372,7 @@ class Document:
         stack=[]
         legacy_markers=[self.span(t) for t in self.elements if t.name in {'sup','em','i'} and compact(self.text_of(t)).casefold()=='legacy']
         for i,c in enumerate(merged):
-            while stack and merged[stack[-1]].rank>=c.rank:stack.pop()
+            while stack and (merged[stack[-1]].rank>=c.rank or merged[stack[-1]].end<=c.start):stack.pop()
             c.parent=stack[-1] if stack else None
             stack.append(i)
             c.end=c.explicit_end or next((x.start for x in merged[i+1:] if x.rank<=c.rank),len(self.text))
@@ -374,6 +444,8 @@ def classify(c:Candidate, text, context, primary=False):
     class_context=bool(re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])',path)) or bool(re.search(r'/(?:角色职业|职业|子职|子职业)/',path))
     if c.kinds:return c.kinds[0],c.method if c.method.endswith('_signature') else 'index_or_statblock'
     if c.method in {'page_intro'}:return 'section','document_structure'
+    if c.method=='table_caption':return 'lore','named_table_structure'
+    if class_context and c.method in {'level_inline_heading','feature_inline_heading'}:return 'class_feature',c.method
     if (primary or '选项' in name) and re.match(r'^(?:魔能祈唤(?:选项)?|禁令恩惠|子职(?:业)?选项|反派选项|超魔(?:法)?选项|灌注选项)(?:\s*[A-Za-z].*)?$',name):return 'section','document_structure'
     if GENERIC.fullmatch(name) or re.fullmatch(r'(?:专长|法术|魔法物品|装备|背景|种族|物种)(?:描述|详述|列表|总览)(?:\s*[A-Za-z].*)?',name):return 'section','document_structure'
     if re.match(r'^(?:毒药的(?:制作|提取)|采购毒药|制作毒药|提取毒药)',name):return 'rule','context_heading'

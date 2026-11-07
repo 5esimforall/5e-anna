@@ -133,6 +133,7 @@ def parse_one(args):
             class_path=re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/角色职业/|/职业/|/子职/',path)
             classify_text=full if primary and class_path else own
             kind,rule=classify(c,classify_text,context+' | '+path,primary)
+            if kind=='section' and c.fields.get('table_span'):kind,rule='lore','named_table_structure'
             if kind=='class':full_for_fields=full
             elif c.explicit_end:full_for_fields=full
             else:full_for_fields=own
@@ -171,7 +172,7 @@ def parse_one(args):
             output.append({'name':re.sub(r'\s+(?:机械|魔法)陷阱$','',c.name) if kind=='trap' else c.name,'start':c.start,'title_end':c.title_end,'end':c.end,'anchors':c.anchors,'parent_index':c.parent,
                 'type':kind,'classification_rule':rule,'boundary_rule':c.method,'legacy_direct':c.local_legacy,'fields':fields,
                 'observation_ids':[o['id'] for o in c.observations], 'body_hash':sha256(compact(full).encode()).hexdigest(),
-                'level':c.rank,'is_primary':primary})
+                'level':c.rank,'is_primary':primary,'table_span':c.fields.get('table_span')})
         # PHB/DMG calls this a table but the HTML encodes it as a simple list.
         for ul in doc.body.find_all('ul'):
             caption=ul.find_previous_sibling()
@@ -289,6 +290,7 @@ class Build:
             'classification_status':status,'classification_rule':c['classification_rule'],'boundary_rule':c['boundary_rule'],
                 'fields':{},'field_conflicts':[],'observation_ids':c['observation_ids'],'parent_id':'','is_primary':c['is_primary'], 'snapshot':self.commit}
             local_entries.append(e);self.entries.append(e);self.entry_by_id[eid]=e;self.page_entries[path].append(e)
+            if c.get('table_span'):e['table_span']=c['table_span']
             self.locators[path].add(eid) if c['is_primary'] else None
             for a in c['anchors']:self.locators[path+'#'+a].add(eid)
             ev={'path':path,'span':[c['start'],min(c['title_end'],c['end'])],'locator':locator}
@@ -552,7 +554,7 @@ class Build:
             db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         for name,(where,_) in EXTRA_VIEWS.items():db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         from concepts import build_concepts
-        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages)
+        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources)
         summary={'snapshot_commit':self.commit,'input_html_files':total_inputs,'processed_html_files':len(self.pages),'full_scan':len(self.pages)==total_inputs,
             'page_roles':dict(Counter(p['role'] for p in self.pages.values())),'parse_status':dict(Counter(p['parse_status'] for p in self.pages.values())),
             'sources':len(sources),'source_coverage':dict(Counter(s['coverage'] for s in sources)), 'versions':len(self.entries),

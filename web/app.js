@@ -319,3 +319,5 @@ async function init(){
   finally{restoringUi=false;saveUiState();}
 }
 init();
+
+const reviewLink=document.createElement("a");reviewLink.href="/review";reviewLink.textContent=annaLinkLabels[document.documentElement.lang.startsWith("en")?"en":"zh"].reviewSearch.title;document.querySelector(".topbar-actions").prepend(reviewLink);

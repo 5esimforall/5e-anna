@@ -22,7 +22,7 @@ from source_extract import SourceRegistry
 from table_extract import extract_tables
 
 from paths import PROJECT, WEB as DEFAULT_WEB
-from review_store import DEFAULT_DECISIONS, require_current, pipeline_hash
+from review_store import DEFAULT_DECISIONS, require_current, pipeline_hash, extraction_hash
 INDEX_FIELDS={
     '物品名':'name','怪物名':'name','法术名':'name','稀有度':'rarity','类别':'item_type','子类别':'item_subtypes',
     '同调':'attunement','同调条件':'attunement_requirements','来源':'source_code','体型':'size','类型':'creature_type',
@@ -571,7 +571,7 @@ class Build:
             'concept_definitions':concept_coverage['definitions'],'concept_observations':concept_coverage['observations'],'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in reviews)),
             'reference_coverage':reference_coverage,
             'validation':validation,'runtime_seconds':round(elapsed,2),'identity_policy':'provisional locator identities; no name-based merge',
-            'parser':'beautifulsoup4/html5lib','pipeline_sha256':pipeline_hash()}
+            'parser':'beautifulsoup4/html5lib','pipeline_sha256':pipeline_hash(),'extraction_sha256':extraction_hash()}
         manifest=sha256('\n'.join(p+':'+self.pages[p]['sha256'] for p in sorted(self.pages)).encode()).hexdigest()
         summary['input_manifest_sha256']=manifest
         db.execute('INSERT INTO metadata VALUES(?,?)',('summary',dumps(summary)))
@@ -623,7 +623,7 @@ def main():
     ap.add_argument('--decisions',type=Path,default=DEFAULT_DECISIONS)
     ap.add_argument('--workers',type=int,default=min(4,os.cpu_count() or 1));ap.add_argument('--limit',type=int,help='development only; summary explicitly marks partial scans')
     args=ap.parse_args()
-    started=time.monotonic();b=Build(args.source)
+    started=time.monotonic();extraction_at_start=extraction_hash();b=Build(args.source)
     paths=sorted(p.relative_to(args.source).as_posix() for p in (args.source/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
     total=len(paths)
     b.registry.register_orphans([p for p in paths if page_role(p)=='document'])
@@ -646,6 +646,8 @@ def main():
         b.validate(paths)
         with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
             require_current(staged_db,args.decisions)
+        if extraction_hash()!=extraction_at_start:
+            raise ValueError('构建期间提取实现变化，未发布；请重新构建')
         publish(Path(tmp),args.output)
     print(json.dumps(summary,ensure_ascii=False,indent=2))
 

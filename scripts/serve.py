@@ -13,8 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 import browse
-from references import query_references, query_decisions
+from references import query_references, query_decisions, query_missing_definitions
 from review_store import load_events
+from review_search import search_candidates
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = ROOT / 'data/extracted/catalog.sqlite'
@@ -136,6 +137,7 @@ def detail(db, eid):
             candidates.update((r['id'],dict(r)) for r in db.execute('SELECT id,name,ruleset FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
         for o in e['concept_observations']:
             o['candidate_entries']=[candidates[cid] for cid in o['candidates'] if cid in candidates] if not o['target_id'] else []
+    e['missing_definitions']=query_missing_definitions(db,path=e['page_path'],limit=300)['rows'] if db.execute("SELECT 1 FROM sqlite_master WHERE name='missing_definitions'").fetchone() else []
     e['reviews']=[json.loads(r[0]) for r in db.execute('SELECT data FROM review_queue WHERE target IN (?,?) ORDER BY priority,reason',(eid,e['page_path']))]
     e['effective_references']=[]
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():
@@ -187,6 +189,8 @@ class Handler(BaseHTTPRequestHandler):
                 if (stat.st_ino,stat.st_size,stat.st_mtime_ns)!=self.db_signature:
                     self.send({'error':'数据库已重建，请重启 make up 以同步链接版。'},status=409);return
             static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
+            static['/review']=('review.html','text/html; charset=utf-8')
+            static['/review-ui.js']=('review-ui.js','text/javascript; charset=utf-8')
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
             static['/theme.js']=('theme.js','text/javascript; charset=utf-8')
@@ -200,6 +204,11 @@ class Handler(BaseHTTPRequestHandler):
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))
                 elif url.path=='/api/references': self.send(query_references(db,path=first(p,'path'),reference_id=first(p,'id'),
                     status=first(p,'status'),signal=first(p,'signal'),review_status=first(p,'review_status'),
+                    limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
+                elif url.path=='/api/reference-candidates': self.send(search_candidates(db,first(p,'id'),query=first(p,'q'),
+                    entry_type=first(p,'type'),ruleset=first(p,'ruleset'),source_id=first(p,'source'),
+                    limit=int(first(p,'limit','20')),offset=int(first(p,'offset','0'))))
+                elif url.path=='/api/missing-definitions': self.send(query_missing_definitions(db,status=first(p,'status'),path=first(p,'path'),
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
                 elif url.path=='/api/review-decisions': self.send(query_decisions(db,status=first(p,'status'),
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))

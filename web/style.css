@@ -308,3 +308,13 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 @media(prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* Review retrieval shares the reader's local design tokens. */
+.review-page {height:auto;min-height:100vh;overflow:auto}
+.review-page .source-page {max-width:1000px;margin:0 auto;padding:24px}
+.review-page section {margin:24px 0}
+.review-controls {display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:12px 0}
+.review-controls label {display:grid;gap:6px;flex:1;min-width:min(260px,100%)}
+.review-controls input {min-width:0;width:100%;box-sizing:border-box}
+.review-page code,.review-page a {overflow-wrap:anywhere}
+.review-page .fact {margin:12px 0}

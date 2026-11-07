@@ -10,9 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
 from concepts import build_concepts
 from html_extract import Document
 from linked_book import build_book, fingerprint, MARKER
-from references import build_references, query_references, query_decisions
-from review import inspect, save, revoke
-from review_store import append_event, load_events, locked, pipeline_hash, require_current
+from references import build_references, query_references, query_decisions, query_missing_definitions
+from review_search import search_candidates
+from review import inspect, save, save_batch, revoke
+from review_store import append_event, load_events, locked, pipeline_hash, extraction_hash, require_current
 
 
 class ReviewTests(unittest.TestCase):
@@ -64,7 +65,7 @@ class ReviewTests(unittest.TestCase):
         doc.close()
         build_concepts(self.db,self.source,self.root,entries,{self.path:page})
         build_references(self.db,self.source,self.root,self.log)
-        self.db.execute('INSERT INTO metadata VALUES(?,?)',('summary',json.dumps({'full_scan':True,'pipeline_sha256':pipeline_hash()})))
+        self.db.execute('INSERT INTO metadata VALUES(?,?)',('summary',json.dumps({'full_scan':True,'pipeline_sha256':pipeline_hash(),'extraction_sha256':extraction_hash()})))
         self.db.commit()
 
     def plain(self):
@@ -138,8 +139,73 @@ class ReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'依据已变化'):
             save(self.db,self.log,operation='confirm',reference_id=ref['id'],target='target',expected_basis='old',reviewer='fixture',reason='reason')
         self.confirm()
-        with self.assertRaisesRegex(ValueError,'重放'): self.confirm()
+        with self.assertRaisesRegex(ValueError,'已有有效或待核决策'): self.confirm()
         with self.assertRaisesRegex(ValueError,'重放'): build_book(self.source,self.database,self.root/'book')
+
+    def batch_items(self):
+        refs = [self.plain(), next(r for r in query_references(self.db,signal='explicit')['rows'] if r['text']=='未知引用')]
+        return [dict(operation='confirm',reference_id=r['id'],target='target',
+                     expected_basis=inspect(self.db,r['id'],'target',path=self.log)['basis_sha256'],
+                     reviewer='fixture',reason='synthetic evidence') for r in refs]
+
+    def test_batch_is_atomic_and_pending_events_allow_more_saves(self):
+        items = self.batch_items()
+        bad = [items[0],dict(items[1],expected_basis='outdated')]
+        before = load_events(self.log)[1]
+        with self.assertRaisesRegex(ValueError,'依据已变化'): save_batch(self.db,self.log,bad)
+        self.assertEqual(load_events(self.log)[1],before)
+        saved = save_batch(self.db,self.log,items)
+        self.assertEqual(len(saved),2)
+        with self.assertRaisesRegex(ValueError,'重放'): require_current(self.db,self.log)
+        # A subsequent supersession is saved against the same input without a rebuild.
+        save(self.db,self.log,**dict(items[0],supersedes=saved[0]['id']))
+        self.rebuild()
+        self.assertEqual(query_decisions(self.db,status='applied')['total'],2)
+        self.assertEqual(query_decisions(self.db,status='superseded')['total'],1)
+
+    def test_batch_rejects_log_and_snapshot_changes(self):
+        items = self.batch_items()
+        with self.assertRaisesRegex(ValueError,'构建快照'): save_batch(self.db,self.log,items,expected_snapshot='outdated')
+        with self.assertRaisesRegex(ValueError,'审核日志已变化'): save_batch(self.db,self.log,items,expected_log='outdated')
+        with self.assertRaisesRegex(ValueError,'重复'): save_batch(self.db,self.log,[items[0],items[0]])
+        self.assertEqual(load_events(self.log)[0],[])
+
+    def test_comment_bytes_are_not_semantic_dependencies(self):
+        self.confirm()
+        self.page.write_text(self.page.read_text()+'<!-- no visible change -->')
+        self.rebuild()
+        self.assertEqual(self.plain()['review_status'],'applied')
+        self.rebuild(competitor=True)
+        changes = query_decisions(self.db,status='stale')['rows'][0]['changes']
+        self.assertTrue(any(c['path'][0]=='definitions' and c['kind']=='added' for c in changes))
+
+    def test_search_keeps_evidence_and_never_resolves(self):
+        ref = self.plain()
+        before = dict(ref)
+        result = search_candidates(self.db,ref['id'])
+        self.assertFalse(result['automatic_approval'])
+        target = next(r for r in result['rows'] if r['id']=='target')
+        self.assertIn('exact_name',[r['code'] for r in target['reasons']])
+        self.assertEqual(query_references(self.db,reference_id=ref['id'])['rows'][0],before)
+        self.assertEqual(search_candidates(self.db,ref['id'],query='absent label')['total'],0)
+        with self.assertRaises(LookupError): search_candidates(self.db,'missing')
+
+    def test_missing_definition_lifecycle_and_withdrawn_repair(self):
+        ref = next(r for r in query_references(self.db,signal='explicit')['rows'] if r['text']=='未知引用')
+        view = inspect(self.db,ref['id'],missing_definition=True,path=self.log)
+        issue = save(self.db,self.log,operation='missing_definition',reference_id=ref['id'],target=None,
+                     expected_basis=view['basis_sha256'],reviewer='fixture',reason='No suitable independent definition')
+        self.rebuild()
+        self.assertEqual(query_missing_definitions(self.db,status='open')['total'],1)
+        result = query_references(self.db,reference_id=ref['id'])['rows'][0]
+        self.assertEqual((result['status'],result['review_status'],result['can_link']),('unresolved','applied',False))
+        repair = self.confirm(ref=result,supersedes=issue['id'])
+        self.rebuild()
+        self.assertEqual(query_missing_definitions(self.db,status='resolved')['rows'][0]['target_id'],'target')
+        revoke(self.log,repair['id'],'fixture','Withdraw repair')
+        self.rebuild()
+        self.assertEqual(query_missing_definitions(self.db,status='needs_review')['total'],1)
+        self.assertFalse(query_references(self.db,reference_id=ref['id'])['rows'][0]['can_link'])
 
     def test_removed_reference_remains_in_review_history(self):
         event = self.confirm()

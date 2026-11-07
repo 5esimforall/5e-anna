@@ -26,6 +26,35 @@ def pipeline_hash():
     return sha256(b''.join(p.read_bytes() for p in sorted((PROJECT/'scripts').glob('*.py')))).hexdigest()
 
 
+# Bump when the meaning of stored review dependencies changes, not for UI edits.
+REVIEW_SEMANTICS_VERSION = 1
+EXTRACTION_MODULES = ('build.py', 'html_extract.py', 'source_extract.py', 'table_extract.py',
+                      'concepts.py', 'references.py', 'review_store.py', 'review_search.py')
+
+
+def extraction_hash():
+    return digest({name: sha256((PROJECT/'scripts'/name).read_bytes()).hexdigest()
+                   for name in EXTRACTION_MODULES})
+
+
+def input_snapshot(db):
+    summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
+    return digest({'summary': summary, 'reviews': snapshot(db)})
+
+
+def require_appendable(db, path):
+    """Pending events may extend, but never replace, the published log prefix."""
+    saved = snapshot(db)
+    raw = Path(path).read_bytes() if Path(path).exists() else b''
+    events, _ = load_events(path)
+    prefix = raw[:saved['bytes']] if 'bytes' in saved else b''.join(raw.splitlines(keepends=True)[:saved['events']])
+    if len(events) < saved['events'] or sha256(prefix).hexdigest() != saved['sha256']:
+        raise ValueError('审核日志不是构建快照的追加历史，请重新构建')
+    summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
+    if summary.get('extraction_sha256') != extraction_hash():
+        raise ValueError('提取实现已变化或快照过旧，请先运行 make build')
+
+
 def load_events(path=DEFAULT_DECISIONS):
     path = Path(path)
     raw = path.read_bytes() if path.exists() else b''
@@ -35,7 +64,7 @@ def load_events(path=DEFAULT_DECISIONS):
         if not line.strip(): continue
         try:
             event = json.loads(line)
-            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'revoke'}:
+            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'missing_definition', 'revoke'}:
                 raise ValueError('未知审核事件版本或操作')
             for field in ('id', 'reviewer', 'reason', 'created_at'):
                 if not isinstance(event.get(field), str) or not event[field].strip():
@@ -56,8 +85,10 @@ def load_events(path=DEFAULT_DECISIONS):
                 target = event.get('target_id')
                 if event['operation'] == 'confirm' and (not isinstance(target, str) or not target):
                     raise ValueError('确认引用需要目标')
-                if event['operation'] == 'non_reference' and target is not None:
-                    raise ValueError('非引用决策不能有目标')
+                if event['operation'] in {'non_reference', 'missing_definition'} and target is not None:
+                    raise ValueError('非引用或缺失定义决策不能有目标')
+                if event['operation'] == 'missing_definition' and not isinstance(event.get('search_query'), str):
+                    raise ValueError('缺失定义决策须保存候选搜索条件')
                 if event.get('supersedes'):
                     previous = known.get(event['supersedes'])
                     if (not previous or previous['operation'] == 'revoke'
@@ -90,14 +121,19 @@ def locked(path):
 
 def append_event(path, event, expected_hash):
     """Caller holds locked(path); compare-and-swap protects concurrent saves."""
+    return append_events(path, [event], expected_hash)[0]
+
+
+def append_events(path, pending, expected_hash):
+    """Atomically publish the entire validated batch under the caller's lock."""
     path = Path(path)
-    events, current = load_events(path)
+    _, current = load_events(path)
     if current != expected_hash: raise ValueError('审核日志已变化，请重新读取后保存')
-    event = {'schema': 1, 'id': 'review_'+uuid4().hex,
-             'created_at': datetime.now(timezone.utc).isoformat(), **event}
+    events = [{'schema': 1, 'id': 'review_'+uuid4().hex,
+               'created_at': datetime.now(timezone.utc).isoformat(), **event} for event in pending]
     raw = path.read_bytes() if path.exists() else b''
     if raw and not raw.endswith(b'\n'): raw += b'\n'
-    raw += (canonical(event)+'\n').encode()
+    raw += ''.join(canonical(event)+'\n' for event in events).encode()
     temp = None
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.review-', delete=False) as stream:
@@ -110,7 +146,7 @@ def append_event(path, event, expected_hash):
         finally: os.close(directory)
     finally:
         if temp and temp.exists(): temp.unlink()
-    return event
+    return events
 
 
 def snapshot(db):

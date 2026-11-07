@@ -54,15 +54,114 @@ def resolve_link(page, href):
     return target, unquote(u.fragment)
 
 
+def parse_name(raw):
+    """Parse bilingual structure; all spans address the unchanged input name, not HTML.
+
+    Parentheses wrapping a translation differ from qualifiers inside either name.
+    Uncertain structure stays intact; display normalization never establishes identity.
+    """
+    raw=str(raw);removed=set();annotations=[]
+    # Existing source editorial conventions, recorded separately from name content.
+    for pattern in (r'（旧版）|\(旧版\)', r'Legacy\s*$', r'(?<![A-Za-z])new!(?=\s|$)'):
+        for match in re.finditer(pattern,raw,re.I):
+            removed.update(range(*match.span()))
+            annotations.append({'role':'editorial_marker','text':match[0],'spans':[list(match.span())]})
+    positions=[i for i in range(len(raw)) if i not in removed]
+    while positions and raw[positions[0]] in ' \t\r\n｜|：:':positions.pop(0)
+    while positions and raw[positions[-1]] in ' \t\r\n｜|：:':positions.pop()
+    text=''.join(raw[i] for i in positions)
+    result={'raw':raw,'offset_basis':'raw_name_codepoints','status':'single_language','rule':'single_language',
+            'name_zh':'','name_en':'','parts':[],'groups':[],'annotations':annotations}
+    han=lambda s:bool(re.search(r'[\u3400-\u9fff]',s))
+    latin=lambda ch:ch.isalpha() and 'LATIN' in unicodedata.name(ch,'')
+    def english(s):
+        # A qualifier belongs to its surrounding name even when its explanatory
+        # text is in another language. Only the ungrouped name establishes language.
+        grouped={'(':')','（':'）','[':']','【':'】'};nest=[];seen=False
+        for ch in s:
+            if ch in grouped:nest.append(grouped[ch]);continue
+            if nest:
+                if ch==nest[-1]:nest.pop()
+                continue
+            if ch.isalpha():
+                if not latin(ch):return False
+                seen=True
+        return seen and not nest
+    def trim(a,b,separators=''):
+        while a<b and (text[a].isspace() or text[a] in separators):a+=1
+        while b>a and (text[b-1].isspace() or text[b-1] in separators):b-=1
+        return a,b
+    def spans(a,b):
+        ranges=[]
+        for i in positions[a:b]:
+            if ranges and ranges[-1][1]==i:ranges[-1][1]=i+1
+            else:ranges.append([i,i+1])
+        return ranges
+    def part(language,a,b):
+        a,b=trim(a,b)
+        value=compact(text[a:b]);result['name_'+language]=value
+        result['parts'].append({'language':language,'text':value,'spans':spans(a,b)})
+    def unsplit(reason=None):
+        if reason:result.update(status='review',rule=reason)
+        if text:part('zh' if han(text) else 'en',0,len(text))
+        else:result.update(status='review',rule='empty_name')
+        return result
+    pairs={'(':')','（':'）','[':']','【':'】','“':'”','「':'」','『':'』','"':'"'}
+    stack=[];groups=[];depth=[]
+    for i,ch in enumerate(text):
+        depth.append(len(stack))
+        if ch=='"' and stack and stack[-1][1]=='"':
+            start,_=stack.pop();groups.append((start,i+1,len(stack)))
+        elif ch in pairs:stack.append((i,ch))
+        elif ch in pairs.values():
+            if not stack or pairs[stack[-1][1]]!=ch:return unsplit('unbalanced_brackets')
+            start,_=stack.pop();groups.append((start,i+1,len(stack)))
+    if stack:return unsplit('unbalanced_brackets')
+    boundary=None;wrapper=None
+    if han(text):
+        # A language transition is allowed only outside balanced groups. Prefer the
+        # whole English suffix, so English Name (Alias) keeps its internal qualifier.
+        for i,ch in enumerate(text):
+            if (depth[i]==0 and (latin(ch) or ch in '“「『"') and han(text[:i])
+                    and english(text[i:]) and sum(c.isalnum() for c in text[i:])>=2):
+                boundary=i
+                # Keep a separated numeric qualifier with the following English name.
+                qualifier=re.search(r'(?<!\S)[+−-]?\d+\s+$',text[:i])
+                if qualifier and han(text[:qualifier.start()]):boundary=qualifier.start()
+                break
+        if boundary is None:
+            for a,b,level in groups:
+                if level==0 and b==len(text) and text[a] in '(（' and han(text[:a]) and english(text[a+1:b-1]):
+                    boundary=a;wrapper=(a,b);break
+    # A preceding English-only group followed by another English suffix could be
+    # a second translation or a qualifier. Do not assign it to the Chinese field.
+    if boundary is not None and any(b<=boundary and english(text[a+1:b-1]) for a,b,_ in groups):
+        boundary=None;wrapper=None
+    if boundary is None:
+        unsplit('mixed_name_unresolved' if han(text) and any(latin(ch) for ch in text) else None)
+    else:
+        a,b=trim(0,boundary,'｜|')
+        part('zh',a,b)
+        start,end=(wrapper[0]+1,wrapper[1]-1) if wrapper else (boundary,len(text))
+        part('en',start,end)
+        result.update(status='parsed',rule='wrapped_translation' if wrapper else 'bilingual_suffix')
+    for a,b,_ in sorted(groups):
+        is_wrapper=wrapper==(a,b)
+        language=None
+        if is_wrapper:role='translation_wrapper'
+        elif result['status']=='review':role='undetermined'
+        else:
+            role='quoted_name' if text[a] in '“「『"' else 'qualifier'
+            language=('en' if a>=boundary else 'zh') if boundary is not None else ('zh' if han(text) else 'en')
+        result['groups'].append({'role':role,'language':language,'text':text[a:b],'spans':spans(a,b),
+            'delimiter_spans':spans(a,a+1)+spans(b-1,b)})
+    return result
+
+
 def split_name(text):
-    text=re.sub(r'[（(]旧版[）)]','',text)
-    text=compact(re.sub(r'Legacy\s*$','',text,flags=re.I)).strip(' ｜|：:')
-    text=re.sub(r'\s*new!\s*','',text,flags=re.I)
-    # Keep qualifiers; do not guess equivalence from translated names.
-    m=re.search(r'[A-Za-z][A-Za-z\s\d\'’:,/()\-–.!&+]+$',text)
-    if m and re.search(r'[\u3400-\u9fff]',text[:m.start()]):
-        return text[:m.start()].rstrip(' ｜|'),compact(m.group()).strip()
-    return (text,'') if re.search(r'[\u3400-\u9fff]',text) else ('',text)
+    """Two-field projection of the shared structural parser for existing consumers."""
+    parsed=parse_name(text)
+    return parsed['name_zh'],parsed['name_en']
 
 
 @dataclass
@@ -248,8 +347,12 @@ class Document:
                 for tag in block.find_all(['u','b','strong']):
                     a,b=self.span(tag);name=compact(self.text[a:b])
                     if compact(self.text[ba:a]):continue
-                    if re.match(r'^\d+\s*级\s*[:：]',name) and split_name(name)[1] and not re.search(r'[。；！？]',name):
-                        if not any(c.start==a and c.title_end==b for c in items):
+                    # A formatted heading may span adjacent tags (including its
+                    # closing quote). Failed name segmentation must not erase an
+                    # already established heading or its child ability boundaries.
+                    existing=next((c for c in items if c.start==a and c.method in {'heading','colored_heading','word_heading'}),None)
+                    if re.match(r'^\d+\s*级\s*[:：]',name) and (split_name(name)[1] or existing) and not re.search(r'[。；！？]',name):
+                        if not existing and not any(c.start==a and c.title_end==b for c in items):
                             add(tag,rank=4,method='level_inline_heading')
                         headings.append(tag)
                         break

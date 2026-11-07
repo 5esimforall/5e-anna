@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, split_name, resolve_link, classify, text_fields, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
@@ -277,14 +277,14 @@ class Build:
             locator=path+('#'+unique_anchors[0] if unique_anchors else '::'+c['name']+'::'+str(occurrence))
             entity='ent_'+digest(locator)
             eid='ver_'+digest(entity,c['body_hash'])
-            zh,en=split_name(c['name'])
+            name_parse=parse_name(c['name']);zh,en=name_parse['name_zh'],name_parse['name_en']
             rules={self.sources[s]['ruleset_hint'] for s in owners if self.sources[s]['ruleset_hint'] not in {'待核'}}
             ruleset=next(iter(rules)) if len(rules)==1 and '冲突' not in rules else '待核'
             archived=[s for s in owners if self.sources[s]['archived']]
             index_legacy=[self.ob_by_id[o] for o in c['observation_ids'] if self.ob_by_id[o]['legacy']]
             legacy='entry_marked' if c['legacy_direct'] or index_legacy else 'source_archived' if archived else 'unmarked'
             status='原文明示' if c['classification_rule'].endswith('_signature') or c['classification_rule'].endswith('_table') or c['classification_rule'] in {'index_or_statblock','spell_fields','stat_fields','item_descriptor','feat_descriptor','poison_descriptor','level_heading','level_statement','background_fields','species_fields','class_structure','name_label','equipment_table'} else '上下文推得' if c['type']!='section' else '未分类段落'
-            e={'id':eid,'entity_id':entity,'identity_status':'provisional','name':compact(c['name']),'name_zh':zh,'name_en':en,'type':c['type'],
+            e={'id':eid,'entity_id':entity,'identity_status':'provisional','name':compact(c['name']),'name_zh':zh,'name_en':en,'name_parse':name_parse,'type':c['type'],
                 'type_label':TYPE_LABELS[c['type']],'page_path':path,'start':c['start'],'title_end':c['title_end'],'end':c['end'],'locator':locator,'anchors':c['anchors'],
                 'body_hash':c['body_hash'],'source_ids':owners,'source_names':[self.sources[s]['name'] for s in owners],
                 'ruleset':ruleset,'ruleset_status':'上下文推得' if ruleset!='待核' else '待核','legacy':legacy,
@@ -295,6 +295,8 @@ class Build:
             self.locators[path].add(eid) if c['is_primary'] else None
             for a in c['anchors']:self.locators[path+'#'+a].add(eid)
             ev={'path':path,'span':[c['start'],min(c['title_end'],c['end'])],'locator':locator}
+            if name_parse['status']=='review':
+                self.review(eid,'name_structure_unresolved',name_parse,ev)
             self.fact(eid,'type',c['type'],ev,c['classification_rule'],status=status)
             for s in owners:
                 self.fact(eid,'source_id',s,{'source_id':s,'toc_nodes':page['toc_nodes']},method,scope='book',status='上下文推得')

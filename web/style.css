@@ -49,7 +49,7 @@ kbd { font: 11px ui-monospace, monospace; border: 1px solid var(--anna-line); co
 /* Shell: query and reader own their scroll positions. */
 .topbar { height: 56px; display: flex; align-items: center; justify-content: space-between; padding: 0 22px; border-bottom: 1px solid var(--anna-line); }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--anna-ink); font-size: 20px; font-weight: 650; letter-spacing: -.5px; }
-.brand-icon { display: grid; place-items: center; width: 28px; height: 30px; border: 1px solid #833f4933; border-radius: 8px; background: var(--anna-selected); color: var(--anna-brand); font: italic bold 26px Georgia, serif; }
+.brand-logo { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
 .brand>span:last-child { font-size: 12px; font-weight: 400; color: var(--anna-secondary); margin-left: 10px; letter-spacing: 1px; }
 .topbar>.muted { font-size: 11px; }
 .workspace { display: grid; grid-template-columns: var(--anna-sidebar) minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }

@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import sqlite3
+import struct
 import sys
 import threading
 import unittest
@@ -83,12 +84,46 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request('/api/entries',{'Host':'attacker.example'})[0],403)
         self.assertEqual(self.request('/../scripts/serve.py')[0],404)
         self.assertEqual(self.request('/source?path=/etc/passwd')[0],404)
+    def test_brand_assets(self):
+        page=self.request('/')[2]
+        self.assertIn(b'href="/favicon.ico"',page)
+        for size in (16,32,48):
+            path=f'/favicon-{size}.png'
+            self.assertIn(f'href="{path}"'.encode(),page)
+            status,kind,body=self.request(path)
+            self.assertEqual((status,kind),(200,'image/png'))
+            self.assertEqual(body[:8],b'\x89PNG\r\n\x1a\n')
+            self.assertEqual(struct.unpack('>II',body[16:24]),(size,size))
+            self.assertEqual(body[25],6)  # RGBA; preserve transparent edges.
+        status,kind,body=self.request('/favicon.ico')
+        self.assertEqual((status,kind),(200,'image/x-icon'))
+        self.assertEqual(struct.unpack('<HHH',body[:6]),(0,1,6))
+        sizes=set()
+        for index in range(6):
+            width,height,_,_,_,_,length,offset=struct.unpack_from('<BBBBHHII',body,6+index*16)
+            sizes.add((width or 256,height or 256))
+            self.assertGreater(length,0)
+            self.assertGreaterEqual(offset,102)
+            self.assertLessEqual(offset+length,len(body))
+        self.assertEqual(sizes,{(size,size) for size in (16,32,48,64,128,256)})
+        self.assertEqual(self.request('/favicon-24.png')[0],404)
+        self.assertEqual(self.request('/assets/branding/anna.png')[0],404)
+        self.assertEqual(self.request('/favicon.ico',{'Host':'attacker.example'})[0],403)
+        self.assertIn(b'class="brand-logo" src="/anna-logo.png" width="36" height="36" alt=""',page)
+        self.assertNotIn(b'class="brand-icon"',page)
+        status,kind,body=self.request('/anna-logo.png')
+        self.assertEqual((status,kind),(200,'image/png'))
+        self.assertEqual(body[:8],b'\x89PNG\r\n\x1a\n')
+        self.assertEqual(struct.unpack('>II',body[16:24]),(128,128))
+        self.assertEqual(body[25],6)
+        self.assertEqual(self.request('/anna-logo.png',{'Host':'attacker.example'})[0],403)
     def test_source_highlights(self):
         e=query(self.db,{})['rows'][0]
         url='/source?'+urlencode({'path':e['page_path'],'start':e['start'],'end':e['end']})
         status,kind,body=self.request(url)
         self.assertEqual(status,200);self.assertIn(b'<mark id="evidence">',body)
         self.assertIn('text/html',kind)
+        self.assertIn(b'href="/favicon.ico"',body)
     def test_mount_and_animal_catalog_views(self):
         mounts=query(self.db,{'view':['坐骑']})
         self.assertEqual(mounts['total'],20)

@@ -1,0 +1,13 @@
+Mode: built-in image_gen edit
+Transparent background: true
+Input: anna-dragon-librarian-v1.png
+
+Use case: identity-preserve.
+Edit target: the provided Anna anime favicon portrait.
+Make a revised single transparent head icon of the SAME character, preserving her warm silver-white bob, amber gold slit-pupil eyes, ivory skin, burgundy scholarly collar, clean outlined anime style and compact favicon composition.
+Requested changes:
+1. Replace the stiff frontal symmetry with a subtle three-quarter turn, about 20 degrees toward image left, with both eyes clearly visible. Slight playful head tilt; eyes glance back toward the viewer. More alert intelligent expression: one eyebrow gently lifted, slightly narrower confident eyes, a small asymmetric closed-mouth knowing smile. Cute but not babyish or vacant.
+2. Make her read distinctly as a DRAGON girl rather than a tiefling or devil. Remove the existing tall upward-curled red devil horns. Replace them with two SHORT swept-back tapered dragon horns growing from the side/rear crown, oriented backwards along the skull rather than upwards, with bone-ivory tips and muted burgundy bases, simple broad faceted surfaces, no ram curls, no upright devil spikes. One horn naturally foreshortened in the turned pose.
+3. Reveal a small elegant dragon fin-like ear on the visible side: compact burgundy membrane with two or three simple ivory ribs, NOT a long elf ear, not a large wing. Add just three tiny muted burgundy scale plates at the visible temple near the ear, a restrained accent not full-face armor. Keep the face predominantly human anime girl, no reptile muzzle.
+Composition: head and tiny collar only, large face, all horns and hair safely inside the square frame, approximately 90% canvas occupancy. Horns and ear should add readable compact dragon silhouette without clutter. Simplify hair into fewer large locks, crisp deep plum-brown outlines, mostly flat colors and simple cel shadows. Genuine transparent alpha background.
+Avoid: upright crescent devil horns, demonic imagery, extra horns, large wings, body, props, text, badges, watermark, background, sticker border, excessive scale detail, photorealism.

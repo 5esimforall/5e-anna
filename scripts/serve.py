@@ -187,6 +187,9 @@ class Handler(BaseHTTPRequestHandler):
                 if (stat.st_ino,stat.st_size,stat.st_mtime_ns)!=self.db_signature:
                     self.send({'error':'数据库已重建，请重启 make up 以同步链接版。'},status=409);return
             static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
+            static['/favicon.ico']=('favicon.ico','image/x-icon')
+            static['/anna-logo.png']=('anna-logo.png','image/png')
+            static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             with closing(connect(self.db_path)) as db:
@@ -204,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
                     row=db.execute('SELECT text FROM pages WHERE path=?',(first(p,'path'),)).fetchone()
                     if not row: raise LookupError('页面不存在')
                     text=row[0]; start=max(0,min(len(text),int(first(p,'start','0')))); end=max(start,min(len(text),int(first(p,'end',str(start)))))
-                    body='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页面文本 · 5e anna</title><link rel="stylesheet" href="/style.css"><main class="source-page"><a href="/">← 条目查询</a><h1>页面文本</h1><p>提取后的文本；高亮为所选证据范围。</p><p>'+html.escape(first(p,'path'))+'</p><pre>'+html.escape(text[:start])+'<mark id="evidence">'+html.escape(text[start:end])+'</mark>'+html.escape(text[end:])+'</pre></main></html>'
+                    body='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页面文本 · 5e anna</title><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/style.css"><main class="source-page"><a href="/">← 条目查询</a><h1>页面文本</h1><p>提取后的文本；高亮为所选证据范围。</p><p>'+html.escape(first(p,'path'))+'</p><pre>'+html.escape(text[:start])+'<mark id="evidence">'+html.escape(text[start:end])+'</mark>'+html.escape(text[end:])+'</pre></main></html>'
                     self.send(body.encode(),'text/html; charset=utf-8')
                 else: raise LookupError('页面不存在')
         except ValueError as exc: self.send({'error':str(exc)},status=400)

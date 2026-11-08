@@ -5,6 +5,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 const annaUiLabels = {
   zh: {skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或重置筛选。',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
+    fullWidth:'全宽阅读',showViews:'分类目录',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
     outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
@@ -25,6 +26,7 @@ const annaUiLabels = {
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
+    fullWidth:'Full-width reading',showViews:'Categories',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
     outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
@@ -108,7 +110,7 @@ function captureUiState(){
   return {tableTop:$('.table-wrap').scrollTop,tableLeft:$('.table-wrap').scrollLeft,
     mainTop:$('#query-main').scrollTop,windowTop:window.scrollY,filterTop:$('#filter-panel').scrollTop,
     filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,auditOpen:$('#audit-details').open,extraOpen:$('#domain-extra')?.open,
-    sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,
+    sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,readerFull,
     readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
 function saveUiState(){if(!restoringUi)history.replaceState({...history.state,anna:captureUiState()},'');}
@@ -128,6 +130,8 @@ function restoreUiState(state){
   $('#source-details').open=!!state.sourceOpen;$('#audit-details').open=!!state.auditOpen;
   if($('#domain-extra')&&typeof state.extraOpen==='boolean')$('#domain-extra').open=state.extraOpen;
   $('#source-search').value=state.sourceSearch||'';filterSources();
+  // Full-width reading changes the text's line breaks, so it returns before the reader's scroll position.
+  if(currentReaderId&&state.readerId===currentReaderId)setReaderFull(!!state.readerFull,{save:false});
   $('#filter-panel').scrollTop=state.filterTop||0;
   $('.table-wrap').scrollTop=state.tableTop||0;$('.table-wrap').scrollLeft=state.tableLeft||0;
   $('#query-main').scrollTop=state.mainTop||0;window.scrollTo(0,state.windowTop||0);
@@ -410,7 +414,25 @@ $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
 $('#export').onclick=()=>{location.href='/api/export?'+params;};
-$('#results').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,'body',true);});
+// The whole row is the target: anywhere on it reads the row's entry, a version pill reads that version.
+// Selecting text in a row reads nothing, so values stay copyable.
+let resultClick=false;
+$('#results').addEventListener('click',e=>{
+  if(awaitingResults())return;
+  const pill=e.target.closest('[data-entry]');
+  const row=!pill&&!e.target.closest('a,button,input,select,summary,label')&&getSelection().isCollapsed?e.target.closest('tr'):null;
+  const target=pill||row?.querySelector('.entry-name');if(!target)return;
+  resultClick=true;openEntry(target.dataset.entry,true,'body',true);
+});
+// A double click reads the result at full width. The first click has already opened the entry and may have
+// moved the layout under the pointer, so the rest of the gesture means only that, wherever it lands.
+document.addEventListener('click',e=>{
+  if(e.detail<2){resultClick=false;return;}
+  if(!resultClick)return;
+  e.preventDefault();e.stopPropagation();
+  if(e.detail===2&&currentReaderId&&widenableReader.matches)setReaderFull(true);
+},true);
+for(const type of ['mousedown','dblclick'])document.addEventListener(type,e=>{if(e.detail>1&&resultClick){e.preventDefault();e.stopPropagation();}},true);
 $('#results').addEventListener('keydown',e=>{
   if(e.isComposing||!['ArrowUp','ArrowDown'].includes(e.key))return;
   const b=e.target.closest('.entry-name');if(!b)return;
@@ -425,6 +447,7 @@ $('#detail-content').addEventListener('click',e=>{
   const note=e.target.closest('.field-note[data-note]');
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   if(e.target.closest('[data-audit-summary]')){setAuditMode(true);renderDetail('facts');$('#tab-facts').focus();saveUiState();}
+  if(e.target.closest('[data-reader-full]')){setReaderFull(true);$('#reader-full').focus();}
 });
 for(const [type,on] of [['mouseover',true],['focusin',true],['mouseout',false],['focusout',false]])
   $('#detail-content').addEventListener(type,e=>{const el=e.target.closest('.field-note[data-note],mark.note');if(!el)return;
@@ -463,9 +486,11 @@ window.addEventListener('popstate',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.isComposing)return;
+  if(e.key==='Escape'&&$('.sidebar').classList.contains('rail-open')){e.preventDefault();setRailOpen(false,{focus:true});return;}
   if(e.key==='Escape'&&$('#detail').open){e.preventDefault();closeEntry();return;}
+  // F6 moves to the results, so full-width reading gives them their place back first.
   if(e.key==='F6'&&$('#detail').open&&wideReader.matches){
-    e.preventDefault();if($('#detail').contains(document.activeElement))focusResult();else $('#close-detail').focus();return;
+    e.preventDefault();if($('#detail').contains(document.activeElement)){if(readerFull)setReaderFull(false);focusResult();}else $('#close-detail').focus();return;
   }
   if(e.key==='/'&&!$('#detail').matches(':modal')&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!e.target.isContentEditable){e.preventDefault();$('#q').focus();}
 });
@@ -484,6 +509,15 @@ function revealActiveView(){
   updateRailEdges();
 }
 $('#views').addEventListener('scroll',updateRailEdges,{passive:true});window.addEventListener('resize',updateRailEdges);
+// While an entry is read beside the results, the rail folds to one button; it opens the categories over the
+// results, and choosing one closes the reader as before.
+function setRailOpen(open,{focus=false}={}){
+  $('.sidebar').classList.toggle('rail-open',open);$('#rail-toggle').setAttribute('aria-expanded',String(open));
+  if(open&&focus)($('#views .active')||$('#views button'))?.focus();
+  if(!open&&focus)$('#rail-toggle').focus();
+}
+$('#rail-toggle').addEventListener('click',()=>setRailOpen(!$('.sidebar').classList.contains('rail-open'),{focus:true}));
+document.addEventListener('pointerdown',e=>{if($('.sidebar').classList.contains('rail-open')&&!e.target.closest('.sidebar'))setRailOpen(false);});
 function renderViews(){
   const button=v=>`<button data-view="${esc(v.name)}">${esc(v.name||ui.allEntries)}<span>${fmt(v.count)}</span></button>`;
   const byName=new Map(metadata.views.map(v=>[v.name,v])),listed=new Set(viewGroups.flatMap(([,names])=>names));
@@ -518,6 +552,7 @@ $('#compact-rows').onchange=()=>{
 };
 window.addEventListener('storage',e=>{if(e.key===DENSITY_KEY||e.key===null)applyDensity(storedDensity());});
 applyDensity(storedDensity());
+initReaderLayout();
 window.addEventListener('storage',e=>{if(e.key===AUDIT_KEY||e.key===null){try{auditMode=localStorage.getItem(AUDIT_KEY)==='on';}catch{}applyAuditMode();}});
 async function init(){
   const saved=history.state?.anna;restoringUi=true;

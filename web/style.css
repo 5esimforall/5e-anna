@@ -46,7 +46,12 @@
   --anna-type-reading: 15px;
   --anna-leading-reading: 1.75;
   --anna-sidebar: 188px;
-  --anna-reader: clamp(400px, 34vw, 600px);
+  --anna-folded-rail: 44px;
+  /* Reading space: prose keeps a readable measure; the pinned tabs set how far below the top notes and
+     scrolled-to marks rest; full-width reading centres a column this wide. */
+  --anna-measure: 40em;
+  --anna-reader-tabs: 46px;
+  --anna-reader-column: 1120px;
 }
 :root[data-theme=dark] {
   color-scheme: dark;
@@ -208,6 +213,7 @@ th button span { margin-left: 4px; color: var(--anna-muted); }
 th[aria-sort] button { color: var(--anna-brand); }
 th:first-child { left: 0; z-index: 3; }
 td { padding: 8px 10px; border-bottom: 1px solid var(--anna-line); vertical-align: middle; white-space: nowrap; font-variant-numeric: tabular-nums; background: var(--anna-paper); }
+#results>tr { cursor: pointer; }
 tbody tr:hover td { background: var(--anna-hover); }
 tbody tr.row-selected td { background: var(--anna-selected); }
 tbody tr.row-selected .name-cell { box-shadow: inset 3px 0 var(--anna-brand); }
@@ -260,22 +266,34 @@ tbody tr:last-child td { border-bottom: 0; }
 /* Counts and the empty notice describe the dimmed rows, so they wait with them. */
 .workspace>main:has(#results[aria-busy=true]) :is(#empty,#range,#load-more-row) { opacity: .45; }
 
-/* One reader, two modes: non-modal desktop column / native modal on narrow screens. */
+/* One reader, two modes: non-modal desktop column / native modal on narrow screens. Opening an entry
+   hands it the space: the view rail steps aside and the reader takes the larger share of the workspace. */
 #detail { margin: 0; padding: 0; color: var(--anna-ink); background: var(--anna-paper); border: 0; overflow: hidden; }
 #detail[open] { display: flex; flex-direction: column; }
 #detail::backdrop { background: var(--anna-backdrop); backdrop-filter: blur(2px); }
-.detail-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 12px 20px; border-bottom: 1px solid var(--anna-line); color: var(--anna-secondary); font-size: var(--anna-type-ui); }
-.detail-tools { display: flex; align-items: center; gap: 5px; }
+.detail-top { display: flex; align-items: center; gap: 8px; flex-shrink: 0; min-height: 49px; padding: 8px 12px 8px 20px; border-bottom: 1px solid var(--anna-line); color: var(--anna-secondary); font-size: var(--anna-type-ui); }
+#reader-name { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--anna-ink); font-family: var(--anna-serif); font-size: var(--anna-type-name); font-weight: 600; }
+#detail.title-away #reader-title { display: none; }
+#detail.title-away #reader-name { display: block; }
+.detail-tools { display: flex; align-items: center; gap: 5px; margin-left: auto; flex-shrink: 0; }
 .detail-tools button { min-width: 30px; }
 .icon-button { border-color: transparent; background: transparent; font-size: 21px; line-height: 1; padding: 4px 7px; }
+#reader-full { display: inline-grid; place-items: center; width: 32px; padding: 0; color: var(--anna-secondary); }
+#reader-full svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#reader-full[aria-pressed=true] { color: var(--anna-brand); }
+#reader-full[aria-pressed=true] .full-enter, #reader-full[aria-pressed=false] .full-exit { display: none; }
 #detail-position { color: var(--anna-muted); font-size: var(--anna-type-ui); font-variant-numeric: tabular-nums; }
-#detail-content { container: reader / inline-size; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 23px 24px; scroll-padding: 12px; }
-#detail-content h2 { margin: 6px 0 0; font-family: var(--anna-serif); font-size: 27px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-#detail-content>.english { font-size: var(--anna-type-ui); margin-top: 6px; }
-.eyebrow { font-size: var(--anna-type-ui); color: var(--anna-secondary); }
-.detail-meta { margin: 13px 0; color: var(--anna-secondary); font-size: var(--anna-type-ui); overflow-wrap: anywhere; }
-.detail-links { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.reader-versions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 12px; }
+#detail-content { container: reader / inline-size; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 24px 20px; scroll-padding: calc(var(--anna-reader-tabs) + 12px) 12px 12px; }
+/* The head is short: name and English name share a line, then type, rules and book, then versions and links. */
+.reader-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+#detail-content h2 { margin: 0; font-family: var(--anna-serif); font-size: 25px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.reader-heading>.english { font-size: var(--anna-type-ui); }
+.reader-meta { display: flex; flex-wrap: wrap; gap: 2px 0; margin-top: 4px; color: var(--anna-secondary); font-size: var(--anna-type-ui); overflow-wrap: anywhere; }
+.reader-meta>span+span::before { content: '·'; margin: 0 7px; color: var(--anna-muted); }
+.reader-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 9px; }
+.reader-head>.badges { margin-top: 9px; }
+.detail-links { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--anna-type-ui); }
+.reader-versions { display: flex; flex-wrap: wrap; gap: 5px; }
 .versions-intro { margin: 16px 0 8px; font-size: var(--anna-type-ui); }
 .versions-heading { margin: 16px 0 8px; font-size: var(--anna-type-ui); font-weight: 600; }
 .version-table-wrap { overflow-x: auto; }
@@ -288,12 +306,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .versions-same>summary { padding: 6px 0; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
 .link-button { min-height: 0; padding: 0; border: 0; background: transparent; color: var(--anna-brand); text-align: left; white-space: normal; }
 .link-button[aria-current=true] { font-weight: 600; }
-.detail-tabs { display: flex; gap: 3px; overflow-x: auto; margin-top: 22px; border-bottom: 1px solid var(--anna-line); padding: 3px 2px 0; scrollbar-width: thin; }
+.detail-tabs { position: sticky; top: -16px; z-index: 4; display: flex; gap: 3px; overflow-x: auto; margin: 10px -24px 0; border-bottom: 1px solid var(--anna-line); padding: 3px 22px 0; background: var(--anna-paper); scrollbar-width: thin; }
 .detail-tabs button { padding: 9px 8px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
 .detail-tabs button.active { color: var(--anna-brand); border-bottom-color: var(--anna-brand); font-weight: 600; }
 .detail-tabs button.empty:not(.active) { color: var(--anna-muted); opacity: .65; }
 .tab-group { align-self: center; flex-shrink: 0; margin-left: 8px; padding: 0 2px 0 10px; border-left: 1px solid var(--anna-line); color: var(--anna-muted); font-size: var(--anna-type-ui); }
-.body-text { margin: 18px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: var(--anna-leading-reading); }
+.body-text { max-width: var(--anna-measure); margin: 18px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: var(--anna-leading-reading); }
 pre.body-text { font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.6; }
 /* Original layout: the book's structure in serif; anna's field readings as wine-red notes. */
 .layout-reading { display: grid; gap: 4px; margin-top: 16px; }
@@ -304,11 +322,17 @@ pre.body-text { font-family: var(--anna-sans); font-size: var(--anna-type-small)
 .field-note.unlocated { border-color: var(--anna-line); color: var(--anna-muted); }
 .field-note.unlocated .note-field { color: var(--anna-muted); }
 .field-note.lit, .field-note:hover { background: var(--anna-selected); }
-.layout-text { overflow-x: auto; font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: var(--anna-leading-reading); overflow-wrap: anywhere; }
+.layout-text { min-width: 0; font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: var(--anna-leading-reading); overflow-wrap: anywhere; }
+/* Prose and parameter cards keep a readable line length; tables may use the reader's full width. */
+.layout-text>:not(.table-frame):not(:has(table)) { max-width: var(--anna-measure); }
+.table-frame { margin: .4em 0 .8em; }
+.table-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.table-frame.overflowing .table-scroll { box-shadow: inset -10px 0 8px -8px var(--anna-line-strong); }
+.table-wide-hint { display: inline-flex; min-height: 26px; margin: 0 0 6px; padding: 2px 8px; border-color: var(--anna-selected-line); background: transparent; color: var(--anna-brand); font-family: var(--anna-sans); font-size: var(--anna-type-ui); }
 .layout-text p, .layout-text div { margin: 0 0 .55em; }
 .layout-text :is(h3,h4,h5) { margin: 1em 0 .35em; font-size: 16px; font-weight: 600; line-height: 1.5; }
 .layout-text :is(ul,ol) { margin: 0 0 .6em; padding-left: 1.4em; }
-.layout-text table { width: auto; max-width: 100%; margin: .4em 0 .8em; border-collapse: collapse; font-size: 14px; line-height: 1.6; }
+.layout-text table { width: auto; max-width: 100%; margin: 0; border-collapse: collapse; font-size: 14px; line-height: 1.6; }
 .layout-text :is(th,td) { position: static; padding: 4px 8px; border: 1px solid var(--anna-line); background: transparent; color: var(--anna-ink); white-space: normal; vertical-align: top; font-size: 14px; }
 .layout-text th { font-weight: 600; }
 .layout-text :is(th,td):empty { padding: 0; border-color: transparent; }
@@ -326,9 +350,11 @@ mark.note.inferred { text-decoration-style: dashed; }
 mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--anna-brand); }
 .layout-text .ref { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--anna-brand); font: inherit; white-space: normal; text-decoration: underline dotted; text-underline-offset: 4px; }
 .layout-notice { margin: 16px 0 0; font-size: var(--anna-type-ui); }
-@container reader (min-width: 600px) {
-  .layout-reading { grid-template-columns: minmax(0,1fr) 172px; gap: 22px; align-items: start; }
-  .field-notes { position: sticky; top: 0; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; border-top: 0; }
+/* Notes move to the margin only when the text beside them still keeps about 32 characters a line. */
+@container reader (min-width: 680px) {
+  /* The text column is as wide as its widest content (the prose measure or a wide table), so the notes stay beside the words. */
+  .layout-reading.with-notes { grid-template-columns: minmax(0,max-content) 172px; justify-content: start; gap: 22px; align-items: start; }
+  .field-notes { position: sticky; top: calc(var(--anna-reader-tabs) - 4px); flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; border-top: 0; }
   .field-note { width: 100%; border-width: 0 0 0 2px; border-radius: 0; padding: 2px 0 2px 9px; flex-direction: column; gap: 0; }
   .field-note.inferred { border-left-style: dashed; }
 }
@@ -347,20 +373,48 @@ mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--a
 .audit-summary { display: block; margin-top: 22px; padding: 8px 0 0; border: 0; border-top: 1px solid var(--anna-line); border-radius: 0; background: transparent; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: left; white-space: normal; }
 .audit-summary:hover:not(:disabled) { background: transparent; color: var(--anna-brand); }
 .footnote { margin-top: 24px; color: var(--anna-muted); font-size: var(--anna-type-small); overflow-wrap: anywhere; }
-.detail-footer { flex-shrink: 0; border-top: 1px solid var(--anna-line); padding: 8px 20px; font-size: var(--anna-type-ui); color: var(--anna-muted); background: var(--anna-surface); }
+/* Keyboard hints close the text instead of holding a fixed bar under it. */
+.reader-hint { margin: 16px 0 0; color: var(--anna-muted); font-size: var(--anna-type-ui); }
 .reader-message { padding: 26px 0; color: var(--anna-secondary); }
 .reader-message button { margin-top: 12px; }
 .source-page { max-width: 1000px; margin: auto; padding: 24px; }
 .source-page pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.9 system-ui,sans-serif; }
 mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-top: 25px; }
 
+#reader-resizer, .sidebar .rail-toggle { display: none; }
 @media(min-width:1200px) {
-  body.detail-open .workspace { grid-template-columns: var(--anna-sidebar) minmax(0,1fr) var(--anna-reader); }
+  /* The reader's share is the reader's own preference (detail.js); the track keeps 400px for the
+     reader and 360px for the results whatever the stored share. The rail folds to one button that
+     lays the categories over the results. */
+  body.detail-open .workspace { position: relative; grid-template-columns: var(--anna-folded-rail) minmax(0,1fr) clamp(min(400px,50%), calc(var(--anna-reader-share,.55) * 100%), max(50%, 100% - 360px - var(--anna-folded-rail))); }
+  body.detail-open .sidebar { padding: 10px 5px; }
+  body.detail-open .sidebar:not(.rail-open) #views { display: none; }
+  body.detail-open .sidebar .rail-toggle { display: inline-grid; place-items: center; width: 34px; height: 34px; padding: 0; border-color: transparent; background: transparent; color: var(--anna-secondary); }
+  .rail-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+  body.detail-open .sidebar.rail-open { position: absolute; z-index: 7; top: 0; bottom: 0; left: 0; width: var(--anna-sidebar); padding: 10px 10px 24px; background: var(--anna-canvas); box-shadow: var(--anna-shadow); }
+  body.detail-open .rail-open .rail-toggle { margin: 0 0 4px 5px; color: var(--anna-brand); }
   #detail { position: relative; inset: auto; grid-column: 3; grid-row: 1; width: auto; height: 100%; max-width: none; max-height: none; min-width: 0; border-left: 1px solid var(--anna-line-strong); }
+  #reader-resizer { display: block; position: absolute; z-index: 6; top: 0; bottom: 0; left: 0; width: 7px; cursor: col-resize; touch-action: none; }
+  #reader-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: transparent; transition: background var(--anna-fast); }
+  #reader-resizer:hover::after, body.reader-resizing #reader-resizer::after { background: var(--anna-brand); }
+  #reader-resizer:focus-visible { outline: 0; }
+  #reader-resizer:focus-visible::after { width: 3px; background: var(--anna-focus); }
+  body.reader-resizing { cursor: col-resize; user-select: none; }
+  /* Full-width reading lays the reader over the results, which keep their layout and scroll position. */
+  body.detail-open .workspace>main { grid-row: 1; grid-column: 2; }
+  body.detail-open.reader-full :is(.workspace>main, .sidebar) { visibility: hidden; }
+  body.reader-full #detail { grid-column: 1 / -1; border-left: 0; }
+  body.reader-full #reader-resizer { display: none; }
 }
 @media(max-width:1199px) {
-  #detail { position: fixed; inset: 12px; margin: auto; width: min(680px,calc(100% - 24px)); height: calc(100dvh - 24px); max-height: none; max-width: none; border-radius: var(--anna-radius-lg); box-shadow: var(--anna-shadow); }
+  #detail { position: fixed; inset: 12px; margin: auto; width: min(920px,calc(100% - 24px)); height: calc(100dvh - 24px); max-height: none; max-width: none; border-radius: var(--anna-radius-lg); box-shadow: var(--anna-shadow); }
+  body.reader-full #detail { inset: 0; width: 100%; height: 100dvh; border-radius: 0; }
   body.detail-modal { overflow: hidden; }
+}
+/* Full-width reading centres one column; the pinned tabs still span the reader. */
+@media(min-width:761px) {
+  body.reader-full #detail-content>:not(.detail-tabs) { max-width: var(--anna-reader-column); margin-inline: auto; }
+  body.reader-full .detail-tabs { padding-inline: max(22px, calc((100% + 48px - var(--anna-reader-column)) / 2)); }
 }
 /* Compact rows: the English name and version pills join the Chinese name on one line. */
 :root[data-density=compact] td { padding-top: 4px; padding-bottom: 4px; }
@@ -426,9 +480,10 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .chip>span { min-height: 34px; }
   .segmented button { min-height: 30px; }
   #detail { inset: 0; width: 100%; height: 100dvh; border-radius: 0; }
-  .detail-top { padding: 10px 14px; }
-  #detail-content { padding: 20px 18px; }
-  .detail-footer { padding-bottom: max(8px,env(safe-area-inset-bottom)); }
+  #reader-full { display: none; }
+  .detail-top { padding: 8px 8px 8px 14px; }
+  #detail-content { padding: 14px 18px max(20px,env(safe-area-inset-bottom)); }
+  .detail-tabs { margin-inline: -18px; padding-inline: 16px; top: -14px; }
 }
 @media(max-width:480px) {
   .brand>span:last-child { display: none; }
@@ -436,6 +491,8 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 /* Keyboard hints mean nothing on a touch-only device. */
 @media(hover:none) and (pointer:coarse) {
   .searchbox kbd { display: none; }
+  /* Version pills are the one target inside a row; on touch they keep a fingertip's height. */
+  .version-pill { min-height: 30px; padding: 4px 9px; line-height: 20px; }
 }
 @media(prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }

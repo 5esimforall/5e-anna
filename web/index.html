@@ -21,7 +21,7 @@
   </button></div>
 </header>
 <div class="workspace">
-  <aside class="sidebar"><nav id="views" aria-label="分类视图">正在读取…</nav></aside>
+  <aside class="sidebar"><button type="button" id="rail-toggle" class="rail-toggle" aria-expanded="false" aria-controls="views" data-ui-label="showViews"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg></button><nav id="views" aria-label="分类视图">正在读取…</nav></aside>
   <main id="query-main">
     <div class="heading-row"><h1 id="title">全部条目</h1><span id="view-total" class="muted"></span><span class="heading-note">自动提取 · 未经全量核验</span></div>
     <form id="search-form" class="toolbar">
@@ -51,9 +51,12 @@
     <div class="bottom-bar"><span id="range" role="status" aria-live="polite"></span><span data-ui="legend"></span></div>
   </main>
   <dialog id="detail" aria-labelledby="reader-title">
-    <div class="detail-top"><span id="reader-title" data-ui="readerTitle"></span><div class="detail-tools"><span id="detail-position"></span><button id="entry-prev" data-ui-label="previousEntry" disabled>‹</button><button id="entry-next" data-ui-label="nextEntry" disabled>›</button><button id="close-detail" class="icon-button" data-ui-label="closeDetail" autofocus>×</button></div></div>
+    <div id="reader-resizer" role="separator" aria-orientation="vertical" aria-controls="detail" tabindex="0"></div>
+    <div class="detail-top"><span id="reader-title" data-ui="readerTitle"></span><span id="reader-name" aria-hidden="true"></span><div class="detail-tools"><span id="detail-position"></span><button id="entry-prev" data-ui-label="previousEntry" disabled>‹</button><button id="entry-next" data-ui-label="nextEntry" disabled>›</button><button id="reader-full" type="button" class="icon-button" aria-pressed="false" data-ui-label="fullWidth">
+      <svg class="full-enter" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      <svg class="full-exit" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>
+    </button><button id="close-detail" class="icon-button" data-ui-label="closeDetail" aria-keyshortcuts="Escape" autofocus>×</button></div></div>
     <div id="detail-content" tabindex="-1"></div>
-    <div class="detail-footer" data-ui="readerHint"></div>
   </dialog>
 </div>
 <noscript>查询页需要 JavaScript；终端也可使用 query.py 查询。</noscript>

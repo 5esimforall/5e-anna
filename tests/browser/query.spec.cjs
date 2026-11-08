@@ -185,7 +185,8 @@ test('changing filters or classification closes a stale reader without losing fi
   await page.getByRole('checkbox',{name:'环阶：戏法',exact:true}).uncheck();await ready(page);
   await expect(page.locator('#detail')).toBeHidden();expect(new URL(page.url()).searchParams.has('entry')).toBeFalsy();
   await page.locator('#results .entry-name').first().click();await read(page,await entry(page));
-  await page.locator('#views [data-view="生物数据卡"]').click();await ready(page);
+  // While reading, the folded rail opens the categories over the results.
+  await page.locator('#rail-toggle').click();await page.locator('#views [data-view="生物数据卡"]').click();await ready(page);
   await expect(page.locator('#detail')).toBeHidden();await expect(page.locator('#cr_min')).toBeVisible();
   await page.locator('#cr_min').selectOption('1/2');await page.locator('#cr_max').selectOption('2');
   const data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
@@ -340,8 +341,9 @@ test('a field reads the same in the table, the reader attributes, the notes and 
   await expect(row.locator('.source-cell abbr')).toHaveText('PHB24');await expect(row.locator('.source-cell abbr')).toHaveAttribute('title','玩家手册2024');
   await expect(row.locator('.version-pill')).toHaveText(['PHB24 2024','XGE 2014']);
   await row.locator('.entry-name').click();await read(page,head.id);
-  await expect(page.locator('#detail .eyebrow')).toHaveText('法术 / 2024 版规则（5r）');
-  await expect(page.locator('#detail .detail-meta').first()).toHaveText('玩家手册2024（PHB24）');
+  await expect(page.locator('#detail .reader-type')).toHaveText('法术');
+  await expect(page.locator('#detail .reader-ruleset')).toHaveText('2024 版规则（5r）');
+  await expect(page.locator('#detail .reader-source')).toHaveText('玩家手册2024（PHB24）');
   await page.getByRole('tab',{name:'属性',exact:true}).click();
   const attributes=page.locator('.detail-fields');
   const names=await attributes.locator('dt').allTextContents(),values=await attributes.locator('dd').allTextContents();
@@ -397,8 +399,12 @@ test('phones hide keyboard hints and keep the current view in sight on the view 
   await expect(rail).toHaveClass(/more-before/);await expect(rail).toHaveClass(/more-after/);
   await rail.evaluate(e=>{e.scrollLeft=0;});await expect(rail).not.toHaveClass(/more-before/);
   await expect(page.locator('.searchbox kbd')).toBeHidden();
+  // Version pills are the one target inside a row, so on touch they keep a fingertip's height.
+  expect((await page.locator('#results .version-pill').first().boundingBox()).height).toBeGreaterThanOrEqual(30);
   await page.locator('#results .entry-name').first().click();
-  await expect(page.locator('.detail-footer')).toHaveText('用上方箭头连续查阅结果');
+  await expect(page.locator('#detail .reader-hint')).toHaveText('用上方箭头连续查阅结果');
+  // The reader already fills the phone, so full-width reading is not offered there.
+  await expect(page.locator('#reader-full')).toBeHidden();
   await context.close();
 });
 
@@ -423,6 +429,10 @@ test('reader shows the original layout with field notes tied to their words and 
   await note.focus();await expect(mark).toHaveClass(/lit/);
   await expect(page.locator('.field-note.unlocated').first()).toBeVisible();
   await shot(page,testInfo,'layout-reader-notes.png');
+  // At 1280px the side reader is too narrow for text and margin both, so the notes follow the text.
+  await page.setViewportSize({width:1280,height:800});
+  await expect.poll(async()=>{const n=await note.boundingBox(),box=await layout.boundingBox();return n.y>=box.y+box.height;}).toBeTruthy();
+  await page.setViewportSize({width:1100,height:820});
   // An unavailable or changed source never yields a partial layout; extracted text stands in with the reason.
   await page.route('**/api/entry-layout?*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'stale',path:'x'})}));
   await page.locator('.reader-versions').getByRole('button',{name:/PHB 2014/}).click();await read(page,other.id);
@@ -463,6 +473,115 @@ test('stat blocks keep their tables in the reader without widening the page',asy
     expect(await page.locator('#detail-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
     await page.locator('#close-detail').click();
   }
+});
+
+test('opening an entry hands it the space: the rail steps aside, the text starts high and the tabs stay pinned',async({page},testInfo)=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业')+'&q='+encodeURIComponent('法师'));
+  await expect(page.locator('#views')).toBeVisible();await expect(page.locator('#rail-toggle')).toBeHidden();
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
+  // Before: a 188px rail, a 490px reader with a 441px text column, and the text starting 418px down.
+  // The rail folds to one button that lays the categories over the results; Esc folds it before closing the reader.
+  await expect(page.locator('#views')).toBeHidden();expect((await page.locator('.sidebar').boundingBox()).width).toBe(44);
+  await page.locator('#rail-toggle').click();await expect(page.locator('#rail-toggle')).toHaveAttribute('aria-expanded','true');
+  await expect(page.locator('#views .active')).toBeFocused();
+  await page.keyboard.press('Escape');await expect(page.locator('#views')).toBeHidden();
+  await expect(page.locator('#rail-toggle')).toBeFocused();await expect(page.locator('#detail')).toBeVisible();
+  const reader=await page.locator('#detail').boundingBox();expect(Math.round(reader.width)).toBe(Math.round(1440*.55));
+  const panel=await page.locator('#detail-panel').boundingBox();expect(panel.y-reader.y).toBeLessThan(240);
+  // Scrolling the text keeps the tabs at the top of the reader, and the toolbar takes over the name.
+  await expect(page.locator('#reader-name')).toBeHidden();
+  await page.locator('#detail-content').evaluate(e=>e.scrollTop=1200);
+  const content=await page.locator('#detail-content').boundingBox();
+  await expect.poll(async()=>Math.round((await page.locator('.detail-tabs').boundingBox()).y)).toBe(Math.round(content.y));
+  await expect(page.locator('#reader-name')).toBeVisible();await expect(page.locator('#reader-name')).toHaveText('法师');
+  await expect(page.locator('#reader-title')).toBeHidden();
+  await shot(page,testInfo,'reader-pinned-tabs.png');
+  await page.keyboard.press('Escape');await expect(page.locator('#views')).toBeVisible();await expect(page.locator('#rail-toggle')).toBeHidden();
+});
+
+test('the reader width is a per-browser preference set by dragging or the separator keys',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page);
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
+  const separator=page.getByRole('separator',{name:'调整阅读栏宽度'}),width=async()=>Math.round((await page.locator('#detail').boundingBox()).width);
+  await expect(separator).toHaveAttribute('aria-valuenow','55');
+  await separator.focus();await page.keyboard.press('ArrowLeft');
+  await expect(separator).toHaveAttribute('aria-valuenow','57');expect(await width()).toBe(Math.round(1440*.57));
+  // Home and End stop at the bounds: the reader keeps 400px and the results keep 360px beside the folded rail.
+  await page.keyboard.press('Home');expect(await width()).toBe(400);
+  await page.keyboard.press('End');expect(await width()).toBe(1440-360-44);
+  await expect(separator).toHaveAttribute('aria-valuetext','阅读栏占 72%');
+  // Dragging the separator follows the pointer; the share survives a reload but never enters the URL.
+  const box=await separator.boundingBox();
+  await page.mouse.move(box.x+2,box.y+300);await page.mouse.down();await page.mouse.move(720,400,{steps:4});await page.mouse.up();
+  expect(await width()).toBe(720);
+  expect(await page.evaluate(()=>localStorage.getItem('anna.readerShare'))).toBe('0.500');
+  const url=page.url();await page.reload();await ready(page);await read(page,id);
+  expect(await width()).toBe(720);expect(page.url()).toBe(url);
+  // Double-clicking restores the default and forgets the preference.
+  await separator.dblclick();expect(await width()).toBe(Math.round(1440*.55));
+  expect(await page.evaluate(()=>localStorage.getItem('anna.readerShare'))).toBeNull();
+  // The modal reader has no separator.
+  await page.setViewportSize({width:1100,height:820});await expect(separator).toBeHidden();
+});
+
+test('full-width reading shows a wide table whole and F6 gives the results their place back',async({page},testInfo)=>{
+  await page.setViewportSize({width:1280,height:800});await visit(page,'/?view='+encodeURIComponent('职业')+'&q='+encodeURIComponent('法师'));
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
+  // The class table is wider than the side reader: it scrolls inside its own frame and offers full width.
+  const wide=page.locator('#detail-panel .table-frame.overflowing');await expect(wide).toHaveCount(1);
+  await expect(wide.locator('.table-wide-hint')).toBeVisible();
+  expect(await page.locator('#detail-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
+  await wide.locator('.table-wide-hint').click();
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','true');await expect(page.locator('#reader-full')).toBeFocused();
+  const reader=await page.locator('#detail').boundingBox();expect(reader.x).toBe(0);expect(reader.width).toBe(1280);
+  await expect(page.locator('#query-main')).toHaveCSS('visibility','hidden');
+  await expect(page.locator('#detail-panel .table-frame.overflowing')).toHaveCount(0);
+  await expect(page.locator('#detail-panel .table-wide-hint:visible')).toHaveCount(0);
+  await shot(page,testInfo,'full-width-class-table.png');
+  // Full-width reading belongs to this reading: the tab's history restores it on reload, and the URL stays the same.
+  const url=page.url();await page.reload();await ready(page);await read(page,id);
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','true');expect(page.url()).toBe(url);
+  // F6 heads for the results, so they come back first.
+  await page.locator('#reader-full').focus();await page.keyboard.press('F6');
+  await expect(page.locator(`#results .entry-name[data-entry="${id}"]`)).toBeFocused();
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','false');
+  await expect(page.locator('#query-main')).toHaveCSS('visibility','visible');
+  // Below 1200px the modal reader widens to the whole window.
+  await page.setViewportSize({width:1100,height:820});await page.locator('#reader-full').click();
+  const modal=await page.locator('#detail').boundingBox();expect(modal.x).toBe(0);expect(modal.width).toBe(1100);
+  await page.locator('#reader-full').click();expect((await page.locator('#detail').boundingBox()).width).toBe(920);
+});
+
+test('a whole result row opens its entry, and a double click reads it at full width',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&sort=name');
+  const row=n=>page.locator('#results tr').nth(n),cell=n=>row(n).locator('td[data-label="学派"]');
+  // A click on a plain cell reads the row's entry beside the results.
+  const second=await entry(page,1);await cell(1).click();await read(page,second);
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','false');
+  await page.keyboard.press('Escape');await expect(page.locator('#detail')).toBeHidden();
+  // Selecting text in a row reads nothing, so values stay copyable.
+  const english=row(1).locator('.english'),box=await english.boundingBox();
+  await page.mouse.move(box.x+1,box.y+box.height/2);await page.mouse.down();
+  await page.mouse.move(box.x+box.width-1,box.y+box.height/2,{steps:5});await page.mouse.up();
+  expect(await page.evaluate(()=>getSelection().toString().length)).toBeGreaterThan(0);
+  await expect(page.locator('#detail')).toBeHidden();
+  // The first click of a double click opens the entry and re-flows the results under the pointer;
+  // the second, wherever it lands, only asks for full width and selects nothing.
+  const third=await entry(page,2);await cell(2).dblclick();await read(page,third);
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#query-main')).toHaveCSS('visibility','hidden');
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(third);
+  expect(await page.evaluate(()=>getSelection().toString())).toBe('');
+  // Full-width reading lasts one reading: stepping keeps it, closing ends it.
+  await page.locator('#entry-next').click();await read(page,await entry(page,3));
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','true');
+  await page.keyboard.press('Escape');await expect(page.locator('#detail')).toBeHidden();
+  await row(0).locator('.entry-name').click();await read(page,await entry(page,0));
+  await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','false');
+  // Below 1200px a double click opens the modal reader across the whole window.
+  await page.keyboard.press('Escape');await page.setViewportSize({width:1100,height:820});
+  await cell(1).dblclick();await read(page,second);
+  const modal=await page.locator('#detail').boundingBox();expect(modal.x).toBe(0);expect(modal.width).toBe(1100);
 });
 
 test('scrolling near the end appends exactly the next batch and keyboard focus continues into it',async({page},testInfo)=>{

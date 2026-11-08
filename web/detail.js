@@ -1,7 +1,10 @@
 let currentReaderId=null, detailTab='body';
 const wideReader=window.matchMedia('(min-width: 1200px)');
+// Below 761px the reader already fills the screen, so full-width reading has nothing to add.
+const widenableReader=window.matchMedia('(min-width: 761px)');
 // Touch-only devices have neither Esc nor F6, so their hint names only the on-screen arrows.
 const touchOnly=window.matchMedia('(hover: none) and (pointer: coarse)');
+const readerHint=()=>touchOnly.matches?ui.readerHintTouch:wideReader.matches?ui.readerHint:ui.readerHintNarrow;
 function placeReader(){
   const dialog=$('#detail'),active=document.activeElement,top=$('#detail-content').scrollTop;
   if(dialog.open)dialog.close();
@@ -10,11 +13,66 @@ function placeReader(){
   if(!currentReaderId)return;
   wideReader.matches?dialog.show():dialog.showModal();
   dialog.setAttribute('aria-modal',String(!wideReader.matches));
-  $('.detail-footer').textContent=touchOnly.matches?ui.readerHintTouch:wideReader.matches?ui.readerHint:ui.readerHintNarrow;
+  const hint=$('#detail-content .reader-hint');if(hint)hint.textContent=readerHint();
+  applyReaderLayout();
   if(active&&dialog.contains(active))active.focus({preventScroll:true});
   $('#detail-content').scrollTop=top;
 }
 wideReader.addEventListener('change',()=>{if(currentReaderId)placeReader();});
+// The reader's share of the workspace is a per-browser preference like density and theme. Full-width
+// reading, which sets the results aside entirely, belongs to one reading session: it lasts until the
+// reader closes, and this tab's history restores it.
+const READER_SHARE_KEY='anna.readerShare';
+const DEFAULT_READER_SHARE=.55, MIN_READER_WIDTH=400, MIN_LIST_WIDTH=360, FOLDED_RAIL_WIDTH=44;
+const storedReaderShare=()=>{try{const v=Number(localStorage.getItem(READER_SHARE_KEY));return v>0&&v<1?v:DEFAULT_READER_SHARE;}catch{return DEFAULT_READER_SHARE;}};
+let readerShare=storedReaderShare(), readerFull=false;
+// The same bounds as the grid track in style.css: the reader keeps 400px, the results keep 360px beside
+// the folded rail.
+function readerShareBounds(){
+  const width=$('.workspace').clientWidth||innerWidth;
+  return [Math.min(MIN_READER_WIDTH/width,.5),Math.max(1-(MIN_LIST_WIDTH+FOLDED_RAIL_WIDTH)/width,.5)];
+}
+function applyReaderLayout(){
+  const [min,max]=readerShareBounds(),share=Math.min(max,Math.max(min,readerShare)),percent=Math.round(share*100);
+  $('.workspace').style.setProperty('--anna-reader-share',String(readerShare));
+  document.body.classList.toggle('reader-full',readerFull);
+  $('#reader-full').setAttribute('aria-pressed',String(readerFull));
+  const separator=$('#reader-resizer');
+  separator.setAttribute('aria-valuemin',String(Math.round(min*100)));separator.setAttribute('aria-valuemax',String(Math.round(max*100)));
+  separator.setAttribute('aria-valuenow',String(percent));separator.setAttribute('aria-valuetext',ui.readerShare.replace('{percent}',percent));
+}
+function saveReaderPreference(key,value){
+  try{value===null?localStorage.removeItem(key):localStorage.setItem(key,value);}catch{/* Blocked storage still applies to this page. */}
+}
+function setReaderShare(share,save=true){
+  const [min,max]=readerShareBounds();readerShare=Math.min(max,Math.max(min,share));applyReaderLayout();
+  if(save)saveReaderPreference(READER_SHARE_KEY,Math.abs(readerShare-DEFAULT_READER_SHARE)<.005?null:readerShare.toFixed(3));
+}
+function setReaderFull(on,{save=true}={}){readerFull=on;applyReaderLayout();markTableFrames();if(save)saveUiState();}
+// Runs from app.js once the shared helpers and labels exist.
+function initReaderLayout(){
+  const separator=$('#reader-resizer'),workspace=$('.workspace');
+  separator.title=ui.resizeReaderHint;separator.setAttribute('aria-label',ui.resizeReader);
+  const shareAt=x=>{const box=workspace.getBoundingClientRect();return (box.right-x)/box.width;};
+  separator.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();separator.setPointerCapture(e.pointerId);document.body.classList.add('reader-resizing');});
+  separator.addEventListener('pointermove',e=>{if(separator.hasPointerCapture(e.pointerId))setReaderShare(shareAt(e.clientX),false);});
+  separator.addEventListener('lostpointercapture',()=>{document.body.classList.remove('reader-resizing');setReaderShare(readerShare);});
+  separator.addEventListener('dblclick',()=>setReaderShare(DEFAULT_READER_SHARE));
+  // The separator moves like the boundary it is: left widens the reader, Home and End reach its bounds.
+  separator.addEventListener('keydown',e=>{
+    const step=e.shiftKey?.1:.02,[min,max]=readerShareBounds();
+    const next={ArrowLeft:readerShare+step,ArrowRight:readerShare-step,Home:min,End:max}[e.key];
+    if(next===undefined)return;e.preventDefault();setReaderShare(next);
+  });
+  $('#reader-full').addEventListener('click',()=>setReaderFull(!readerFull));
+  window.addEventListener('resize',()=>{if(currentReaderId)applyReaderLayout();});
+  new ResizeObserver(markTableFrames).observe($('#detail-content'));
+  window.addEventListener('storage',e=>{
+    if(![READER_SHARE_KEY,null].includes(e.key))return;
+    readerShare=storedReaderShare();applyReaderLayout();
+  });
+  applyReaderLayout();
+}
 // A stacked row contains every listed version; reading any of them places the reader on that row.
 const rowHas=(row,id)=>row.id===id||!!row.versions?.some(v=>v.id===id);
 function updateReaderNavigation(){
@@ -68,7 +126,14 @@ function renderDetail(tab='body') {
   if(tab==='discoveries') content=(e.concept_observations||[]).map(o=>renderConceptObservation(o,linkLabels)).join('')||`<p class="muted">${esc(linkLabels.emptyDiscoveries)}</p>`;
   if(tab==='references') content=(metadata.review_snapshot?.pending_rebuild?`<p>${badge(linkLabels.pendingReview,'amber')}</p>`:'')+`<p class="muted">${esc(linkLabels.referencePolicy)}</p>`+(e.effective_references||[]).map(o=>renderConceptObservation(o,linkLabels)).join('');
   if(tab==='reviews') content=`<p class="muted">仅展示关联此条目或所在页面的问题。没有待核记录不代表已经核实。</p>`+e.reviews.map(r=>renderReview(r,linkLabels)).join('');
-  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(e.type_label)} / ${esc(rulesetFull(e.ruleset))}</div><h2 id="entry-title">${esc(e.name_zh||e.name)}</h2><div class="english">${esc(e.name_en)}</div>${members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}</button>`).join('')}</div>`:''}<div class="detail-meta">${esc(e.source_ids.map(sourceFull).join('；'))}</div><div class="badges">${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}</div><div class="detail-meta detail-links">${metadata.book_url?`<a target="_blank" rel="noopener" href="${esc(metadata.book_url+'/definition/'+encodeURIComponent(e.id)+'?reader=1')}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${readingTabs.map(tabButton).join('')}${auditTabs.length?`<span class="tab-group" aria-hidden="true">${esc(ui.auditSummary)}</span>${auditTabs.map(tabButton).join('')}`:''}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div>`;
+  // One compact head: name, then what and where it is, then its versions and outside links. The tabs stay
+  // pinned while the text scrolls, and the toolbar takes over the name once the head has scrolled away.
+  const badges=`${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}`;
+  const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}</button>`).join('')}</div>`:'';
+  const links=`<div class="detail-links">${metadata.book_url?`<a target="_blank" rel="noopener" href="${esc(metadata.book_url+'/definition/'+encodeURIComponent(e.id)+'?reader=1')}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div>`;
+  const name=e.name_zh||e.name;
+  $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(e.source_ids.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${readingTabs.map(tabButton).join('')}${auditTabs.length?`<span class="tab-group" aria-hidden="true">${esc(ui.auditSummary)}</span>${auditTabs.map(tabButton).join('')}`:''}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div><p class="reader-hint">${esc(readerHint())}</p>`;
+  $('#reader-name').textContent=name;watchReaderTitle();markTableFrames();
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
 async function openEntry(id,update=true,tab='body',fromResult=false) {
@@ -79,7 +144,7 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   const wasOpen=$('#detail').open;
   currentReaderId=id;currentEntry=null;detailTab=tab;
   if(!wasOpen)placeReader();
-  $('#detail').setAttribute('aria-labelledby','reader-title');
+  $('#detail').setAttribute('aria-labelledby','reader-title');$('#detail').classList.remove('title-away');readerTitleObserver?.disconnect();
   $('#detail-content').setAttribute('aria-busy','true');
   $('#detail-content').innerHTML=`<p class="reader-message" role="status">${esc(ui.loading)}</p>`;
   $('#detail-content').scrollTop=0;updateReaderNavigation();
@@ -105,13 +170,39 @@ function renderBody(e){
     const inner=`<span class="note-field">${esc(fieldNames[n.field]||n.field)}</span><span class="note-value">${esc(fieldText(e,n.field))}</span>`;
     return `<li>${n.located?`<button type="button" class="field-note ${n.status==='原文明示'?'':'inferred'}" data-note="${esc(n.field)}" title="${esc(label)}">${inner}</button>`:`<span class="field-note unlocated" title="${esc(label)}">${inner}</span>`}</li>`;
   }).join('');
-  return `<div class="layout-reading">${notes?`<ul class="field-notes" aria-label="${esc(ui.fieldNotes)}">${notes}</ul>`:''}<div class="layout-text">${l.html}</div></div>`;
+  return `<div class="layout-reading${notes?' with-notes':''}">${notes?`<ul class="field-notes" aria-label="${esc(ui.fieldNotes)}">${notes}</ul>`:''}<div class="layout-text">${framedTables(l.html)}</div></div>`;
+}
+// Each source table scrolls inside its own frame, so a wide table never drags the prose sideways.
+// A frame whose table is wider than the reader offers full-width reading.
+function framedTables(html){
+  const template=document.createElement('template');template.innerHTML=html;
+  for(const table of template.content.querySelectorAll('table')){
+    if(table.parentElement?.closest('table'))continue;
+    const frame=document.createElement('div');frame.className='table-frame';
+    frame.innerHTML=`<button type="button" class="table-wide-hint" data-reader-full hidden>${esc(ui.wideTable)}</button><div class="table-scroll"></div>`;
+    table.replaceWith(frame);frame.lastElementChild.append(table);
+  }
+  return template.innerHTML;
+}
+function markTableFrames(){
+  for(const frame of $('#detail-content').querySelectorAll('.table-frame')){
+    const scroll=frame.querySelector('.table-scroll'),wide=scroll.scrollWidth>scroll.clientWidth+1;
+    frame.classList.toggle('overflowing',wide);
+    frame.querySelector('.table-wide-hint').hidden=!wide||readerFull||!widenableReader.matches;
+  }
+}
+// The toolbar names the entry only after the head carrying the name has scrolled out of view.
+let readerTitleObserver;
+function watchReaderTitle(){
+  readerTitleObserver?.disconnect();
+  readerTitleObserver=new IntersectionObserver(([seen])=>$('#detail').classList.toggle('title-away',!seen.isIntersecting),{root:$('#detail-content')});
+  readerTitleObserver.observe($('#entry-title'));
 }
 function loadLayout(e){
   if(e.layout||e.layoutRequest)return;
   e.layoutRequest=api('/api/entry-layout?id='+encodeURIComponent(e.id)).catch(()=>({status:'error'})).then(layout=>{
     e.layout=layout;
-    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;}
+    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();}
   });
 }
 // A note and the words it was read from light up together; activating a note brings its words into view.
@@ -134,8 +225,9 @@ function closeEntry({update=true,restoreFocus=true}={}) {
   detailGeneration++;
   if(restoreFocus)lastResultEntry=lastResultEntry||currentReaderId;
   if($('#detail').open)$('#detail').close();
-  currentReaderId=null;currentEntry=null;detailTab='body';
-  document.body.classList.remove('detail-open','detail-modal');
+  currentReaderId=null;currentEntry=null;detailTab='body';readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
+  document.body.classList.remove('detail-open','detail-modal');setRailOpen(false);
+  if(readerFull)setReaderFull(false,{save:false});
   if(restoreFocus)focusResult();
   updateReaderNavigation();
   if(update&&params.has('entry')){params.delete('entry');historyUpdate(true);}

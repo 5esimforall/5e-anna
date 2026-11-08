@@ -49,6 +49,31 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(set(re.findall(r'class="([^"]+)"',out+inferred))<={c for c in ALLOWED_CLASSES}|{'note inferred'})
         doc.close()
 
+    def test_line_breaks_become_paragraphs_and_label_lines_a_parameter_card(self):
+        doc=self.doc('<p><em>死灵 戏法</em><br><strong>施法时间：</strong>动作<br><b>施法距离：</b>60尺<br>'
+                     '<font><strong>持续时间：</strong>专注，</font>至多1分钟<br>正文一。<br><br><strong>强化。</strong>正文二。</p>')
+        a=doc.text.index('施法时间');b=doc.text.index('动作')+2
+        out=render(doc,0,len(doc.text),[(a,b,'note',{'field':'casting_time','status':'原文明示'})])
+        self.assertEqual(out,'<div><p><em>死灵 戏法</em></p><dl class="parameters">'
+            '<div><dt><mark class="note" data-notes="casting_time">施法时间</mark></dt><dd><mark class="note" data-notes="casting_time">动作</mark></dd></div>'
+            '<div><dt>施法距离</dt><dd>60尺</dd></div><div><dt>持续时间</dt><dd>专注，至多1分钟</dd></div></dl>'
+            '<p>正文一。</p><p><strong>强化。</strong>正文二。</p></div>')
+        doc.close()
+    def test_parameter_cards_need_two_named_labels(self):
+        for body in ('<p>前文<br><strong>前置：</strong>力量 13<br>正文</p>',  # one label line stays a paragraph
+                     '<p><b>Q：</b>问题？<br><b>A：</b>回答。</p>',          # single-letter dialogue turns are not labels
+                     '<p><b>这一行粗体文字太长不算标签名称：</b>值<br><b>同样过长的另一行粗体文字：</b>值</p>'):
+            with self.subTest(body=body):
+                doc=self.doc(body);out=render(doc,0,len(doc.text),[]);doc.close()
+                self.assertNotIn('<dl',out);self.assertIn('：',out)
+        doc=self.doc('<p><b>装备：</b>'+'一件物品、'*8+'<br><b>技能：</b>运动</p>')
+        out=render(doc,0,len(doc.text),[]);doc.close()
+        self.assertIn('<div class="wide"><dt>装备</dt>',out);self.assertIn('<div><dt>技能</dt>',out)
+    def test_lines_outside_the_range_are_not_emitted(self):
+        doc=self.doc('<p><b>上一条 Prev</b><br>上文。<br><b>本条 This</b><br>本文。</p>')
+        out=render(doc,doc.text.index('本条'),len(doc.text),[]);doc.close()
+        self.assertEqual(out,'<div><p><strong>本条 This</strong></p><p>本文。</p></div>')
+
 
 @unittest.skipUnless(DB.exists() and paths.WEB.is_dir(),'Build corpus first')
 class CorpusLayoutTests(unittest.TestCase):
@@ -66,6 +91,13 @@ class CorpusLayoutTests(unittest.TestCase):
         # Fields read from a quick-reference table elsewhere follow, unlocated.
         located=[n['located'] for n in layout['notes']]
         self.assertEqual(located,sorted(located,reverse=True));self.assertIn(False,located)
+    def test_spell_header_lines_form_a_card_and_text_starts_after_the_title(self):
+        from serve import detail
+        eid=self.entry('spell','Toll the Dead','5r');layout=entry_layout(self.db,eid,paths.WEB)
+        self.assertEqual(re.findall(r'<dt>(?:<mark[^>]*>)?([^<]+)',layout['html']),['施法时间','施法距离','法术成分','持续时间'])
+        self.assertNotIn('Toll the Dead',layout['html'])
+        # The extracted-text fallback starts at the same place as the layout.
+        self.assertTrue(detail(self.db,eid)['body'].startswith('死灵 戏法'))
     def test_statblock_keeps_its_tables(self):
         layout=entry_layout(self.db,self.entry('creature','Adult Red Dragon','5r'),paths.WEB)
         self.assertEqual(layout['status'],'ok')

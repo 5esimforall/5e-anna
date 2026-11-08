@@ -291,6 +291,8 @@ tbody tr:last-child td { border-bottom: 0; }
 .detail-tabs { display: flex; gap: 3px; overflow-x: auto; margin-top: 22px; border-bottom: 1px solid var(--anna-line); padding: 3px 2px 0; scrollbar-width: thin; }
 .detail-tabs button { padding: 9px 8px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
 .detail-tabs button.active { color: var(--anna-brand); border-bottom-color: var(--anna-brand); font-weight: 600; }
+.detail-tabs button.empty:not(.active) { color: var(--anna-muted); opacity: .65; }
+.tab-group { align-self: center; flex-shrink: 0; margin-left: 8px; padding: 0 2px 0 10px; border-left: 1px solid var(--anna-line); color: var(--anna-muted); font-size: var(--anna-type-ui); }
 .body-text { margin: 18px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: var(--anna-leading-reading); }
 pre.body-text { font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.6; }
 /* Original layout: the book's structure in serif; anna's field readings as wine-red notes. */
@@ -312,6 +314,13 @@ pre.body-text { font-family: var(--anna-sans); font-size: var(--anna-type-small)
 .layout-text :is(th,td):empty { padding: 0; border-color: transparent; }
 .layout-text :is(th,td).short { white-space: nowrap; overflow-wrap: normal; }
 .layout-text tbody tr:hover td { background: transparent; }
+/* Parameter card: the source's label lines (施法时间：动作) as a two-column grid; long values span both. */
+.layout-text .parameters { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px 20px; margin: .5em 0 1em; padding: 11px 14px; border-radius: var(--anna-radius); background: var(--anna-surface); }
+.layout-text .parameters>div { min-width: 0; margin: 0; }
+.layout-text .parameters>.wide { grid-column: 1 / -1; }
+.layout-text .parameters dt { color: var(--anna-muted); font-family: var(--anna-sans); font-size: var(--anna-type-ui); line-height: 1.4; }
+.layout-text .parameters dd { margin: 1px 0 0; line-height: 1.55; }
+@container reader (max-width: 300px) { .layout-text .parameters { grid-template-columns: minmax(0,1fr); } }
 mark.note { background: transparent; color: inherit; text-decoration: underline solid var(--anna-note-line); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 mark.note.inferred { text-decoration-style: dashed; }
 mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--anna-brand); }

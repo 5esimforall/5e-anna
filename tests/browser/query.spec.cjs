@@ -401,6 +401,27 @@ test('reader shows the original layout with field notes tied to their words and 
   await expect(page.locator('#detail-panel .layout-text')).toHaveCount(0);
 });
 
+test('reader sets label lines as a parameter card, starts after the title and groups audit tabs',async({page})=>{
+  await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('亡者丧钟'));
+  await page.locator('#results .entry-name').first().click();
+  const card=page.locator('#detail-panel .layout-text dl.parameters');
+  await expect(card.locator('dt')).toHaveText(['施法时间','施法距离','法术成分','持续时间']);await expect(card.locator('dd').first()).toHaveText('动作');
+  expect(await card.evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(2);
+  await expect(page.locator('#detail-panel .layout-text')).not.toContainText('Toll the Dead');
+  // Reading tabs lead; audit tabs follow their group label, and a tab with nothing in it is faded.
+  const tabs=page.locator('.detail-tabs');await expect(tabs.locator('.tab-group')).toHaveText('核对');
+  expect(await tabs.locator('[role=tab]').evaluateAll(els=>els.map(e=>e.dataset.tab))).toEqual(['body','fields','versions','relations','facts','discoveries','references','reviews']);
+  for(const tab of await tabs.locator('[role=tab]').all()){
+    const count=(await tab.textContent()).match(/ (\d+)$/)?.[1];
+    if(count!==undefined)await expect(tab).toHaveClass(count==='0'?/\bempty\b/:/^(?!.*\bempty\b)/);
+  }
+  // The extracted-text fallback starts after the title as well.
+  await page.route('**/api/entry-layout?*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'missing',path:'x'})}));
+  await page.locator('.reader-versions').getByRole('button',{name:/XGE/}).click();
+  await expect(page.locator('#detail-panel .body-text')).toContainText('施法时间');
+  await expect(page.locator('#detail-panel .body-text')).not.toContainText('亡者丧钟｜');
+});
+
 test('stat blocks keep their tables in the reader without widening the page',async({page})=>{
   for(const [width,height] of [[1440,900],[390,844]]){
     await page.setViewportSize({width,height});

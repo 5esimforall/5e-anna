@@ -14,7 +14,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 import browse
 import paths
-from entry_layout import entry_layout
+from entry_layout import entry_layout, text_start
 from references import query_references, query_decisions, query_missing_definitions
 from review_store import load_events
 from review_search import search_candidates
@@ -199,7 +199,8 @@ def detail(db, eid):
     if not row: raise LookupError('条目不存在')
     e=browse.enrich(json.loads(row[0]))
     e['field_order']=browse.field_order(e)
-    e['body']=db.execute('SELECT body FROM entry_text WHERE id=?',(eid,)).fetchone()[0]
+    start=text_start(e)
+    e['body']=db.execute('SELECT substr(text,?,?) FROM pages WHERE path=?',(start+1,e['end']-start,e['page_path'])).fetchone()[0].strip()
     e['facts']=[]
     for r in db.execute('SELECT field,value,evidence,rule,scope,status FROM facts WHERE entry_id=? ORDER BY field,id',(eid,)):
         f=dict(r); f['value']=json.loads(f['value']); f['evidence']=json.loads(f['evidence'])

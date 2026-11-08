@@ -4,7 +4,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
   zh: {skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或重置筛选。',
-    readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',closeDetail:'关闭详情',
+    readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
     outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
@@ -24,7 +24,7 @@ const annaUiLabels = {
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
-    readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',closeDetail:'Close details',
+    readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
     outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
@@ -183,6 +183,7 @@ function sync(){
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
   for(const button of $('#views').querySelectorAll('[data-view]')){const active=button.dataset.view===(params.get('view')||'');button.classList.toggle('active',active);button.setAttribute('aria-pressed',active);}
+  revealActiveView();
   for(const g of groups){
     const el=document.querySelector(`[data-group="${g.key}"]`);if(!el)continue;
     const values=selected(g);el.classList.toggle('all-selected',!params.has(g.key));
@@ -468,6 +469,21 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='/'&&!$('#detail').matches(':modal')&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!e.target.isContentEditable){e.preventDefault();$('#q').focus();}
 });
+// On narrow screens the view rail scrolls sideways without a scrollbar (its thumb read as a selection under
+// the first view): the current view is kept in sight, and only an edge that hides more views fades.
+function updateRailEdges(){
+  const nav=$('#views');
+  nav.classList.toggle('more-before',nav.scrollLeft>1);nav.classList.toggle('more-after',nav.scrollLeft+nav.clientWidth<nav.scrollWidth-1);
+}
+function revealActiveView(){
+  const nav=$('#views'),active=nav.querySelector('.active');
+  if(active&&nav.scrollWidth>nav.clientWidth){
+    const rail=nav.getBoundingClientRect(),box=active.getBoundingClientRect();
+    if(box.left<rail.left||box.right>rail.right)nav.scrollLeft+=box.left-rail.left-(rail.width-box.width)/2;
+  }
+  updateRailEdges();
+}
+$('#views').addEventListener('scroll',updateRailEdges,{passive:true});window.addEventListener('resize',updateRailEdges);
 function renderViews(){
   const button=v=>`<button data-view="${esc(v.name)}">${esc(v.name||ui.allEntries)}<span>${fmt(v.count)}</span></button>`;
   const byName=new Map(metadata.views.map(v=>[v.name,v])),listed=new Set(viewGroups.flatMap(([,names])=>names));

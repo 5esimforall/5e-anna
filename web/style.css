@@ -408,7 +408,11 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .workspace { display: block; height: auto; min-height: 0; }
   .sidebar { padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--anna-line); }
   .side-title { display: none; }
-  .sidebar nav { display: flex; overflow: auto; gap: 4px; }
+  .sidebar nav { display: flex; overflow: auto; gap: 4px; scrollbar-width: none; }
+  .sidebar nav::-webkit-scrollbar { display: none; }
+  .sidebar nav.more-after { mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+  .sidebar nav.more-before { mask-image: linear-gradient(to right, transparent, #000 32px); }
+  .sidebar nav.more-before.more-after { mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
   .view-group { display: contents; }
   .view-group-label { display: none; }
   .sidebar button { flex-shrink: 0; }
@@ -428,6 +432,10 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 }
 @media(max-width:480px) {
   .brand>span:last-child { display: none; }
+}
+/* Keyboard hints mean nothing on a touch-only device. */
+@media(hover:none) and (pointer:coarse) {
+  .searchbox kbd { display: none; }
 }
 @media(prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }

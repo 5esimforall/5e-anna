@@ -1,5 +1,7 @@
 let currentReaderId=null, detailTab='body';
 const wideReader=window.matchMedia('(min-width: 1200px)');
+// Touch-only devices have neither Esc nor F6, so their hint names only the on-screen arrows.
+const touchOnly=window.matchMedia('(hover: none) and (pointer: coarse)');
 function placeReader(){
   const dialog=$('#detail'),active=document.activeElement,top=$('#detail-content').scrollTop;
   if(dialog.open)dialog.close();
@@ -8,7 +10,7 @@ function placeReader(){
   if(!currentReaderId)return;
   wideReader.matches?dialog.show():dialog.showModal();
   dialog.setAttribute('aria-modal',String(!wideReader.matches));
-  $('.detail-footer').textContent=wideReader.matches?ui.readerHint:ui.readerHintNarrow;
+  $('.detail-footer').textContent=touchOnly.matches?ui.readerHintTouch:wideReader.matches?ui.readerHint:ui.readerHintNarrow;
   if(active&&dialog.contains(active))active.focus({preventScroll:true});
   $('#detail-content').scrollTop=top;
 }

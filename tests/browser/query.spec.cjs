@@ -387,6 +387,21 @@ test('a search ranks closer names first until the reader picks a sort',async({pa
   await expect(page.locator('#sort option[value="match"]')).toHaveCount(0);await expect(page.locator('#sort')).toHaveValue('name');
 });
 
+test('phones hide keyboard hints and keep the current view in sight on the view rail',async({browser})=>{
+  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
+  const page=await context.newPage();await visit(page,'/?view='+encodeURIComponent('专长'));
+  const rail=page.locator('#views'),r=await rail.boundingBox(),a=await rail.locator('.active').boundingBox();
+  expect(a.x).toBeGreaterThanOrEqual(r.x);expect(a.x+a.width).toBeLessThanOrEqual(r.x+r.width+1);
+  // No scrollbar thumb under the first view; faded edges show where more views wait.
+  expect(await rail.evaluate(e=>getComputedStyle(e).scrollbarWidth)).toBe('none');
+  await expect(rail).toHaveClass(/more-before/);await expect(rail).toHaveClass(/more-after/);
+  await rail.evaluate(e=>{e.scrollLeft=0;});await expect(rail).not.toHaveClass(/more-before/);
+  await expect(page.locator('.searchbox kbd')).toBeHidden();
+  await page.locator('#results .entry-name').first().click();
+  await expect(page.locator('.detail-footer')).toHaveText('用上方箭头连续查阅结果');
+  await context.close();
+});
+
 test('stacking never merges class features from different classes',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业能力')+'&q='+encodeURIComponent('属性值提升'));
   const data=await queryMatchesAPI(page);

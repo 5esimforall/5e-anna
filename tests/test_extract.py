@@ -141,4 +141,17 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertTrue(any('探寻走私者之秘' in registry.sources[s]['name'] for s in owners))
         self.assertFalse(any(s['ruleset_hint']=='冲突' for s in registry.sources.values()))
 
+    def test_catalog_abbreviations_name_what_they_identify(self):
+        registry=SourceRegistry(WEB);by_name={s['name']:s for s in registry.sources.values()}
+        # Mixed-case and punctuated codes are the catalog's own; no alias is promoted by its spelling.
+        self.assertEqual(by_name['被遗忘的国度：费伦英雄']['abbreviations'],['FRHoF'])
+        self.assertEqual(by_name['瓦尔达的秘密尖塔 / 玩家包Ⅰ']['abbreviations'],['VSS:PP'])
+        # A collection's code is shared by its publications, so it is recorded apart from their own codes.
+        ua=by_name['破解奥秘（UA） / 灵能I']
+        self.assertEqual((ua['abbreviations'],ua['collection_abbreviations']),([],['UA']))
+        adventure=by_name['模组相关 / 纸质出版物 / 黄金宝库之钥']
+        self.assertEqual((adventure['abbreviations'],adventure['collection_abbreviations']),([],[]))
+        codes=[c for s in registry.sources.values() for c in s['abbreviations']]
+        self.assertEqual(len(codes),len(set(codes)))
+
 if __name__=='__main__':unittest.main()

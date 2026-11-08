@@ -54,6 +54,39 @@ def resolve_link(page, href):
     return target, unquote(u.fragment)
 
 
+# A conjunction counts as a separator only right after an English run and before the next
+# Chinese name, so 或 inside a Chinese name (微型或小型) never splits it.
+ALTERNATIVE = re.compile(r'(?<=[A-Za-z])(\s*(?:或|/|／|、)\s*)(?=[㐀-鿿\d])')
+
+
+def parse_alternatives(text,result,han,latin,english,trim,spans):
+    """Several bilingual names joined by conjunctions, such as a table row offering one price for
+    alternative goods. Each name pairs its own Chinese and English text; a single English suffix
+    would otherwise claim only the last one. Every segment must be a clean pair or nothing splits."""
+    cuts=[m.span(1) for m in ALTERNATIVE.finditer(text)]
+    if not cuts:return None
+    bounds=[0]+[x for cut in cuts for x in cut]+[len(text)]
+    pairs=[]
+    for a,b in zip(bounds[::2],bounds[1::2]):
+        boundary=next((i for i in range(a,b) if latin(text[i]) and han(text[a:i]) and english(text[i:b])
+                       and sum(c.isalnum() for c in text[i:b])>=2),None)
+        if boundary is None or any(latin(ch) for ch in text[a:boundary]):return None
+        pairs.append((trim(a,boundary),trim(boundary,b)))
+    zh=[];en=[]
+    for (za,zb),(ea,eb) in pairs:
+        for language,(x,y),out in (('zh',(za,zb),zh),('en',(ea,eb),en)):
+            out.append(compact(text[x:y]))
+            result['parts'].append({'language':language,'text':out[-1],'spans':spans(x,y)})
+    # Space before a conjunction separated the English word; space after it stays (或 1 头绵羊).
+    joiners=[re.sub(r'\s+',' ',text[a:b]).lstrip() for a,b in cuts]
+    result['annotations'].extend({'role':'alternative_separator','text':text[a:b],'spans':spans(a,b)} for a,b in cuts)
+    # The Chinese projection keeps the source's own conjunctions; the English one has none to keep.
+    result['name_zh']=zh[0]+''.join(j+z for j,z in zip(joiners,zh[1:]))
+    result['name_en']=' / '.join(en)
+    result.update(status='parsed',rule='bilingual_alternatives')
+    return result
+
+
 def parse_name(raw):
     """Parse bilingual structure; all spans address the unchanged input name, not HTML.
 
@@ -117,6 +150,9 @@ def parse_name(raw):
             if not stack or pairs[stack[-1][1]]!=ch:return unsplit('unbalanced_brackets')
             start,_=stack.pop();groups.append((start,i+1,len(stack)))
     if stack:return unsplit('unbalanced_brackets')
+    if han(text) and not groups:
+        alternatives=parse_alternatives(text,result,han,latin,english,trim,spans)
+        if alternatives:return alternatives
     boundary=None;wrapper=None
     if han(text):
         # A language transition is allowed only outside balanced groups. Prefer the

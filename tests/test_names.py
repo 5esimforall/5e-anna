@@ -68,6 +68,24 @@ class NameTests(unittest.TestCase):
         self.assertEqual(parse_name('中文 (English')['rule'],'unbalanced_brackets')
         self.assertEqual(parse_name('')['rule'],'empty_name')
 
+    def test_alternative_bilingual_names_pair_each_translation(self):
+        # One row offering alternatives must not hand the last English word to the whole row.
+        for raw,zh,en in [
+            ('1 磅肉桂 cinnamon 或胡椒 pepper 或 1 头绵羊 sheep','1 磅肉桂或胡椒或 1 头绵羊','cinnamon / pepper / sheep'),
+            ('甲饰 Example Ring/乙饰Other Ring','甲饰/乙饰','Example Ring / Other Ring'),
+            ('壶 Jug 或罐 Pitcher','壶或罐','Jug / Pitcher'),
+        ]:
+            with self.subTest(raw=raw):
+                result=self.assert_name(raw,zh,en,'bilingual_alternatives')
+                self.assertEqual([p['language'] for p in result['parts']],['zh','en']*(len(result['parts'])//2))
+                for note in result['annotations']:
+                    self.assertEqual(''.join(raw[a:b] for a,b in note['spans']),note['text'])
+        # A conjunction inside one Chinese name, a Latin token inside it, or an unpaired segment never splits.
+        self.assert_name('微型或小型 Tiny or Small','微型或小型','Tiny or Small','bilingual_suffix')
+        self.assert_name('AHA成员 Member of AHA','AHA成员','Member of AHA','bilingual_suffix')
+        self.assert_name('附录A：设定汇编 Lore Glossary','附录A：设定汇编','Lore Glossary','bilingual_suffix')
+        self.assertEqual(parse_name('壶 Jug 或罐')['rule'],'mixed_name_unresolved')
+
     def test_editorial_annotations_have_original_offsets(self):
         raw='  示例（旧版） (  Example\n Name  ) Legacy '
         result=self.assert_name(raw,'示例','Example Name','wrapped_translation')

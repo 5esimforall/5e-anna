@@ -101,7 +101,7 @@ class SourceRegistry:
                 sid='src_'+digest('catalog',row['id'])
                 self.sources[sid]={'id':sid,'name':row['name_zh'] if row['name_zh']!='——' else row['name_en'],'toc_node':'','group':row['section'],'source_type':self._type(row['section']),
                     'origin':'合作' if '合作' in row['section'] else '待核','release_status':'待核','ruleset_hint':row['ruleset_hint'],
-                    'archived':row['section']=='旧版资源','catalog_ids':[row['id']],'aliases':self._aliases([row]),'parent_name':'','setting':[],
+                    'archived':row['section']=='旧版资源','catalog_ids':[row['id']],'aliases':self._aliases([row]),**self._abbreviations([row]),'parent_name':'','setting':[],
                     'coverage':'catalog_only','paths':[], 'namespace_hint':'','evidence':[row['evidence']],'metadata_status':'上下文推得'}
         for sid,source in self.sources.items():
             source['paths']=sorted(path for path,ids in self.page_sources.items() if sid in ids)
@@ -142,6 +142,15 @@ class SourceRegistry:
             vals.extend([row['name_zh'],row['name_en']])
             vals+=re.split(r'[、；;]',row['abbreviations']+'、'+row['aliases'])
         return sorted({compact(v) for v in vals if v.strip() not in {'','——','—'}})
+
+    @staticmethod
+    def _abbreviations(rows):
+        """Catalog abbreviations by what they name: a publication's own code identifies it; a
+        collection's code (UA, Drops) is shared by every publication in that collection."""
+        def codes(level):
+            found=[compact(a) for r in rows if r['level']==level for a in re.split(r'[、,，;；]',r['abbreviations'])]
+            return list(dict.fromkeys(a for a in found if a and a.strip('—－-')))
+        return {'abbreviations':codes('publication'),'collection_abbreviations':codes('collection')}
 
     def _match_catalog(self,name,parent,english_names=()):
         nk=namekey(name);full=namekey(''.join(parent)+name)
@@ -203,7 +212,7 @@ class SourceRegistry:
         if stype=='待核' and len(types)==1:stype=next(iter(types))
         evidence=[{'path':'webhelpcontents.htm','node_id':node_id,'label':n['label'],'group':group}]+[r['evidence'] for r in matches]
         self.sources[sid]={'id':sid,'name':display,'toc_node':node_id,'group':group,'source_type':stype,'origin':origin,'release_status':release,'ruleset_hint':rule,
-            'archived':archived,'catalog_ids':[r['id'] for r in matches],'aliases':self._aliases(matches), 'parent_name':' / '.join(parents),
+            'archived':archived,'catalog_ids':[r['id'] for r in matches],'aliases':self._aliases(matches),**self._abbreviations(matches), 'parent_name':' / '.join(parents),
             'setting':[w for w in WORLD_WORDS if w in display], 'coverage':'toc_only','paths':[], 'evidence':evidence,'metadata_status':'上下文推得'}
         for r in matches:self.catalog_matches[r['id']].append(sid)
         def assign(node):
@@ -238,7 +247,7 @@ class SourceRegistry:
             else:
                 sid='src_'+digest('filesystem',b)
                 s={'id':sid,'name':b,'toc_node':'','group':'未编入目录','source_type':'待核','origin':'合作' if b.startswith('第三方/') else '待核',
-                    'release_status':'待核','ruleset_hint':'待核','archived':False,'catalog_ids':[],'aliases':[], 'parent_name':'', 'setting':[],
+                    'release_status':'待核','ruleset_hint':'待核','archived':False,'catalog_ids':[],'aliases':[],**self._abbreviations([]), 'parent_name':'', 'setting':[],
                     'coverage':'filesystem_only','paths':[],'namespace_hint':'topics/'+b,'evidence':[{'path':'topics/'+b,'rule':'orphan_path_group'}],'metadata_status':'待核'}
                 self.sources[sid]=s
             s['coverage']='filesystem_only';s['paths']=sorted(files);s['namespace_hint']='topics/'+b

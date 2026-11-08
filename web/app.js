@@ -234,7 +234,7 @@ async function changeView(){
     const extraGroups=[...multi.slice(2),...groups.filter(g=>g.mode==='flag')];
     const extra=multi.slice(2).map(multiGroup).join('')+
       (schema.flags.length?`<div class="flag-grid">${groups.filter(g=>g.mode==='flag').map(flagGroup).join('')}</div>`:'')+
-      (schema.kind==='spell'?'<p class="material-note">特殊材料：注明价值或会消耗的材料；“是 / 否”均限含材料的法术。</p>':'');
+      (schema.flags.includes('special_material')?'<p class="material-note">特殊材料：注明价值或会消耗的材料；“是 / 否”均限含材料的法术。</p>':'');
     $('#domain-filters').innerHTML=(schema.range?rangeGroup():'')+multi.slice(0,2).map(multiGroup).join('')+
       (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key))?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
     $('#domain-extra')?.addEventListener('toggle',queueUiSave);

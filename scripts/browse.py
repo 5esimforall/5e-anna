@@ -58,21 +58,50 @@ SCHEMAS = {
 
 
 def configure(kind):
-    config = {'kind':kind, **SCHEMAS[kind]}
+    return finish({'kinds':[kind], **SCHEMAS[kind]})
+
+
+def finish(config):
     config.setdefault('export_columns', config['columns'])
     config['composites'] = {k:COMPOSITES[k] for k in config['columns'] if k in COMPOSITES}
     return config
 
 
-def schema(view):
-    kind = ('animal' if view=='动物购置' else 'spell' if view=='法术' else 'creature' if view in {'生物数据卡','NPC','伙伴','坐骑'}
-            else 'item' if view in {'魔法物品','魔法武器','装备'}
-            else 'feat' if view in {'专长','战斗风格','传奇恩惠'} else 'generic')
-    return configure(kind)
-
-
 # An entry's own type picks its quick-reference schema wherever it is read, whichever view opened it.
 TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal'}
+GENERIC = 'generic'
+
+
+def combine(kinds):
+    """A view mixing kinds reads as the generic table (name, type, then identity columns)
+    widened by each kind's own columns, facets and sorts, in the kinds' reading order."""
+    base,own = SCHEMAS[GENERIC],[SCHEMAS[k] for k in kinds]
+    merge = lambda key:list(dict.fromkeys(x for s in [base,*own] for x in s.get(key,[])))
+    lead = [c for c in base['columns'] if c not in IDENTITY_COLUMNS or c in {'name','type'}]
+    tail = [c for c in base['columns'] if c not in lead]
+    readings = lambda key:[c for s in own for c in s.get(key,s['columns']) if c not in IDENTITY_COLUMNS]
+    return finish({'kinds':[GENERIC,*kinds], 'facets':merge('facets'), 'flags':merge('flags'),
+                   'range':next((s['range'] for s in own if s.get('range')),None),
+                   'columns':list(dict.fromkeys(lead+readings('columns')+tail)),
+                   'export_columns':list(dict.fromkeys(lead+readings('export_columns')+tail)),
+                   'sorts':merge('sorts'), 'default_sort':base['default_sort']})
+
+
+def schema_for(types):
+    """The table a set of entry types reads as: one kind's own schema, or the generic table
+    widened by every kind present when types mix (装备 lists mundane gear beside magic items)."""
+    types = sorted(set(types),key=lambda t:TYPE_ORDER.index(t) if t in TYPE_ORDER else len(TYPE_ORDER))
+    kinds = list(dict.fromkeys(TYPE_KINDS.get(t,GENERIC) for t in types))
+    if len(kinds)<=1:return configure(kinds[0] if kinds else GENERIC)
+    return combine([k for k in kinds if k!=GENERIC])
+
+
+def schema(db, view):
+    """A view's schema follows the entry types it actually holds; all entries read as the generic table."""
+    if not view:return configure(GENERIC)
+    return schema_for(r[0] for r in db.execute('SELECT DISTINCT type FROM "'+view.replace('"','""')+'"'))
+
+
 # These fields name or locate a version (what it is, which book, which rules); they are not readings of its rules.
 METADATA_FIELDS = ('type','source_id','source_code','ruleset','legacy')
 DETAIL_SUFFIX = '_detail'
@@ -81,7 +110,7 @@ DETAIL_SUFFIX = '_detail'
 def field_order(entry):
     """Reader order: the type's quick-reference columns as the table shows them, the remaining rule
     fields as extracted with each X_detail right after X, then the version's metadata."""
-    fields=entry['fields'];config=configure(TYPE_KINDS.get(entry['type'],'generic'))
+    fields=entry['fields'];config=configure(TYPE_KINDS.get(entry['type'],GENERIC))
     lead=[f for column in config['columns'] for f in [column,*config['composites'].get(column,[])]]
     rules=[f for f in fields if f not in METADATA_FIELDS]
     ordered=[f for f in dict.fromkeys(lead) if f in rules]+[f for f in rules if f not in lead]
@@ -284,9 +313,9 @@ def option_order(field,value):
 
 
 def facets(db,view):
-    config=schema(view)
     allowed=[r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name!='entry_text'")]
     if view and view not in allowed:raise ValueError('未知分类视图')
+    config=schema(db,view)
     where='e.id IN (SELECT id FROM "'+view.replace('"','""')+'")' if view else "e.type!='section'"
     counts={f:Counter() for f in config['facets']+config['flags']}
     total=0
@@ -298,6 +327,8 @@ def facets(db,view):
     for field,c in counts.items():
         groups.append({'key':field,'label':LABELS[field],'mode':'flag' if field in config['flags'] else 'multi',
                        'options':[{'value':v,'label':option_label(field,v),'count':c[v]} for v in sorted(c,key=lambda v:option_order(field,v))]})
+    # A mixed view leads with the facets most of its entries can answer (rarity before weapon mastery).
+    if len(config['kinds'])>1:groups.sort(key=lambda g:-(total-counts[g['key']][UNKNOWN]))
     return {'schema':config,'groups':groups,'source_counts':source_counts,'total':total}
 
 

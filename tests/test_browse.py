@@ -54,7 +54,7 @@ class NormalizeTests(unittest.TestCase):
         from serve import TYPES
         # Every entry type has a place in the reading order, so a mixed view never falls back to code order.
         self.assertEqual(set(browse.TYPE_ORDER),set(TYPES))
-        self.assertEqual(browse.schema('')['default_sort'],'type')
+        self.assertEqual(browse.schema(None,'')['default_sort'],'type')
         db=sqlite3.connect(':memory:');browse.register(db)
         db.execute('create table entries(id,name,name_zh,name_en,type,page_path,start)')
         for i,(t,n) in enumerate([('rule','甲'),('spell','乙'),('class','丙'),('mystery','丁')]):db.execute('insert into entries values(?,?,?,?,?,?,?)',(str(i),n,n,'',t,'',0))
@@ -127,7 +127,7 @@ class BrowseCorpusTests(unittest.TestCase):
         p={'view':['魔法物品'],'f_rarity':['普通','珍稀'],'sort':['rarity'],'dir':['desc'],'limit':['50']}
         allrows=query(self.db,p,export=True)['rows'];first=query(self.db,p|{'versions':['each']})['rows']
         self.assertEqual([r['id'] for r in allrows[:50]],[r['id'] for r in first])
-        csv=csv_export(allrows,'魔法物品').decode('utf-8-sig')
+        csv=csv_export(allrows,browse.schema(self.db,'魔法物品')).decode('utf-8-sig')
         self.assertIn('稀有度',csv.splitlines()[0]);self.assertIn('同调条件',csv.splitlines()[0])
     def stacked_pages(self,params):
         rows=[]
@@ -191,20 +191,46 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertEqual([r['name_zh'] for r in rows],['延迟爆裂火球','火球术'])
     def test_export_ignores_stacking(self):
         p={'view':['法术'],'f_spell_level':['7']}
-        csv=csv_export(query(self.db,p,export=True)['rows'],'法术').decode('utf-8-sig').strip().splitlines()
+        csv=csv_export(query(self.db,p,export=True)['rows'],browse.schema(self.db,'法术')).decode('utf-8-sig').strip().splitlines()
         self.assertEqual(len(csv)-1,query(self.db,p|{'versions':['each']})['total'])
         self.assertGreater(len(csv)-1,query(self.db,p)['total'])
     def test_composite_spell_columns_keep_exported_parts(self):
-        config=browse.schema('法术')
+        config=browse.schema(self.db,'法术')
         self.assertEqual(config['composites'],{'components':['verbal','somatic','material'],'spell_markers':['ritual','concentration']})
         self.assertFalse({'verbal','somatic','material','ritual','concentration'}&set(config['columns']))
         rows=query(self.db,{'view':['法术'],'f_verbal':['false'],'limit':['50']})['rows']
         self.assertTrue(rows);self.assertTrue(all(r['quickref']['verbal']==['false'] for r in rows))
-        header=csv_export(rows,'法术').decode('utf-8-sig').splitlines()[0].split(',')
+        header=csv_export(rows,config).decode('utf-8-sig').splitlines()[0].split(',')
         for label in ['言语','姿势','材料','仪式','专注']:self.assertIn(label,header)
         self.assertNotIn('成分',header)
         # Views without composites keep identical table and export columns.
-        self.assertEqual(browse.schema('魔法物品')['composites'],{})
-        self.assertEqual(browse.schema('魔法物品')['export_columns'],browse.schema('魔法物品')['columns'])
+        items=browse.schema(self.db,'魔法物品')
+        self.assertEqual(items['composites'],{})
+        self.assertEqual(items['export_columns'],items['columns'])
+
+    def test_view_schema_follows_the_entry_types_it_holds(self):
+        # One kind keeps its own table; kinds that mix widen the generic table with each kind's readings.
+        self.assertEqual(browse.schema_for({'magic_item'})['columns'],browse.configure('item')['columns'])
+        self.assertEqual(browse.schema_for({'rule','condition'})['kinds'],['generic'])
+        self.assertEqual(browse.schema_for(set())['kinds'],['generic'])
+        mixed=browse.schema_for({'magic_item','equipment'})
+        self.assertEqual(mixed['kinds'],['generic','equipment','item'])
+        self.assertEqual(mixed['columns'][:2],['name','type'])
+        self.assertEqual(mixed['columns'][-4:],['sources','ruleset','classification_status','legacy'])
+        for column in ['price','weight','damage','mastery','rarity','item_type','attunement']:self.assertIn(column,mixed['columns'])
+        self.assertEqual(len(mixed['columns']),len(set(mixed['columns'])))
+        self.assertEqual(mixed['default_sort'],'type')
+        self.assertIn('rarity',mixed['sorts']);self.assertIn('mastery',mixed['sorts'])
+        self.assertEqual(browse.schema_for({'reward','feat'})['facets'],['feat_category'])
+        # The live 装备 view holds both kinds, so mundane gear shows its own price and weight.
+        self.assertEqual(browse.schema(self.db,'装备')['kinds'],['generic','equipment','item'])
+        rows=query(self.db,{'view':['装备'],'limit':['40']})['rows']
+        gear=[r for r in rows if r['type']=='equipment']
+        self.assertTrue(gear);self.assertTrue(all(r['fields'].get('price') for r in gear))
+        self.assertEqual(rows[0]['type'],'equipment')
+        # Its leading facets are the ones most of its entries can answer.
+        self.assertEqual([g['key'] for g in browse.facets(self.db,'装备')['groups']][:2],['rarity','item_type'])
+        header=csv_export(query(self.db,{'view':['装备']},export=True)['rows'],browse.schema(self.db,'装备')).decode('utf-8-sig').splitlines()[0].split(',')
+        for label in ['价格','重量','稀有度']:self.assertIn(label,header)
 
 if __name__=='__main__':unittest.main()

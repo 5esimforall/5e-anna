@@ -12,7 +12,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from build import Build,parse_one
 from html_extract import split_name
-from browse import schema
+from browse import schema_for
 from audit import audit
 from paths import WEB
 
@@ -136,8 +136,8 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(e['type'],'class_feature')
 
     def test_animal_browse_columns(self):
-        self.assertIn('carrying_capacity',schema('动物购置')['columns'])
-        self.assertNotIn('weight',schema('动物购置')['columns'])
+        self.assertIn('carrying_capacity',schema_for({'animal_offer'})['columns'])
+        self.assertNotIn('weight',schema_for({'animal_offer'})['columns'])
 
 class AnimalLinkTests(unittest.TestCase):
     @classmethod

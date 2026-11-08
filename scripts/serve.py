@@ -114,7 +114,8 @@ def query(db, params, export=False):
     where, values = filters(db,params)
     q = first(params,'q').strip()
     db.create_function('browse_query',0,lambda:q)
-    order = browse.order_sql(params,browse.schema(first(params,'view'))['default_sort'])
+    config = browse.schema(db,first(params,'view'))
+    order = browse.order_sql(params,config['default_sort'])
     offset, limit = result_window(params)
     versions = first(params,'versions','stacked')
     if versions not in {'stacked','each'}:raise ValueError('无效版本显示方式')
@@ -147,7 +148,6 @@ def query(db, params, export=False):
     for start in range(0,len(ids),400):
         batch = ids[start:start+400]
         data.update((r[0],browse.enrich(json.loads(r[1]))) for r in db.execute('SELECT id, data FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
-    config = browse.schema(first(params,'view'))
     rows = []
     for head in shown:
         row = data[head['id']]
@@ -240,9 +240,9 @@ def detail(db, eid):
     return e
 
 
-def csv_export(rows, view=''):
+def csv_export(rows, config=None):
     out=io.StringIO(newline=''); writer=csv.writer(out)
-    extras=[f for f in browse.schema(view)['export_columns'] if f not in {'name','type','sources','ruleset','classification_status','legacy'}]
+    extras=[f for f in (config or browse.configure(browse.GENERIC))['export_columns'] if f not in browse.IDENTITY_COLUMNS]
     writer.writerow(['版本ID','中文名','英文名','类型','版本','来源','分类依据','旧版标记','字段冲突','正文路径']+[browse.COLUMN_LABELS.get(f,f) for f in extras])
     for r in rows:
         cells=[r['id'],r['name_zh'],r['name_en'],TYPES.get(r['type'],r['type']),r['ruleset'],'；'.join(r['source_names']),r['classification_status'],r['legacy'],'；'.join(r['field_conflicts']),r['page_path']]
@@ -300,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
                 elif url.path=='/api/review-decisions': self.send(query_decisions(db,status=first(p,'status'),
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
-                elif url.path=='/api/export': self.send(csv_export(query(db,p,export=True)['rows'],first(p,'view')),'text/csv; charset=utf-8',download=True)
+                elif url.path=='/api/export': self.send(csv_export(query(db,p,export=True)['rows'],browse.schema(db,first(p,'view'))),'text/csv; charset=utf-8',download=True)
                 elif url.path=='/source':
                     row=db.execute('SELECT text FROM pages WHERE path=?',(first(p,'path'),)).fetchone()
                     if not row: raise LookupError('页面不存在')

@@ -258,7 +258,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .detail-tools button { min-width: 30px; }
 .icon-button { border-color: transparent; background: transparent; font-size: 21px; line-height: 1; padding: 4px 7px; }
 #detail-position { color: var(--anna-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
-#detail-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 23px 24px; scroll-padding: 12px; }
+#detail-content { container: reader / inline-size; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 23px 24px; scroll-padding: 12px; }
 #detail-content h2 { margin: 6px 0 0; font-family: var(--anna-serif); font-size: 27px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 #detail-content>.english { font-size: 13px; margin-top: 6px; }
 .eyebrow { font-size: 12px; color: var(--anna-secondary); }
@@ -282,6 +282,36 @@ tbody tr:last-child td { border-bottom: 0; }
 .detail-tabs button.active { color: var(--anna-brand); border-bottom-color: var(--anna-brand); font-weight: 600; }
 .body-text { margin: 18px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--anna-serif); font-size: 15px; line-height: 1.9; }
 pre.body-text { font-family: var(--anna-sans); font-size: 12px; line-height: 1.6; }
+/* Original layout: the book's structure in serif; anna's field readings as wine-red notes. */
+.layout-reading { display: grid; gap: 4px; margin-top: 16px; }
+.field-notes { order: 2; display: flex; flex-wrap: wrap; gap: 5px; margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid var(--anna-line); list-style: none; }
+.field-note { display: inline-flex; align-items: baseline; gap: 5px; min-height: 26px; padding: 2px 7px; border: 1px solid var(--anna-selected-line); border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-ink); font-size: 12px; text-align: left; white-space: normal; }
+.field-note .note-field { color: var(--anna-brand); }
+.field-note.inferred { border-style: dashed; }
+.field-note.unlocated { border-color: var(--anna-line); color: var(--anna-muted); }
+.field-note.unlocated .note-field { color: var(--anna-muted); }
+.field-note.lit, .field-note:hover { background: var(--anna-selected); }
+.layout-text { overflow-x: auto; font-family: var(--anna-serif); font-size: 15px; line-height: 1.9; overflow-wrap: anywhere; }
+.layout-text p, .layout-text div { margin: 0 0 .55em; }
+.layout-text :is(h3,h4,h5) { margin: 1em 0 .35em; font-size: 16px; font-weight: 600; line-height: 1.5; }
+.layout-text :is(ul,ol) { margin: 0 0 .6em; padding-left: 1.4em; }
+.layout-text table { width: auto; max-width: 100%; margin: .4em 0 .8em; border-collapse: collapse; font-size: 14px; line-height: 1.6; }
+.layout-text :is(th,td) { position: static; padding: 4px 8px; border: 1px solid var(--anna-line); background: transparent; color: var(--anna-ink); white-space: normal; vertical-align: top; font-size: 14px; }
+.layout-text th { font-weight: 600; }
+.layout-text :is(th,td):empty { padding: 0; border-color: transparent; }
+.layout-text :is(th,td).short { white-space: nowrap; overflow-wrap: normal; }
+.layout-text tbody tr:hover td { background: transparent; }
+mark.note { background: transparent; color: inherit; text-decoration: underline solid var(--anna-note-line); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
+mark.note.inferred { text-decoration-style: dashed; }
+mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--anna-brand); }
+.layout-text .ref { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--anna-brand); font: inherit; white-space: normal; text-decoration: underline dotted; text-underline-offset: 4px; }
+.layout-notice { margin: 16px 0 0; font-size: 12px; }
+@container reader (min-width: 600px) {
+  .layout-reading { grid-template-columns: minmax(0,1fr) 172px; gap: 22px; align-items: start; }
+  .field-notes { position: sticky; top: 0; flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; border-top: 0; }
+  .field-note { width: 100%; border-width: 0 0 0 2px; border-radius: 0; padding: 2px 0 2px 9px; flex-direction: column; gap: 0; }
+  .field-note.inferred { border-left-style: dashed; }
+}
 .detail-fields { display: grid; grid-template-columns: minmax(85px,1fr) 2fr; margin: 16px 0; font-size: 13px; }
 .detail-fields dt, .detail-fields dd { margin: 0; padding: 10px 7px; border-bottom: 1px solid var(--anna-line); overflow-wrap: anywhere; }
 .detail-fields dt { color: var(--anna-secondary); }

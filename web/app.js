@@ -17,6 +17,8 @@ const annaUiLabels = {
     stackVersions:'合并同名版本',preferRuleset:'优先显示',preferOptions:{'5r':'2024 规则（5r）','5e':'2014 规则（5e）'},
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
     stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
+    fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
+    layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse this page',closeDetail:'Close details',
@@ -32,6 +34,8 @@ const annaUiLabels = {
     stackVersions:'Stack same-name versions',preferRuleset:'Show first',preferOptions:{'5r':'2024 rules (5r)','5e':'2014 rules (5e)'},
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
     stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
+    fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
+    layoutUnavailable:{missing:'The source page is missing; showing extracted text.',stale:'The source changed since this database snapshot; showing extracted text.',empty:'The source layout is empty; showing extracted text.',error:'Unable to load the source layout; showing extracted text.'},
     versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current'}
 };
 const ui = annaUiLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
@@ -344,8 +348,13 @@ $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
   const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);$('#tab-'+t.dataset.tab).focus();saveUiState();}
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
+  const note=e.target.closest('.field-note[data-note]');
+  if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   if(e.target.closest('[data-audit-summary]')){setAuditMode(true);renderDetail('facts');$('#tab-facts').focus();saveUiState();}
 });
+for(const [type,on] of [['mouseover',true],['focusin',true],['mouseout',false],['focusout',false]])
+  $('#detail-content').addEventListener(type,e=>{const el=e.target.closest('.field-note[data-note],mark.note');if(!el)return;
+    lightNotes(el.dataset.note?[el.dataset.note]:el.dataset.notes.split(' '),on);});
 $('#detail-content').addEventListener('keydown',e=>{
   const t=e.target.closest('[data-tab]');if(!t||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
   e.preventDefault();const tabs=[...$('#detail-content').querySelectorAll('[data-tab]')],index=tabs.indexOf(t);

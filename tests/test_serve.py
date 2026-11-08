@@ -154,6 +154,16 @@ class WebTests(unittest.TestCase):
         self.assertEqual(data[0],200)
         self.assertEqual(json.loads(data[2])['versions_total'],19)
 
+    def test_entry_layout_endpoint(self):
+        eid=self.db.execute("SELECT id FROM entries WHERE type='spell' AND name_en='Etherealness' AND ruleset='5r'").fetchone()[0]
+        status,kind,body=self.request('/api/entry-layout?'+urlencode({'id':eid}))
+        self.assertEqual(status,200);self.assertIn('application/json',kind)
+        self.assertIn(json.loads(body)['status'],{'ok','missing','stale'})
+        self.assertEqual(self.request('/api/entry-layout?id=ver_missing')[0],404)
+        self.assertEqual(self.request('/api/entry-layout?id='+eid,{'Host':'attacker.example'})[0],403)
+        # Reader notes read normalized values from the entry itself.
+        self.assertEqual(detail(self.db,eid)['quickref']['spell_level'],['7'])
+
     def test_metadata(self):
         m=meta(self.db);self.assertEqual(len(m['views']),24);self.assertIn('动物购置',{v['name'] for v in m['views']})
         self.assertEqual(len(m['sources']),155)

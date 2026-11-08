@@ -328,6 +328,42 @@ test('stacking never merges class features from different classes',async({page})
   expect(data.total).toBe(data.versions_total);await expect(page.locator('#results .version-pill')).toHaveCount(0);
 });
 
+test('reader shows the original layout with field notes tied to their words and falls back to extracted text',async({page},testInfo)=>{
+  await page.setViewportSize({width:1100,height:820});await visit(page,spells+'&q='+encodeURIComponent('以太化'));
+  const data=await queryMatchesAPI(page),[shown,other]=data.rows[0].versions;
+  await page.locator('#results .entry-name').first().click();await read(page,shown.id);
+  const layout=page.locator('#detail-panel .layout-text');await expect(layout).toBeVisible();
+  const mark=layout.locator('mark.note[data-notes~="school"]').first();await expect(mark).toHaveText('七环 咒法');
+  const note=page.locator('.field-note[data-note="school"]');
+  await expect(note).toContainText('学派');await expect(note).toContainText('咒法');
+  // A wide reader sets the notes in the margin beside the text.
+  const n=await note.boundingBox(),box=await layout.boundingBox();expect(n.x).toBeGreaterThanOrEqual(box.x+box.width);
+  await note.hover();await expect(mark).toHaveClass(/lit/);
+  await page.mouse.move(0,0);await expect(mark).not.toHaveClass(/lit/);
+  await note.focus();await expect(mark).toHaveClass(/lit/);
+  await expect(page.locator('.field-note.unlocated').first()).toBeVisible();
+  await shot(page,testInfo,'layout-reader-notes.png');
+  // An unavailable or changed source never yields a partial layout; extracted text stands in with the reason.
+  await page.route('**/api/entry-layout?*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'stale',path:'x'})}));
+  await page.locator('.reader-versions').getByRole('button',{name:/PHB 5e/}).click();await read(page,other.id);
+  await expect(page.locator('#detail-panel .layout-notice')).toContainText('原文已更新');
+  await expect(page.locator('#detail-panel .body-text')).toContainText('以太');
+  await expect(page.locator('#detail-panel .layout-text')).toHaveCount(0);
+});
+
+test('stat blocks keep their tables in the reader without widening the page',async({page})=>{
+  for(const [width,height] of [[1440,900],[390,844]]){
+    await page.setViewportSize({width,height});
+    await visit(page,'/?view='+encodeURIComponent('生物数据卡')+'&q='+encodeURIComponent('成年红龙'));
+    await page.locator('#results .entry-name').first().click();
+    const tables=page.locator('#detail-panel .layout-text table');await expect(tables.first()).toBeVisible();
+    expect(await tables.count()).toBeGreaterThanOrEqual(2);
+    await expect(page.locator('#detail-panel .layout-text td.short').first()).toHaveCSS('white-space','nowrap');
+    expect(await page.locator('#detail-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
+    await page.locator('#close-detail').click();
+  }
+});
+
 test('detail failure is recoverable, missing IDs are explained, late responses cannot replace newer entries',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
   const first=await entry(page),second=await entry(page,1);let fail=true;

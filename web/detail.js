@@ -52,7 +52,7 @@ function renderDetail(tab='body') {
     .filter(([id])=>auditMode||!AUDIT_TABS.has(id));
   const auditSummary=auditMode?'':`<button type="button" class="audit-summary" data-audit-summary title="${esc(ui.auditSummaryHint)}">${esc(ui.auditSummary)}：${Object.entries(counts).map(([k,n])=>`${esc(auditNames[k])} ${n}`).join(' · ')}</button>`;
   let content='';
-  if(tab==='body') content=`<div class="body-text">${esc(e.body)}</div>`;
+  if(tab==='body'){content=renderBody(e);loadLayout(e);}
   if(tab==='fields') content=`<dl class="detail-fields">${Object.entries(e.fields).map(([k,v])=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(displayValue(k,v))}${e.field_conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
   if(tab==='facts') content=e.facts.map(f=>`<article class="fact"><div class="fact-head"><strong>${esc(fieldNames[f.field]||f.field)}</strong>${badge(f.status,f.status==='原文明示'?'green':'amber')}</div><div class="fact-value">${esc(displayValue(f.field,f.value))}</div><small>规则：${esc(f.rule)} · 作用域：${esc(f.scope)}</small>${f.excerpt?`<blockquote>${esc(f.excerpt)}</blockquote>`:''}${f.evidence.path?`<a href="${esc(sourceURL(f.evidence.path,...(f.evidence.span||[0,0])))}" target="_blank" rel="noopener">${esc(f.evidence.path)} ↗</a>`:`<details><summary class="muted">定位依据</summary><pre class="body-text">${esc(JSON.stringify(f.evidence,null,2))}</pre></details>`}</article>`).join('');
   if(tab==='facts'&&!content)content=`<p class="muted">${esc(ui.noEvidence)}</p>`;
@@ -84,6 +84,38 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   } finally {
     if(gen===detailGeneration){$('#detail-content').setAttribute('aria-busy','false');saveUiState();}
   }
+}
+// The body shows the book's own layout; anna's readings of it sit beside the text as notes.
+// Until the layout arrives, or when the source page is unavailable, the extracted text stands in.
+function noteValue(e,field){
+  const values=e.quickref?.[field];
+  if(values&&!values[0].startsWith('__'))return values.map(v=>field==='spell_level'&&/^\d$/.test(v)?LEVELS[Number(v)]:BOOL_FIELDS.has(field)?(v==='true'?'是':v==='false'?'否':v):v).join('、');
+  const raw=e.fields[field];return raw===undefined||raw===null||raw===''?'—':Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
+}
+function renderBody(e){
+  const l=e.layout;
+  if(!l||l.status!=='ok'){
+    const notice=l?`<p class="layout-notice muted">${esc(ui.layoutUnavailable[l.status]||ui.layoutUnavailable.error)}</p>`:'';
+    return `${notice}<div class="body-text" ${l?'':'aria-busy="true"'}>${esc(e.body)}</div>`;
+  }
+  const notes=l.notes.map(n=>{
+    const label=`${fieldNames[n.field]||n.field}：${noteValue(e,n.field)} · ${n.status}${n.located?'':' · '+ui.noteElsewhere}`;
+    const inner=`<span class="note-field">${esc(fieldNames[n.field]||n.field)}</span><span class="note-value">${esc(noteValue(e,n.field))}</span>`;
+    return `<li>${n.located?`<button type="button" class="field-note ${n.status==='原文明示'?'':'inferred'}" data-note="${esc(n.field)}" title="${esc(label)}">${inner}</button>`:`<span class="field-note unlocated" title="${esc(label)}">${inner}</span>`}</li>`;
+  }).join('');
+  return `<div class="layout-reading">${notes?`<ul class="field-notes" aria-label="${esc(ui.fieldNotes)}">${notes}</ul>`:''}<div class="layout-text">${l.html}</div></div>`;
+}
+function loadLayout(e){
+  if(e.layout||e.layoutRequest)return;
+  e.layoutRequest=api('/api/entry-layout?id='+encodeURIComponent(e.id)).catch(()=>({status:'error'})).then(layout=>{
+    e.layout=layout;
+    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;}
+  });
+}
+// A note and the words it was read from light up together; activating a note brings its words into view.
+function lightNotes(fields,on){
+  for(const el of $('#detail-content').querySelectorAll('mark.note'))el.classList.toggle('lit',on&&el.dataset.notes.split(' ').some(f=>fields.includes(f)));
+  for(const el of $('#detail-content').querySelectorAll('.field-note[data-note]'))el.classList.toggle('lit',on&&fields.includes(el.dataset.note));
 }
 // Versions are compared field by field; differing fields lead, equal or unextracted ones fold away.
 function renderVersions(e){

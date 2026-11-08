@@ -13,6 +13,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 import browse
+import paths
+from entry_layout import entry_layout
 from references import query_references, query_decisions, query_missing_definitions
 from review_store import load_events
 from review_search import search_candidates
@@ -185,7 +187,7 @@ def version_compare(db, entry):
 def detail(db, eid):
     row=db.execute('SELECT data FROM entries WHERE id=?',(eid,)).fetchone()
     if not row: raise LookupError('条目不存在')
-    e=json.loads(row[0])
+    e=browse.enrich(json.loads(row[0]))
     e['body']=db.execute('SELECT body FROM entry_text WHERE id=?',(eid,)).fetchone()[0]
     e['facts']=[]
     for r in db.execute('SELECT field,value,evidence,rule,scope,status FROM facts WHERE entry_id=? ORDER BY field,id',(eid,)):
@@ -239,6 +241,7 @@ class Handler(BaseHTTPRequestHandler):
     db_path=DB
     book_url=None
     db_signature=None
+    source_root=paths.WEB
     def log_message(self,*args): pass
     def send(self,body,kind='application/json; charset=utf-8',status=200,download=False):
         if not isinstance(body,bytes): body=json.dumps(body,ensure_ascii=False).encode()
@@ -272,6 +275,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif url.path=='/api/facets': self.send(browse.facets(db,first(p,'view')))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))
+                elif url.path=='/api/entry-layout': self.send(entry_layout(db,first(p,'id'),Path(self.source_root)))
                 elif url.path=='/api/references': self.send(query_references(db,path=first(p,'path'),reference_id=first(p,'id'),
                     status=first(p,'status'),signal=first(p,'signal'),review_status=first(p,'review_status'),
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))

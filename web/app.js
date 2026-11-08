@@ -15,7 +15,7 @@ const annaUiLabels = {
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
-    stackVersions:'合并同名版本',compactRows:'紧凑行',preferRuleset:'优先显示',
+    stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
     stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
@@ -35,7 +35,7 @@ const annaUiLabels = {
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
-    stackVersions:'Stack same-name versions',compactRows:'Compact rows',preferRuleset:'Show first',
+    stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
     stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
@@ -138,6 +138,17 @@ for(const el of [window,$('.table-wrap'),$('#query-main'),$('#filter-panel'),$('
 for(const el of [$('#source-details'),$('#audit-details')])el.addEventListener('toggle',queueUiSave);
 window.addEventListener('pagehide',saveUiState);
 function setParam(key,value){value!==''&&value!==null?params.set(key,value):params.delete(key);}
+// The URL records only a sort the reader chose. Without one, a search ranks by match quality and an
+// empty search uses the view's default; the server applies the same rule (browse.sort_key).
+function effectiveSort(){
+  const searching=!!params.get('q'),sort=params.get('sort')||(searching?'match':schema.default_sort);
+  return sort==='match'&&!searching?schema.default_sort:sort;
+}
+function renderSortOptions(){
+  const sorts=[...(params.get('q')?['match']:[]),...schema.sorts];
+  $('#sort').innerHTML=sorts.map(k=>`<option value="${esc(k)}">${esc(k==='match'?ui.sortMatch:fieldNames[k]||k)}</option>`).join('');
+  $('#sort').value=effectiveSort();
+}
 function selected(g){return new Set(params.has(g.key)?params.getAll(g.key):g.options.map(o=>o.value));}
 function setSelection(g,values){
   params.delete(g.key);
@@ -166,7 +177,7 @@ function sync(){
   if(!schema)return;
   $('#q').value=params.get('q')||'';
   $('#conflict').checked=params.get('conflict')==='1';$('#sections').checked=params.get('sections')==='1';
-  $('#sort').value=params.get('sort')||schema.default_sort;
+  renderSortOptions();
   const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
   $('#prefer').value=params.get('prefer')||'5r';$('#prefer').disabled=!stacked;$('.prefer-control').classList.toggle('inactive',!stacked);
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
@@ -231,8 +242,7 @@ async function changeView(){
     $('#audit-filters').innerHTML=groups.filter(g=>['legacy','status'].includes(g.key)).map(multiGroup).join('');
     $('#source-search').value='';
     $('#title').textContent=view||'全部条目';$('#view-total').textContent=`${fmt(data.total)} 个版本候选`;
-    $('#sort').innerHTML=schema.sorts.map(k=>`<option value="${esc(k)}">${esc(fieldNames[k]||k)}</option>`).join('');
-    if(!schema.sorts.includes(params.get('sort')))params.set('sort',schema.default_sort);
+    if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
     $('#audit-details').open=AUDIT_PARAMS.some(k=>params.has(k));
     historyUpdate(true);sync();ready=true;await load();
@@ -240,7 +250,7 @@ async function changeView(){
 }
 function renderColumns(){
   $('#columns').innerHTML='<tr>'+visibleColumns().map(k=>{
-    const sortable=schema.sorts.includes(k),active=(params.get('sort')||schema.default_sort)===k;
+    const sortable=schema.sorts.includes(k),active=effectiveSort()===k;
     const order=params.get('dir')==='desc'?'descending':'ascending';
     return `<th scope="col" ${active?`aria-sort="${order}"`:''}>${sortable?`<button data-sort="${esc(k)}" aria-label="按${esc(fieldNames[k]||k)}排序">${esc(fieldNames[k]||k)} <span>${active?(order==='descending'?'↓':'↑'):'↕'}</span></button>`:esc(fieldNames[k]||k)}</th>`;
   }).join('')+'</tr>';
@@ -362,7 +372,7 @@ async function load(){
 function presented(){clearTimeout(timer);historyUpdate();sync();$('.table-wrap').scrollTop=0;load();}
 $('#stack-versions').onchange=()=>{setParam('versions',$('#stack-versions').checked?'':'each');presented();};
 $('#prefer').onchange=()=>{setParam('prefer',$('#prefer').value==='5r'?'':$('#prefer').value);presented();};
-function sortBy(key){if(params.get('sort')===key)setParam('dir',params.get('dir')==='desc'?'asc':'desc');else{params.set('sort',key);params.delete('dir');}changed();}
+function sortBy(key){if(effectiveSort()===key)setParam('dir',params.get('dir')==='desc'?'asc':'desc');else{params.set('sort',key);params.delete('dir');}changed();}
 $('#filter-panel').addEventListener('change',e=>{
   const el=e.target;
   if(el.type==='checkbox'&&el.closest('[data-group]')){

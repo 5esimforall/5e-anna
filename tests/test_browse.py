@@ -61,6 +61,17 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual([r[0] for r in db.execute('select type from entries e order by '+browse.order_sql({'sort':['type']}))],['class','spell','rule','mystery'])
         db.close()
 
+    def test_search_ranks_exact_then_prefix_then_contained_names(self):
+        self.assertEqual(browse.match_rank('火球术','Fireball','','fireball'),0)
+        self.assertEqual(browse.match_rank('火球术','Fireball','','火球'),1)
+        self.assertEqual(browse.match_rank('延迟爆裂火球','Delayed Blast Fireball','','火球'),2)
+        self.assertEqual(browse.match_rank('','','Ｆｉｒｅ Ｂｏｌｔ','fire bolt'),0)
+        # The sort follows an explicit choice; otherwise match quality while searching, else the view default.
+        self.assertEqual(browse.sort_key({'q':['火球']},'spell_level'),'match')
+        self.assertEqual(browse.sort_key({'q':['火球'],'sort':['name']},'spell_level'),'name')
+        self.assertEqual(browse.sort_key({'sort':['match']},'spell_level'),'spell_level')
+        self.assertEqual(browse.sort_key({'q':['  ']},'cr'),'cr')
+
     def test_reader_field_order_follows_the_type_then_metadata(self):
         entry={'type':'spell','fields':{'type':'spell','range':'60尺','source_id':'s','casting_time_detail':'1 动作','ruleset':'5r',
                'components':'V','spell_classes':'法','school':'死灵','casting_time':'动作','material':'×','spell_level':'戏法','zeta':'x'}}
@@ -170,6 +181,14 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertNotEqual(detail(self.db,row['id'])['body'],detail(self.db,other['id'])['body'])
         single=query(self.db,{'view':['法术'],'q':['不动物件']})['rows'][0]
         self.assertEqual(len(single['versions']),1);self.assertIsNone(single['stack']);self.assertIsNone(detail(self.db,single['id'])['versions'])
+    def test_search_order_puts_closer_names_first_in_stacked_and_flat_results(self):
+        for versions in ('stacked','each'):
+            rows=query(self.db,{'q':['火球'],'versions':[versions]})['rows']
+            names=[r['name_zh'] for r in rows]
+            self.assertEqual(names[0],'火球术');self.assertLess(names.index('火球魔杖'),names.index('延迟爆裂火球'))
+        # An explicit sort still wins over match quality.
+        rows=query(self.db,{'view':['法术'],'q':['火球'],'sort':['spell_level'],'dir':['desc']})['rows']
+        self.assertEqual([r['name_zh'] for r in rows],['延迟爆裂火球','火球术'])
     def test_export_ignores_stacking(self):
         p={'view':['法术'],'f_spell_level':['7']}
         csv=csv_export(query(self.db,p,export=True)['rows'],'法术').decode('utf-8-sig').strip().splitlines()

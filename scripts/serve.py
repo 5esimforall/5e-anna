@@ -112,7 +112,9 @@ def result_window(params):
 
 def query(db, params, export=False):
     where, values = filters(db,params)
-    order = browse.order_sql(params)
+    q = first(params,'q').strip()
+    db.create_function('browse_query',0,lambda:q)
+    order = browse.order_sql(params,browse.schema(first(params,'view'))['default_sort'])
     offset, limit = result_window(params)
     versions = first(params,'versions','stacked')
     if versions not in {'stacked','each'}:raise ValueError('无效版本显示方式')

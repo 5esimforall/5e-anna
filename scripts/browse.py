@@ -168,6 +168,8 @@ def register(db):
     db.create_function('browse_values',2,field_values,deterministic=True)
     db.create_function('browse_rank',2,sort_value,deterministic=True)
     db.create_function('browse_name',1,name_key,deterministic=True)
+    db.create_function('browse_match',4,match_rank,deterministic=True)
+    db.create_function('browse_query',0,lambda:'')
 
 
 def add_filters(params,clauses,values):
@@ -189,12 +191,37 @@ def add_filters(params,clauses,values):
         clauses.append("browse_rank(e.fields,'cr')"+('>=?' if name=='cr_min' else '<=?'));values.append(value)
 
 
-def order_sql(params):
-    sort=params.get('sort',['name'])[0]
+MATCH = 'match'
+
+
+def match_rank(zh, en, name, query):
+    """How well a name matches the search: 0 an exact name, 1 a name starting with it, 2 one containing it.
+    Chinese and English names are compared separately, so 火球 is a prefix of 火球术 Fireball."""
+    words=lambda text:unicodedata.normalize('NFKC',text or '').casefold().strip()
+    q=words(query);names=[words(n) for n in (zh,en) if n] or [words(name)]
+    if not q:return 2
+    return 0 if q in names else 1 if any(n.startswith(q) for n in names) else 2
+
+
+def sort_key(params, default):
+    """The sort in effect: an explicit choice, else match quality while searching, else the view's default."""
+    searching=bool(params.get('q',[''])[0].strip())
+    sort=params.get('sort',[MATCH if searching else default])[0]
+    return default if sort==MATCH and not searching else sort
+
+
+def order_sql(params, default='name'):
+    """ORDER BY for the effective sort. Match ranking reads the search through browse_query(),
+    which the caller registers on its connection (one connection per request)."""
+    sort=sort_key(params,default)
     direction=params.get('dir',['asc'])[0]
     if direction not in {'asc','desc'}:raise ValueError('无效排序方向')
     direct={'name':"browse_name(COALESCE(NULLIF(e.name_zh,''),e.name))",'name_en':"browse_name(NULLIF(e.name_en,''))",
             'type':TYPE_RANK,'ruleset':'e.ruleset','source':'e.page_path'}
+    if sort==MATCH:
+        # Within one match class, shorter names are closer matches; then the view's usual order.
+        rank="browse_match(e.name_zh,e.name_en,e.name,browse_query())"
+        return f"{rank} {direction.upper()},length(COALESCE(NULLIF(e.name_zh,''),e.name)),"+order_sql({'sort':[default]},default)
     sortable={x for s in SCHEMAS.values() for x in s['sorts']}
     if sort not in sortable:raise ValueError('无效排序')
     expr=direct.get(sort) or "browse_rank(e.fields,'"+sort+"')"

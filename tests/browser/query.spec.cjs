@@ -66,7 +66,8 @@ test('filters start collapsed while active conditions stay visible and results k
   await page.locator('#toggle-filters').click();
   await expect(page.locator('#filter-panel')).toBeVisible();await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','true');
   await page.reload();await ready(page);await expect(page.locator('#filter-panel')).toBeVisible();
-  await visit(page);await expect(page.locator('#filter-panel')).toBeHidden();
+  // A new visit (a fresh tab, not a same-URL navigation that browsers treat as a reload) starts collapsed.
+  const fresh=await page.context().newPage();await visit(fresh);await expect(fresh.locator('#filter-panel')).toBeHidden();
 });
 
 test('switching categories keeps dimmed results and counts consistent until the new view renders',async({page})=>{
@@ -370,6 +371,20 @@ test('compact rows join names and versions on one line, as a per-browser prefere
   await expect(page.locator('#compact-rows')).toBeChecked();await expect(page.locator('html')).toHaveAttribute('data-density','compact');
   await page.locator('#compact-rows').uncheck();await expect(page.locator('html')).toHaveAttribute('data-density','comfortable');
   expect(await page.evaluate(()=>localStorage.getItem('anna.density'))).toBeNull();
+});
+
+test('a search ranks closer names first until the reader picks a sort',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells);
+  await page.locator('#q').fill('火球');await expect(page).toHaveURL(/q=/);await ready(page);
+  await queryMatchesAPI(page);
+  await expect(page.locator('#results .entry-name')).toHaveText(['火球术','延迟爆裂火球']);
+  await expect(page.locator('#sort')).toHaveValue('match');await expect(page.locator('#sort option').first()).toHaveText('匹配度');
+  expect(new URL(page.url()).searchParams.has('sort')).toBeFalsy();
+  // A chosen sort is recorded and kept while searching; clearing the search drops the match option.
+  await page.locator('#sort').selectOption('name');await ready(page);
+  expect(new URL(page.url()).searchParams.get('sort')).toBe('name');await queryMatchesAPI(page);
+  await page.getByRole('button',{name:/^移除 搜索/}).click();await ready(page);
+  await expect(page.locator('#sort option[value="match"]')).toHaveCount(0);await expect(page.locator('#sort')).toHaveValue('name');
 });
 
 test('stacking never merges class features from different classes',async({page})=>{

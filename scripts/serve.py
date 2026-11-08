@@ -98,11 +98,22 @@ def stack_members(alias='m'):
             f"json_each(g.data,'$.entry_ids') j WHERE g.type IN ({kinds}))")
 
 
+# Results load in batches as the list scrolls; one request may restore up to RESTORE_LIMIT rows at once.
+BATCH, RESTORE_LIMIT = 150, 1500
+
+
+def result_window(params):
+    try:offset,limit = int(first(params,'offset','0')),int(first(params,'limit',str(BATCH)))
+    except ValueError:raise ValueError('offset 与 limit 必须是整数') from None
+    if offset<0:raise ValueError('offset 不能为负数')
+    if not 1<=limit<=RESTORE_LIMIT:raise ValueError(f'每次读取 1 至 {RESTORE_LIMIT} 行')
+    return offset,limit
+
+
 def query(db, params, export=False):
     where, values = filters(db,params)
     order = browse.order_sql(params)
-    size = int(first(params,'size','150'))
-    if size not in {40,50,150,300}:raise ValueError('每页仅支持 40、50、150、300 条')
+    offset, limit = result_window(params)
     versions = first(params,'versions','stacked')
     if versions not in {'stacked','each'}:raise ValueError('无效版本显示方式')
     prefer = first(params,'prefer','5r')
@@ -110,13 +121,10 @@ def query(db, params, export=False):
     # Export always lists every matching version as its own row.
     if export or versions=='each':
         total = db.execute('SELECT count(*) FROM entries e'+where,values).fetchone()[0]
-        page = max(1,int(first(params,'page','1')))
-        pages = max(1,(total+size-1)//size)
-        page = min(page,pages)
         sql = 'SELECT e.data FROM entries e'+where+' ORDER BY '+order
-        if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[size,(page-1)*size]
+        if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[limit,offset]
         rows = [browse.enrich(json.loads(r[0])) for r in db.execute(sql,values)]
-        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'page':page,'pages':pages,'page_size':size,'rows':rows}
+        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows}
     # Stacking happens inside the matched set: filters decide which versions exist, then each
     # candidate group shows its preferred-ruleset version at that version's sorted position.
     first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
@@ -127,10 +135,7 @@ def query(db, params, export=False):
         [first_choice,second_choice]+values).fetchall()
     heads = sorted((r for r in matched if r['rank']==1), key=lambda r:r['pos'])
     total = len(heads)
-    page = max(1,int(first(params,'page','1')))
-    pages = max(1,(total+size-1)//size)
-    page = min(page,pages)
-    shown = heads[(page-1)*size:page*size]
+    shown = heads[offset:offset+limit]
     stacks = {r['stack']:r for r in shown}
     members = {}
     for r in sorted((r for r in matched if r['stack'] in stacks), key=lambda r:(r['stack'],r['rank'])):
@@ -149,8 +154,7 @@ def query(db, params, export=False):
         row['stack'] = {'id':head['stack'],'status':head['status']} if head['status'] else None
         row['version_diffs'] = browse.version_diffs(config,row,stacked[1:])
         rows.append(row)
-    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,
-            'page':page,'pages':pages,'page_size':size,'rows':rows}
+    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows}
 
 
 def meta(db):

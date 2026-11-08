@@ -35,9 +35,11 @@ class WebTests(unittest.TestCase):
         # Rows stack same-name versions; every non-section version is still counted.
         self.assertEqual(r['versions_total'],self.db.execute("SELECT count(*) FROM entries WHERE type!='section'").fetchone()[0])
         self.assertLess(r['total'],r['versions_total'])
-        a={e['id'] for e in r['rows']};b={e['id'] for e in query(self.db,{'page':['2']})['rows']}
-        self.assertEqual(len(a),150);self.assertFalse(a&b)
-        self.assertEqual(query(self.db,{'page':['999999999']})['page'],r['pages'])
+        a={e['id'] for e in r['rows']};b={e['id'] for e in query(self.db,{'offset':['150']})['rows']}
+        self.assertEqual(len(a),150);self.assertEqual(len(b),150);self.assertFalse(a&b)
+        # A restore may fetch several batches at once; past the end there are simply no rows.
+        restored=query(self.db,{'limit':['300']})['rows'];self.assertEqual({e['id'] for e in restored},a|b)
+        self.assertEqual(query(self.db,{'offset':['999999999']})['rows'],[])
     def test_phb_feats_and_intersection(self):
         sid=self.db.execute("select id from sources where name='玩家手册2024'").fetchone()[0]
         p={'view':['专长'],'source':[sid],'ruleset':['5r']}
@@ -70,7 +72,7 @@ class WebTests(unittest.TestCase):
                 self.assertEqual([c['id'] for c in m['candidate_entries']],m['candidates'])
                 self.assertTrue(all(c['name'] for c in m['candidate_entries']))
     def test_invalid_query(self):
-        for p in [{'view':['entries; DROP TABLE entries']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'page':['nan']}]:
+        for p in [{'view':['entries; DROP TABLE entries']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)
         with self.assertRaises(LookupError):detail(self.db,'absent')
     def test_export_all_not_one_page(self):

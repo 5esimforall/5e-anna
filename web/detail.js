@@ -18,8 +18,9 @@ const rowHas=(row,id)=>row.id===id||!!row.versions?.some(v=>v.id===id);
 function updateReaderNavigation(){
   const rows=currentData?.rows||[],index=rows.findIndex(r=>rowHas(r,currentReaderId));
   const busy=$('#results').getAttribute('aria-busy')==='true';
-  $('#entry-prev').disabled=busy||index<=0;$('#entry-next').disabled=busy||index<0||index>=rows.length-1;
-  $('#detail-position').textContent=currentReaderId?(index<0?ui.outsideResults:ui.pagePosition.replace('{current}',index+1).replace('{total}',rows.length)):'';
+  // The next arrow continues past the loaded rows while more results remain.
+  $('#entry-prev').disabled=busy||index<=0;$('#entry-next').disabled=busy||index<0||(index>=rows.length-1&&!hasMore());
+  $('#detail-position').textContent=currentReaderId?(index<0?ui.outsideResults:ui.listPosition.replace('{current}',fmt(index+1)).replace('{total}',fmt(currentData.total))):'';
   for(const tr of $('#results').querySelectorAll('tr')){
     const buttons=[...tr.querySelectorAll('[data-entry]')];
     tr.classList.toggle('row-selected',buttons.some(b=>b.dataset.entry===currentReaderId));
@@ -36,9 +37,10 @@ function focusResult(){
   const button=buttons.find(b=>b.dataset.entry===id&&b.classList.contains('entry-name'))||buttons.find(b=>b.dataset.entry===id);
   (button||$('#q')).focus({preventScroll:true});
 }
-function stepEntry(delta){
-  const rows=currentData?.rows||[],index=rows.findIndex(r=>rowHas(r,currentReaderId)),next=rows[index+delta];
-  if(index>=0&&next)openEntry(next.id,true,'body',true);
+async function stepEntry(delta){
+  const index=(currentData?.rows||[]).findIndex(r=>rowHas(r,currentReaderId));if(index<0)return;
+  if(delta>0&&index===currentData.rows.length-1&&!(await loadMore()))return;
+  const next=currentData?.rows[index+delta];if(next)openEntry(next.id,true,'body',true);
 }
 function renderDetail(tab='body') {
   const e=currentEntry;if(!e)return;

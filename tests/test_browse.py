@@ -83,24 +83,23 @@ class BrowseCorpusTests(unittest.TestCase):
         rows=query(self.db,{'view':['生物数据卡'],'cr_min':['1/8'],'cr_max':['1/2'],'sort':['cr']},export=True)['rows']
         ranks=[browse.sort_value(json.dumps(e['fields']),'cr') for e in rows]
         self.assertTrue(ranks);self.assertEqual(ranks,sorted(ranks));self.assertTrue(all(.125<=x<=.5 for x in ranks))
-        for p in [{'cr_min':['2'],'cr_max':['1']},{'cr_min':['nan']},{'cr_max':['1/0']},{'dir':['DROP']},{'size':['-1']}]:
+        for p in [{'cr_min':['2'],'cr_max':['1']},{'cr_min':['nan']},{'cr_max':['1/0']},{'dir':['DROP']},{'limit':['-1']}]:
             with self.assertRaises(ValueError):query(self.db,p)
     def test_special_material_false_requires_material(self):
         rows=query(self.db,{'view':['法术'],'f_special_material':['false']})['rows']
         self.assertTrue(rows);self.assertTrue(all(r['fields']['material']=='M' for r in rows))
     def test_export_matches_sorted_rows_and_columns(self):
-        p={'view':['魔法物品'],'f_rarity':['普通','珍稀'],'sort':['rarity'],'dir':['desc'],'size':['50']}
+        p={'view':['魔法物品'],'f_rarity':['普通','珍稀'],'sort':['rarity'],'dir':['desc'],'limit':['50']}
         allrows=query(self.db,p,export=True)['rows'];first=query(self.db,p|{'versions':['each']})['rows']
         self.assertEqual([r['id'] for r in allrows[:50]],[r['id'] for r in first])
         csv=csv_export(allrows,'魔法物品').decode('utf-8-sig')
         self.assertIn('稀有度',csv.splitlines()[0]);self.assertIn('同调条件',csv.splitlines()[0])
     def stacked_pages(self,params):
-        rows,page=[],1
+        rows=[]
         while True:
-            data=query(self.db,params|{'size':['300'],'page':[str(page)]})
+            data=query(self.db,params|{'limit':['300'],'offset':[str(len(rows))]})
             rows+=data['rows']
-            if page>=data['pages']:return data,rows
-            page+=1
+            if len(rows)>=data['total']:return data,rows
     def test_stacked_versions_partition_the_matched_set(self):
         for params in [{'view':['法术'],'sort':['name']},{'view':['生物数据卡'],'sort':['cr'],'dir':['desc']},{'sort':['name']}]:
             data,rows=self.stacked_pages(params)
@@ -156,7 +155,7 @@ class BrowseCorpusTests(unittest.TestCase):
         config=browse.schema('法术')
         self.assertEqual(config['composites'],{'components':['verbal','somatic','material'],'spell_markers':['ritual','concentration']})
         self.assertFalse({'verbal','somatic','material','ritual','concentration'}&set(config['columns']))
-        rows=query(self.db,{'view':['法术'],'f_verbal':['false'],'size':['50']})['rows']
+        rows=query(self.db,{'view':['法术'],'f_verbal':['false'],'limit':['50']})['rows']
         self.assertTrue(rows);self.assertTrue(all(r['quickref']['verbal']==['false'] for r in rows))
         header=csv_export(rows,'法术').decode('utf-8-sig').splitlines()[0].split(',')
         for label in ['言语','姿势','材料','仪式','专注']:self.assertIn(label,header)

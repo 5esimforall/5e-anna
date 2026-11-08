@@ -4,9 +4,10 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
   zh: {skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或重置筛选。',
-    readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅本页条目',closeDetail:'关闭详情',
-    previousEntry:'本页上一条',nextEntry:'本页下一条',pagePosition:'本页 {current} / {total}',
-    outsideResults:'不在本页结果中',loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
+    readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',closeDetail:'关闭详情',
+    previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
+    outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',
+    loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
     viewGroups:{monsters:'怪物',items:'物品',options:'角色选项',rules:'规则',other:'其他'},
@@ -21,9 +22,10 @@ const annaUiLabels = {
     layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
-    readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse this page',closeDetail:'Close details',
-    previousEntry:'Previous entry on this page',nextEntry:'Next entry on this page',pagePosition:'Page entries {current} / {total}',
-    outsideResults:'Not in this page of results',loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
+    readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',closeDetail:'Close details',
+    previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
+    outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',
+    loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
     viewGroups:{monsters:'Monsters',items:'Items',options:'Character options',rules:'Rules',other:'Other'},
@@ -78,7 +80,7 @@ function captureUiState(){
     mainTop:$('#query-main').scrollTop,windowTop:window.scrollY,filterTop:$('#filter-panel').scrollTop,
     filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,auditOpen:$('#audit-details').open,extraOpen:$('#domain-extra')?.open,
     sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,
-    readerTop:$('#detail-content').scrollTop,lastResultEntry};
+    readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
 function saveUiState(){if(!restoringUi)history.replaceState({...history.state,anna:captureUiState()},'');}
 function historyUpdate(replace=false){
@@ -114,7 +116,7 @@ function setSelection(g,values){
   (values.length?values:[NONE]).forEach(v=>params.append(g.key,v));
 }
 function changed(replace=false){
-  clearTimeout(timer);params.delete('page');params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();
+  clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();
 }
 function shortSource(s){
   const code=s.aliases.find(v=>/^[A-Z][A-Z0-9]{1,11}$/.test(v));
@@ -139,7 +141,7 @@ function sync(){
   if(!schema)return;
   $('#q').value=params.get('q')||'';
   $('#conflict').checked=params.get('conflict')==='1';$('#sections').checked=params.get('sections')==='1';
-  $('#sort').value=params.get('sort')||schema.default_sort;$('#page-size').value=params.get('size')||'150';
+  $('#sort').value=params.get('sort')||schema.default_sort;
   const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
   $('#prefer').value=params.get('prefer')||'5r';$('#prefer').disabled=!stacked;$('.prefer-control').classList.toggle('inactive',!stacked);
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
@@ -170,13 +172,12 @@ function sync(){
 // header, rows and paging together; a failure clears them instead of leaving stale counts behind.
 const awaitingResults=()=>$('#results').getAttribute('aria-busy')==='true';
 function awaitResults(status){
-  $('#error').hidden=true;$('#result-count').textContent=status;$('#export').disabled=true;
-  for(const id of ['prev','next','bottom-prev','bottom-next'])$('#'+id).disabled=true;
+  $('#error').hidden=true;$('#result-count').textContent=status;$('#export').disabled=true;$('#load-more').disabled=true;
   $('#results').setAttribute('aria-busy','true');
 }
 function failResults(message,status){
   currentData=null;$('#error').hidden=false;$('#error').textContent=message;$('#result-count').textContent=status;
-  $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';$('#page').textContent='';
+  $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';renderLoadState();
 }
 async function changeView(){
   const gen=++panelGeneration;request?.abort();generation++;ready=false;
@@ -207,7 +208,6 @@ async function changeView(){
     $('#title').textContent=view||'全部条目';$('#view-total').textContent=`${fmt(data.total)} 个版本候选`;
     $('#sort').innerHTML=schema.sorts.map(k=>`<option value="${esc(k)}">${esc(fieldNames[k]||k)}</option>`).join('');
     if(!schema.sorts.includes(params.get('sort')))params.set('sort',schema.default_sort);
-    $('#page-size').innerHTML=[40,50,150,300].filter(n=>n!==40||params.get('size')==='40').map(n=>`<option value="${n}">${n}</option>`).join('');
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
     $('#audit-details').open=AUDIT_PARAMS.some(k=>params.has(k));
     historyUpdate(true);sync();ready=true;await load();
@@ -272,32 +272,75 @@ function cell(row,key){
   const conflict=row.field_conflicts.includes(key);const raw=pretty(row.fields[key]);
   return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}${differs}" title="${esc((conflict?'字段冲突：':'')+raw)}"><span class="cell-value">${esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</span>${versionDiffs(row,key)}</td>`;
 }
+const rowHTML=(row,columns)=>'<tr>'+columns.map(k=>cell(row,k)).join('')+'</tr>';
 function renderResults(){
   renderColumns();const columns=visibleColumns();
-  $('#results').innerHTML=(currentData?.rows||[]).map(r=>'<tr>'+columns.map(k=>cell(r,k)).join('')+'</tr>').join('');
+  $('#results').innerHTML=(currentData?.rows||[]).map(r=>rowHTML(r,columns)).join('');
   updateReaderNavigation();
 }
-async function load(){
-  if(!ready)return;request?.abort();request=new AbortController();const gen=++generation;
-  awaitResults('正在查询…');updateReaderNavigation();
+// Results arrive in batches. A new query replaces the list (old rows stay dimmed until then); scrolling
+// near the end, the “load more” button, the reader's next arrow and ArrowDown on the last name append
+// the next batch without dimming what is already shown. History restores how many rows were loaded.
+const BATCH=150, RESTORE_LIMIT=1500;
+let appending=null, appendPromise=null, appendFailed=false, restoreRows=0;
+const NEAR_END=600;
+// Measured directly: after an append, the observer's last report still describes the old layout.
+function nearEnd(){
+  const row=$('#load-more-row');if(row.hidden)return false;
+  return row.getBoundingClientRect().top<$('.table-wrap').getBoundingClientRect().bottom+NEAR_END;
+}
+const entriesURL=(offset,limit)=>'/api/entries?'+new URLSearchParams([...params,['offset',offset],['limit',limit]]);
+const hasMore=()=>!!currentData&&currentData.rows.length<currentData.total;
+function renderLoadState(){
+  const data=currentData,unit=ui.units[data?.versions]||ui.units.each;
+  $('#range').textContent=!data?'':!data.total?ui.noResults:(hasMore()?ui.loadedRange:ui.allLoaded).replace('{shown}',fmt(data.rows.length)).replace('{total}',fmt(data.total)).replace('{unit}',unit);
+  $('#load-more-row').hidden=!hasMore();
+  $('#load-more').disabled=!!appending||awaitingResults();
+  $('#load-more').textContent=appending?ui.loadingMore:appendFailed?ui.retryLoad:ui.loadMore;
+  $('#load-more').setAttribute('aria-busy',String(!!appending));
+}
+// Scrolling, the button, ArrowDown and the reader share one in-flight batch; callers await the same result.
+function loadMore(){
+  if(appending)return appendPromise;
+  if(!hasMore()||awaitingResults())return Promise.resolve(false);
+  return appendPromise=appendBatch();
+}
+async function appendBatch(){
+  const gen=generation,controller=new AbortController();appending=controller;appendFailed=false;$('#load-error').hidden=true;renderLoadState();
   try{
-    const data=await api('/api/entries?'+params,request.signal);if(gen!==generation)return;
+    const data=await api(entriesURL(currentData.rows.length,BATCH),controller.signal);
+    if(gen!==generation||appending!==controller)return false;
+    currentData.rows.push(...data.rows);
+    $('#results').insertAdjacentHTML('beforeend',data.rows.map(r=>rowHTML(r,visibleColumns())).join(''));
+    updateReaderNavigation();queueUiSave();return true;
+  }catch(e){
+    if(e.name==='AbortError'||gen!==generation)return false;
+    appendFailed=true;$('#load-error').hidden=false;$('#load-error').textContent=e.message;return false;
+  }finally{
+    if(appending===controller){appending=null;renderLoadState();if(!appendFailed&&nearEnd())setTimeout(loadMore);}
+  }
+}
+new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&!appendFailed)loadMore();},
+  {root:$('.table-wrap'),rootMargin:`0px 0px ${NEAR_END}px 0px`}).observe($('#load-more-row'));
+$('#load-more').onclick=()=>loadMore();
+async function load(){
+  if(!ready)return;request?.abort();appending?.abort();appending=null;appendFailed=false;$('#load-error').hidden=true;
+  request=new AbortController();const gen=++generation;
+  awaitResults('正在查询…');updateReaderNavigation();
+  const limit=Math.min(RESTORE_LIMIT,Math.max(BATCH,Math.ceil(restoreRows/BATCH)*BATCH));restoreRows=0;
+  try{
+    const data=await api(entriesURL(0,limit),request.signal);if(gen!==generation)return;
     currentData=data;
     $('#result-count').innerHTML=data.versions==='stacked'?ui.stackedCount.replace('{rows}',`<strong>${fmt(data.total)}</strong>`).replace('{versions}',fmt(data.versions_total)):`找到 <strong>${fmt(data.total)}</strong> 条`;
     renderResults();
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
-    $('#page').textContent=`${data.page} / ${data.pages}`;
-    $('#range').textContent=data.total?`${fmt((data.page-1)*data.page_size+1)}–${fmt(Math.min(data.page*data.page_size,data.total))} / ${fmt(data.total)}`:'0 条结果';
-    for(const id of ['prev','bottom-prev'])$('#'+id).disabled=data.page<=1;
-    for(const id of ['next','bottom-next'])$('#'+id).disabled=data.page>=data.pages;
   }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
-  finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');updateReaderNavigation();saveUiState();}}
+  finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');renderLoadState();updateReaderNavigation();saveUiState();}}
 }
 // Stacking and edition preference change presentation only; the open entry stays matched, so the reader stays.
-function presented(){clearTimeout(timer);params.delete('page');historyUpdate();sync();$('.table-wrap').scrollTop=0;load();}
+function presented(){clearTimeout(timer);historyUpdate();sync();$('.table-wrap').scrollTop=0;load();}
 $('#stack-versions').onchange=()=>{setParam('versions',$('#stack-versions').checked?'':'each');presented();};
 $('#prefer').onchange=()=>{setParam('prefer',$('#prefer').value==='5r'?'':$('#prefer').value);presented();};
-function page(delta){if(!currentData)return;params.set('page',currentData.page+delta);historyUpdate();$('.table-wrap').scrollTop=0;load();}
 function sortBy(key){if(params.get('sort')===key)setParam('dir',params.get('dir')==='desc'?'asc':'desc');else{params.set('sort',key);params.delete('dir');}changed();}
 $('#filter-panel').addEventListener('change',e=>{
   const el=e.target;
@@ -327,22 +370,21 @@ $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#fi
 $('#reset').onclick=()=>{const view=params.get('view');params=new URLSearchParams();if(view)params.set('view',view);historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();};
 $('#views').addEventListener('click',e=>{
   const b=e.target.closest('[data-view]');if(!b)return;
-  for(const key of [...params.keys()])if(key.startsWith('f_')||['page','entry','sort','dir','cr_min','cr_max','field','value'].includes(key))params.delete(key);
+  for(const key of [...params.keys()])if(key.startsWith('f_')||['entry','sort','dir','cr_min','cr_max','field','value'].includes(key))params.delete(key);
   setParam('view',b.dataset.view);historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();
 });
 $('#active-filters').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(!b)return;const key=b.dataset.remove;params.delete(key);if(['cr_min','cr_max'].includes(key))$('#'+key).value='';changed();});
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
-$('#page-size').onchange=()=>{params.set('size',$('#page-size').value);changed();};
-$('#prev').onclick=$('#bottom-prev').onclick=()=>page(-1);$('#next').onclick=$('#bottom-next').onclick=()=>page(1);
 $('#export').onclick=()=>{location.href='/api/export?'+params;};
 $('#results').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,'body',true);});
 $('#results').addEventListener('keydown',e=>{
   if(e.isComposing||!['ArrowUp','ArrowDown'].includes(e.key))return;
   const b=e.target.closest('.entry-name');if(!b)return;
   const buttons=[...$('#results').querySelectorAll('.entry-name')],i=buttons.indexOf(b);
-  const next=buttons[i+(e.key==='ArrowDown'?1:-1)];if(next){e.preventDefault();next.focus();}
+  const next=buttons[i+(e.key==='ArrowDown'?1:-1)];if(next){e.preventDefault();next.focus();return;}
+  if(e.key==='ArrowDown'&&hasMore()){e.preventDefault();loadMore().then(ok=>{if(ok)$('#results').querySelectorAll('.entry-name')[i+1]?.focus();});}
 });
 $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
@@ -376,7 +418,7 @@ let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
   const gen=++navigationGeneration,state=e.state?.anna,oldView=params.get('view');
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
-  params=new URLSearchParams(location.search);
+  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
   if(oldView===params.get('view')&&ready){sync();await load();}else await changeView();
   if(gen!==navigationGeneration)return;
@@ -425,6 +467,8 @@ async function init(){
     metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
     renderViews();
     // Preserve older bookmarked single-attribute queries.
+    // Paging was replaced by batch loading; old links keep their query and drop page and size.
+    params.delete('page');params.delete('size');restoreRows=saved?.loadedRows||0;
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     await changeView();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);

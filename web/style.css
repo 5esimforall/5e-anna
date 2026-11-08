@@ -192,7 +192,6 @@ summary>span { margin-left: 8px; font-size: 12px; color: var(--anna-brand); }
 .result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .result-actions label { display: flex; align-items: center; gap: 5px; margin-left: 6px; color: var(--anna-secondary); font-size: 12px; }
 .result-actions button, .result-actions select { min-height: 28px; padding: 3px 7px; font-size: 12px; }
-#page { min-width: 43px; font-size: 12px; text-align: center; font-variant-numeric: tabular-nums; }
 #error { padding: 12px; margin-bottom: 12px; border: 1px solid var(--anna-error-line); border-radius: var(--anna-radius); background: var(--anna-error-bg); color: var(--anna-error); }
 .workspace>main>.table-wrap { flex: 1 0 200px; }
 .table-wrap { min-height: 0; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); scroll-padding-top: 42px; }
@@ -241,13 +240,16 @@ tbody tr:last-child td { border-bottom: 0; }
 .badge.amber { background: var(--anna-warning-bg); color: var(--anna-warning); }
 .badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .bottom-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 10px; font-size: 12px; color: var(--anna-muted); }
-.bottom-bar>div { display: flex; gap: 5px; }
-.bottom-bar button { min-height: 27px; padding: 3px 8px; font-size: 12px; }
+#range { font-variant-numeric: tabular-nums; }
+#load-more-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 12px; padding: 14px 12px 16px; border-top: 1px solid var(--anna-line); }
+#load-more-row[hidden] { display: none; }
+#load-more { min-width: 112px; }
+#load-error { color: var(--anna-error); font-size: 12px; }
 #empty { padding: 40px 20px; text-align: center; color: var(--anna-secondary); }
 #empty strong { display: block; color: var(--anna-ink); font-size: 16px; margin-bottom: 7px; }
 #results[aria-busy=true] { opacity: .45; pointer-events: none; }
 /* Counts and the empty notice describe the dimmed rows, so they wait with them. */
-.workspace>main:has(#results[aria-busy=true]) :is(#empty,#range,#page) { opacity: .45; }
+.workspace>main:has(#results[aria-busy=true]) :is(#empty,#range,#load-more-row) { opacity: .45; }
 
 /* One reader, two modes: non-modal desktop column / native modal on narrow screens. */
 #detail { margin: 0; padding: 0; color: var(--anna-ink); background: var(--anna-paper); border: 0; overflow: hidden; }
@@ -367,8 +369,6 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .searchbox { flex-basis: 100%; }
   .toolbar button { min-height: 32px; }
   .result-actions label:first-child { margin-left: 0; }
-  /* Page size keeps its current value; the narrow bar keeps sort and paging on one line. */
-  .result-actions label:has(#page-size) { display: none; }
   .result-actions .prefer-control { margin-left: 0; }
   .results-bar { align-items: start; }
   .facet { grid-template-columns: 1fr; }

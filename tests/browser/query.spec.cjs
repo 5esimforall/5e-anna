@@ -15,6 +15,7 @@ async function read(page,id){await expect(page.locator('#detail-content')).toHav
 // Audit tabs belong to audit mode, a per-browser preference stored like the theme.
 async function auditMode(page){await page.addInitScript(()=>{try{localStorage.setItem('anna.audit','on');}catch{}});}
 const AUDIT_COLUMNS=['classification_status','legacy'];
+const fmt=n=>n.toLocaleString('zh-CN');
 async function shot(page,testInfo,name){await testInfo.attach(name,{body:await page.screenshot(),contentType:'image/png'});}
 async function queryMatchesAPI(page){
   await ready(page);
@@ -68,9 +69,9 @@ test('filters start collapsed while active conditions stay visible and results k
   await visit(page);await expect(page.locator('#filter-panel')).toBeHidden();
 });
 
-test('switching categories keeps dimmed results and paging consistent until the new view renders',async({page})=>{
+test('switching categories keeps dimmed results and counts consistent until the new view renders',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
-  const range=await page.locator('#range').textContent(),pages=await page.locator('#page').textContent();
+  const range=await page.locator('#range').textContent();
   const columns=await page.locator('#columns th').count(),rows=await page.locator('#results tr').count();
   let release;const gate=new Promise(resolve=>release=resolve);let started;const waiting=new Promise(resolve=>started=resolve);
   await page.route('**/api/entries?*',async route=>{
@@ -83,17 +84,16 @@ test('switching categories keeps dimmed results and paging consistent until the 
   // The previous rows remain under their own header instead of disappearing or mixing schemas.
   await expect(page.locator('#results tr')).toHaveCount(rows);await expect(page.locator('#columns th')).toHaveCount(columns);
   expect(await page.locator('#results tr').first().locator('td').count()).toBe(columns);
-  for(const [id,text] of [['#range',range],['#page',pages]]){
-    await expect(page.locator(id)).toHaveText(text);await expect(page.locator(id)).toHaveCSS('opacity','0.45');
-  }
-  for(const id of ['#prev','#next','#bottom-prev','#bottom-next','#export'])await expect(page.locator(id)).toBeDisabled();
+  await expect(page.locator('#range')).toHaveText(range);
+  for(const id of ['#range','#load-more-row'])await expect(page.locator(id)).toHaveCSS('opacity','0.45');
+  for(const id of ['#load-more','#export'])await expect(page.locator(id)).toBeDisabled();
   release();await ready(page);await page.unrouteAll({behavior:'wait'});
   const facets=await (await page.request.get(anna+'/api/facets?view='+encodeURIComponent('生物数据卡'))).json();
   await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.length);
   expect(await page.locator('#results tr').first().locator('td').count()).toBe(facets.schema.columns.length);
   const data=await queryMatchesAPI(page);
-  await expect(page.locator('#range')).toHaveText(`1–150 / ${data.total.toLocaleString('zh-CN')}`);
-  await expect(page.locator('#page')).toHaveText(`1 / ${data.pages}`);await expect(page.locator('#range')).toHaveCSS('opacity','1');
+  await expect(page.locator('#range')).toHaveText(`已显示 150 / ${fmt(data.total)} 行`);
+  await expect(page.locator('#range')).toHaveCSS('opacity','1');await expect(page.locator('#load-more')).toBeEnabled();
   expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(0);
 });
 
@@ -106,7 +106,7 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
   expect(await page.locator('#detail').evaluate(e=>e.matches(':modal'))).toBeFalsy();
   await expect(page.locator(`#results .entry-name[data-entry="${first}"]`)).toHaveAttribute('aria-current','true');
   await page.locator('#entry-next').click();await read(page,second);
-  await expect(page.locator('#detail-position')).toHaveText('本页 10 / 150');
+  await expect(page.locator('#detail-position')).toHaveText(/^第 10 \/ [\d,]+ 行$/);
   await page.getByRole('tab',{name:/^证据/}).click();
   await expect(page.locator('#detail-panel .fact').first()).toBeVisible();
   await expect(page.locator('#detail-panel a').first()).toHaveAttribute('target','_blank');
@@ -124,11 +124,15 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
   await page.locator('#results .entry-name').nth(9).click();await read(page,second);
 });
 
-test('history and reload restore page, sorting, disclosure, reading tab and scroll positions',async({page})=>{
+test('history and reload restore loaded rows, sorting, disclosure, reading tab and scroll positions',async({page})=>{
   await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&size=50&page=2&sort=name&dir=desc');
+  // Links from before batch loading keep their query; page and size fall away.
+  const keys=[...new URL(page.url()).searchParams.keys()];expect(keys).not.toContain('page');expect(keys).not.toContain('size');
+  await expect(page.locator('#results tr')).toHaveCount(150);
   await page.locator('#toggle-filters').click();
-  await page.locator('#results .entry-name').nth(12).focus();
-  const first=await entry(page,12),second=await entry(page,13);
+  await page.locator('#load-more').click();await expect(page.locator('#results tr')).toHaveCount(300);
+  await page.locator('#results .entry-name').nth(160).focus();
+  const first=await entry(page,160),second=await entry(page,161);
   await page.keyboard.press('Enter');await read(page,first);
   await page.getByRole('tab',{name:/^证据/}).click();
   await page.locator('#detail-content').evaluate(e=>e.scrollTop=180);
@@ -146,7 +150,7 @@ test('history and reload restore page, sorting, disclosure, reading tab and scro
   await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
   await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(180);
   expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(listTop);
-  await expect(page.locator('#page')).toContainText('2 /');await expect(page.locator('#page-size')).toHaveValue('50');
+  await expect(page.locator('#results tr')).toHaveCount(300);await expect(page.locator('#range')).toContainText('已显示 300 /');
   await expect(page.locator('#sort')).toHaveValue('name');await expect(page.locator('#direction')).toHaveText('降序 ↓');
   await page.goForward();await read(page,second);
 });
@@ -300,7 +304,7 @@ test('same-name versions stack into one row with pills, in-place differences and
   await row.locator(`.version-pill[data-entry="${other.id}"]`).click();await read(page,other.id);
   await expect(row).toHaveClass(/row-selected/);
   await expect(row.locator(`.version-pill[data-entry="${other.id}"]`)).toHaveAttribute('aria-current','true');
-  await expect(page.locator('#detail-position')).toHaveText('本页 1 / 1');
+  await expect(page.locator('#detail-position')).toHaveText('第 1 / 1 行');
   // The reader compares every version field by field and switches versions inside the same tab.
   await page.getByRole('tab',{name:/^版本对照/}).click();
   await expect(page.locator('.version-table tr.differs th').filter({hasText:'学派'})).toHaveCount(1);
@@ -364,6 +368,63 @@ test('stat blocks keep their tables in the reader without widening the page',asy
   }
 });
 
+test('scrolling near the end appends exactly the next batch and keyboard focus continues into it',async({page},testInfo)=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&sort=name');
+  const data=await queryMatchesAPI(page);
+  await expect(page.locator('#range')).toHaveText(`已显示 150 / ${fmt(data.total)} 行`);
+  const offsets=[];page.on('request',r=>{if(r.url().includes('/api/entries?'))offsets.push(new URL(r.url()).searchParams.get('offset'));});
+  await page.locator('.table-wrap').evaluate(e=>e.scrollTop=e.scrollHeight);
+  await expect(page.locator('#results tr')).toHaveCount(300);
+  await page.waitForTimeout(500);expect(offsets).toEqual(['150']);
+  // Appended rows continue the API order without gaps or repeats, still dim-free.
+  const next=await (await page.request.get(anna+'/api/entries'+new URL(page.url()).search+'&offset=150')).json();
+  const ids=await page.locator('#results .entry-name').evaluateAll(els=>els.map(e=>e.dataset.entry));
+  expect(ids.slice(150)).toEqual(next.rows.map(r=>r.id));expect(new Set(ids).size).toBe(300);
+  await expect(page.locator('#range')).toHaveText(`已显示 300 / ${fmt(data.total)} 行`);
+  await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
+  await shot(page,testInfo,'batch-loading.png');
+  await page.locator('#results .entry-name').nth(299).focus();await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#results .entry-name').nth(300)).toBeFocused();
+  expect(new URL(page.url()).searchParams.has('offset')).toBeFalsy();
+  // The last batch hides the button and states that everything is shown.
+  for(let i=0;i<10&&await page.locator('#load-more-row').isVisible();i++){await page.locator('#load-more').click();await expect(page.locator('#load-more')).not.toHaveAttribute('aria-busy','true');}
+  await expect(page.locator('#results tr')).toHaveCount(data.total);
+  await expect(page.locator('#range')).toHaveText(`已全部显示 ${fmt(data.total)} 行`);await expect(page.locator('#load-more-row')).toBeHidden();
+});
+
+test('the reader steps past the loaded rows and waits for the batch already in flight',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&sort=name');
+  const data=await queryMatchesAPI(page);
+  let release;const gate=new Promise(resolve=>release=resolve);
+  await page.route('**/api/entries?*',async route=>{if(new URL(route.request().url()).searchParams.get('offset')==='150')await gate;await route.continue();});
+  const last=await entry(page,149);await page.locator('#results .entry-name').nth(149).click();await read(page,last);
+  await expect(page.locator('#detail-position')).toHaveText(`第 150 / ${fmt(data.total)} 行`);
+  await expect(page.locator('#entry-next')).toBeEnabled();
+  await page.locator('#entry-next').click();
+  await expect(page.locator('#load-more')).toHaveText('正在加载…');
+  release();
+  const following=await (await page.request.get(anna+'/api/entries'+new URL(page.url()).search.replace(/&?entry=[^&]*/,'')+'&offset=150&limit=1')).json();
+  await read(page,following.rows[0].id);
+  await expect(page.locator('#detail-position')).toHaveText(`第 151 / ${fmt(data.total)} 行`);
+  await expect(page.locator('#results tr')).toHaveCount(300);
+});
+
+test('a failed batch keeps the loaded rows and retries from the same place',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&sort=name');
+  let fail=true;
+  await page.route('**/api/entries?*',async route=>{
+    if(fail&&new URL(route.request().url()).searchParams.get('offset')==='150'){fail=false;await route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Injected batch failure'})});}
+    else await route.continue();
+  });
+  await page.locator('.table-wrap').evaluate(e=>e.scrollTop=e.scrollHeight);
+  await expect(page.locator('#load-error')).toContainText('Injected batch failure');
+  await expect(page.locator('#results tr')).toHaveCount(150);await expect(page.locator('#load-more')).toHaveText('重新加载');
+  await expect(page.locator('#error')).toBeHidden();await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
+  await page.locator('#load-more').click();
+  await expect(page.locator('#results tr')).toHaveCount(300);await expect(page.locator('#load-error')).toBeHidden();
+  await expect(page.locator('#load-more')).toHaveText('继续加载');
+});
+
 test('detail failure is recoverable, missing IDs are explained, late responses cannot replace newer entries',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
   const first=await entry(page),second=await entry(page,1);let fail=true;
@@ -400,7 +461,7 @@ test('query failures clear stale rows and recover through the existing controls'
   await page.locator('#q').fill('Shield');
   await expect(page.locator('#error')).toContainText('Injected query failure');
   await expect(page.locator('#results tr')).toHaveCount(0);await expect(page.locator('#export')).toBeDisabled();
-  await expect(page.locator('#range')).toHaveText('');await expect(page.locator('#page')).toHaveText('');
+  await expect(page.locator('#range')).toHaveText('');await expect(page.locator('#load-more-row')).toBeHidden();
   await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
   await page.locator('#reset').click();await ready(page);await expect(page.locator('#error')).toBeHidden();
   await expect(page.locator('#results tr').first()).toBeVisible();

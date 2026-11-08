@@ -44,11 +44,11 @@
     <div id="active-filters" class="active-filters" aria-label="已选筛选"></div>
     <div class="results-bar">
       <span id="result-count" role="status" aria-live="polite">正在查询…</span>
-      <div class="result-actions"><label class="stack-toggle"><input type="checkbox" id="stack-versions" checked><span data-ui="stackVersions"></span></label><label class="prefer-control"><span data-ui="preferRuleset"></span> <select id="prefer"></select></label><label>排序 <select id="sort" aria-label="排序字段"></select></label><button id="direction" aria-label="切换排序方向">升序 ↑</button><label>每页 <select id="page-size" aria-label="每页条数"><option>50</option><option selected>150</option><option>300</option></select></label><button id="prev" aria-label="上一页" disabled>‹</button><span id="page"></span><button id="next" aria-label="下一页" disabled>›</button></div>
+      <div class="result-actions"><label class="stack-toggle"><input type="checkbox" id="stack-versions" checked><span data-ui="stackVersions"></span></label><label class="prefer-control"><span data-ui="preferRuleset"></span> <select id="prefer"></select></label><label>排序 <select id="sort" aria-label="排序字段"></select></label><button id="direction" aria-label="切换排序方向">升序 ↑</button></div>
     </div>
     <div id="error" role="alert" hidden></div>
-    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden><strong data-ui="emptyTitle"></strong><span data-ui="emptyHint"></span></div></div>
-    <div class="bottom-bar"><span id="range"></span><span>— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据</span><div><button id="bottom-prev" disabled>上一页</button><button id="bottom-next" disabled>下一页</button></div></div>
+    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden><strong data-ui="emptyTitle"></strong><span data-ui="emptyHint"></span></div><div id="load-more-row" hidden><button type="button" id="load-more"></button><span id="load-error" role="alert" hidden></span></div></div>
+    <div class="bottom-bar"><span id="range" role="status" aria-live="polite"></span><span>— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据</span></div>
   </main>
   <dialog id="detail" aria-labelledby="reader-title">
     <div class="detail-top"><span id="reader-title" data-ui="readerTitle"></span><div class="detail-tools"><span id="detail-position"></span><button id="entry-prev" data-ui-label="previousEntry" disabled>‹</button><button id="entry-next" data-ui-label="nextEntry" disabled>›</button><button id="close-detail" class="icon-button" data-ui-label="closeDetail" autofocus>×</button></div></div>

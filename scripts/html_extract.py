@@ -21,6 +21,25 @@ CREATURE_META = re.compile(r'(?m)^[ \t]*(?:微型|小型|中型|大型|巨型|�
 STATS = re.compile(r'(?:护甲等级|(?<![A-Za-z])AC(?=\s|[:：]|\d)).{0,100}(?:生命值|(?<![A-Za-z])HP(?=\s|[:：]|\d))', re.S|re.I)
 SPELL = re.compile(r'施法时间.{0,250}(?:施法距离|射程|距离).{0,250}(?:法术成分|成分)', re.S)
 LEGACY = re.compile(r'Legacy\b|[（(]旧版[）)]',re.I)
+# The two rule generations print the same rule differently. A 2024 stat block lists initiative and a
+# modifier/save column per ability; a 2014 one is a table of scores with modifiers in parentheses
+# (several of them, so a prose note such as 智力18（+4） is not a table). A 2024 spell drops the
+# count from its casting time (动作, not 1 动作). These are layouts, not book names.
+GENERATION_MARKERS = {
+    'creature':{'5r':(re.compile(r'先攻\s*[+＋\-−]?\d|调整\s*豁免'),1),
+                '5e':(re.compile(r'\d{1,2}\s*[（(]\s*[+＋\-−]\s*\d+\s*[)）]'),3)},
+    'spell':{'5r':(re.compile(r'施法时间\s*[:：]\s*(?:动作|附赠|反应)'),1),
+             '5e':(re.compile(r'施法时间\s*[:：]\s*[1１一]\s*个?\s*(?:动作|附赠|反应)'),1)},
+}
+
+
+def printed_generation(kind,text):
+    """(ruleset, span) when an entry's text is laid out in exactly one generation's format."""
+    found={}
+    for rule,(pattern,needed) in GENERATION_MARKERS.get(kind,{}).items():
+        matches=list(pattern.finditer(text))
+        if len(matches)>=needed:found[rule]=(matches[0].start(),matches[needed-1].end())
+    return next(iter(found.items())) if len(found)==1 else None
 CLASSES = {'野蛮人','吟游诗人','牧师','德鲁伊','战士','武僧','圣武士','游侠','游荡者','术士','魔契师','邪术师','法师','奇械师','血猎手','邪狱使','拳斗士','铳士','魔战士','怪物猎人'}
 CLASS_SHORT = {'诗':'吟游诗人','吟':'吟游诗人','牧':'牧师','德':'德鲁伊','帕':'圣武士','圣':'圣武士','软':'游侠','游':'游侠','术':'术士','锁':'魔契师','契':'魔契师','邪':'邪术师','法':'法师','械':'奇械师','魔':'魔战士'}
 

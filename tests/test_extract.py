@@ -191,4 +191,42 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual([labels[k] for k in 'defghij'],['冰谷','龙金之劫','疯法师地城','艾卓生物','溟渊的呼唤','旧库','错位怪物'])
         self.assertEqual(len(set(labels.values())),len(labels))
 
+    def test_printed_layout_marks_one_rule_generation(self):
+        from html_extract import printed_generation
+        old='僵尸 中型亡灵 护甲等级 8 生命值 22 力量 敏捷 体质 智力 感知 魅力 13 (+1) 6 (-2) 16 (+3) 3 (-4) 6 (-2) 5 (-3)'
+        new='僵尸 中型亡灵 AC 8 先攻 -2 (8) HP 15 调整 豁免 力量 13 +1 +1'
+        self.assertEqual(printed_generation('creature',old)[0],'5e')
+        self.assertEqual(printed_generation('creature',new)[0],'5r')
+        # One parenthesized score in prose is an adjustment note, not an ability table.
+        self.assertIsNone(printed_generation('creature','其具有以下调整：智力18（+4）'))
+        self.assertIsNone(printed_generation('creature',old+' '+new))
+        self.assertEqual(printed_generation('spell','一环 塑能 施法时间：1 动作 施法距离')[0],'5e')
+        self.assertEqual(printed_generation('spell','一环 塑能 施法时间：附赠动作 施法距离')[0],'5r')
+        self.assertIsNone(printed_generation('spell','施法时间：1 分钟'))
+        self.assertIsNone(printed_generation('magic_item','施法时间：动作'))
+
+    def test_sources_without_a_catalog_generation_take_their_printed_layout(self):
+        from build import Build
+        build=Build(WEB)
+        pages=['topics/模组/湮灭之墓/生物/三花株.htm','topics/模组/湮灭之墓/生物/僵尸.htm','topics/玩家手册2024/法术详述/6环.htm']
+        for path in pages:build.consume(parse_one((str(WEB),path,[],build.registry.context(path))))
+        tomb=next(s for s in build.sources.values() if s['name'].endswith('湮灭之墓'))
+        phb=next(s for s in build.sources.values() if s['name']=='玩家手册2024')
+        self.assertEqual(tomb['ruleset_hint'],'待核')
+        creatures=[e for e in build.entries if tomb['id'] in e['source_ids'] and e['type']=='creature']
+        self.assertTrue(creatures);self.assertTrue(all(e['ruleset']=='待核' for e in creatures))
+        build.infer_source_rulesets()
+        # The adventure's 2014 stat blocks set its default; entries and their facts follow with the votes as evidence.
+        self.assertEqual(tomb['ruleset_hint'],'5e')
+        self.assertEqual(tomb['evidence'][-1]['rule'],'printed_generation')
+        self.assertTrue(all(e['ruleset']=='5e' and e['ruleset_status']=='上下文推得' for e in creatures))
+        facts={(f['entry_id'],f['rule']) for f in build.facts if f['field']=='ruleset'}
+        self.assertTrue(all((e['id'],'source_default') in facts for e in creatures))
+        # A catalogued generation is never overridden; an entry printed the other way is queued instead.
+        self.assertEqual(phb['ruleset_hint'],'5r')
+        heal=next(e for e in build.entries if e['name_en']=='Heal')
+        self.assertEqual(heal['ruleset'],'5r')
+        mismatch=[r for r in build.reviews if r['reason']=='printed_generation_mismatch']
+        self.assertEqual([(r['target'],r['detail']) for r in mismatch],[(heal['id'],{'ruleset':'5r','printed':'5e'})])
+
 if __name__=='__main__':unittest.main()

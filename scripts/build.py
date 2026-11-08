@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
@@ -35,6 +35,10 @@ TYPE_LABELS={'class':'职业','subclass':'子职','class_feature':'职业能力'
     'animal_offer':'动物购置','facility':'设施','condition':'状态','action':'动作','rule':'规则','trap':'陷阱','poison':'毒药','disease':'疾病','hazard':'环境危害',
     'subsystem':'扩展机制','lore':'资料索引','section':'文献段落'}
 EXCLUDED_DIRS={'速查 - 副本 - 副本','空白页模板','template','template2','Generator','格式转换工具包','鸣谢'}
+
+
+# Share of a source's marked entries that must print in one generation's layout to set its default.
+PRINTED_AGREEMENT=0.9
 
 
 def dumps(v):return json.dumps(v,ensure_ascii=False,sort_keys=True,separators=(',',':'))
@@ -212,7 +216,7 @@ class Build:
         self.pages={};self.entries=[];self.facts=[];self.relations=[];self.tables=[];self.reviews=[]
         self.page_entries=defaultdict(list);self.locators=defaultdict(set);self.observations=[];self.ob_by_id={};self.ob_targets=defaultdict(list)
         self.anchor_spans={};self.raw_links=[]
-        self.entry_by_id={}
+        self.entry_by_id={};self.printed={}
         self.commit=subprocess.check_output(['git','-C',str(web),'rev-parse','HEAD'],text=True).strip() if (web/'.git').exists() else 'unversioned'
         self._review_ids=set()
 
@@ -278,8 +282,6 @@ class Build:
             entity='ent_'+digest(locator)
             eid='ver_'+digest(entity,c['body_hash'])
             name_parse=parse_name(c['name']);zh,en=name_parse['name_zh'],name_parse['name_en']
-            rules={self.sources[s]['ruleset_hint'] for s in owners if self.sources[s]['ruleset_hint'] not in {'待核'}}
-            ruleset=next(iter(rules)) if len(rules)==1 and '冲突' not in rules else '待核'
             archived=[s for s in owners if self.sources[s]['archived']]
             index_legacy=[self.ob_by_id[o] for o in c['observation_ids'] if self.ob_by_id[o]['legacy']]
             legacy='entry_marked' if c['legacy_direct'] or index_legacy else 'source_archived' if archived else 'unmarked'
@@ -287,7 +289,7 @@ class Build:
             e={'id':eid,'entity_id':entity,'identity_status':'provisional','name':compact(c['name']),'name_zh':zh,'name_en':en,'name_parse':name_parse,'type':c['type'],
                 'type_label':TYPE_LABELS[c['type']],'page_path':path,'start':c['start'],'title_end':c['title_end'],'end':c['end'],'locator':locator,'anchors':c['anchors'],
                 'body_hash':c['body_hash'],'source_ids':owners,'source_names':[self.sources[s]['name'] for s in owners],
-                'ruleset':ruleset,'ruleset_status':'上下文推得' if ruleset!='待核' else '待核','legacy':legacy,
+                'legacy':legacy,
             'classification_status':status,'classification_rule':c['classification_rule'],'boundary_rule':c['boundary_rule'],
                 'fields':{},'field_conflicts':[],'observation_ids':c['observation_ids'],'parent_id':'','is_primary':c['is_primary'], 'snapshot':self.commit}
             local_entries.append(e);self.entries.append(e);self.entry_by_id[eid]=e;self.page_entries[path].append(e)
@@ -300,8 +302,9 @@ class Build:
             self.fact(eid,'type',c['type'],ev,c['classification_rule'],status=status)
             for s in owners:
                 self.fact(eid,'source_id',s,{'source_id':s,'toc_nodes':page['toc_nodes']},method,scope='book',status='上下文推得')
-                rule=self.sources[s]['ruleset_hint']
-                if rule!='待核':self.fact(eid,'ruleset',rule,{'source_id':s,'source_evidence':self.sources[s]['evidence']},'source_default',scope='book',status='上下文推得')
+            self.source_ruleset(e,ev)
+            printed=printed_generation(c['type'],page['text'][c['start']:c['end']])
+            if printed:self.printed[eid]=(printed[0],[c['start']+printed[1][0],c['start']+printed[1][1]])
             if e['type']=='creature':
                 role_context=path+' | '+self.registry.context(path)
                 for role,pattern in [('NPC',r'/NPC/|/NPC\.| / 非玩家角色 / | / NPC / '),('伙伴',r'/魔宠/|/伙伴/|/协力者/| / 魔宠 / | / 协力者 / '),('坐骑',r'/坐骑/| / 坐骑 / ')]:
@@ -323,7 +326,6 @@ class Build:
                 self.fact(eid,'type',ob['kind'],{'path':ob['path'],'span':ob['span'],'observation_id':oid},'quickref_attribute',scope='index')
                 if 'index_name' in c['boundary_rule'] and ob['target_anchor']:
                     self.review(eid,'anchor_recovered_by_name',ob['target_anchor'],{'path':path,'observation_id':oid},'low')
-            if len(rules)>1 or '冲突' in rules:self.review(eid,'ruleset_conflict',sorted(rules),ev,'high')
         for i,(c,e) in enumerate(zip(result['candidates'],local_entries)):
             pi=c['parent_index']
             if pi is not None and pi<len(local_entries):
@@ -340,6 +342,36 @@ class Build:
         for ob in self.ob_targets.get(path,[]):
             if ob['id'] not in matched:
                 self.review(ob['id'],'index_entry_unresolved',ob['name'],{'target_path':path,'target_anchor':ob['target_anchor'],'index_path':ob['path']},'high')
+
+    def source_ruleset(self,e,ev):
+        """An entry's rule generation defaults to its sources'; sources that disagree leave it for review."""
+        rules={self.sources[s]['ruleset_hint'] for s in e['source_ids']}-{'待核'}
+        e['ruleset']=next(iter(rules)) if len(rules)==1 and '冲突' not in rules else '待核'
+        e['ruleset_status']='上下文推得' if e['ruleset']!='待核' else '待核'
+        for s in e['source_ids']:
+            rule=self.sources[s]['ruleset_hint']
+            if rule!='待核':self.fact(e['id'],'ruleset',rule,{'source_id':s,'source_evidence':self.sources[s]['evidence']},'source_default',scope='book',status='上下文推得')
+        if len(rules)>1 or '冲突' in rules:self.review(e['id'],'ruleset_conflict',sorted(rules),ev,'high')
+
+    def infer_source_rulesets(self):
+        """A source the catalog leaves 待核 (adventures, digital releases, UA) still prints its stat blocks
+        and spells in one generation's layout. When nearly all of its marked entries agree, that layout
+        sets the source default; an entry printed unlike its source's generation is queued for a look."""
+        votes=defaultdict(Counter)
+        for eid,(rule,_) in self.printed.items():
+            for s in self.entry_by_id[eid]['source_ids']:votes[s][rule]+=1
+        inferred=set()
+        for sid,count in votes.items():
+            source=self.sources[sid];rule,agreeing=count.most_common(1)[0]
+            if source['ruleset_hint']=='待核' and agreeing>=PRINTED_AGREEMENT*sum(count.values()):
+                source['ruleset_hint']=rule;inferred.add(sid)
+                source['evidence'].append({'rule':'printed_generation','votes':dict(sorted(count.items())),'status':'上下文推得'})
+        for e in self.entries:
+            if inferred&set(e['source_ids']):self.source_ruleset(e,{'path':e['page_path'],'span':[e['start'],min(e['title_end'],e['end'])],'locator':e['locator']})
+        for eid,(rule,span) in self.printed.items():
+            e=self.entry_by_id[eid]
+            if e['ruleset'] in {'5e','5r'} and e['ruleset']!=rule:
+                self.review(eid,'printed_generation_mismatch',{'ruleset':e['ruleset'],'printed':rule},{'path':e['page_path'],'span':span},'low')
 
     def link_animal_catalogs(self):
         """Link catalog uses to uniquely identified core statblocks of the SAME ruleset.
@@ -402,6 +434,7 @@ class Build:
                     self.relation(subject['id'],'lists_mount',target['name'],ev,target['id'],'上下文推得')
 
     def finish(self):
+        self.infer_source_rulesets()
         # Recover broken index links only with an exact English/Chinese name,
         # matching type and unambiguous source. Never fuzzy-match records.
         linked={o for e in self.entries for o in e['observation_ids']}

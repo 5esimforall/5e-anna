@@ -355,6 +355,23 @@ test('a field reads the same in the table, the reader attributes, the notes and 
   await expect(classRow.locator('td')).toHaveText(['牧师、法师、魔契师','牧师、法师、魔契师']);
 });
 
+test('compact rows join names and versions on one line, as a per-browser preference above a 13px floor',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('亡者丧钟'));
+  // Chinese interface text stays at 13px or more; 12px is left to codes, counts and English names.
+  for(const selector of ['.result-actions label','.view-group-label','#result-count','.bottom-bar'])
+    expect(parseFloat(await page.locator(selector).first().evaluate(e=>getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(13);
+  const row=page.locator('#results tr').first(),comfortable=(await row.boundingBox()).height;
+  const url=page.url();await page.locator('#compact-rows').check();
+  await expect(page.locator('html')).toHaveAttribute('data-density','compact');
+  const name=await row.locator('.entry-name').boundingBox(),english=await row.locator('.english').boundingBox();
+  expect(english.y).toBeLessThan(name.y+name.height);expect(english.x).toBeGreaterThan(name.x+name.width);
+  expect((await row.boundingBox()).height).toBeLessThan(comfortable*.7);expect(page.url()).toBe(url);
+  await page.reload();await ready(page);
+  await expect(page.locator('#compact-rows')).toBeChecked();await expect(page.locator('html')).toHaveAttribute('data-density','compact');
+  await page.locator('#compact-rows').uncheck();await expect(page.locator('html')).toHaveAttribute('data-density','comfortable');
+  expect(await page.evaluate(()=>localStorage.getItem('anna.density'))).toBeNull();
+});
+
 test('stacking never merges class features from different classes',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业能力')+'&q='+encodeURIComponent('属性值提升'));
   const data=await queryMatchesAPI(page);

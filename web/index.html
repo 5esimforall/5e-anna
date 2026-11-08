@@ -44,7 +44,7 @@
     <div id="active-filters" class="active-filters" aria-label="已选筛选"></div>
     <div class="results-bar">
       <span id="result-count" role="status" aria-live="polite">正在查询…</span>
-      <div class="result-actions"><label class="stack-toggle"><input type="checkbox" id="stack-versions" checked><span data-ui="stackVersions"></span></label><label class="prefer-control"><span data-ui="preferRuleset"></span> <select id="prefer"></select></label><label>排序 <select id="sort" aria-label="排序字段"></select></label><button id="direction" aria-label="切换排序方向">升序 ↑</button></div>
+      <div class="result-actions"><label class="check-toggle"><input type="checkbox" id="stack-versions" checked><span data-ui="stackVersions"></span></label><label class="check-toggle"><input type="checkbox" id="compact-rows"><span data-ui="compactRows"></span></label><label class="prefer-control"><span data-ui="preferRuleset"></span> <select id="prefer"></select></label><label>排序 <select id="sort" aria-label="排序字段"></select></label><button id="direction" aria-label="切换排序方向">升序 ↑</button></div>
     </div>
     <div id="error" role="alert" hidden></div>
     <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden><strong data-ui="emptyTitle"></strong><span data-ui="emptyHint"></span></div><div id="load-more-row" hidden><button type="button" id="load-more"></button><span id="load-error" role="alert" hidden></span></div></div>

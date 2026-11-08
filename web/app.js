@@ -15,7 +15,7 @@ const annaUiLabels = {
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
-    stackVersions:'合并同名版本',preferRuleset:'优先显示',
+    stackVersions:'合并同名版本',compactRows:'紧凑行',preferRuleset:'优先显示',
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
     stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
@@ -35,7 +35,7 @@ const annaUiLabels = {
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
-    stackVersions:'Stack same-name versions',preferRuleset:'Show first',
+    stackVersions:'Stack same-name versions',compactRows:'Compact rows',preferRuleset:'Show first',
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
     stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
@@ -481,6 +481,17 @@ function setAuditMode(on){
   applyAuditMode();saveUiState();
 }
 $('#audit-mode').onclick=()=>setAuditMode(!auditMode);
+// Row density is a per-browser reading preference like the theme; shared links never carry it.
+const DENSITY_KEY='anna.density';
+const storedDensity=()=>{try{return localStorage.getItem(DENSITY_KEY)==='compact';}catch{return false;}};
+function applyDensity(compact){document.documentElement.dataset.density=compact?'compact':'comfortable';$('#compact-rows').checked=compact;}
+$('#compact-rows').onchange=()=>{
+  const compact=$('#compact-rows').checked;
+  try{compact?localStorage.setItem(DENSITY_KEY,'compact'):localStorage.removeItem(DENSITY_KEY);}catch{/* Blocked storage still applies to this page. */}
+  applyDensity(compact);
+};
+window.addEventListener('storage',e=>{if(e.key===DENSITY_KEY||e.key===null)applyDensity(storedDensity());});
+applyDensity(storedDensity());
 window.addEventListener('storage',e=>{if(e.key===AUDIT_KEY||e.key===null){try{auditMode=localStorage.getItem(AUDIT_KEY)==='on';}catch{}applyAuditMode();}});
 async function init(){
   const saved=history.state?.anna;restoringUi=true;

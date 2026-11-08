@@ -86,5 +86,17 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertEqual([r['id'] for r in allrows[:50]],[r['id'] for r in first])
         csv=csv_export(allrows,'魔法物品').decode('utf-8-sig')
         self.assertIn('稀有度',csv.splitlines()[0]);self.assertIn('同调条件',csv.splitlines()[0])
+    def test_composite_spell_columns_keep_exported_parts(self):
+        config=browse.schema('法术')
+        self.assertEqual(config['composites'],{'components':['verbal','somatic','material'],'spell_markers':['ritual','concentration']})
+        self.assertFalse({'verbal','somatic','material','ritual','concentration'}&set(config['columns']))
+        rows=query(self.db,{'view':['法术'],'f_verbal':['false'],'size':['50']})['rows']
+        self.assertTrue(rows);self.assertTrue(all(r['quickref']['verbal']==['false'] for r in rows))
+        header=csv_export(rows,'法术').decode('utf-8-sig').splitlines()[0].split(',')
+        for label in ['言语','姿势','材料','仪式','专注']:self.assertIn(label,header)
+        self.assertNotIn('成分',header)
+        # Views without composites keep identical table and export columns.
+        self.assertEqual(browse.schema('魔法物品')['composites'],{})
+        self.assertEqual(browse.schema('魔法物品')['export_columns'],browse.schema('魔法物品')['columns'])
 
 if __name__=='__main__':unittest.main()

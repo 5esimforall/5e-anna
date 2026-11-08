@@ -16,7 +16,7 @@ LABELS = {
     'size':'体型', 'creature_type':'生物类型', 'legendary_actions':'传奇动作', 'cr':'CR',
     'feat_category':'专长类别', 'role':'使用角色', 'mastery':'精通',
 }
-COLUMN_LABELS = {**LABELS, 'attunement_requirements':'同调条件','item_subtypes':'子类别','prerequisite':'前置条件','ac':'AC','hp':'HP','price':'价格','carrying_capacity':'载重','speed':'速度','weight':'重量','damage':'伤害'}
+COLUMN_LABELS = {**LABELS, 'components':'成分', 'spell_markers':'仪式/专注', 'attunement_requirements':'同调条件','item_subtypes':'子类别','prerequisite':'前置条件','ac':'AC','hp':'HP','price':'价格','carrying_capacity':'载重','speed':'速度','weight':'重量','damage':'伤害'}
 BOOL_FIELDS = {'concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions'}
 CLASSES = {'诗':'吟游诗人','吟':'吟游诗人','牧':'牧师','德':'德鲁伊','帕':'圣武士','圣':'圣武士','软':'游侠','游':'游侠','术':'术士','法':'法师','锁':'魔契师','契':'魔契师','邪':'魔契师','邪术师':'魔契师','械':'奇械师','魔':'魔战士','无':'无职'}
 LEVELS = ['戏法']+[x+'环' for x in '一二三四五六七八九']
@@ -30,10 +30,13 @@ ORDERS = {
     'creature_type':['异怪','野兽','天族','构装','龙类','元素','妖精','邪魔','巨人','类人','怪兽','泥怪','植物','亡灵'],
     'feat_category':['起源','通用','战斗风格','传奇恩惠','种族','血族'],
 }
+# Table columns may be composites of boolean fields; CSV export keeps every part as its own column.
+COMPOSITES = {'components':['verbal','somatic','material'], 'spell_markers':['ritual','concentration']}
 SCHEMAS = {
     'spell': {'facets':['spell_level','school','spell_classes','casting_time'],
               'flags':['concentration','ritual','verbal','somatic','material','special_material'],
-              'columns':['name','spell_level','school','spell_classes','casting_time','verbal','somatic','material','ritual','concentration','sources','ruleset'],
+              'columns':['name','spell_level','school','spell_classes','casting_time','components','spell_markers','sources','ruleset'],
+              'export_columns':['name','spell_level','school','spell_classes','casting_time','verbal','somatic','material','ritual','concentration','sources','ruleset'],
               'sorts':['source','name','name_en','spell_level','school','casting_time'], 'default_sort':'spell_level'},
     'creature': {'facets':['size','creature_type'], 'flags':['legendary_actions'], 'range':'cr',
                  'columns':['name','size','creature_type','cr','ac','hp','legendary_actions','sources','ruleset'],
@@ -57,7 +60,10 @@ def schema(view):
     kind = ('animal' if view=='动物购置' else 'spell' if view=='法术' else 'creature' if view in {'生物数据卡','NPC','伙伴','坐骑'}
             else 'item' if view in {'魔法物品','魔法武器','装备'}
             else 'feat' if view in {'专长','战斗风格','传奇恩惠'} else 'generic')
-    return {'kind':kind, **SCHEMAS[kind]}
+    config = {'kind':kind, **SCHEMAS[kind]}
+    config.setdefault('export_columns', config['columns'])
+    config['composites'] = {k:COMPOSITES[k] for k in config['columns'] if k in COMPOSITES}
+    return config
 
 
 def scalar_values(v):

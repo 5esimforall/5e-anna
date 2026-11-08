@@ -123,7 +123,10 @@ test('formatted mention navigates in the current page and exposes evidence in an
   await expect(link).toHaveAttribute('target','_self');
   await link.focus();await expect(link).toBeFocused();await page.keyboard.press('Enter');
   await expect(page).toHaveURL(topic(book,m.target.path)+'#'+m.target.fragment);await ready(page);
+  // Concept evidence is an audit tab; reading mode summarizes it below the entry.
   await page.goto(anna+'/?entry='+m.entry_id);
+  await expect(page.getByRole('tab',{name:/概念线索/})).toHaveCount(0);
+  await page.locator('[data-audit-summary]').click();
   await page.getByRole('tab',{name:/概念线索/}).click();
   const detail=await (await page.request.get(anna+'/api/entry?id='+m.entry_id)).json();
   const pending=detail.concept_observations.find(o=>o.status==='review' && o.candidate_entries.length);

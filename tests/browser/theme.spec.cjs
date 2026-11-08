@@ -122,7 +122,7 @@ test('dark palette keeps text contrast, narrow controls and error messages reada
   for(const pair of contrast)expect(pair.ratio,`${pair.fg} / ${pair.bg}`).toBeGreaterThanOrEqual(4.5);
   await page.locator('#results .entry-name').first().click();
   await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');
-  await expect(page.locator('#detail')).toHaveCSS('background-color','rgb(41, 38, 39)');
+  await expect(page.locator('#detail')).toHaveCSS('background-color','rgb(33, 36, 41)');
   await testInfo.attach('dark-desktop',{body:await page.screenshot(),contentType:'image/png'});
   await page.locator('#close-detail').click();
   for(const width of [320,390,760]){
@@ -136,7 +136,7 @@ test('dark palette keeps text contrast, narrow controls and error messages reada
   await page.route('**/api/entries?**',route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'测试读取失败'})}));
   await page.locator('#q').fill('unavailable');
   await expect(page.locator('#error')).toBeVisible();
-  await expect(page.locator('#error')).toHaveCSS('background-color','rgb(66, 43, 41)');
+  await expect(page.locator('#error')).toHaveCSS('background-color','rgb(61, 39, 36)');
   await testInfo.attach('dark-error',{body:await page.screenshot(),contentType:'image/png'});
 });
 

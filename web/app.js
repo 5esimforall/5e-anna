@@ -8,13 +8,23 @@ const annaUiLabels = {
     previousEntry:'本页上一条',nextEntry:'本页下一条',pagePosition:'本页 {current} / {total}',
     outsideResults:'不在本页结果中',loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
-    detailTabs:'详情栏目',moreFilters:'更多筛选条件'},
+    detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
+    viewGroups:{monsters:'怪物',items:'物品',options:'角色选项',rules:'规则',other:'其他'},
+    auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
+    auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
+    marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
+    markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'}},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse this page',closeDetail:'Close details',
     previousEntry:'Previous entry on this page',nextEntry:'Next entry on this page',pagePosition:'Page entries {current} / {total}',
     outsideResults:'Not in this page of results',loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
-    detailTabs:'Detail sections',moreFilters:'More filters'}
+    detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
+    viewGroups:{monsters:'Monsters',items:'Items',options:'Character options',rules:'Rules',other:'Other'},
+    auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
+    auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
+    marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
+    markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'}}
 };
 const ui = annaUiLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
@@ -29,7 +39,14 @@ const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','�
 const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions']);
 const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections']);
-const viewOrder=['法术','生物数据卡','魔法物品','魔法武器','专长','战斗风格','传奇恩惠','职业','子职','职业能力','种族物种','背景','装备','NPC','伙伴','坐骑','动物购置','奖励','载具','设施','状态动作规则','危害','扩展机制','资料索引'];
+// The rail groups views the way a table looks things up; views missing here still appear under “other”.
+const viewGroups=[[null,['法术']],['monsters',['生物数据卡','NPC','伙伴','坐骑']],['items',['装备','魔法物品','魔法武器','载具','动物购置','奖励']],
+  ['options',['职业','子职','职业能力','种族物种','背景','专长','战斗风格','传奇恩惠']],['rules',['状态动作规则','危害','扩展机制','设施','资料索引']]];
+// Audit mode is a per-browser viewing preference, never part of a shared query URL.
+const AUDIT_KEY='anna.audit', AUDIT_COLUMNS=new Set(['classification_status','legacy']), AUDIT_PARAMS=['status','legacy','conflict','sections'];
+const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
+let auditMode=(()=>{try{return localStorage.getItem(AUDIT_KEY)==='on';}catch{return false;}})();
+const visibleColumns=()=>schema.columns.filter(k=>auditMode||!AUDIT_COLUMNS.has(k));
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
 let currentData, currentEntry, detailGeneration=0, ready=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
@@ -125,7 +142,8 @@ function sync(){
   const extraCount=groups.filter(g=>params.has(g.key)&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
   $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(k))?'已筛选':'';
-  $('#audit-count').textContent=active.some(k=>['status','legacy','conflict','sections'].includes(k))?'已筛选':'';
+  $('#audit-count').textContent=active.some(k=>AUDIT_PARAMS.includes(k))?'已筛选':'';
+  $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
   $('#active-filters').innerHTML=active.map(k=>{
     const g=groups.find(g=>g.key===k);const values=params.getAll(k);
     const labels=values.map(v=>v===NONE?'无选项':g?.options.find(o=>o.value===v)?.label||v);
@@ -176,12 +194,12 @@ async function changeView(){
     if(!schema.sorts.includes(params.get('sort')))params.set('sort',schema.default_sort);
     $('#page-size').innerHTML=[40,50,150,300].filter(n=>n!==40||params.get('size')==='40').map(n=>`<option value="${n}">${n}</option>`).join('');
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
-    $('#audit-details').open=['status','legacy','conflict','sections'].some(k=>params.has(k));
+    $('#audit-details').open=AUDIT_PARAMS.some(k=>params.has(k));
     historyUpdate(true);sync();ready=true;await load();
   }catch(e){if(gen===panelGeneration){failResults(e.message,'读取失败');$('#columns').replaceChildren();$('#results').setAttribute('aria-busy','false');}}
 }
 function renderColumns(){
-  $('#columns').innerHTML='<tr>'+schema.columns.map(k=>{
+  $('#columns').innerHTML='<tr>'+visibleColumns().map(k=>{
     const sortable=schema.sorts.includes(k),active=(params.get('sort')||schema.default_sort)===k;
     const order=params.get('dir')==='desc'?'descending':'ascending';
     return `<th scope="col" ${active?`aria-sort="${order}"`:''}>${sortable?`<button data-sort="${esc(k)}" aria-label="按${esc(fieldNames[k]||k)}排序">${esc(fieldNames[k]||k)} <span>${active?(order==='descending'?'↓':'↑'):'↕'}</span></button>`:esc(fieldNames[k]||k)}</th>`;
@@ -194,17 +212,36 @@ function quickLabel(field,value){
   if(BOOL_FIELDS.has(field))return value==='true'?'是':value==='false'?'否':value;
   return value;
 }
+// A composite column shows several boolean fields as one glyph strip; filters and export keep the parts.
+function marksCell(row,key){
+  const parts=schema.composites[key].map(field=>{
+    const [glyph,name]=ui.marks[field],value=row.quickref[field]||['__unknown__'];
+    const special=field==='material'&&row.quickref.special_material?.[0]==='true';
+    const state=row.field_conflicts.includes(field)||value[0]==='__conflict__'?'conflict':value[0]==='true'?(special?'special':'present'):value[0]==='false'?'absent':'unknown';
+    const label=state==='present'?name:ui.markStates[state].replace('{name}',name);
+    return `<span class="mark ${state}" title="${esc(label)}"><span aria-hidden="true">${esc(glyph)}${state==='special'?'*':state==='conflict'?'⚠':''}</span><span class="sr-only">${esc(label)}</span></span>`;
+  });
+  const raw=key==='components'?pretty(row.fields.components):'';
+  return `<td data-label="${esc(fieldNames[key]||key)}" ${raw?`title="${esc(raw)}"`:''}><span class="marks">${parts.join('')}</span></td>`;
+}
 function cell(row,key){
+  if(schema.composites?.[key])return marksCell(row,key);
   if(key==='name')return `<td class="name-cell"><button class="entry-name" data-entry="${esc(row.id)}">${esc(row.name_zh||row.name)}</button><div class="english">${esc(row.name_en)}</div>${row.field_conflicts.length?'<span class="row-warning" title="存在字段冲突；打开详情核对">⚠</span>':''}</td>`;
-  if(key==='sources')return `<td class="source-cell">${row.source_ids.map(id=>`<abbr title="${esc(sourceName(id))}">${esc(shortSource(metadata.sources.find(s=>s.id===id)||{name:id,aliases:[]}))}</abbr>`).join(' / ')}</td>`;
-  if(key==='type')return `<td>${esc(row.type_label)}</td>`;
-  if(key==='ruleset')return `<td>${badge(row.ruleset,row.ruleset==='待核'?'amber':'gray')}</td>`;
-  if(key==='legacy')return `<td>${esc(legacy[row.legacy])}</td>`;
-  if(key==='classification_status')return `<td>${esc(row.classification_status)}</td>`;
+  const label=`data-label="${esc(fieldNames[key]||key)}"`;
+  if(key==='sources')return `<td class="source-cell" ${label}>${row.source_ids.map(id=>`<abbr title="${esc(sourceName(id))}">${esc(shortSource(metadata.sources.find(s=>s.id===id)||{name:id,aliases:[]}))}</abbr>`).join(' / ')}</td>`;
+  if(key==='type')return `<td ${label}>${esc(row.type_label)}</td>`;
+  if(key==='ruleset')return `<td ${label}>${badge(row.ruleset,row.ruleset==='待核'?'amber':'gray')}</td>`;
+  if(key==='legacy')return `<td ${label}>${esc(legacy[row.legacy])}</td>`;
+  if(key==='classification_status')return `<td ${label}>${esc(row.classification_status)}</td>`;
   const values=row.quickref[key];let text=values?values.map(v=>quickLabel(key,v)).join(key==='spell_classes'?' ':' / '):pretty(row.fields[key]);
   if(!text)text='—';
   const conflict=row.field_conflicts.includes(key);const raw=pretty(row.fields[key]);
-  return `<td class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}" title="${esc((conflict?'字段冲突：':'')+raw)}">${esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</td>`;
+  return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}" title="${esc((conflict?'字段冲突：':'')+raw)}">${esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</td>`;
+}
+function renderResults(){
+  renderColumns();const columns=visibleColumns();
+  $('#results').innerHTML=(currentData?.rows||[]).map(r=>'<tr>'+columns.map(k=>cell(r,k)).join('')+'</tr>').join('');
+  updateReaderNavigation();
 }
 async function load(){
   if(!ready)return;request?.abort();request=new AbortController();const gen=++generation;
@@ -213,8 +250,7 @@ async function load(){
     const data=await api('/api/entries?'+params,request.signal);if(gen!==generation)return;
     currentData=data;
     $('#result-count').innerHTML=`找到 <strong>${fmt(data.total)}</strong> 条`;
-    renderColumns();$('#results').innerHTML=data.rows.map(r=>'<tr>'+schema.columns.map(k=>cell(r,k)).join('')+'</tr>').join('');
-    updateReaderNavigation();
+    renderResults();
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
     $('#page').textContent=`${data.page} / ${data.pages}`;
     $('#range').textContent=data.total?`${fmt((data.page-1)*data.page_size+1)}–${fmt(Math.min(data.page*data.page_size,data.total))} / ${fmt(data.total)}`:'0 条结果';
@@ -274,6 +310,7 @@ $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry);
   const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);$('#tab-'+t.dataset.tab).focus();saveUiState();}
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
+  if(e.target.closest('[data-audit-summary]')){setAuditMode(true);renderDetail('facts');$('#tab-facts').focus();saveUiState();}
 });
 $('#detail-content').addEventListener('keydown',e=>{
   const t=e.target.closest('[data-tab]');if(!t||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
@@ -315,12 +352,35 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='/'&&!$('#detail').matches(':modal')&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!e.target.isContentEditable){e.preventDefault();$('#q').focus();}
 });
+function renderViews(){
+  const button=v=>`<button data-view="${esc(v.name)}">${esc(v.name||ui.allEntries)}<span>${fmt(v.count)}</span></button>`;
+  const byName=new Map(metadata.views.map(v=>[v.name,v])),listed=new Set(viewGroups.flatMap(([,names])=>names));
+  const groupsWithOther=[...viewGroups,['other',metadata.views.map(v=>v.name).filter(n=>!listed.has(n))]];
+  $('#views').innerHTML=button({name:'',count:metadata.summary.typed_versions})+groupsWithOther.map(([key,names])=>{
+    const views=names.map(n=>byName.get(n)).filter(Boolean);if(!views.length)return '';
+    if(!key)return views.map(button).join('');
+    return `<div class="view-group" role="group" aria-labelledby="view-group-${key}"><div class="view-group-label" id="view-group-${key}">${esc(ui.viewGroups[key])}</div>${views.map(button).join('')}</div>`;
+  }).join('');
+}
+// Reading mode folds review apparatus away; filters already in the URL stay visible and editable.
+function applyAuditMode(){
+  document.documentElement.dataset.audit=auditMode?'on':'off';
+  const toggle=$('#audit-mode');toggle.setAttribute('aria-pressed',String(auditMode));toggle.title=auditMode?ui.auditOn:ui.auditOff;
+  $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
+  if(schema&&currentData)renderResults();else if(schema)renderColumns();
+  if(currentEntry)renderDetail(AUDIT_TABS.has(detailTab)&&!auditMode?'body':detailTab);
+}
+function setAuditMode(on){
+  auditMode=on;try{on?localStorage.setItem(AUDIT_KEY,'on'):localStorage.removeItem(AUDIT_KEY);}catch{/* Storage may be blocked; the mode still applies to this page. */}
+  applyAuditMode();saveUiState();
+}
+$('#audit-mode').onclick=()=>setAuditMode(!auditMode);
+window.addEventListener('storage',e=>{if(e.key===AUDIT_KEY||e.key===null){try{auditMode=localStorage.getItem(AUDIT_KEY)==='on';}catch{}applyAuditMode();}});
 async function init(){
   const saved=history.state?.anna;restoringUi=true;
   try{
     metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
-    metadata.views.sort((a,b)=>viewOrder.indexOf(a.name)-viewOrder.indexOf(b.name));
-    $('#views').innerHTML=[{name:'',count:metadata.summary.typed_versions},...metadata.views].map(v=>`<button data-view="${esc(v.name)}">${esc(v.name||'全部条目')}<span>${fmt(v.count)}</span></button>`).join('');
+    renderViews();
     // Preserve older bookmarked single-attribute queries.
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     await changeView();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
@@ -328,6 +388,7 @@ async function init(){
   }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}
   finally{restoringUi=false;saveUiState();}
 }
+applyAuditMode();
 init();
 
-const reviewLink=document.createElement("a");reviewLink.href="/review";reviewLink.textContent=annaLinkLabels[document.documentElement.lang.startsWith("en")?"en":"zh"].reviewSearch.title;document.querySelector(".topbar-actions").prepend(reviewLink);
+const reviewLink=document.createElement("a");reviewLink.href="/review";reviewLink.className="audit-only";reviewLink.textContent=annaLinkLabels[document.documentElement.lang.startsWith("en")?"en":"zh"].reviewSearch.title;document.querySelector(".topbar-actions").prepend(reviewLink);

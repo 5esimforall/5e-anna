@@ -109,7 +109,7 @@ def meta(db):
     review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
     review = json.loads(review[0]) if review else None
     if review: review['pending_rebuild'] = load_events(review['path'])[1] != review['sha256']
-    return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.LABELS},'sources':sources,
+    return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
             'views':[{'name':v,'count':db.execute('SELECT count(*) FROM "'+v.replace('"','""')+'"').fetchone()[0]} for v in views(db)]}
 
 
@@ -156,7 +156,7 @@ def detail(db, eid):
 
 def csv_export(rows, view=''):
     out=io.StringIO(newline=''); writer=csv.writer(out)
-    extras=[f for f in browse.schema(view)['columns'] if f not in {'name','type','sources','ruleset','classification_status','legacy'}]
+    extras=[f for f in browse.schema(view)['export_columns'] if f not in {'name','type','sources','ruleset','classification_status','legacy'}]
     writer.writerow(['版本ID','中文名','英文名','类型','版本','来源','分类依据','旧版标记','字段冲突','正文路径']+[browse.COLUMN_LABELS.get(f,f) for f in extras])
     for r in rows:
         cells=[r['id'],r['name_zh'],r['name_en'],TYPES.get(r['type'],r['type']),r['ruleset'],'；'.join(r['source_names']),r['classification_status'],r['legacy'],'；'.join(r['field_conflicts']),r['page_path']]

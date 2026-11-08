@@ -12,6 +12,9 @@ async function ready(page){await expect(page.locator('#result-count')).toContain
 async function visit(page,query=spells){await page.goto(anna+query);await ready(page);}
 async function entry(page,index=0){return page.locator('#results .entry-name').nth(index).getAttribute('data-entry');}
 async function read(page,id){await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');await expect(page.locator('#detail .footnote')).toContainText(id);}
+// Audit tabs belong to audit mode, a per-browser preference stored like the theme.
+async function auditMode(page){await page.addInitScript(()=>{try{localStorage.setItem('anna.audit','on');}catch{}});}
+const AUDIT_COLUMNS=['classification_status','legacy'];
 async function shot(page,testInfo,name){await testInfo.attach(name,{body:await page.screenshot(),contentType:'image/png'});}
 async function queryMatchesAPI(page){
   await ready(page);
@@ -95,7 +98,7 @@ test('switching categories keeps dimmed results and paging consistent until the 
 });
 
 test('wide reader remains non-modal, consecutive entries and keyboard return preserve list position',async({page},testInfo)=>{
-  await page.setViewportSize({width:1440,height:900});await visit(page);
+  await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page);
   const first=await entry(page,8),second=await entry(page,9);
   await page.locator('#results .entry-name').nth(8).focus();
   const top=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
@@ -122,7 +125,7 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
 });
 
 test('history and reload restore page, sorting, disclosure, reading tab and scroll positions',async({page})=>{
-  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&size=50&page=2&sort=name&dir=desc');
+  await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&size=50&page=2&sort=name&dir=desc');
   await page.locator('#toggle-filters').click();
   await page.locator('#results .entry-name').nth(12).focus();
   const first=await entry(page,12),second=await entry(page,13);
@@ -157,7 +160,9 @@ test('narrow reader traps focus, tabs use arrow keys, resize keeps content and c
   await page.getByRole('tab',{name:'正文',exact:true}).focus();await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab',{name:'属性',exact:true})).toBeFocused();
   await expect(page.getByRole('tab',{name:'属性',exact:true})).toHaveAttribute('aria-selected','true');
-  await page.keyboard.press('End');await expect(page.getByRole('tab',{name:/^待核/})).toBeFocused();
+  // Reading mode ends the tab list at relations; audit tabs are summarized below the panel.
+  await page.keyboard.press('End');await expect(page.getByRole('tab',{name:/^关系/})).toBeFocused();
+  await expect(page.getByRole('tab',{name:/^待核/})).toHaveCount(0);await expect(page.locator('[data-audit-summary]')).toContainText('待核');
   await page.keyboard.press('Home');await expect(page.getByRole('tab',{name:'正文',exact:true})).toBeFocused();
   expect(await page.locator('#detail-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
   await shot(page,testInfo,'mobile-spell-reader.png');
@@ -189,7 +194,7 @@ test('all category schemas share the workbench without losing their columns or f
   for(const view of [{name:''},...meta.views]){
     await visit(page,'/?view='+encodeURIComponent(view.name));
     const facets=await (await page.request.get(anna+'/api/facets?view='+encodeURIComponent(view.name))).json();
-    await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.length);
+    await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.filter(k=>!AUDIT_COLUMNS.includes(k)).length);
     for(const group of facets.groups)await expect(page.locator(`[data-group="f_${group.key}"]`)).toHaveCount(1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
     const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
@@ -204,6 +209,81 @@ test('all category schemas share the workbench without losing their columns or f
   await expect(page.getByRole('button',{name:'同调：需要',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'同调：需要',exact:true}).click();await queryMatchesAPI(page);
   await shot(page,testInfo,'magic-items-filters.png');
+});
+
+test('category rail groups every view once and flattens into one strip on narrow screens',async({page})=>{
+  const meta=await (await page.request.get(anna+'/api/meta')).json();
+  await page.setViewportSize({width:1440,height:900});await visit(page);
+  const names=await page.locator('#views [data-view]').evaluateAll(els=>els.map(e=>e.dataset.view));
+  expect(names.slice(0,2)).toEqual(['','法术']);
+  expect([...names].sort()).toEqual(['',...meta.views.map(v=>v.name)].sort());
+  for(const [label,view] of [['怪物','生物数据卡'],['物品','魔法物品'],['角色选项','职业'],['规则','状态动作规则']])
+    await expect(page.getByRole('group',{name:label}).locator(`[data-view="${view}"]`)).toHaveCount(1);
+  await expect(page.locator('#views [data-view="法术"]')).toHaveAttribute('aria-pressed','true');
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator('.view-group-label').first()).toBeHidden();
+  expect((await page.locator('#views').boundingBox()).height).toBeLessThan(60);
+  await page.locator('#views [data-view="生物数据卡"]').click();await ready(page);
+  await expect(page.locator('#title')).toHaveText('生物数据卡');
+});
+
+test('spell components read as glyph strips while filters and export keep every component',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,spells+'&f_verbal=false&f_material=true');
+  const data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
+  const headers=await page.locator('#columns th').allTextContents();
+  expect(headers.some(h=>h.includes('成分'))).toBeTruthy();expect(headers.some(h=>h.includes('言语'))).toBeFalsy();
+  const cell=page.locator('#results tr').first().locator('td[data-label="成分"]');
+  await expect(cell.locator('.mark.absent')).toContainText('言');
+  await expect(cell.locator('.mark.absent .sr-only')).toHaveText('无言语');
+  await expect(cell.locator('.mark.present, .mark.special').last()).toContainText('材');
+  if(data.rows[0].fields.components)await expect(cell).toHaveAttribute('title',data.rows[0].fields.components);
+  const csv=await (await page.request.get(anna+'/api/export'+new URL(page.url()).search)).text();
+  for(const name of ['言语','姿势','材料','仪式','专注'])expect(csv.split('\n')[0]).toContain(name);
+});
+
+test('reading mode folds review apparatus and audit mode persists per browser',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,'/');
+  expect((await page.locator('#columns th').allTextContents()).some(h=>h.includes('分类依据'))).toBeFalsy();
+  await expect(page.locator('.topbar-actions a[href="/review"]')).toBeHidden();
+  await page.locator('#toggle-filters').click();await expect(page.locator('#audit-details')).toBeHidden();
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
+  await expect(page.getByRole('tab',{name:/^证据/})).toHaveCount(0);
+  await page.locator('[data-audit-summary]').click();
+  await expect(page.locator('#audit-mode')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
+  await expect(page.getByRole('tab',{name:/^证据/})).toBeFocused();
+  await expect(page.locator('.topbar-actions a[href="/review"]')).toBeVisible();await expect(page.locator('#audit-details')).toBeVisible();
+  expect((await page.locator('#columns th').allTextContents()).some(h=>h.includes('分类依据'))).toBeTruthy();
+  // The mode belongs to this browser, not to the shared query URL.
+  expect([...new URL(page.url()).searchParams.keys()].some(k=>k.includes('audit'))).toBeFalsy();
+  await page.reload();await ready(page);await read(page,id);
+  await expect(page.locator('#audit-mode')).toHaveAttribute('aria-pressed','true');
+  await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
+  // Leaving audit mode returns an open audit tab to the text without closing the reader.
+  await page.locator('#audit-mode').click();
+  await expect(page.getByRole('tab',{name:'正文',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('#detail')).toBeVisible();
+  expect(await page.evaluate(()=>localStorage.getItem('anna.audit'))).toBeNull();
+  // An audit filter from a shared URL stays visible and removable in reading mode.
+  await visit(page,'/?conflict=1');
+  await expect(page.locator('#active-filters')).toContainText('字段冲突');
+  await page.locator('#toggle-filters').click();await expect(page.locator('#audit-details')).toBeVisible();
+  await page.getByRole('button',{name:/^移除 字段冲突/}).click();await ready(page);
+  await expect(page.locator('#audit-details')).toBeHidden();
+});
+
+test('narrow results read as labelled lists without horizontal scrolling',async({page},testInfo)=>{
+  await page.setViewportSize({width:390,height:844});await visit(page);
+  await expect(page.locator('#columns')).toBeHidden();
+  const row=page.locator('#results tr').first();
+  await expect(row.locator('td[data-label="环阶"]')).toBeVisible();
+  expect(await row.locator('td[data-label="环阶"]').evaluate(e=>getComputedStyle(e,'::before').content)).toBe('"环阶"');
+  expect(await page.locator('.table-wrap').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
+  const name=await row.locator('.name-cell').boundingBox(),wrap=await page.locator('.table-wrap').boundingBox();
+  expect(name.width).toBeGreaterThan(wrap.width*.8);
+  await shot(page,testInfo,'mobile-spell-list.png');
+  await page.setViewportSize({width:1280,height:800});await expect(page.locator('#columns')).toBeVisible();
 });
 
 test('detail failure is recoverable, missing IDs are explained, late responses cannot replace newer entries',async({page})=>{

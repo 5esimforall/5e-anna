@@ -13,24 +13,31 @@ function placeReader(){
   $('#detail-content').scrollTop=top;
 }
 wideReader.addEventListener('change',()=>{if(currentReaderId)placeReader();});
+// A stacked row contains every listed version; reading any of them places the reader on that row.
+const rowHas=(row,id)=>row.id===id||!!row.versions?.some(v=>v.id===id);
 function updateReaderNavigation(){
-  const rows=currentData?.rows||[],index=rows.findIndex(r=>r.id===currentReaderId);
+  const rows=currentData?.rows||[],index=rows.findIndex(r=>rowHas(r,currentReaderId));
   const busy=$('#results').getAttribute('aria-busy')==='true';
   $('#entry-prev').disabled=busy||index<=0;$('#entry-next').disabled=busy||index<0||index>=rows.length-1;
   $('#detail-position').textContent=currentReaderId?(index<0?ui.outsideResults:ui.pagePosition.replace('{current}',index+1).replace('{total}',rows.length)):'';
-  for(const b of $('#results').querySelectorAll('[data-entry]')){
-    const active=b.dataset.entry===currentReaderId;b.closest('tr').classList.toggle('row-selected',active);
-    if(active)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current');
-    b.setAttribute('aria-controls','detail');b.setAttribute('aria-expanded',String(active));
+  for(const tr of $('#results').querySelectorAll('tr')){
+    const buttons=[...tr.querySelectorAll('[data-entry]')];
+    tr.classList.toggle('row-selected',buttons.some(b=>b.dataset.entry===currentReaderId));
+    for(const b of buttons){
+      const active=b.dataset.entry===currentReaderId;
+      if(active)b.setAttribute('aria-current','true');else b.removeAttribute('aria-current');
+      if(b.classList.contains('entry-name')){b.setAttribute('aria-controls','detail');b.setAttribute('aria-expanded',String(buttons.some(x=>x.dataset.entry===currentReaderId)));}
+    }
   }
 }
 function focusResult(){
   const id=lastResultEntry||currentReaderId;
-  const button=[...$('#results').querySelectorAll('[data-entry]')].find(b=>b.dataset.entry===id);
+  const buttons=[...$('#results').querySelectorAll('[data-entry]')];
+  const button=buttons.find(b=>b.dataset.entry===id&&b.classList.contains('entry-name'))||buttons.find(b=>b.dataset.entry===id);
   (button||$('#q')).focus({preventScroll:true});
 }
 function stepEntry(delta){
-  const rows=currentData?.rows||[],index=rows.findIndex(r=>r.id===currentReaderId),next=rows[index+delta];
+  const rows=currentData?.rows||[],index=rows.findIndex(r=>rowHas(r,currentReaderId)),next=rows[index+delta];
   if(index>=0&&next)openEntry(next.id,true,'body',true);
 }
 function renderDetail(tab='body') {
@@ -40,7 +47,8 @@ function renderDetail(tab='body') {
   const linkLabels=annaLinkLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
   const counts={facts:e.facts.length,discoveries:(e.concept_observations||[]).length,references:(e.effective_references||[]).length,reviews:e.reviews.length};
   const auditNames={facts:ui.facts,discoveries:linkLabels.discoveries,references:linkLabels.effectiveReferences,reviews:ui.reviews};
-  const tabs=[['body',ui.body],['fields',ui.fields],['facts',`${ui.facts} ${counts.facts}`],['relations',`${ui.relations} ${e.relations.length}`],['discoveries',`${linkLabels.discoveries} ${counts.discoveries}`],['references',`${linkLabels.effectiveReferences} ${counts.references}`],['reviews',`${ui.reviews} ${counts.reviews}`]]
+  const members=e.versions?.members||[];
+  const tabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',`${ui.versionsTab} ${members.length}`]]:[]),['facts',`${ui.facts} ${counts.facts}`],['relations',`${ui.relations} ${e.relations.length}`],['discoveries',`${linkLabels.discoveries} ${counts.discoveries}`],['references',`${linkLabels.effectiveReferences} ${counts.references}`],['reviews',`${ui.reviews} ${counts.reviews}`]]
     .filter(([id])=>auditMode||!AUDIT_TABS.has(id));
   const auditSummary=auditMode?'':`<button type="button" class="audit-summary" data-audit-summary title="${esc(ui.auditSummaryHint)}">${esc(ui.auditSummary)}：${Object.entries(counts).map(([k,n])=>`${esc(auditNames[k])} ${n}`).join(' · ')}</button>`;
   let content='';
@@ -48,11 +56,12 @@ function renderDetail(tab='body') {
   if(tab==='fields') content=`<dl class="detail-fields">${Object.entries(e.fields).map(([k,v])=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(displayValue(k,v))}${e.field_conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
   if(tab==='facts') content=e.facts.map(f=>`<article class="fact"><div class="fact-head"><strong>${esc(fieldNames[f.field]||f.field)}</strong>${badge(f.status,f.status==='原文明示'?'green':'amber')}</div><div class="fact-value">${esc(displayValue(f.field,f.value))}</div><small>规则：${esc(f.rule)} · 作用域：${esc(f.scope)}</small>${f.excerpt?`<blockquote>${esc(f.excerpt)}</blockquote>`:''}${f.evidence.path?`<a href="${esc(sourceURL(f.evidence.path,...(f.evidence.span||[0,0])))}" target="_blank" rel="noopener">${esc(f.evidence.path)} ↗</a>`:`<details><summary class="muted">定位依据</summary><pre class="body-text">${esc(JSON.stringify(f.evidence,null,2))}</pre></details>`}</article>`).join('');
   if(tab==='facts'&&!content)content=`<p class="muted">${esc(ui.noEvidence)}</p>`;
+  if(tab==='versions'&&members.length>1) content=renderVersions(e);
   if(tab==='relations') content=e.relations.length?e.relations.map(r=>`<div class="related"><span class="muted">${esc(relationNames[r.predicate]||r.predicate)}</span>${r.object_id?`<button data-entry="${esc(r.object_id)}">${esc(r.target_label)}</button>`:`<span>${esc(r.target_label)} ${badge('目标未关联','amber')}</span>`}${badge(r.status)}</div>`).join(''):'<p class="muted">未提取到关系；不代表不存在。</p>';
   if(tab==='discoveries') content=(e.concept_observations||[]).map(o=>renderConceptObservation(o,linkLabels)).join('')||`<p class="muted">${esc(linkLabels.emptyDiscoveries)}</p>`;
   if(tab==='references') content=(metadata.review_snapshot?.pending_rebuild?`<p>${badge(linkLabels.pendingReview,'amber')}</p>`:'')+`<p class="muted">${esc(linkLabels.referencePolicy)}</p>`+(e.effective_references||[]).map(o=>renderConceptObservation(o,linkLabels)).join('');
   if(tab==='reviews') content=`<p class="muted">仅展示关联此条目或所在页面的问题。没有待核记录不代表已经核实。</p>`+e.reviews.map(r=>renderReview(r,linkLabels)).join('');
-  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(e.type_label)} / ${esc(e.ruleset)}</div><h2 id="entry-title">${esc(e.name_zh||e.name)}</h2><div class="english">${esc(e.name_en)}</div><div class="detail-meta">${esc(e.source_names.join('；'))}</div><div class="badges">${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}</div><div class="detail-meta detail-links">${metadata.book_url?`<a target="_blank" rel="noopener" href="${esc(metadata.book_url+'/definition/'+encodeURIComponent(e.id)+'?reader=1')}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(([id,name])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''}" data-tab="${id}">${esc(name)}</button>`).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div>`;
+  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(e.type_label)} / ${esc(e.ruleset)}</div><h2 id="entry-title">${esc(e.name_zh||e.name)}</h2><div class="english">${esc(e.name_en)}</div>${members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(m.source_names.join('；')+' · '+m.ruleset)}">${esc(versionLabel(m))}</button>`).join('')}</div>`:''}<div class="detail-meta">${esc(e.source_names.join('；'))}</div><div class="badges">${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}</div><div class="detail-meta detail-links">${metadata.book_url?`<a target="_blank" rel="noopener" href="${esc(metadata.book_url+'/definition/'+encodeURIComponent(e.id)+'?reader=1')}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(([id,name])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''}" data-tab="${id}">${esc(name)}</button>`).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div>`;
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
 async function openEntry(id,update=true,tab='body',fromResult=false) {
@@ -75,6 +84,18 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   } finally {
     if(gen===detailGeneration){$('#detail-content').setAttribute('aria-busy','false');saveUiState();}
   }
+}
+// Versions are compared field by field; differing fields lead, equal or unextracted ones fold away.
+function renderVersions(e){
+  const {members,fields}=e.versions;
+  const value=(field,v)=>v===undefined||v===null||v===''?'—':Array.isArray(v)?v.map(x=>displayValue(field,x)).join('、'):displayValue(field,v);
+  const head=`<thead><tr><th scope="col">${esc(ui.fields)}</th>${members.map(m=>`<th scope="col"><button type="button" class="link-button" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''}>${esc(versionLabel(m))}</button>${m.id===e.id?` <span class="muted">${esc(ui.currentVersion)}</span>`:''}</th>`).join('')}</tr></thead>`;
+  const rows=list=>list.map(f=>`<tr class="${f.differs?'differs':''}"><th scope="row">${esc(fieldNames[f.field]||f.field)}</th>${f.values.map(v=>`<td>${esc(value(f.field,v))}</td>`).join('')}</tr>`).join('');
+  const differing=fields.filter(f=>f.differs),same=fields.filter(f=>!f.differs);
+  return `<p class="muted versions-intro">${esc(ui.versionsIntro)}</p>
+    <h3 class="versions-heading">${esc(ui.differingFields)} ${differing.length}</h3>
+    ${differing.length?`<div class="version-table-wrap"><table class="version-table">${head}<tbody>${rows(differing)}</tbody></table></div>`:''}
+    ${same.length?`<details class="versions-same"><summary>${esc(ui.sameFields.replace('{count}',same.length))}</summary><div class="version-table-wrap"><table class="version-table">${head}<tbody>${rows(same)}</tbody></table></div></details>`:''}`;
 }
 function closeEntry({update=true,restoreFocus=true}={}) {
   detailGeneration++;

@@ -5,6 +5,7 @@ from functools import lru_cache
 import json
 import math
 import re
+import unicodedata
 
 UNKNOWN = '__unknown__'
 CONFLICT = '__conflict__'
@@ -160,6 +161,43 @@ def order_sql(params):
     expr=direct.get(sort) or "browse_rank(e.fields,'"+sort+"')"
     # NULL (missing, ambiguous numeric rank) remains last in either direction.
     return f'({expr} IS NULL),{expr} {direction.upper()},'+('e.start ASC,' if sort=='source' else '')+'e.name,e.id'
+
+
+# Same-name candidates are stacked only where the English name identifies one published object
+# (a spell, creature, item...). Class features are scoped by class, and rule or lore sections
+# share generic headings, so equal names there do not mean versions of one thing.
+STACKABLE_TYPES = ('spell','magic_item','creature','feat','equipment','species','background','class','subclass',
+                   'vehicle','animal_offer','reward','condition','action','trap','poison','disease','hazard','facility')
+RULESET_PREFERENCES = {'5r':('5r','5e'), '5e':('5e','5r')}
+# Columns that name or locate a version differ by definition; they are never reported as rule differences.
+IDENTITY_COLUMNS = {'name','sources','ruleset','type','classification_status','legacy'}
+COMPARE_EXTRA = {'components':['special_material']}
+
+
+def comparable(fields, field):
+    """Normalized value for version comparison; unknown, conflicting or inapplicable values never differ."""
+    values=normalized(fields,field)
+    if any(v.startswith('__') for v in values):return None
+    return tuple(sorted(unicodedata.normalize('NFKC',re.sub(r'\s+','',v)).casefold() for v in values))
+
+
+def values_differ(a, b, field):
+    x,y=comparable(a,field),comparable(b,field)
+    return x is not None and y is not None and x!=y
+
+
+def column_fields(config, column):
+    return [*config['composites'].get(column,[column]),*COMPARE_EXTRA.get(column,[])]
+
+
+def version_diffs(config, head, others):
+    """Table columns whose values differ between the displayed version and each other version."""
+    out={}
+    for column in config['columns']:
+        if column in IDENTITY_COLUMNS:continue
+        ids=[o['id'] for o in others if any(values_differ(head['fields'],o['fields'],f) for f in column_fields(config,column))]
+        if ids:out[column]=ids
+    return out
 
 
 def option_label(field,value):

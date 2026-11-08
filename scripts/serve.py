@@ -86,19 +86,69 @@ def filters(db, params):
     return (' WHERE '+' AND '.join(clauses) if clauses else ''),values
 
 
+VERSION_FIELDS = ('id','name','name_zh','name_en','ruleset','source_ids','source_names','fields','field_conflicts','quickref','legacy')
+
+
+def stack_members(alias='m'):
+    """Membership of same-name candidate groups whose names identify one published object."""
+    kinds=','.join("'"+k+"'" for k in browse.STACKABLE_TYPES)
+    return (f"{alias}(stack, entry_id, status) AS (SELECT g.group_id, j.value, g.status FROM identity_candidates g, "
+            f"json_each(g.data,'$.entry_ids') j WHERE g.type IN ({kinds}))")
+
+
 def query(db, params, export=False):
     where, values = filters(db,params)
     order = browse.order_sql(params)
-    total = db.execute('SELECT count(*) FROM entries e'+where,values).fetchone()[0]
     size = int(first(params,'size','150'))
     if size not in {40,50,150,300}:raise ValueError('每页仅支持 40、50、150、300 条')
+    versions = first(params,'versions','stacked')
+    if versions not in {'stacked','each'}:raise ValueError('无效版本显示方式')
+    prefer = first(params,'prefer','5r')
+    if prefer not in browse.RULESET_PREFERENCES:raise ValueError('无效规则版本偏好')
+    # Export always lists every matching version as its own row.
+    if export or versions=='each':
+        total = db.execute('SELECT count(*) FROM entries e'+where,values).fetchone()[0]
+        page = max(1,int(first(params,'page','1')))
+        pages = max(1,(total+size-1)//size)
+        page = min(page,pages)
+        sql = 'SELECT e.data FROM entries e'+where+' ORDER BY '+order
+        if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[size,(page-1)*size]
+        rows = [browse.enrich(json.loads(r[0])) for r in db.execute(sql,values)]
+        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'page':page,'pages':pages,'page_size':size,'rows':rows}
+    # Stacking happens inside the matched set: filters decide which versions exist, then each
+    # candidate group shows its preferred-ruleset version at that version's sorted position.
+    first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
+    matched = db.execute('WITH '+stack_members()+', matched AS (SELECT e.id, COALESCE(m.stack, e.id) AS stack, m.status, '
+        'ROW_NUMBER() OVER (ORDER BY '+order+') AS pos, CASE e.ruleset WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END AS preference '
+        'FROM entries e LEFT JOIN m ON m.entry_id=e.id'+where+') '
+        'SELECT id, stack, status, pos, ROW_NUMBER() OVER (PARTITION BY stack ORDER BY preference, pos) AS rank FROM matched',
+        [first_choice,second_choice]+values).fetchall()
+    heads = sorted((r for r in matched if r['rank']==1), key=lambda r:r['pos'])
+    total = len(heads)
     page = max(1,int(first(params,'page','1')))
     pages = max(1,(total+size-1)//size)
     page = min(page,pages)
-    sql = 'SELECT e.data FROM entries e'+where+' ORDER BY '+order
-    if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[size,(page-1)*size]
-    rows = [browse.enrich(json.loads(r[0])) for r in db.execute(sql,values)]
-    return {'total':total,'page':page,'pages':pages,'page_size':size,'rows':rows}
+    shown = heads[(page-1)*size:page*size]
+    stacks = {r['stack']:r for r in shown}
+    members = {}
+    for r in sorted((r for r in matched if r['stack'] in stacks), key=lambda r:(r['stack'],r['rank'])):
+        members.setdefault(r['stack'],[]).append(r['id'])
+    ids = [i for ids in members.values() for i in ids]
+    data = {}
+    for start in range(0,len(ids),400):
+        batch = ids[start:start+400]
+        data.update((r[0],browse.enrich(json.loads(r[1]))) for r in db.execute('SELECT id, data FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
+    config = browse.schema(first(params,'view'))
+    rows = []
+    for head in shown:
+        row = data[head['id']]
+        stacked = [data[i] for i in members[head['stack']]]
+        row['versions'] = [{k:v.get(k) for k in VERSION_FIELDS} for v in stacked]
+        row['stack'] = {'id':head['stack'],'status':head['status']} if head['status'] else None
+        row['version_diffs'] = browse.version_diffs(config,row,stacked[1:])
+        rows.append(row)
+    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,
+            'page':page,'pages':pages,'page_size':size,'rows':rows}
 
 
 def meta(db):
@@ -111,6 +161,25 @@ def meta(db):
     if review: review['pending_rebuild'] = load_events(review['path'])[1] != review['sha256']
     return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
             'views':[{'name':v,'count':db.execute('SELECT count(*) FROM "'+v.replace('"','""')+'"').fetchone()[0]} for v in views(db)]}
+
+
+COMPARE_SKIP = {'source_id','source_code','type','ruleset','legacy'}
+
+
+def version_compare(db, entry):
+    """All versions in the entry's candidate group, independent of the current filters, field by field."""
+    group=db.execute('WITH '+stack_members()+' SELECT stack, status FROM m WHERE entry_id=?',(entry['id'],)).fetchone()
+    if not group:return None
+    rows=[json.loads(r[0]) for r in db.execute('WITH '+stack_members()+' SELECT e.data FROM m JOIN entries e ON e.id=m.entry_id WHERE m.stack=? '
+        "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",(group['stack'],))]
+    order=list(dict.fromkeys(k for r in rows for k in r['fields'] if k not in COMPARE_SKIP))
+    fields=[]
+    for k in order:
+        known={browse.comparable(r['fields'],k) for r in rows}-{None}
+        fields.append({'field':k,'values':[r['fields'].get(k) for r in rows],'differs':len(known)>1})
+    return {'group_id':group['stack'],'status':group['status'],
+            'members':[{k:r.get(k) for k in ('id','name','name_zh','name_en','ruleset','source_ids','source_names','legacy')} for r in rows],
+            'fields':fields}
 
 
 def detail(db, eid):
@@ -127,6 +196,7 @@ def detail(db, eid):
             if snippet: f['excerpt']=snippet[0]
         e['facts'].append(f)
     e['relations']=[dict(r) for r in db.execute('SELECT predicate,object_id,target_label,status FROM relations WHERE subject_id=? ORDER BY predicate,target_label',(eid,))]
+    e['versions']=version_compare(db,e)
     e['concept_observations']=[]
     if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
         e['concept_observations']=[json.loads(r[0]) for r in db.execute("SELECT data FROM concept_observations WHERE page_path=? AND start>=? AND end<=? ORDER BY start,signal",(e['page_path'],e['start'],e['end']))]

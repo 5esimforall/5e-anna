@@ -6,7 +6,7 @@ import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import browse
-from serve import DB,connect,query,csv_export
+from serve import DB,connect,query,csv_export,detail
 
 class NormalizeTests(unittest.TestCase):
     def test_level_alias(self):
@@ -15,6 +15,14 @@ class NormalizeTests(unittest.TestCase):
     def test_class_tokens(self):
         self.assertEqual(browse.normalized({'spell_classes':'术 法 锁 械'},'spell_classes'),['术士','法师','魔契师','奇械师'])
         self.assertEqual(browse.normalized({},'spell_classes'),[browse.UNKNOWN])
+    def test_version_comparison_ignores_spacing_and_unknowns(self):
+        self.assertFalse(browse.values_differ({'range':'150 尺'},{'range':'150尺'},'range'))
+        self.assertFalse(browse.values_differ({'range':'１５０尺'},{'range':'150尺'},'range'))
+        self.assertTrue(browse.values_differ({'duration':'最长 8 小时'},{'duration':'8小时'},'duration'))
+        self.assertFalse(browse.values_differ({},{'school':'咒法'},'school'))
+        self.assertFalse(browse.values_differ({'concentration':['是','否']},{'concentration':False},'concentration'))
+        self.assertFalse(browse.values_differ({'spell_classes':'法 术'},{'spell_classes':'术 法'},'spell_classes'))
+        self.assertTrue(browse.values_differ({'material':'M'},{'material':'M*'},'special_material'))
     def test_missing_is_not_false(self):
         self.assertEqual(browse.normalized({},'concentration'),[browse.UNKNOWN])
         self.assertEqual(browse.normalized({'concentration':False},'concentration'),['false'])
@@ -82,10 +90,68 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertTrue(rows);self.assertTrue(all(r['fields']['material']=='M' for r in rows))
     def test_export_matches_sorted_rows_and_columns(self):
         p={'view':['魔法物品'],'f_rarity':['普通','珍稀'],'sort':['rarity'],'dir':['desc'],'size':['50']}
-        allrows=query(self.db,p,export=True)['rows'];first=query(self.db,p)['rows']
+        allrows=query(self.db,p,export=True)['rows'];first=query(self.db,p|{'versions':['each']})['rows']
         self.assertEqual([r['id'] for r in allrows[:50]],[r['id'] for r in first])
         csv=csv_export(allrows,'魔法物品').decode('utf-8-sig')
         self.assertIn('稀有度',csv.splitlines()[0]);self.assertIn('同调条件',csv.splitlines()[0])
+    def stacked_pages(self,params):
+        rows,page=[],1
+        while True:
+            data=query(self.db,params|{'size':['300'],'page':[str(page)]})
+            rows+=data['rows']
+            if page>=data['pages']:return data,rows
+            page+=1
+    def test_stacked_versions_partition_the_matched_set(self):
+        for params in [{'view':['法术'],'sort':['name']},{'view':['生物数据卡'],'sort':['cr'],'dir':['desc']},{'sort':['name']}]:
+            data,rows=self.stacked_pages(params)
+            flat=[r['id'] for r in query(self.db,params,export=True)['rows']]
+            listed=[v['id'] for r in rows for v in r['versions']]
+            self.assertEqual(sorted(listed),sorted(flat));self.assertEqual(len(listed),len(set(listed)))
+            self.assertEqual(data['total'],len(rows));self.assertEqual(data['versions_total'],len(flat))
+            # Each row sits where its displayed version falls in the flat order.
+            position={i:n for n,i in enumerate(flat)}
+            self.assertEqual([r['id'] for r in rows],sorted((r['id'] for r in rows),key=position.get))
+            for r in rows:
+                self.assertEqual(r['versions'][0]['id'],r['id'])
+                if len(r['versions'])>1:self.assertIsNotNone(r['stack'])
+        self.assertEqual(query(self.db,{'view':['法术']})['total'],933)
+    def test_class_features_never_stack_across_classes(self):
+        data,rows=self.stacked_pages({'view':['职业能力'],'q':['属性值提升']})
+        self.assertGreater(len(rows),10);self.assertTrue(all(len(r['versions'])==1 for r in rows))
+        self.assertEqual(data['total'],data['versions_total'])
+    def test_ruleset_preference_and_filters_shape_stacks(self):
+        for prefer,other in [('5r','5e'),('5e','5r')]:
+            _,rows=self.stacked_pages({'view':['法术'],'prefer':[prefer]})
+            for r in rows:
+                rulesets=[v['ruleset'] for v in r['versions']]
+                if prefer in rulesets:self.assertEqual(r['ruleset'],prefer)
+                elif other in rulesets:self.assertEqual(r['ruleset'],other)
+        _,rows=self.stacked_pages({'view':['法术'],'ruleset':['5e']})
+        self.assertTrue(all(v['ruleset']=='5e' for r in rows for v in r['versions']))
+        each=query(self.db,{'view':['法术'],'versions':['each']})
+        self.assertEqual(each['total'],1385);self.assertTrue(all('versions' not in r for r in each['rows']))
+        for bad in [{'versions':['merge']},{'prefer':['2014']}]:
+            with self.assertRaises(ValueError):query(self.db,bad)
+    def test_version_differences_and_reader_comparison(self):
+        row=query(self.db,{'view':['法术'],'q':['以太化']})['rows'][0]
+        other=row['versions'][1]
+        self.assertEqual((row['ruleset'],other['ruleset']),('5r','5e'))
+        self.assertEqual(row['version_diffs'],{'school':[other['id']]})
+        fireball=query(self.db,{'view':['法术'],'q':['火球术']})['rows'][0]
+        self.assertEqual(len(fireball['versions']),2);self.assertNotIn('components',fireball['version_diffs'])
+        compare=detail(self.db,other['id'])['versions']
+        self.assertEqual([m['id'] for m in compare['members']],[row['id'],other['id']])
+        differs={f['field'] for f in compare['fields'] if f['differs']}
+        self.assertIn('school',differs);self.assertIn('duration',differs);self.assertNotIn('spell_level',differs)
+        # Every version in a stack is still its own entry with its own detail.
+        self.assertNotEqual(detail(self.db,row['id'])['body'],detail(self.db,other['id'])['body'])
+        single=query(self.db,{'view':['法术'],'q':['不动物件']})['rows'][0]
+        self.assertEqual(len(single['versions']),1);self.assertIsNone(single['stack']);self.assertIsNone(detail(self.db,single['id'])['versions'])
+    def test_export_ignores_stacking(self):
+        p={'view':['法术'],'f_spell_level':['7']}
+        csv=csv_export(query(self.db,p,export=True)['rows'],'法术').decode('utf-8-sig').strip().splitlines()
+        self.assertEqual(len(csv)-1,query(self.db,p|{'versions':['each']})['total'])
+        self.assertGreater(len(csv)-1,query(self.db,p)['total'])
     def test_composite_spell_columns_keep_exported_parts(self):
         config=browse.schema('法术')
         self.assertEqual(config['composites'],{'components':['verbal','somatic','material'],'spell_markers':['ritual','concentration']})

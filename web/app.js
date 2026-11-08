@@ -13,7 +13,11 @@ const annaUiLabels = {
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
-    markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'}},
+    markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
+    stackVersions:'合并同名版本',preferRuleset:'优先显示',preferOptions:{'5r':'2024 规则（5r）','5e':'2014 规则（5e）'},
+    stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
+    stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
+    versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse this page',closeDetail:'Close details',
     previousEntry:'Previous entry on this page',nextEntry:'Next entry on this page',pagePosition:'Page entries {current} / {total}',
@@ -24,15 +28,20 @@ const annaUiLabels = {
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
-    markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'}}
+    markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
+    stackVersions:'Stack same-name versions',preferRuleset:'Show first',preferOptions:{'5r':'2024 rules (5r)','5e':'2014 rules (5e)'},
+    stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
+    stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
+    versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current'}
 };
 const ui = annaUiLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+document.querySelector('#prefer').innerHTML=Object.entries(ui.preferOptions).map(([value,label])=>`<option value="${value}">${label}</option>`).join('');
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
 for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('aria-label',ui[el.dataset.uiLabel]);el.title=ui[el.dataset.uiLabel];}
 const fmt = n => Number(n).toLocaleString('zh-CN');
 const pretty = v => typeof v==='boolean'?(v?'是':'否'):typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
-const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',type:'类型',source_id:'来源',ruleset:'版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR'};
+const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',type:'类型',source_id:'来源',ruleset:'版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR',strength:'力量',dexterity:'敏捷',constitution:'体质',intelligence:'智力',wisdom:'感知',charisma:'魅力'};
 const relationNames = {uses_statblock:'使用数据卡',catalog_offer:'购置条目',lists_mount:'列为坐骑',part_of:'属于',section_of:'所属段落',grants:'授予',grants_feat:'授予专长',references:'引用',requires:'要求',belongs_to:'属于',casts:'施展'};
 const reasonNames = {animal_statblock_unresolved:'动物数据卡关联待核',catalog_table_unhandled:'商品表结构待支持',catalog_row_layout_unresolved:'合并单元格待核',field_conflict:'字段冲突',duplicate_anchor:'重复锚点',anchor_recovered_by_name:'按名称恢复锚点',possible_incomplete_content:'正文可能不完整',unclassified_page:'页面尚未分类',index_entry_unresolved:'索引未关联',source_ruleset_unresolved:'来源版本待核',catalog_without_locator:'仅见资源名录',index_link_recovered:'已恢复索引链接'};
 const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','七环','八环','九环'];
@@ -127,6 +136,8 @@ function sync(){
   $('#q').value=params.get('q')||'';
   $('#conflict').checked=params.get('conflict')==='1';$('#sections').checked=params.get('sections')==='1';
   $('#sort').value=params.get('sort')||schema.default_sort;$('#page-size').value=params.get('size')||'150';
+  const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
+  $('#prefer').value=params.get('prefer')||'5r';$('#prefer').disabled=!stacked;$('.prefer-control').classList.toggle('inactive',!stacked);
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
   for(const button of $('#views').querySelectorAll('[data-view]')){const active=button.dataset.view===(params.get('view')||'');button.classList.toggle('active',active);button.setAttribute('aria-pressed',active);}
@@ -213,30 +224,49 @@ function quickLabel(field,value){
   return value;
 }
 // A composite column shows several boolean fields as one glyph strip; filters and export keep the parts.
-function marksCell(row,key){
-  const parts=schema.composites[key].map(field=>{
+function marksHTML(row,key){
+  return `<span class="marks">${schema.composites[key].map(field=>{
     const [glyph,name]=ui.marks[field],value=row.quickref[field]||['__unknown__'];
     const special=field==='material'&&row.quickref.special_material?.[0]==='true';
     const state=row.field_conflicts.includes(field)||value[0]==='__conflict__'?'conflict':value[0]==='true'?(special?'special':'present'):value[0]==='false'?'absent':'unknown';
     const label=state==='present'?name:ui.markStates[state].replace('{name}',name);
     return `<span class="mark ${state}" title="${esc(label)}"><span aria-hidden="true">${esc(glyph)}${state==='special'?'*':state==='conflict'?'⚠':''}</span><span class="sr-only">${esc(label)}</span></span>`;
-  });
-  const raw=key==='components'?pretty(row.fields.components):'';
-  return `<td data-label="${esc(fieldNames[key]||key)}" ${raw?`title="${esc(raw)}"`:''}><span class="marks">${parts.join('')}</span></td>`;
+  }).join('')}</span>`;
+}
+function valueText(row,key){
+  const values=row.quickref[key];const text=values?values.map(v=>quickLabel(key,v)).join(key==='spell_classes'?' ':' / '):pretty(row.fields[key]);
+  return text||'—';
+}
+const versionSource=v=>v.source_ids.map(id=>shortSource(metadata.sources.find(s=>s.id===id)||{name:id,aliases:[]})).join(' / ');
+const versionLabel=v=>`${versionSource(v)} ${v.ruleset}`;
+// Other versions' values sit under the displayed one, so a rule change is visible in place.
+function versionDiffs(row,key){
+  const ids=row.version_diffs?.[key];if(!ids)return '';
+  return ids.map(id=>{const v=row.versions.find(v=>v.id===id);
+    const value=schema.composites?.[key]?marksHTML(v,key):esc(valueText(v,key));
+    return `<div class="version-diff"><span class="version-source">${esc(versionSource(v))}</span> ${value}</div>`;}).join('');
+}
+function versionPills(row){
+  if(!(row.versions?.length>1))return '';
+  const status=ui.stackStatus[row.stack?.status]||ui.stackStatus.same_name_candidate;
+  return `<div class="versions" role="group" aria-label="${esc(status.replace('{count}',row.versions.length))}" title="${esc(status.replace('{count}',row.versions.length))}">${row.versions.map((v,i)=>
+    `<button type="button" class="version-pill ${i===0?'shown':''} ${v.ruleset==='待核'?'unverified':''}" data-entry="${esc(v.id)}" title="${esc(v.source_names.join('；')+' · '+v.ruleset+(i===0?' · '+ui.shownVersion:''))}">${esc(versionLabel(v))}</button>`).join('')}</div>`;
 }
 function cell(row,key){
-  if(schema.composites?.[key])return marksCell(row,key);
-  if(key==='name')return `<td class="name-cell"><button class="entry-name" data-entry="${esc(row.id)}">${esc(row.name_zh||row.name)}</button><div class="english">${esc(row.name_en)}</div>${row.field_conflicts.length?'<span class="row-warning" title="存在字段冲突；打开详情核对">⚠</span>':''}</td>`;
-  const label=`data-label="${esc(fieldNames[key]||key)}"`;
+  const label=`data-label="${esc(fieldNames[key]||key)}"`,differs=row.version_diffs?.[key]?' differs':'';
+  if(schema.composites?.[key]){
+    const raw=key==='components'?pretty(row.fields.components):'';
+    return `<td ${label} class="${differs}" ${raw?`title="${esc(raw)}"`:''}>${marksHTML(row,key)}${versionDiffs(row,key)}</td>`;
+  }
+  if(key==='name')return `<td class="name-cell"><button class="entry-name" data-entry="${esc(row.id)}">${esc(row.name_zh||row.name)}</button><div class="english">${esc(row.name_en)}</div>${row.field_conflicts.length?'<span class="row-warning" title="存在字段冲突；打开详情核对">⚠</span>':''}${versionPills(row)}</td>`;
   if(key==='sources')return `<td class="source-cell" ${label}>${row.source_ids.map(id=>`<abbr title="${esc(sourceName(id))}">${esc(shortSource(metadata.sources.find(s=>s.id===id)||{name:id,aliases:[]}))}</abbr>`).join(' / ')}</td>`;
   if(key==='type')return `<td ${label}>${esc(row.type_label)}</td>`;
   if(key==='ruleset')return `<td ${label}>${badge(row.ruleset,row.ruleset==='待核'?'amber':'gray')}</td>`;
   if(key==='legacy')return `<td ${label}>${esc(legacy[row.legacy])}</td>`;
   if(key==='classification_status')return `<td ${label}>${esc(row.classification_status)}</td>`;
-  const values=row.quickref[key];let text=values?values.map(v=>quickLabel(key,v)).join(key==='spell_classes'?' ':' / '):pretty(row.fields[key]);
-  if(!text)text='—';
+  const text=valueText(row,key);
   const conflict=row.field_conflicts.includes(key);const raw=pretty(row.fields[key]);
-  return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}" title="${esc((conflict?'字段冲突：':'')+raw)}">${esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</td>`;
+  return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}${differs}" title="${esc((conflict?'字段冲突：':'')+raw)}"><span class="cell-value">${esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</span>${versionDiffs(row,key)}</td>`;
 }
 function renderResults(){
   renderColumns();const columns=visibleColumns();
@@ -249,7 +279,7 @@ async function load(){
   try{
     const data=await api('/api/entries?'+params,request.signal);if(gen!==generation)return;
     currentData=data;
-    $('#result-count').innerHTML=`找到 <strong>${fmt(data.total)}</strong> 条`;
+    $('#result-count').innerHTML=data.versions==='stacked'?ui.stackedCount.replace('{rows}',`<strong>${fmt(data.total)}</strong>`).replace('{versions}',fmt(data.versions_total)):`找到 <strong>${fmt(data.total)}</strong> 条`;
     renderResults();
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
     $('#page').textContent=`${data.page} / ${data.pages}`;
@@ -259,6 +289,10 @@ async function load(){
   }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
   finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');updateReaderNavigation();saveUiState();}}
 }
+// Stacking and edition preference change presentation only; the open entry stays matched, so the reader stays.
+function presented(){clearTimeout(timer);params.delete('page');historyUpdate();sync();$('.table-wrap').scrollTop=0;load();}
+$('#stack-versions').onchange=()=>{setParam('versions',$('#stack-versions').checked?'':'each');presented();};
+$('#prefer').onchange=()=>{setParam('prefer',$('#prefer').value==='5r'?'':$('#prefer').value);presented();};
 function page(delta){if(!currentData)return;params.set('page',currentData.page+delta);historyUpdate();$('.table-wrap').scrollTop=0;load();}
 function sortBy(key){if(params.get('sort')===key)setParam('dir',params.get('dir')==='desc'?'asc':'desc');else{params.set('sort',key);params.delete('dir');}changed();}
 $('#filter-panel').addEventListener('change',e=>{
@@ -302,12 +336,12 @@ $('#export').onclick=()=>{location.href='/api/export?'+params;};
 $('#results').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,'body',true);});
 $('#results').addEventListener('keydown',e=>{
   if(e.isComposing||!['ArrowUp','ArrowDown'].includes(e.key))return;
-  const b=e.target.closest('[data-entry]');if(!b)return;
-  const buttons=[...$('#results').querySelectorAll('[data-entry]')],i=buttons.indexOf(b);
+  const b=e.target.closest('.entry-name');if(!b)return;
+  const buttons=[...$('#results').querySelectorAll('.entry-name')],i=buttons.indexOf(b);
   const next=buttons[i+(e.key==='ArrowDown'?1:-1)];if(next){e.preventDefault();next.focus();}
 });
 $('#detail-content').addEventListener('click',e=>{
-  const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry);
+  const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
   const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);$('#tab-'+t.dataset.tab).focus();saveUiState();}
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
   if(e.target.closest('[data-audit-summary]')){setAuditMode(true);renderDetail('facts');$('#tab-facts').focus();saveUiState();}

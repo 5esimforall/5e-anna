@@ -32,7 +32,9 @@ class WebTests(unittest.TestCase):
         with self.assertRaises(sqlite3.OperationalError):self.db.execute('DELETE FROM entries')
     def test_defaults_and_pages(self):
         r=query(self.db,{})
-        self.assertEqual(r['total'],self.db.execute("SELECT count(*) FROM entries WHERE type!='section'").fetchone()[0])
+        # Rows stack same-name versions; every non-section version is still counted.
+        self.assertEqual(r['versions_total'],self.db.execute("SELECT count(*) FROM entries WHERE type!='section'").fetchone()[0])
+        self.assertLess(r['total'],r['versions_total'])
         a={e['id'] for e in r['rows']};b={e['id'] for e in query(self.db,{'page':['2']})['rows']}
         self.assertEqual(len(a),150);self.assertFalse(a&b)
         self.assertEqual(query(self.db,{'page':['999999999']})['page'],r['pages'])
@@ -137,12 +139,12 @@ class WebTests(unittest.TestCase):
         self.assertNotIn(b'id="snapshot"',page)
         self.assertNotIn(b'class="theme-control"',page)
     def test_mount_and_animal_catalog_views(self):
-        mounts=query(self.db,{'view':['坐骑']})
+        mounts=query(self.db,{'view':['坐骑'],'versions':['each']})
         self.assertEqual(mounts['total'],20)
         self.assertEqual(sum(e['ruleset']=='5e' for e in mounts['rows']),12)
         self.assertEqual(sum(e['ruleset']=='5r' for e in mounts['rows']),8)
         self.assertFalse(any(e['name_en'] in {'Flying Snake','Wolf','Warhorse Skeleton'} for e in mounts['rows']))
-        offers=query(self.db,{'view':['动物购置']})
+        offers=query(self.db,{'view':['动物购置'],'versions':['each']})
         self.assertEqual(offers['total'],19)
         self.assertTrue(all(e['type']=='animal_offer' for e in offers['rows']))
         horse=next(e for e in mounts['rows'] if e['name_en']=='Warhorse' and e['ruleset']=='5r')
@@ -150,7 +152,7 @@ class WebTests(unittest.TestCase):
         self.assertTrue(any(r['predicate']=='catalog_offer' for r in d['relations']))
         data=self.request('/api/entries?'+urlencode({'view':'动物购置'}))
         self.assertEqual(data[0],200)
-        self.assertEqual(json.loads(data[2])['total'],19)
+        self.assertEqual(json.loads(data[2])['versions_total'],19)
 
     def test_metadata(self):
         m=meta(self.db);self.assertEqual(len(m['views']),24);self.assertIn('动物购置',{v['name'] for v in m['views']})

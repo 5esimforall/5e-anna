@@ -104,17 +104,17 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
   const top=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
   await page.keyboard.press('Enter');await read(page,first);
   expect(await page.locator('#detail').evaluate(e=>e.matches(':modal'))).toBeFalsy();
-  await expect(page.locator(`#results [data-entry="${first}"]`)).toHaveAttribute('aria-current','true');
+  await expect(page.locator(`#results .entry-name[data-entry="${first}"]`)).toHaveAttribute('aria-current','true');
   await page.locator('#entry-next').click();await read(page,second);
   await expect(page.locator('#detail-position')).toHaveText('本页 10 / 150');
   await page.getByRole('tab',{name:/^证据/}).click();
   await expect(page.locator('#detail-panel .fact').first()).toBeVisible();
   await expect(page.locator('#detail-panel a').first()).toHaveAttribute('target','_blank');
   await shot(page,testInfo,'desktop-spell-evidence.png');
-  await page.keyboard.press('F6');await expect(page.locator(`#results [data-entry="${second}"]`)).toBeFocused();
+  await page.keyboard.press('F6');await expect(page.locator(`#results .entry-name[data-entry="${second}"]`)).toBeFocused();
   await page.keyboard.press('F6');await expect(page.locator('#close-detail')).toBeFocused();
   await page.keyboard.press('Escape');await expect(page.locator('#detail')).not.toBeVisible();
-  await expect(page.locator(`#results [data-entry="${second}"]`)).toBeFocused();
+  await expect(page.locator(`#results .entry-name[data-entry="${second}"]`)).toBeFocused();
   expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(top);
   // Existing URL query, sort and size survive the entire reader session.
   expect(new URL(page.url()).searchParams.get('view')).toBe('法术');
@@ -139,7 +139,7 @@ test('history and reload restore page, sorting, disclosure, reading tab and scro
   await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(180);
   const listTop=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
   await expect(page.getByRole('tab',{name:/^证据/})).toBeFocused();
-  await page.keyboard.press('F6');await expect(page.locator(`#results [data-entry="${first}"]`)).toBeFocused();
+  await page.keyboard.press('F6');await expect(page.locator(`#results .entry-name[data-entry="${first}"]`)).toBeFocused();
   await page.keyboard.press('F6');
   await page.reload();await ready(page);await read(page,first);
   await expect(page.locator('#filter-panel')).toBeVisible();
@@ -284,6 +284,48 @@ test('narrow results read as labelled lists without horizontal scrolling',async(
   expect(name.width).toBeGreaterThan(wrap.width*.8);
   await shot(page,testInfo,'mobile-spell-list.png');
   await page.setViewportSize({width:1280,height:800});await expect(page.locator('#columns')).toBeVisible();
+});
+
+test('same-name versions stack into one row with pills, in-place differences and a reader comparison',async({page},testInfo)=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('以太化'));
+  const data=await queryMatchesAPI(page);expect(data.versions).toBe('stacked');
+  await expect(page.locator('#result-count')).toContainText(`${data.total} 行 · ${data.versions_total} 个版本`);
+  const row=page.locator('#results tr').first(),[shown,other]=data.rows[0].versions;
+  expect([shown.ruleset,other.ruleset]).toEqual(['5r','5e']);
+  await expect(row.locator('.version-pill')).toHaveCount(2);
+  await expect(row.locator('.version-pill.shown')).toHaveAttribute('data-entry',shown.id);
+  const school=row.locator('td[data-label="学派"]');
+  await expect(school).toHaveClass(/differs/);await expect(school.locator('.version-diff')).toContainText('变化');
+  // A pill opens that version; its row stays current and reader stepping stays on this page.
+  await row.locator(`.version-pill[data-entry="${other.id}"]`).click();await read(page,other.id);
+  await expect(row).toHaveClass(/row-selected/);
+  await expect(row.locator(`.version-pill[data-entry="${other.id}"]`)).toHaveAttribute('aria-current','true');
+  await expect(page.locator('#detail-position')).toHaveText('本页 1 / 1');
+  // The reader compares every version field by field and switches versions inside the same tab.
+  await page.getByRole('tab',{name:/^版本对照/}).click();
+  await expect(page.locator('.version-table tr.differs th').filter({hasText:'学派'})).toHaveCount(1);
+  await expect(page.locator('.version-table tr.differs th').filter({hasText:'环阶'})).toHaveCount(0);
+  await page.locator('.reader-versions').getByRole('button',{name:/PHB24/}).click();await read(page,shown.id);
+  await expect(page.getByRole('tab',{name:/^版本对照/})).toHaveAttribute('aria-selected','true');
+  await shot(page,testInfo,'stacked-versions-reader.png');
+  // The edition preference changes the shown version without closing the reader.
+  await page.locator('#prefer').selectOption('5e');await ready(page);
+  await expect(row.locator('.version-pill.shown')).toHaveAttribute('data-entry',other.id);
+  await expect(school.locator('.cell-value')).toHaveText('变化');await expect(page.locator('#detail')).toBeVisible();
+  expect(new URL(page.url()).searchParams.get('prefer')).toBe('5e');
+  // One row per version stays available, kept in the URL and in history.
+  await page.locator('#stack-versions').uncheck();await ready(page);
+  expect(new URL(page.url()).searchParams.get('versions')).toBe('each');
+  await expect(page.locator('#results tr')).toHaveCount(2);await expect(page.locator('#prefer')).toBeDisabled();
+  await expect(page.locator('#results .version-pill')).toHaveCount(0);await expect(page.locator('#result-count')).toContainText('2 条');
+  await page.goBack();await ready(page);
+  await expect(page.locator('#stack-versions')).toBeChecked();await expect(page.locator('#results tr')).toHaveCount(1);
+});
+
+test('stacking never merges class features from different classes',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业能力')+'&q='+encodeURIComponent('属性值提升'));
+  const data=await queryMatchesAPI(page);
+  expect(data.total).toBe(data.versions_total);await expect(page.locator('#results .version-pill')).toHaveCount(0);
 });
 
 test('detail failure is recoverable, missing IDs are explained, late responses cannot replace newer entries',async({page})=>{

@@ -15,7 +15,7 @@ LABELS = {
     'concentration':'专注', 'ritual':'仪式', 'verbal':'言语', 'somatic':'姿势', 'material':'材料',
     'special_material':'特殊材料', 'rarity':'稀有度', 'item_type':'物品类别', 'attunement':'同调',
     'size':'体型', 'creature_type':'生物类型', 'legendary_actions':'传奇动作', 'cr':'CR',
-    'feat_category':'专长类别', 'role':'使用角色', 'mastery':'精通',
+    'feat_category':'专长类别', 'role':'使用角色', 'mastery':'精通', 'level':'等级',
 }
 COLUMN_LABELS = {**LABELS, 'components':'成分', 'spell_markers':'仪式/专注', 'attunement_requirements':'同调条件','item_subtypes':'子类别','prerequisite':'前置条件','ac':'AC','hp':'HP','price':'价格','carrying_capacity':'载重','speed':'速度','weight':'重量','damage':'伤害'}
 BOOL_FIELDS = {'concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions'}
@@ -23,6 +23,7 @@ CLASSES = {'诗':'吟游诗人','吟':'吟游诗人','牧':'牧师','德':'德�
 LEVELS = ['戏法']+[x+'环' for x in '一二三四五六七八九']
 ORDERS = {
     'spell_level':list(map(str,range(10))),
+    'level':list(map(str,range(1,21))),
     'school':['防护','咒法','预言','惑控','塑能','幻术','死灵','变化'],
     'spell_classes':['吟游诗人','牧师','德鲁伊','圣武士','游侠','术士','法师','魔契师','奇械师','魔战士','无职'],
     'casting_time':['动作','附赠动作','反应','其他'],
@@ -51,6 +52,8 @@ SCHEMAS = {
     'equipment': {'facets':['mastery'], 'flags':[],
                   'columns':['name','price','weight','damage','mastery','sources','ruleset'],
                   'sorts':['source','name','name_en','mastery'], 'default_sort':'name'},
+    'feature': {'facets':['level'], 'flags':[], 'columns':['name','level','sources','ruleset'],
+                'sorts':['source','name','name_en','level'], 'default_sort':'level'},
     'animal': {'facets':['role'], 'flags':[], 'columns':['name','role','price','carrying_capacity','speed','sources','ruleset'], 'sorts':['source','name','name_en'],'default_sort':'source'},
     'generic': {'facets':[], 'flags':[], 'columns':['name','type','sources','ruleset','classification_status','legacy'],
                 'sorts':['source','name','name_en','type','ruleset'], 'default_sort':'type'},
@@ -68,7 +71,7 @@ def finish(config):
 
 
 # An entry's own type picks its quick-reference schema wherever it is read, whichever view opened it.
-TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal'}
+TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal', 'class_feature':'feature'}
 GENERIC = 'generic'
 
 
@@ -175,7 +178,7 @@ def sort_value(raw,field):
     vals=normalized(parse_fields(raw),field)
     if len(vals)!=1 or vals[0].startswith('__'):return None
     v=vals[0]
-    if field in {'cr','ac','hp','spell_level'}:return number(v)
+    if field in {'cr','ac','hp','spell_level','level'}:return number(v)
     if field in ORDERS:return ORDERS[field].index(v) if v in ORDERS[field] else None
     return v.casefold()
 

@@ -299,6 +299,8 @@ class Build:
             ev={'path':path,'span':[c['start'],min(c['title_end'],c['end'])],'locator':locator}
             if name_parse['status']=='review':
                 self.review(eid,'name_structure_unresolved',name_parse,ev)
+            for note in name_parse['annotations']:
+                if note['role']=='level_label':self.fact(eid,'level',note['value'],{**ev,'name_spans':note['spans']},'name_level_label')
             self.fact(eid,'type',c['type'],ev,c['classification_rule'],status=status)
             for s in owners:
                 self.fact(eid,'source_id',s,{'source_id':s,'toc_nodes':page['toc_nodes']},method,scope='book',status='上下文推得')

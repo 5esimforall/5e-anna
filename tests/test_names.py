@@ -102,6 +102,22 @@ class NameTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.assertEqual(self.assert_name(raw,raw,'')['rule'],'mixed_name_unresolved')
 
+    def test_level_labels_qualify_feature_names(self):
+        # 3级： says when a class grants the feature; the name itself starts after it.
+        for raw,zh,en,level in [('3级：绝望打击 Despairing Strikes','绝望打击','Despairing Strikes',3),
+                                ('  10 级:示例能力Example','示例能力','Example',10),('17级：K.O.','','K.O.',17)]:
+            with self.subTest(raw=raw):
+                result=self.assert_name(raw,zh,en)
+                note=next(a for a in result['annotations'] if a['role']=='level_label')
+                self.assertEqual(note['value'],level)
+                self.assertEqual(''.join(raw[a:b] for a,b in note['spans']),note['text'])
+        # A label with nothing after it is the whole heading; level words inside a name stay in it.
+        self.assert_name('3级：','3级','')
+        self.assert_name('一级额外专长 Bonus Feat','一级额外专长','Bonus Feat')
+        # Digits glued to an English word belong to it (2nd-Level), unlike a separated qualifier.
+        self.assert_name('2级禁令恩惠 2nd-Level Interdict Boons','2级禁令恩惠','2nd-Level Interdict Boons','bilingual_suffix')
+        self.assert_name('一级额外专长1st-Level Bonus Feat','一级额外专长','1st-Level Bonus Feat','bilingual_suffix')
+
     def test_editorial_annotations_have_original_offsets(self):
         raw='  示例（旧版） (  Example\n Name  ) Legacy '
         result=self.assert_name(raw,'示例','Example Name','wrapped_translation')

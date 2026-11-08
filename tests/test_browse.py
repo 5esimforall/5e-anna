@@ -1,5 +1,6 @@
 """Quick-reference filter and semantic-order regressions."""
 import json
+import re
 from pathlib import Path
 import sqlite3
 import sys
@@ -222,6 +223,8 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertEqual(mixed['default_sort'],'type')
         self.assertIn('rarity',mixed['sorts']);self.assertIn('mastery',mixed['sorts'])
         self.assertEqual(browse.schema_for({'reward','feat'})['facets'],['feat_category'])
+        features=browse.schema_for({'class_feature'})
+        self.assertEqual((features['columns'][:2],features['facets'],features['default_sort']),(['name','level'],['level'],'level'))
         # The live 装备 view holds both kinds, so mundane gear shows its own price and weight.
         self.assertEqual(browse.schema(self.db,'装备')['kinds'],['generic','equipment','item'])
         rows=query(self.db,{'view':['装备'],'limit':['40']})['rows']
@@ -232,5 +235,18 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertEqual([g['key'] for g in browse.facets(self.db,'装备')['groups']][:2],['rarity','item_type'])
         header=csv_export(query(self.db,{'view':['装备']},export=True)['rows'],browse.schema(self.db,'装备')).decode('utf-8-sig').splitlines()[0].split(',')
         for label in ['价格','重量','稀有度']:self.assertIn(label,header)
+
+    def test_class_features_read_their_level_apart_from_the_name(self):
+        rows=query(self.db,{'view':['职业能力'],'limit':['60']})['rows']
+        # The level label left the display name and became a field the view sorts and filters by.
+        self.assertTrue(all(not re.match(r'\d+\s*级\s*[:：]',r['name_zh']) for r in rows))
+        levels=[browse.number(r['quickref']['level'][0]) for r in rows]
+        self.assertEqual(levels,sorted(levels));self.assertEqual(levels[0],1)
+        options=[o['value'] for o in next(g for g in browse.facets(self.db,'职业能力')['groups'] if g['key']=='level')['options']]
+        self.assertEqual(options[:3],['1','2','3'])
+        tenth=query(self.db,{'view':['职业能力'],'f_level':['10'],'limit':['20']})['rows']
+        self.assertTrue(tenth);self.assertTrue(all(r['fields']['level']==10 for r in tenth))
+        fact=self.db.execute("select status,rule from facts where field='level' and entry_id=?",(tenth[0]['id'],)).fetchone()
+        self.assertEqual(tuple(fact),('原文明示','name_level_label'))
 
 if __name__=='__main__':unittest.main()

@@ -127,6 +127,9 @@ def parse_alternatives(text,result,han,latin,english,trim,spans):
     return result
 
 
+LEVEL_LABEL = re.compile(r'\s*(\d+)\s*级\s*[:：]\s*')
+
+
 def parse_name(raw):
     """Parse bilingual structure; all spans address the unchanged input name, not HTML.
 
@@ -139,6 +142,12 @@ def parse_name(raw):
         for match in re.finditer(pattern,raw,re.I):
             removed.update(range(*match.span()))
             annotations.append({'role':'editorial_marker','text':match[0],'spans':[list(match.span())]})
+    # A leading level label (3级：) says when a class grants the feature; it qualifies the name and is
+    # recorded apart from it, so the display name and aliases read 绝望打击, not 3级：绝望打击.
+    level=LEVEL_LABEL.match(raw)
+    if level and raw[level.end():].strip():
+        removed.update(range(*level.span()))
+        annotations.append({'role':'level_label','text':level[0],'value':int(level[1]),'spans':[list(level.span())]})
     positions=[i for i in range(len(raw)) if i not in removed]
     while positions and raw[positions[0]] in ' \t\r\n｜|：:':positions.pop(0)
     while positions and raw[positions[-1]] in ' \t\r\n｜|：:':positions.pop()
@@ -201,8 +210,11 @@ def parse_name(raw):
             if (depth[i]==0 and (latin(ch) or ch in '“「『"') and han(text[:i])
                     and english(text[i:]) and sum(c.isalnum() for c in text[i:])>=2):
                 boundary=i
+                # Digits glued to the English word belong to it (2nd-Level, 13th-Level).
+                while boundary>0 and text[boundary-1].isdigit():boundary-=1
+                if not han(text[:boundary]):boundary=i
                 # Keep a separated numeric qualifier with the following English name.
-                qualifier=re.search(r'(?<!\S)[+−-]?\d+\s+$',text[:i])
+                qualifier=re.search(r'(?<!\S)[+−-]?\d+\s+$',text[:boundary])
                 if qualifier and han(text[:qualifier.start()]):boundary=qualifier.start()
                 break
         if boundary is None:

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from html_extract import Document,compact,digest,key,resolve_link,split_name
+from html_extract import LEVEL_LABEL,Document,compact,digest,key,resolve_link,split_name
 
 RULE_TYPES={'rule','action','condition','hazard','subsystem'}
 
@@ -13,7 +13,9 @@ def aliases(entry):
     names=[]
     for value in (entry['name'],entry.get('name_zh',''),entry.get('name_en','')):
         value=compact(re.sub(r'【[^】]+】','',value)).strip('。:：')
-        if entry['type']=='class_feature':value=re.sub(r'^\d+\s*级\s*[:：]\s*','',value)
+        # The level label qualifies a feature heading; it is never part of the name a reference uses.
+        level=LEVEL_LABEL.match(value)
+        if level and value[level.end():]:value=value[level.end():]
         if value and value not in names:names.append(value)
     if not names:return []
     zh,en=split_name(names[0])

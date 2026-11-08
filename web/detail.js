@@ -55,7 +55,8 @@ function renderDetail(tab='body') {
   const auditSummary=auditMode?'':`<button type="button" class="audit-summary" data-audit-summary title="${esc(ui.auditSummaryHint)}">${esc(ui.auditSummary)}：${Object.entries(counts).map(([k,n])=>`${esc(auditNames[k])} ${n}`).join(' · ')}</button>`;
   let content='';
   if(tab==='body'){content=renderBody(e);loadLayout(e);}
-  if(tab==='fields') content=`<dl class="detail-fields">${Object.entries(e.fields).map(([k,v])=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(displayValue(k,v))}${e.field_conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
+  // Attributes follow the type's table columns; fields naming the version (type, book, rules) come last.
+  if(tab==='fields') content=`<dl class="detail-fields">${(e.field_order||Object.keys(e.fields)).map(k=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(fieldText(e,k))}${e.field_conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
   if(tab==='facts') content=e.facts.map(f=>`<article class="fact"><div class="fact-head"><strong>${esc(fieldNames[f.field]||f.field)}</strong>${badge(f.status,f.status==='原文明示'?'green':'amber')}</div><div class="fact-value">${esc(displayValue(f.field,f.value))}</div><small>规则：${esc(f.rule)} · 作用域：${esc(f.scope)}</small>${f.excerpt?`<blockquote>${esc(f.excerpt)}</blockquote>`:''}${f.evidence.path?`<a href="${esc(sourceURL(f.evidence.path,...(f.evidence.span||[0,0])))}" target="_blank" rel="noopener">${esc(f.evidence.path)} ↗</a>`:`<details><summary class="muted">定位依据</summary><pre class="body-text">${esc(JSON.stringify(f.evidence,null,2))}</pre></details>`}</article>`).join('');
   if(tab==='facts'&&!content)content=`<p class="muted">${esc(ui.noEvidence)}</p>`;
   if(tab==='versions'&&members.length>1) content=renderVersions(e);
@@ -63,7 +64,7 @@ function renderDetail(tab='body') {
   if(tab==='discoveries') content=(e.concept_observations||[]).map(o=>renderConceptObservation(o,linkLabels)).join('')||`<p class="muted">${esc(linkLabels.emptyDiscoveries)}</p>`;
   if(tab==='references') content=(metadata.review_snapshot?.pending_rebuild?`<p>${badge(linkLabels.pendingReview,'amber')}</p>`:'')+`<p class="muted">${esc(linkLabels.referencePolicy)}</p>`+(e.effective_references||[]).map(o=>renderConceptObservation(o,linkLabels)).join('');
   if(tab==='reviews') content=`<p class="muted">仅展示关联此条目或所在页面的问题。没有待核记录不代表已经核实。</p>`+e.reviews.map(r=>renderReview(r,linkLabels)).join('');
-  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(e.type_label)} / ${esc(e.ruleset)}</div><h2 id="entry-title">${esc(e.name_zh||e.name)}</h2><div class="english">${esc(e.name_en)}</div>${members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(m.source_names.join('；')+' · '+m.ruleset)}">${esc(versionLabel(m))}</button>`).join('')}</div>`:''}<div class="detail-meta">${esc(e.source_names.join('；'))}</div><div class="badges">${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}</div><div class="detail-meta detail-links">${metadata.book_url?`<a target="_blank" rel="noopener" href="${esc(metadata.book_url+'/definition/'+encodeURIComponent(e.id)+'?reader=1')}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(([id,name])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''}" data-tab="${id}">${esc(name)}</button>`).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div>`;
+  $('#detail-content').innerHTML=`<div class="eyebrow">${esc(e.type_label)} / ${esc(rulesetFull(e.ruleset))}</div><h2 id="entry-title">${esc(e.name_zh||e.name)}</h2><div class="english">${esc(e.name_en)}</div>${members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}</button>`).join('')}</div>`:''}<div class="detail-meta">${esc(e.source_ids.map(sourceFull).join('；'))}</div><div class="badges">${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}</div><div class="detail-meta detail-links">${metadata.book_url?`<a target="_blank" rel="noopener" href="${esc(metadata.book_url+'/definition/'+encodeURIComponent(e.id)+'?reader=1')}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(([id,name])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''}" data-tab="${id}">${esc(name)}</button>`).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div>`;
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
 async function openEntry(id,update=true,tab='body',fromResult=false) {
@@ -89,11 +90,6 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
 }
 // The body shows the book's own layout; anna's readings of it sit beside the text as notes.
 // Until the layout arrives, or when the source page is unavailable, the extracted text stands in.
-function noteValue(e,field){
-  const values=e.quickref?.[field];
-  if(values&&!values[0].startsWith('__'))return values.map(v=>field==='spell_level'&&/^\d$/.test(v)?LEVELS[Number(v)]:BOOL_FIELDS.has(field)?(v==='true'?'是':v==='false'?'否':v):v).join('、');
-  const raw=e.fields[field];return raw===undefined||raw===null||raw===''?'—':Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
-}
 function renderBody(e){
   const l=e.layout;
   if(!l||l.status!=='ok'){
@@ -101,8 +97,8 @@ function renderBody(e){
     return `${notice}<div class="body-text" ${l?'':'aria-busy="true"'}>${esc(e.body)}</div>`;
   }
   const notes=l.notes.map(n=>{
-    const label=`${fieldNames[n.field]||n.field}：${noteValue(e,n.field)} · ${n.status}${n.located?'':' · '+ui.noteElsewhere}`;
-    const inner=`<span class="note-field">${esc(fieldNames[n.field]||n.field)}</span><span class="note-value">${esc(noteValue(e,n.field))}</span>`;
+    const label=`${fieldNames[n.field]||n.field}：${fieldText(e,n.field)} · ${n.status}${n.located?'':' · '+ui.noteElsewhere}`;
+    const inner=`<span class="note-field">${esc(fieldNames[n.field]||n.field)}</span><span class="note-value">${esc(fieldText(e,n.field))}</span>`;
     return `<li>${n.located?`<button type="button" class="field-note ${n.status==='原文明示'?'':'inferred'}" data-note="${esc(n.field)}" title="${esc(label)}">${inner}</button>`:`<span class="field-note unlocated" title="${esc(label)}">${inner}</span>`}</li>`;
   }).join('');
   return `<div class="layout-reading">${notes?`<ul class="field-notes" aria-label="${esc(ui.fieldNotes)}">${notes}</ul>`:''}<div class="layout-text">${l.html}</div></div>`;
@@ -122,9 +118,8 @@ function lightNotes(fields,on){
 // Versions are compared field by field; differing fields lead, equal or unextracted ones fold away.
 function renderVersions(e){
   const {members,fields}=e.versions;
-  const value=(field,v)=>v===undefined||v===null||v===''?'—':Array.isArray(v)?v.map(x=>displayValue(field,x)).join('、'):displayValue(field,v);
   const head=`<thead><tr><th scope="col">${esc(ui.fields)}</th>${members.map(m=>`<th scope="col"><button type="button" class="link-button" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''}>${esc(versionLabel(m))}</button>${m.id===e.id?` <span class="muted">${esc(ui.currentVersion)}</span>`:''}</th>`).join('')}</tr></thead>`;
-  const rows=list=>list.map(f=>`<tr class="${f.differs?'differs':''}"><th scope="row">${esc(fieldNames[f.field]||f.field)}</th>${f.values.map(v=>`<td>${esc(value(f.field,v))}</td>`).join('')}</tr>`).join('');
+  const rows=list=>list.map(f=>`<tr class="${f.differs?'differs':''}"><th scope="row">${esc(fieldNames[f.field]||f.field)}</th>${members.map(m=>`<td>${esc(fieldText(m,f.field))}</td>`).join('')}</tr>`).join('');
   const differing=fields.filter(f=>f.differs),same=fields.filter(f=>!f.differs);
   return `<p class="muted versions-intro">${esc(ui.versionsIntro)}</p>
     <h3 class="versions-heading">${esc(ui.differingFields)} ${differing.length}</h3>

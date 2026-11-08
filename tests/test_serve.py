@@ -170,5 +170,19 @@ class WebTests(unittest.TestCase):
         m=meta(self.db);self.assertEqual(len(m['views']),24);self.assertIn('动物购置',{v['name'] for v in m['views']})
         self.assertEqual(len(m['sources']),155)
         self.assertTrue(all(s['count']==0 for s in m['sources'] if s['coverage']=='catalog_only'))
+        # Short labels come from the abbreviation catalog, never from guessing at aliases.
+        by_name={s['name']:s['short_name'] for s in m['sources']}
+        self.assertEqual(by_name['被遗忘的国度：费伦英雄'],'FRHoF')
+        self.assertEqual(by_name['瓦尔达的秘密尖塔 / 玩家包Ⅰ'],'VSS:PP')
+        self.assertEqual(by_name['破解奥秘（UA） / 灵能I'],'UA 灵能I')
+        self.assertEqual(by_name['模组相关 / 纸质出版物 / 黄金宝库之钥'],'黄金宝库之钥')
+        codes=[s['short_name'] for s in m['sources']];self.assertEqual(len(codes),len(set(codes)))
+
+    def test_source_label_rule(self):
+        from serve import source_label
+        self.assertEqual(source_label({'name':'甲书','abbreviations':['AB','ABC'],'collection_abbreviations':['X']}),'AB')
+        self.assertEqual(source_label({'name':'合集 / 第二卷','abbreviations':[],'collection_abbreviations':['X']}),'X 第二卷')
+        self.assertEqual(source_label({'name':'其他/新资源/子卷','abbreviations':[],'collection_abbreviations':[]}),'子卷')
+        self.assertEqual(source_label({'name':'旧库'}),'旧库')
 
 if __name__=='__main__':unittest.main()

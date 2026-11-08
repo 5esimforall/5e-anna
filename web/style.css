@@ -222,6 +222,9 @@ td.differs>.cell-value, td.differs>.marks { text-decoration: underline dotted va
 .mark { font-family: var(--anna-serif); }
 .mark.absent { color: var(--anna-muted); opacity: .45; }
 .mark.unknown { color: var(--anna-muted); }
+/* Yes/no columns: the yes carries the weight; no is a faint dot, distinct from — (not extracted). */
+.flag.yes { color: var(--anna-ink); }
+.flag.no { color: var(--anna-muted); opacity: .55; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 tbody tr:last-child td { border-bottom: 0; }
 .name-cell { position: sticky; left: 0; z-index: 1; min-width: 200px; max-width: 275px; white-space: normal; border-right: 1px solid var(--anna-line); }

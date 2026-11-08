@@ -47,6 +47,16 @@ class NormalizeTests(unittest.TestCase):
             self.assertEqual(result,expected+[None,None])
         db.close()
 
+    def test_reader_field_order_follows_the_type_then_metadata(self):
+        entry={'type':'spell','fields':{'type':'spell','range':'60尺','source_id':'s','casting_time_detail':'1 动作','ruleset':'5r',
+               'components':'V','spell_classes':'法','school':'死灵','casting_time':'动作','material':'×','spell_level':'戏法','zeta':'x'}}
+        self.assertEqual(browse.field_order(entry),['spell_level','school','spell_classes','casting_time','casting_time_detail',
+                         'components','material','range','zeta','type','source_id','ruleset'])
+        # A type without its own schema keeps extraction order, still with metadata last.
+        rule={'type':'condition','fields':{'legacy':True,'b':1,'type':'condition','a':2}}
+        self.assertEqual(browse.field_order(rule),['b','a','type','legacy'])
+        self.assertEqual(browse.field_order({'type':'feat','fields':{}}),[])
+
 @unittest.skipUnless(DB.exists(),'Build corpus first')
 class BrowseCorpusTests(unittest.TestCase):
     def setUp(self):self.db=connect()

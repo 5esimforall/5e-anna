@@ -157,19 +157,25 @@ def query(db, params, export=False):
     return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows}
 
 
+def source_label(source):
+    """The shortest label the abbreviation catalog supports: the publication's own code; a collection
+    code (UA, Drops) with the publication's own title; or the title alone where the catalog lists no code."""
+    title=re.split(r'\s*/\s*',source['name'])[-1]
+    if source.get('abbreviations'):return source['abbreviations'][0]
+    if source.get('collection_abbreviations'):return source['collection_abbreviations'][0]+' '+title
+    return title
+
+
 def meta(db):
     summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
     sources = []
     for r in db.execute('SELECT s.data,count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id LEFT JOIN entries e ON e.id=es.entry_id AND e.type!=\'section\' GROUP BY s.id ORDER BY s.name'):
-        s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'count':r['n']})
+        s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'short_name':source_label(s),'count':r['n']})
     review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
     review = json.loads(review[0]) if review else None
     if review: review['pending_rebuild'] = load_events(review['path'])[1] != review['sha256']
     return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
             'views':[{'name':v,'count':db.execute('SELECT count(*) FROM "'+v.replace('"','""')+'"').fetchone()[0]} for v in views(db)]}
-
-
-COMPARE_SKIP = {'source_id','source_code','type','ruleset','legacy'}
 
 
 def version_compare(db, entry):
@@ -178,13 +184,13 @@ def version_compare(db, entry):
     if not group:return None
     rows=[json.loads(r[0]) for r in db.execute('WITH '+stack_members()+' SELECT e.data FROM m JOIN entries e ON e.id=m.entry_id WHERE m.stack=? '
         "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",(group['stack'],))]
-    order=list(dict.fromkeys(k for r in rows for k in r['fields'] if k not in COMPARE_SKIP))
+    order=list(dict.fromkeys(k for r in rows for k in browse.field_order(r) if k not in browse.METADATA_FIELDS))
     fields=[]
     for k in order:
         known={browse.comparable(r['fields'],k) for r in rows}-{None}
         fields.append({'field':k,'values':[r['fields'].get(k) for r in rows],'differs':len(known)>1})
     return {'group_id':group['stack'],'status':group['status'],
-            'members':[{k:r.get(k) for k in ('id','name','name_zh','name_en','ruleset','source_ids','source_names','legacy')} for r in rows],
+            'members':[{k:r.get(k) for k in ('id','name','name_zh','name_en','ruleset','source_ids','source_names','legacy','fields','quickref')} for r in map(browse.enrich,rows)],
             'fields':fields}
 
 
@@ -192,6 +198,7 @@ def detail(db, eid):
     row=db.execute('SELECT data FROM entries WHERE id=?',(eid,)).fetchone()
     if not row: raise LookupError('条目不存在')
     e=browse.enrich(json.loads(row[0]))
+    e['field_order']=browse.field_order(e)
     e['body']=db.execute('SELECT body FROM entry_text WHERE id=?',(eid,)).fetchone()[0]
     e['facts']=[]
     for r in db.execute('SELECT field,value,evidence,rule,scope,status FROM facts WHERE entry_id=? ORDER BY field,id',(eid,)):

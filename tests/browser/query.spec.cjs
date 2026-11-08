@@ -326,6 +326,35 @@ test('same-name versions stack into one row with pills, in-place differences and
   await expect(page.locator('#stack-versions')).toBeChecked();await expect(page.locator('#results tr')).toHaveCount(1);
 });
 
+test('a field reads the same in the table, the reader attributes, the notes and the version comparison',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('亡者丧钟'));
+  const data=await queryMatchesAPI(page),head=data.rows[0];
+  // The source text abbreviates warlock as 锁 on both versions; every place shows the normalized class.
+  expect(head.versions.every(v=>v.fields.spell_classes==='牧 法 锁')).toBeTruthy();
+  const row=page.locator('#results tr').first(),classes=row.locator('td[data-label="职业"]');
+  await expect(classes.locator('.cell-value')).toHaveText('牧 法 契');await expect(classes).toHaveAttribute('title','牧师、法师、魔契师');
+  // Rules versions read as rules generations; books read as catalog codes with the full name on hover.
+  await expect(row.locator('td[data-label="规则版本"] .badge')).toHaveText('2024');
+  await expect(row.locator('td[data-label="规则版本"] .badge')).toHaveAttribute('title','2024 版规则（5r）');
+  await expect(row.locator('.source-cell abbr')).toHaveText('PHB24');await expect(row.locator('.source-cell abbr')).toHaveAttribute('title','玩家手册2024');
+  await expect(row.locator('.version-pill')).toHaveText(['PHB24 2024','XGE 2014']);
+  await row.locator('.entry-name').click();await read(page,head.id);
+  await expect(page.locator('#detail .eyebrow')).toHaveText('法术 / 2024 版规则（5r）');
+  await expect(page.locator('#detail .detail-meta').first()).toHaveText('玩家手册2024（PHB24）');
+  await page.getByRole('tab',{name:'属性',exact:true}).click();
+  const attributes=page.locator('.detail-fields');
+  const names=await attributes.locator('dt').allTextContents(),values=await attributes.locator('dd').allTextContents();
+  const at=name=>values[names.indexOf(name)];
+  expect(at('职业')).toBe('牧师、法师、魔契师');expect(at('材料')).toBe('否');expect(at('规则版本')).toBe('2024 版规则（5r）');
+  // The type's table columns lead, a detail follows its field, and fields naming the version come last.
+  expect(names.slice(0,4)).toEqual(['环阶','学派','职业','施法时间']);
+  expect(names[names.indexOf('施法时间')+1]).toBe('施法时间原文');
+  expect(names.slice(-4)).toEqual(['类型','来源','来源缩写','规则版本']);
+  await page.getByRole('tab',{name:/^版本对照/}).click();
+  const classRow=page.locator('.version-table tr').filter({has:page.locator('th',{hasText:/^职业$/})});
+  await expect(classRow.locator('td')).toHaveText(['牧师、法师、魔契师','牧师、法师、魔契师']);
+});
+
 test('stacking never merges class features from different classes',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业能力')+'&q='+encodeURIComponent('属性值提升'));
   const data=await queryMatchesAPI(page);
@@ -349,7 +378,7 @@ test('reader shows the original layout with field notes tied to their words and 
   await shot(page,testInfo,'layout-reader-notes.png');
   // An unavailable or changed source never yields a partial layout; extracted text stands in with the reason.
   await page.route('**/api/entry-layout?*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'stale',path:'x'})}));
-  await page.locator('.reader-versions').getByRole('button',{name:/PHB 5e/}).click();await read(page,other.id);
+  await page.locator('.reader-versions').getByRole('button',{name:/PHB 2014/}).click();await read(page,other.id);
   await expect(page.locator('#detail-panel .layout-notice')).toContainText('原文已更新');
   await expect(page.locator('#detail-panel .body-text')).toContainText('以太');
   await expect(page.locator('#detail-panel .layout-text')).toHaveCount(0);

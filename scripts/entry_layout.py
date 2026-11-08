@@ -12,6 +12,7 @@ import json
 
 from bs4 import Comment, Doctype, NavigableString, Tag
 
+from browse import METADATA_FIELDS
 from build import read_page
 from html_extract import IGNORED, Document
 
@@ -26,8 +27,6 @@ TAGS = {
 VOID = {'br','hr'}
 SHORT_CELL = 12
 DROPPED = {'img','svg','video','audio','iframe','object','embed','input','button','select','textarea','form','map','area'}
-# These fields name or locate the version; they are not readings of its rules.
-NOTE_SKIP = {'type','ruleset','source_id','source_code'}
 
 
 def attribute(value):
@@ -98,7 +97,7 @@ def entry_layout(db, entry_id, source_root):
         body_start = e['title_end'] if start<e.get('title_end',start)<end else start
         facts = []
         for field,value,evidence,rule,status in db.execute('SELECT field,value,evidence,rule,status FROM facts WHERE entry_id=? ORDER BY id',(entry_id,)):
-            if field in NOTE_SKIP:continue
+            if field in METADATA_FIELDS:continue
             ev = json.loads(evidence);span = ev.get('span') if ev.get('path')==path else None
             located = bool(span and start<=span[0]<span[1]<=end and doc.text[span[0]:span[1]].strip())
             facts.append({'field':field,'value':json.loads(value),'rule':rule,'status':status,'span':span if located else None})

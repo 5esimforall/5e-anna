@@ -15,12 +15,14 @@ const annaUiLabels = {
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
-    stackVersions:'合并同名版本',preferRuleset:'优先显示',preferOptions:{'5r':'2024 规则（5r）','5e':'2014 规则（5e）'},
+    stackVersions:'合并同名版本',preferRuleset:'优先显示',
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
     stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
     layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
-    versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前'},
+    versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
+    rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
+    flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',closeDetail:'Close details',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
@@ -33,21 +35,25 @@ const annaUiLabels = {
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
-    stackVersions:'Stack same-name versions',preferRuleset:'Show first',preferOptions:{'5r':'2024 rules (5r)','5e':'2014 rules (5e)'},
+    stackVersions:'Stack same-name versions',preferRuleset:'Show first',
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
     stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
     layoutUnavailable:{missing:'The source page is missing; showing extracted text.',stale:'The source changed since this database snapshot; showing extracted text.',empty:'The source layout is empty; showing extracted text.',error:'Unable to load the source layout; showing extracted text.'},
-    versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current'}
+    versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current',
+    rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']},
+    flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a name for its text and evidence'}
 };
 const ui = annaUiLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
-document.querySelector('#prefer').innerHTML=Object.entries(ui.preferOptions).map(([value,label])=>`<option value="${value}">${label}</option>`).join('');
+// A ruleset is a rules generation, not a publication year: short labels name it, the full label says so.
+const rulesetShort=r=>ui.rulesets[r]?.[0]||r, rulesetFull=r=>ui.rulesets[r]?.[1]||r;
+document.querySelector('#prefer').innerHTML=['5r','5e'].map(value=>`<option value="${value}" title="${esc(rulesetFull(value))}">${esc(rulesetShort(value))}</option>`).join('');
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
 for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('aria-label',ui[el.dataset.uiLabel]);el.title=ui[el.dataset.uiLabel];}
 const fmt = n => Number(n).toLocaleString('zh-CN');
-const pretty = v => typeof v==='boolean'?(v?'是':'否'):typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
+const pretty = v => typeof v==='boolean'?ui.flags[v]:typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
-const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',type:'类型',source_id:'来源',ruleset:'版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR',strength:'力量',dexterity:'敏捷',constitution:'体质',intelligence:'智力',wisdom:'感知',charisma:'魅力'};
+const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',type:'类型',source_id:'来源',ruleset:'规则版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR',strength:'力量',dexterity:'敏捷',constitution:'体质',intelligence:'智力',wisdom:'感知',charisma:'魅力'};
 const relationNames = {uses_statblock:'使用数据卡',catalog_offer:'购置条目',lists_mount:'列为坐骑',part_of:'属于',section_of:'所属段落',grants:'授予',grants_feat:'授予专长',references:'引用',requires:'要求',belongs_to:'属于',casts:'施展'};
 const reasonNames = {animal_statblock_unresolved:'动物数据卡关联待核',catalog_table_unhandled:'商品表结构待支持',catalog_row_layout_unresolved:'合并单元格待核',field_conflict:'字段冲突',duplicate_anchor:'重复锚点',anchor_recovered_by_name:'按名称恢复锚点',possible_incomplete_content:'正文可能不完整',unclassified_page:'页面尚未分类',index_entry_unresolved:'索引未关联',source_ruleset_unresolved:'来源版本待核',catalog_without_locator:'仅见资源名录',index_link_recovered:'已恢复索引链接'};
 const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','七环','八环','九环'];
@@ -66,11 +72,34 @@ let metadata, schema, groups=[], params=new URLSearchParams(location.search), re
 let currentData, currentEntry, detailGeneration=0, ready=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const sourceURL=(path,start=0,end=0)=>'/source?'+new URLSearchParams({path,start,end})+'#evidence';
-const sourceName=id=>metadata.sources.find(s=>s.id===id)?.name||id;
+const sourceOf=id=>metadata.sources.find(s=>s.id===id);
+const sourceName=id=>sourceOf(id)?.name||id, sourceShort=id=>sourceOf(id)?.short_name||id;
+// The reader names a book in full and adds the short label the table uses, so the two can be matched.
+const sourceFull=id=>sourceShort(id)===sourceName(id)?sourceName(id):`${sourceName(id)}（${sourceShort(id)}）`;
 function displayValue(field,value){
-  if(field==='source_id')return (Array.isArray(value)?value:[value]).map(sourceName).join('；');
+  if(field==='source_id')return (Array.isArray(value)?value:[value]).map(sourceFull).join('；');
   if(field==='type')return metadata.types[value]||pretty(value);
+  if(field==='ruleset')return rulesetFull(value);
   return pretty(value);
+}
+// One reading of each field. The table, the reader's attributes, its field notes and the version comparison
+// all show the normalized value, so one entry never reads 锁 in one place and 契 in another; the source
+// wording stays in the evidence. Short form (the table) abbreviates classes; the reader spells them out.
+const CLASS_SHORT={吟游诗人:'诗',牧师:'牧',德鲁伊:'德',圣武士:'圣',游侠:'游',术士:'术',法师:'法',魔契师:'契',奇械师:'械',魔战士:'魔'};
+const MISSING_TOKENS=new Set(['__unknown__','__na__']);
+function tokenText(field,token,short){
+  if(token==='__conflict__')return '⚠';
+  if(field==='spell_level'&&/^\d$/.test(token))return LEVELS[Number(token)];
+  if(field==='spell_classes'&&short)return CLASS_SHORT[token]||token;
+  if(BOOL_FIELDS.has(field)&&(token==='true'||token==='false'))return ui.flags[token];
+  return token;
+}
+function fieldText(entry,field,short=false){
+  const tokens=entry.quickref?.[field];
+  if(tokens){const parts=tokens.filter(t=>!MISSING_TOKENS.has(t)).map(t=>tokenText(field,t,short));return parts.length?parts.join(short&&field==='spell_classes'?' ':'、'):'—';}
+  const raw=entry.fields?.[field];
+  if(raw===undefined||raw===null||raw==='')return '—';
+  return Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
 }
 async function api(path,signal){const r=await fetch(path,{signal});const d=await r.json();if(!r.ok)throw new Error(d.error||'请求失败');return d;}
 let restoringUi=false, uiSaveTimer, lastResultEntry=null;
@@ -117,10 +146,6 @@ function setSelection(g,values){
 }
 function changed(replace=false){
   clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();
-}
-function shortSource(s){
-  const code=s.aliases.find(v=>/^[A-Z][A-Z0-9]{1,11}$/.test(v));
-  return code||s.name.split(' / ').at(-1);
 }
 function multiGroup(g){
   const choices=selected(g);const all=!params.has(g.key);
@@ -187,11 +212,11 @@ async function changeView(){
     const data=await api('/api/facets?'+new URLSearchParams({view}));if(gen!==panelGeneration)return;
     schema=data.schema;groups=data.groups.map(g=>({...g,key:'f_'+g.key}));
     groups.push(...[
-      {key:'ruleset',label:'规则版本',options:['5e','5r','待核'].map(value=>({value,label:value}))},
+      {key:'ruleset',label:'规则版本',options:['5e','5r','待核'].map(value=>({value,label:rulesetShort(value),title:rulesetFull(value)}))},
       {key:'origin',label:'来源性质',mode:'single',options:['官方','合作','待核'].map(value=>({value,label:value}))},
       {key:'legacy',label:'旧版标记',options:Object.entries(legacy).map(([value,label])=>({value,label}))},
       {key:'status',label:'分类依据',options:['原文明示','上下文推得','未分类段落'].map(value=>({value,label:value}))},
-      {key:'source',label:'来源',options:metadata.sources.filter(s=>data.source_counts[s.id]||params.getAll('source').includes(s.id)).map(s=>({value:s.id,label:shortSource(s),title:s.name,count:data.source_counts[s.id]||0,search:[s.name,...s.aliases].join(' ')}))}
+      {key:'source',label:'来源',options:metadata.sources.filter(s=>data.source_counts[s.id]||params.getAll('source').includes(s.id)).map(s=>({value:s.id,label:s.short_name,title:s.name,count:data.source_counts[s.id]||0,search:[s.name,...s.aliases].join(' ')}))}
     ]);
     const multi=groups.filter(g=>g.key.startsWith('f_')&&g.mode==='multi');
     const extraGroups=[...multi.slice(2),...groups.filter(g=>g.mode==='flag')];
@@ -220,13 +245,6 @@ function renderColumns(){
     return `<th scope="col" ${active?`aria-sort="${order}"`:''}>${sortable?`<button data-sort="${esc(k)}" aria-label="按${esc(fieldNames[k]||k)}排序">${esc(fieldNames[k]||k)} <span>${active?(order==='descending'?'↓':'↑'):'↕'}</span></button>`:esc(fieldNames[k]||k)}</th>`;
   }).join('')+'</tr>';
 }
-function quickLabel(field,value){
-  if(value==='__unknown__')return '—';if(value==='__conflict__')return '⚠';if(value==='__na__')return '—';
-  if(field==='spell_level'&&/^\d$/.test(value))return LEVELS[Number(value)];
-  if(field==='spell_classes')return ({吟游诗人:'诗',牧师:'牧',德鲁伊:'德',圣武士:'圣',游侠:'游',术士:'术',法师:'法',魔契师:'契',奇械师:'械',魔战士:'魔'})[value]||value;
-  if(BOOL_FIELDS.has(field))return value==='true'?'是':value==='false'?'否':value;
-  return value;
-}
 // A composite column shows several boolean fields as one glyph strip; filters and export keep the parts.
 function marksHTML(row,key){
   return `<span class="marks">${schema.composites[key].map(field=>{
@@ -237,24 +255,27 @@ function marksHTML(row,key){
     return `<span class="mark ${state}" title="${esc(label)}"><span aria-hidden="true">${esc(glyph)}${state==='special'?'*':state==='conflict'?'⚠':''}</span><span class="sr-only">${esc(label)}</span></span>`;
   }).join('')}</span>`;
 }
-function valueText(row,key){
-  const values=row.quickref[key];const text=values?values.map(v=>quickLabel(key,v)).join(key==='spell_classes'?' ':' / '):pretty(row.fields[key]);
-  return text||'—';
+// A yes/no column is scanned for the yeses: ✓ carries the weight, a faint dot marks no, — stays “not extracted”.
+function flagHTML(row,key){
+  const token=row.quickref[key]?.length===1?row.quickref[key][0]:'__conflict__';
+  if(token!=='true'&&token!=='false')return null;
+  return `<span class="flag ${token==='true'?'yes':'no'}"><span aria-hidden="true">${token==='true'?'✓':'·'}</span><span class="sr-only">${esc(ui.flags[token])}</span></span>`;
 }
-const versionSource=v=>v.source_ids.map(id=>shortSource(metadata.sources.find(s=>s.id===id)||{name:id,aliases:[]})).join(' / ');
-const versionLabel=v=>`${versionSource(v)} ${v.ruleset}`;
+const versionSource=v=>v.source_ids.map(sourceShort).join(' / ');
+const versionLabel=v=>`${versionSource(v)} ${rulesetShort(v.ruleset)}`;
+const versionTitle=v=>`${v.source_names.join('；')} · ${rulesetFull(v.ruleset)}`;
 // Other versions' values sit under the displayed one, so a rule change is visible in place.
 function versionDiffs(row,key){
   const ids=row.version_diffs?.[key];if(!ids)return '';
   return ids.map(id=>{const v=row.versions.find(v=>v.id===id);
-    const value=schema.composites?.[key]?marksHTML(v,key):esc(valueText(v,key));
+    const value=schema.composites?.[key]?marksHTML(v,key):flagHTML(v,key)||esc(fieldText(v,key,true));
     return `<div class="version-diff"><span class="version-source">${esc(versionSource(v))}</span> ${value}</div>`;}).join('');
 }
 function versionPills(row){
   if(!(row.versions?.length>1))return '';
   const status=ui.stackStatus[row.stack?.status]||ui.stackStatus.same_name_candidate;
   return `<div class="versions" role="group" aria-label="${esc(status.replace('{count}',row.versions.length))}" title="${esc(status.replace('{count}',row.versions.length))}">${row.versions.map((v,i)=>
-    `<button type="button" class="version-pill ${i===0?'shown':''} ${v.ruleset==='待核'?'unverified':''}" data-entry="${esc(v.id)}" title="${esc(v.source_names.join('；')+' · '+v.ruleset+(i===0?' · '+ui.shownVersion:''))}">${esc(versionLabel(v))}</button>`).join('')}</div>`;
+    `<button type="button" class="version-pill ${i===0?'shown':''} ${v.ruleset==='待核'?'unverified':''}" data-entry="${esc(v.id)}" title="${esc(versionTitle(v)+(i===0?' · '+ui.shownVersion:''))}">${esc(versionLabel(v))}</button>`).join('')}</div>`;
 }
 function cell(row,key){
   const label=`data-label="${esc(fieldNames[key]||key)}"`,differs=row.version_diffs?.[key]?' differs':'';
@@ -263,14 +284,14 @@ function cell(row,key){
     return `<td ${label} class="${differs}" ${raw?`title="${esc(raw)}"`:''}>${marksHTML(row,key)}${versionDiffs(row,key)}</td>`;
   }
   if(key==='name')return `<td class="name-cell"><button class="entry-name" data-entry="${esc(row.id)}">${esc(row.name_zh||row.name)}</button><div class="english">${esc(row.name_en)}</div>${row.field_conflicts.length?'<span class="row-warning" title="存在字段冲突；打开详情核对">⚠</span>':''}${versionPills(row)}</td>`;
-  if(key==='sources')return `<td class="source-cell" ${label}>${row.source_ids.map(id=>`<abbr title="${esc(sourceName(id))}">${esc(shortSource(metadata.sources.find(s=>s.id===id)||{name:id,aliases:[]}))}</abbr>`).join(' / ')}</td>`;
+  if(key==='sources')return `<td class="source-cell" ${label}>${row.source_ids.map(id=>`<abbr title="${esc(sourceName(id))}">${esc(sourceShort(id))}</abbr>`).join(' / ')}</td>`;
   if(key==='type')return `<td ${label}>${esc(row.type_label)}</td>`;
-  if(key==='ruleset')return `<td ${label}>${badge(row.ruleset,row.ruleset==='待核'?'amber':'gray')}</td>`;
+  if(key==='ruleset')return `<td ${label}><span class="badge ${row.ruleset==='待核'?'amber':'gray'}" title="${esc(rulesetFull(row.ruleset))}">${esc(rulesetShort(row.ruleset))}</span></td>`;
   if(key==='legacy')return `<td ${label}>${esc(legacy[row.legacy])}</td>`;
   if(key==='classification_status')return `<td ${label}>${esc(row.classification_status)}</td>`;
-  const text=valueText(row,key);
-  const conflict=row.field_conflicts.includes(key);const raw=pretty(row.fields[key]);
-  return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}${differs}" title="${esc((conflict?'字段冲突：':'')+raw)}"><span class="cell-value">${esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</span>${versionDiffs(row,key)}</td>`;
+  const text=fieldText(row,key,true),flag=flagHTML(row,key);
+  const conflict=row.field_conflicts.includes(key),full=fieldText(row,key);
+  return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}${differs}" title="${esc((conflict?'字段冲突：':'')+full)}"><span class="cell-value">${flag||esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</span>${versionDiffs(row,key)}</td>`;
 }
 const rowHTML=(row,columns)=>'<tr>'+columns.map(k=>cell(row,k)).join('')+'</tr>';
 function renderResults(){

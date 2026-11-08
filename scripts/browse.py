@@ -57,14 +57,38 @@ SCHEMAS = {
 }
 
 
-def schema(view):
-    kind = ('animal' if view=='动物购置' else 'spell' if view=='法术' else 'creature' if view in {'生物数据卡','NPC','伙伴','坐骑'}
-            else 'item' if view in {'魔法物品','魔法武器','装备'}
-            else 'feat' if view in {'专长','战斗风格','传奇恩惠'} else 'generic')
+def configure(kind):
     config = {'kind':kind, **SCHEMAS[kind]}
     config.setdefault('export_columns', config['columns'])
     config['composites'] = {k:COMPOSITES[k] for k in config['columns'] if k in COMPOSITES}
     return config
+
+
+def schema(view):
+    kind = ('animal' if view=='动物购置' else 'spell' if view=='法术' else 'creature' if view in {'生物数据卡','NPC','伙伴','坐骑'}
+            else 'item' if view in {'魔法物品','魔法武器','装备'}
+            else 'feat' if view in {'专长','战斗风格','传奇恩惠'} else 'generic')
+    return configure(kind)
+
+
+# An entry's own type picks its quick-reference schema wherever it is read, whichever view opened it.
+TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal'}
+# These fields name or locate a version (what it is, which book, which rules); they are not readings of its rules.
+METADATA_FIELDS = ('type','source_id','source_code','ruleset','legacy')
+DETAIL_SUFFIX = '_detail'
+
+
+def field_order(entry):
+    """Reader order: the type's quick-reference columns as the table shows them, the remaining rule
+    fields as extracted with each X_detail right after X, then the version's metadata."""
+    fields=entry['fields'];config=configure(TYPE_KINDS.get(entry['type'],'generic'))
+    lead=[f for column in config['columns'] for f in [column,*config['composites'].get(column,[])]]
+    rules=[f for f in fields if f not in METADATA_FIELDS]
+    ordered=[f for f in dict.fromkeys(lead) if f in rules]+[f for f in rules if f not in lead]
+    details=[f for f in ordered if f.endswith(DETAIL_SUFFIX) and f[:-len(DETAIL_SUFFIX)] in ordered]
+    for f in details:
+        ordered.remove(f);ordered.insert(ordered.index(f[:-len(DETAIL_SUFFIX)])+1,f)
+    return ordered+[f for f in METADATA_FIELDS if f in fields]
 
 
 def scalar_values(v):

@@ -184,5 +184,6 @@ class WebTests(unittest.TestCase):
         self.assertEqual(source_label({'name':'合集 / 第二卷','abbreviations':[],'collection_abbreviations':['X']}),'X 第二卷')
         self.assertEqual(source_label({'name':'其他/新资源/子卷','abbreviations':[],'collection_abbreviations':[]}),'子卷')
         self.assertEqual(source_label({'name':'旧库'}),'旧库')
+        self.assertEqual(source_label({'name':'其他/新X','abbreviations':[],'collection_abbreviations':['X']}),'新X')
 
 if __name__=='__main__':unittest.main()

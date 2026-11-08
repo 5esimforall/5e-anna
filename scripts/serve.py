@@ -164,8 +164,9 @@ def source_label(source):
     code (UA, Drops) with the publication's own title; or the title alone where the catalog lists no code."""
     title=re.split(r'\s*/\s*',source['name'])[-1]
     if source.get('abbreviations'):return source['abbreviations'][0]
-    if source.get('collection_abbreviations'):return source['collection_abbreviations'][0]+' '+title
-    return title
+    code=next(iter(source.get('collection_abbreviations',[])),'')
+    # A title already carrying the code (新UA) is not prefixed again.
+    return code+' '+title if code and code.casefold() not in title.casefold() else title
 
 
 def meta(db):

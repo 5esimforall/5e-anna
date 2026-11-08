@@ -144,21 +144,28 @@ class SourceRegistry:
         return sorted({compact(v) for v in vals if v.strip() not in {'','——','—'}})
 
     @staticmethod
-    def _abbreviations(rows):
+    def _codes(row):
+        return [a for a in (compact(x) for x in re.split(r'[、,，;；]',row['abbreviations'])) if a and a.strip('—－-')]
+
+    @classmethod
+    def _abbreviations(cls,rows,name=''):
         """Catalog abbreviations by what they name: a publication's own code identifies it; a
-        collection's code (UA, Drops) is shared by every publication in that collection."""
-        def codes(level):
-            found=[compact(a) for r in rows if r['level']==level for a in re.split(r'[、,，;；]',r['abbreviations'])]
-            return list(dict.fromkeys(a for a in found if a and a.strip('—－-')))
-        return {'abbreviations':codes('publication'),'collection_abbreviations':codes('collection')}
+        collection's code (UA, Drops) is shared by every publication in that collection, unless
+        the source is that collection itself (a folder named 瓦尔达的秘密尖塔 holds the collection)."""
+        own=lambda r:r['level']=='publication' or namekey(r['name_zh'])==namekey(name)
+        codes=lambda mine:list(dict.fromkeys(a for r in rows if own(r)==mine for a in cls._codes(r)))
+        return {'abbreviations':codes(True),'collection_abbreviations':codes(False)}
 
     def _match_catalog(self,name,parent,english_names=()):
         nk=namekey(name);full=namekey(''.join(parent)+name)
+        # A Latin token in the path or label that is a catalog code (新UA, beyond drops) names that row.
+        tokens={t.casefold() for t in re.findall(r'[A-Za-z][A-Za-z0-9:]+',' '.join([*parent,name]))}
         scores=[]
         for row in self.catalog:
             candidates=[namekey(row['name_zh'])]+[namekey(a) for a in re.split('[、；]',row['aliases']) if len(a)>1 and a!='——']
             score=0
             if key(row['name_en']) in english_names and sum(key(r['name_en'])==key(row['name_en']) for r in self.catalog)==1:score=130
+            if tokens&{c.casefold() for c in self._codes(row)}:score=max(score,50)
             for ci,ck in enumerate(candidates):
                 if not ck:continue
                 if nk==ck or full==ck:score=max(score,120 if ci==0 else 90)
@@ -172,6 +179,24 @@ class SourceRegistry:
         # Never let a collection's rule generation label override its sub-publication.
         leaf=[r for r in matches if r['level']=='publication']
         return leaf or matches
+
+    def _describe(self,display,group,matches,evidence,named=(),archived=False,origin='待核'):
+        """Publication metadata from a source's group and its matched catalog rows; TOC sources and
+        folder sources share it, so a folder named after a catalogued book reads like that book."""
+        name=re.split(r'\s*/\s*',display)[-1]
+        rules={r['ruleset_hint'] for r in matches if r['ruleset_hint']!='待核'}|set(named)
+        rule=next(iter(rules)) if len(rules)==1 else '冲突' if len(rules)>1 else '待核'
+        # Release status needs a group or catalog row as evidence; a caller's default origin is only a guess.
+        known='合作' if group=='合作内容' or any('合作' in r['section'] for r in matches) else '官方' if group in {'核心规则','规则扩展','战役设定','旧版内容'} else None
+        release='测试' if 'UA' in group else '正式' if known else '待核'
+        origin=known or origin
+        types={self._type(r['section']) for r in matches}
+        types.discard('待核')
+        stype=self._type(group)
+        if stype=='待核' and len(types)==1:stype=next(iter(types))
+        return {'group':group,'source_type':stype,'origin':origin,'release_status':release,'ruleset_hint':rule,'archived':archived,
+            'catalog_ids':[r['id'] for r in matches],'aliases':self._aliases(matches),**self._abbreviations(matches,name),
+            'setting':[w for w in WORLD_WORDS if w in display],'evidence':evidence+[r['evidence'] for r in matches],'metadata_status':'上下文推得'}
 
     def _visit_source(self,node_id,group,parents):
         n=self.nodes[node_id];name=clean_label(n['label'])
@@ -198,22 +223,12 @@ class SourceRegistry:
             english_names={key(split_name(t)[1]) for t in titles if split_name(t)[1]}
             doc.close()
         matches=self._match_catalog(name,parents,english_names)
-        rules={r['ruleset_hint'] for r in matches if r['ruleset_hint']!='待核'}
-        if re.search(r'2024|2025',name) and group=='核心规则':rules.add('5r')
-        if '2014' in n['label']:rules.add('5e')
-        rule=next(iter(rules)) if len(rules)==1 else '冲突' if len(rules)>1 else '待核'
-        origin='合作' if group=='合作内容' else '官方' if group in {'核心规则','规则扩展','战役设定','旧版内容'} else '待核'
-        if any('合作' in r['section'] for r in matches):origin='合作'
-        release='测试' if 'UA' in group else '正式' if origin in {'官方','合作'} else '待核'
-        archived='旧版' in n['label'] or group=='旧版内容'
-        types={self._type(r['section']) for r in matches}
-        types.discard('待核')
-        stype=self._type(group)
-        if stype=='待核' and len(types)==1:stype=next(iter(types))
-        evidence=[{'path':'webhelpcontents.htm','node_id':node_id,'label':n['label'],'group':group}]+[r['evidence'] for r in matches]
-        self.sources[sid]={'id':sid,'name':display,'toc_node':node_id,'group':group,'source_type':stype,'origin':origin,'release_status':release,'ruleset_hint':rule,
-            'archived':archived,'catalog_ids':[r['id'] for r in matches],'aliases':self._aliases(matches),**self._abbreviations(matches), 'parent_name':' / '.join(parents),
-            'setting':[w for w in WORLD_WORDS if w in display], 'coverage':'toc_only','paths':[], 'evidence':evidence,'metadata_status':'上下文推得'}
+        named=set()
+        if re.search(r'2024|2025',name) and group=='核心规则':named.add('5r')
+        if '2014' in n['label']:named.add('5e')
+        evidence=[{'path':'webhelpcontents.htm','node_id':node_id,'label':n['label'],'group':group}]
+        self.sources[sid]={'id':sid,'name':display,'toc_node':node_id,'parent_name':' / '.join(parents),'coverage':'toc_only','paths':[],
+            **self._describe(display,group,matches,evidence,named,archived='旧版' in n['label'] or group=='旧版内容')}
         for r in matches:self.catalog_matches[r['id']].append(sid)
         def assign(node):
             self.node_source[node]=sid
@@ -240,18 +255,22 @@ class SourceRegistry:
             b=bucket(PurePosixPath(path).relative_to('topics'))
             if b:groups[b].append(path)
         for b,files in sorted(groups.items()):
-            name=b.split('/')[-1]
-            matches=[r for r in self.catalog if r['level']=='publication' and namekey(r['name_zh'])==namekey(name)]
+            # A folder outside the TOC is matched to the catalog like a TOC label, its parent folders as context.
+            *parents,name=b.split('/')
+            matches=self._match_catalog(name,parents)
             candidates=[s for s in self.sources.values() if s['coverage']=='catalog_only' and set(s['catalog_ids'])&{r['id'] for r in matches}]
-            if len(candidates)==1:s=candidates[0]
+            if len(candidates)==1:s=candidates[0];rule='exact_directory_name'
             else:
+                # Catalog rows place the folder beside the TOC sources they already describe (新UA beside 破解奥秘).
+                kin={self.sources[t]['group'] for r in matches for t in self.catalog_matches[r['id']]}
                 sid='src_'+digest('filesystem',b)
-                s={'id':sid,'name':b,'toc_node':'','group':'未编入目录','source_type':'待核','origin':'合作' if b.startswith('第三方/') else '待核',
-                    'release_status':'待核','ruleset_hint':'待核','archived':False,'catalog_ids':[],'aliases':[],**self._abbreviations([]), 'parent_name':'', 'setting':[],
-                    'coverage':'filesystem_only','paths':[],'namespace_hint':'topics/'+b,'evidence':[{'path':'topics/'+b,'rule':'orphan_path_group'}],'metadata_status':'待核'}
-                self.sources[sid]=s
+                s={'id':sid,'name':b,'toc_node':'','parent_name':'','coverage':'filesystem_only','paths':[],'namespace_hint':'topics/'+b,
+                   **self._describe(b,next(iter(kin)) if len(kin)==1 else '未编入目录',matches,[],origin='合作' if b.startswith('第三方/') else '待核')}
+                if not matches:s['metadata_status']='待核'
+                self.sources[sid]=s;rule='catalog_label_match' if matches else 'orphan_path_group'
+                for r in matches:self.catalog_matches[r['id']].append(sid)
             s['coverage']='filesystem_only';s['paths']=sorted(files);s['namespace_hint']='topics/'+b
-            s['evidence'].append({'path':'topics/'+b,'rule':'exact_directory_name' if candidates else 'orphan_path_group'})
+            s['evidence'].append({'path':'topics/'+b,'rule':rule})
             for path in files:
                 self.page_sources[path].add(s['id']);self.orphan_paths.add(path)
             for a in [s['name']]+s['aliases']:

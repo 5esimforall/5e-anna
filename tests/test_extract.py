@@ -154,4 +154,28 @@ class CorpusRegressionTests(unittest.TestCase):
         codes=[c for s in registry.sources.values() for c in s['abbreviations']]
         self.assertEqual(len(codes),len(set(codes)))
 
+    def test_folder_sources_read_the_catalog_like_toc_labels(self):
+        from build import page_role
+        registry=SourceRegistry(WEB)
+        paths=sorted(p.relative_to(WEB).as_posix() for p in (WEB/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
+        registry.register_orphans([p for p in paths if page_role(p)=='document'])
+        by_name={s['name']:s for s in registry.sources.values()}
+        # A catalog code in the folder name (新UA, beyond drops) names the collection; the folder joins
+        # the group of the TOC sources the same catalog row describes.
+        ua=by_name['其他/新UA/奥术子职']
+        self.assertEqual((ua['coverage'],ua['abbreviations'],ua['collection_abbreviations']),('filesystem_only',[],['UA']))
+        self.assertEqual((ua['group'],ua['source_type'],ua['release_status']),('破解奥秘UA','测试材料','测试'))
+        self.assertEqual(by_name['其他/beyond drops']['collection_abbreviations'],['Drops'])
+        # A folder named after a collection is that collection; its subfolders are its members.
+        vss=by_name['第三方/瓦尔达的秘密尖塔']
+        self.assertEqual((vss['abbreviations'],vss['collection_abbreviations'],vss['ruleset_hint']),(['VSS'],[],'5r'))
+        member=by_name['第三方/瓦尔达的秘密尖塔/子职']
+        self.assertEqual((member['abbreviations'],member['collection_abbreviations'],member['ruleset_hint']),([],['VSS'],'5r'))
+        # Without a catalog row the folder keeps only what its path says, and says it is unverified.
+        bestiary=by_name['第三方/万兽图志']
+        self.assertEqual((bestiary['catalog_ids'],bestiary['origin'],bestiary['release_status'],bestiary['metadata_status']),([],'合作','待核','待核'))
+        # A folder that is a catalog-only publication fills that publication instead of duplicating it.
+        self.assertEqual((by_name['憎恶魔窟']['coverage'],by_name['憎恶魔窟']['abbreviations']),('filesystem_only',['AV']))
+        self.assertEqual(sum(s['name']=='憎恶魔窟' for s in registry.sources.values()),1)
+
 if __name__=='__main__':unittest.main()

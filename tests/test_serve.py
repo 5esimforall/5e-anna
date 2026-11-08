@@ -176,14 +176,9 @@ class WebTests(unittest.TestCase):
         self.assertEqual(by_name['瓦尔达的秘密尖塔 / 玩家包Ⅰ'],'VSS:PP')
         self.assertEqual(by_name['破解奥秘（UA） / 灵能I'],'UA 灵能I')
         self.assertEqual(by_name['模组相关 / 纸质出版物 / 黄金宝库之钥'],'黄金宝库之钥')
+        self.assertEqual(by_name['模组相关 / 纸质出版物 / 冰风谷：冰霜少女的雾凇'],'冰风谷')
+        self.assertEqual(by_name['模组相关 / 纸质出版物 / 深水城：龙金之劫'],'龙金之劫')
+        self.assertEqual(by_name['其他/新UA/奥术子职'],'UA 奥术子职')
         codes=[s['short_name'] for s in m['sources']];self.assertEqual(len(codes),len(set(codes)))
-
-    def test_source_label_rule(self):
-        from serve import source_label
-        self.assertEqual(source_label({'name':'甲书','abbreviations':['AB','ABC'],'collection_abbreviations':['X']}),'AB')
-        self.assertEqual(source_label({'name':'合集 / 第二卷','abbreviations':[],'collection_abbreviations':['X']}),'X 第二卷')
-        self.assertEqual(source_label({'name':'其他/新资源/子卷','abbreviations':[],'collection_abbreviations':[]}),'子卷')
-        self.assertEqual(source_label({'name':'旧库'}),'旧库')
-        self.assertEqual(source_label({'name':'其他/新X','abbreviations':[],'collection_abbreviations':['X']}),'新X')
 
 if __name__=='__main__':unittest.main()

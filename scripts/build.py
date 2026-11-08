@@ -579,7 +579,7 @@ class Build:
         assert not db.execute('PRAGMA foreign_key_check').fetchall()
         assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         db.close()
-        csv_write(out/'sources.csv',sources,['id','name','origin','release_status','source_type','reference_role','reference_role_evidence','ruleset_hint','archived','setting','coverage','aliases','paths','catalog_ids','evidence'])
+        csv_write(out/'sources.csv',sources,['id','name','label','origin','release_status','source_type','reference_role','reference_role_evidence','ruleset_hint','archived','setting','coverage','aliases','paths','catalog_ids','evidence'])
         csv_write(out/'source_catalog.csv',self.registry.catalog,['id','section','name_zh','name_en','abbreviations','aliases','level','ruleset_hint','evidence'])
         csv_write(out/'pages.csv',self.pages.values(),['path','title','role','parse_status','encoding','sha256','characters','source_ids','source_method','toc_nodes','error'])
         fields=['id','entity_id','name','name_zh','name_en','type','ruleset','ruleset_status','legacy','classification_status','source_names','page_path','locator','start','end','fields','field_conflicts']

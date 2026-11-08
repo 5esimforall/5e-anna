@@ -24,6 +24,28 @@ def namekey(s):
     return key(s)
 
 
+# Volume and issue numbers (卷四, 第二册) order a series; they do not name a book on their own.
+ORDINAL=re.compile(r'[卷第]?[\d一二三四五六七八九十百]+[卷册章部期号辑]?')
+
+
+def source_labels(sources):
+    """The shortest label the evidence supports, unique across sources: the publication's own catalog
+    code; a collection code with the publication's title; else the title, or for a 主标题：副标题 title
+    the first part that names it alone (冰风谷, or 龙金之劫 where two books share 深水城)."""
+    titles={sid:re.split(r'\s*/\s*',s['name'])[-1] for sid,s in sources.items()}
+    parts=lambda title:[x.strip() for x in re.split(r'[：:]',title) if x.strip()]
+    uses=Counter(x for title in titles.values() for x in {title,*parts(title)})
+    names=lambda x:len(re.findall(r'[\u3400-\u9fff]',x))>=2 and not ORDINAL.fullmatch(x)
+    labels={}
+    for sid,source in sources.items():
+        title=titles[sid];code=next(iter(source['collection_abbreviations']),'')
+        if source['abbreviations']:labels[sid]=source['abbreviations'][0]
+        # A title already carrying the collection code (新UA) is not prefixed again.
+        elif code:labels[sid]=title if code.casefold() in title.casefold() else code+' '+title
+        else:labels[sid]=next((x for x in parts(title) if len(parts(title))>1 and names(x) and uses[x]==1),title)
+    return labels
+
+
 def catalog_rows(web):
     raw=(web/'topics/速查/资源简写.htm').read_text()
     rows=[];end=0
@@ -125,6 +147,10 @@ class SourceRegistry:
         for sid,s in self.sources.items():
             for a in [s['name']]+s['aliases']:
                 if key(a):self.aliases[key(a)].add(sid)
+        self._label()
+
+    def _label(self):
+        for sid,label in source_labels(self.sources).items():self.sources[sid]['label']=label
 
     def _type(self,group):
         if '核心' in group:return '核心'
@@ -275,6 +301,7 @@ class SourceRegistry:
                 self.page_sources[path].add(s['id']);self.orphan_paths.add(path)
             for a in [s['name']]+s['aliases']:
                 self.aliases[key(a)].add(s['id'])
+        self._label()
 
     def alias_candidates(self,alias,path=''):
         exact=self.aliases.get(key(alias),set())

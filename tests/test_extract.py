@@ -178,4 +178,17 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual((by_name['憎恶魔窟']['coverage'],by_name['憎恶魔窟']['abbreviations']),('filesystem_only',['AV']))
         self.assertEqual(sum(s['name']=='憎恶魔窟' for s in registry.sources.values()),1)
 
+    def test_source_labels_are_the_shortest_unique_evidence(self):
+        from source_extract import source_labels
+        def src(name,own=(),collection=()):return {'name':name,'abbreviations':list(own),'collection_abbreviations':list(collection)}
+        labels=source_labels({'a':src('甲书',['AB','ABC'],['X']),'b':src('合集 / 第二卷',[],['X']),'c':src('其他/新X',[],['X']),
+            'd':src('模组 / 冰谷：少女雾凇'),'e':src('模组 / 深城：龙金之劫'),'f':src('模组 / 深城：疯法师地城'),
+            'g':src('纲要 / 卷四：艾卓生物'),'h':src('模组 / CR：溟渊的呼唤'),'i':src('旧库'),'j':src('错位怪物：卷一')})
+        # Codes first; a collection code is not repeated in a title that already carries it.
+        self.assertEqual([labels[k] for k in 'abc'],['AB','X 第二卷','新X'])
+        # A main title names the book when no other source shares it; otherwise the subtitle does.
+        # Volume numbers and Latin series marks never stand alone.
+        self.assertEqual([labels[k] for k in 'defghij'],['冰谷','龙金之劫','疯法师地城','艾卓生物','溟渊的呼唤','旧库','错位怪物'])
+        self.assertEqual(len(set(labels.values())),len(labels))
+
 if __name__=='__main__':unittest.main()

@@ -86,6 +86,22 @@ class NameTests(unittest.TestCase):
         self.assert_name('附录A：设定汇编 Lore Glossary','附录A：设定汇编','Lore Glossary','bilingual_suffix')
         self.assertEqual(parse_name('壶 Jug 或罐')['rule'],'mixed_name_unresolved')
 
+    def test_adjacent_bilingual_names_split_only_at_english_words(self):
+        # A translation running straight into the next Chinese name pairs like a conjunction would.
+        for raw in ('甲王Lizard King乙后Lizard Queen','甲王 Lizard King 乙后 Lizard Queen'):
+            with self.subTest(raw=raw):
+                result=self.assert_name(raw,'甲王/乙后','Lizard King / Lizard Queen','bilingual_alternatives')
+                self.assertEqual([p['text'] for p in result['parts']],['甲王','Lizard King','乙后','Lizard Queen'])
+        # Initialisms, codes and leading Latin terms belong to the Chinese name they open.
+        self.assert_name('AHA成员 Member of AHA','AHA成员','Member of AHA','bilingual_suffix')
+        self.assert_name('X射线戒指Ring of X-Ray Vision','X射线戒指','Ring of X-Ray Vision','bilingual_suffix')
+        self.assert_name('krig符文之旗BANNER OF THE KRIG RUNE','krig符文之旗','BANNER OF THE KRIG RUNE','bilingual_suffix')
+        self.assert_name('召唤DM助手 DM Helper','召唤DM助手','DM Helper','bilingual_suffix')
+        # A sentence glossing its terms inline is not a list of names, and its Chinese field cannot hold them.
+        for raw in ('是否所有 黑暗Darkness 都阻挡 黑暗视觉Darkvision ？','传言如此。可控制原初者ice primordial克瑞欧Cryonax。'):
+            with self.subTest(raw=raw):
+                self.assertEqual(self.assert_name(raw,raw,'')['rule'],'mixed_name_unresolved')
+
     def test_editorial_annotations_have_original_offsets(self):
         raw='  示例（旧版） (  Example\n Name  ) Legacy '
         result=self.assert_name(raw,'示例','Example Name','wrapped_translation')

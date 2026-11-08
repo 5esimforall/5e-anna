@@ -56,14 +56,34 @@ def resolve_link(page, href):
 
 # A conjunction counts as a separator only right after an English run and before the next
 # Chinese name, so 或 inside a Chinese name (微型或小型) never splits it.
-ALTERNATIVE = re.compile(r'(?<=[A-Za-z])(\s*(?:或|/|／|、)\s*)(?=[㐀-鿿\d])')
+JOINERS = ('或','/','／','、')
+ALTERNATIVE = re.compile(r'(?<=[A-Za-z])(\s*(?:'+'|'.join(map(re.escape,JOINERS))+r')\s*)(?=[㐀-鿿\d])')
+# Without a conjunction, a translation can run straight into the next Chinese name
+# (蜥蜴之王Lizard King蜥蜴女王Lizard Queen). Only an English word run marks that boundary:
+# initialisms and codes (AHA成员, X射线戒指) are part of the Chinese name they open.
+ADJACENT = re.compile(r'(?<=[A-Za-z])(\s*)(?=[㐀-鿿])(?!'+'|'.join(map(re.escape,JOINERS))+')')
+
+
+SENTENCE = re.compile(r'[，。？！；?]')
+
+
+def adjacent_cuts(text,han):
+    """Boundaries where an English word run that follows Chinese text meets the next Chinese name."""
+    cuts=[]
+    for m in ADJACENT.finditer(text):
+        start=m.start(1);run=start
+        while run>0 and not han(text[run-1]):run-=1
+        if run>0 and re.search(r'[a-z]',text[run:start]):cuts.append(m.span(1))
+    return cuts
 
 
 def parse_alternatives(text,result,han,latin,english,trim,spans):
     """Several bilingual names joined by conjunctions, such as a table row offering one price for
     alternative goods. Each name pairs its own Chinese and English text; a single English suffix
     would otherwise claim only the last one. Every segment must be a clean pair or nothing splits."""
-    cuts=[m.span(1) for m in ALTERNATIVE.finditer(text)]
+    # A sentence that glosses its terms inline (所有魔法 黑暗Darkness 都会阻挡…？) is not a list of names.
+    if SENTENCE.search(text):return None
+    cuts=sorted([m.span(1) for m in ALTERNATIVE.finditer(text)]+adjacent_cuts(text,han))
     if not cuts:return None
     bounds=[0]+[x for cut in cuts for x in cut]+[len(text)]
     pairs=[]
@@ -78,7 +98,8 @@ def parse_alternatives(text,result,han,latin,english,trim,spans):
             out.append(compact(text[x:y]))
             result['parts'].append({'language':language,'text':out[-1],'spans':spans(x,y)})
     # Space before a conjunction separated the English word; space after it stays (或 1 头绵羊).
-    joiners=[re.sub(r'\s+',' ',text[a:b]).lstrip() for a,b in cuts]
+    # Names that met without one are joined by the slash the English projection uses.
+    joiners=[re.sub(r'\s+',' ',text[a:b]).lstrip() or '/' for a,b in cuts]
     result['annotations'].extend({'role':'alternative_separator','text':text[a:b],'spans':spans(a,b)} for a,b in cuts)
     # The Chinese projection keeps the source's own conjunctions; the English one has none to keep.
     result['name_zh']=zh[0]+''.join(j+z for j,z in zip(joiners,zh[1:]))
@@ -172,6 +193,9 @@ def parse_name(raw):
     # A preceding English-only group followed by another English suffix could be
     # a second translation or a qualifier. Do not assign it to the Chinese field.
     if boundary is not None and any(b<=boundary and english(text[a+1:b-1]) for a,b,_ in groups):
+        boundary=None;wrapper=None
+    # An English word run inside the Chinese field is a translation the pairs above could not place.
+    if boundary is not None and adjacent_cuts(text[:boundary],han):
         boundary=None;wrapper=None
     if boundary is None:
         unsplit('mixed_name_unresolved' if han(text) and any(latin(ch) for ch in text) else None)

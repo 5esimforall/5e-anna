@@ -47,6 +47,20 @@ class NormalizeTests(unittest.TestCase):
             self.assertEqual(result,expected+[None,None])
         db.close()
 
+    def test_names_sort_naturally_and_types_in_reading_order(self):
+        names=['10级：甲','2级：乙','1 平方码丝绸','１级：全角','Ｂeta','alpha']
+        self.assertEqual(sorted(names,key=browse.name_key),['1 平方码丝绸','１级：全角','2级：乙','10级：甲','alpha','Ｂeta'])
+        self.assertIsNone(browse.name_key(''))
+        from serve import TYPES
+        # Every entry type has a place in the reading order, so a mixed view never falls back to code order.
+        self.assertEqual(set(browse.TYPE_ORDER),set(TYPES))
+        self.assertEqual(browse.schema('')['default_sort'],'type')
+        db=sqlite3.connect(':memory:');browse.register(db)
+        db.execute('create table entries(id,name,name_zh,name_en,type,page_path,start)')
+        for i,(t,n) in enumerate([('rule','甲'),('spell','乙'),('class','丙'),('mystery','丁')]):db.execute('insert into entries values(?,?,?,?,?,?,?)',(str(i),n,n,'',t,'',0))
+        self.assertEqual([r[0] for r in db.execute('select type from entries e order by '+browse.order_sql({'sort':['type']}))],['class','spell','rule','mystery'])
+        db.close()
+
     def test_reader_field_order_follows_the_type_then_metadata(self):
         entry={'type':'spell','fields':{'type':'spell','range':'60尺','source_id':'s','casting_time_detail':'1 动作','ruleset':'5r',
                'components':'V','spell_classes':'法','school':'死灵','casting_time':'动作','material':'×','spell_level':'戏法','zeta':'x'}}

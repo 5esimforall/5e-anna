@@ -53,7 +53,7 @@ SCHEMAS = {
                   'sorts':['source','name','name_en','mastery'], 'default_sort':'name'},
     'animal': {'facets':['role'], 'flags':[], 'columns':['name','role','price','carrying_capacity','speed','sources','ruleset'], 'sorts':['source','name','name_en'],'default_sort':'source'},
     'generic': {'facets':[], 'flags':[], 'columns':['name','type','sources','ruleset','classification_status','legacy'],
-                'sorts':['source','name','name_en','type','ruleset'], 'default_sort':'name'},
+                'sorts':['source','name','name_en','type','ruleset'], 'default_sort':'type'},
 }
 
 
@@ -151,9 +151,23 @@ def sort_value(raw,field):
     return v.casefold()
 
 
+def name_key(text):
+    """Name collation: digit runs compare by value (2级 before 10级); case and full/half width are ignored."""
+    if not text:return None
+    return re.sub(r'\d+',lambda m:m[0].zfill(8),unicodedata.normalize('NFKC',text).casefold())
+
+
+# Mixed views list kinds in the order a reader meets them: character options, spells, gear, creatures, then rules.
+TYPE_ORDER = ('class','subclass','class_feature','species','background','feat','spell','equipment','magic_item','creature',
+              'animal_offer','vehicle','reward','facility','condition','action','rule','hazard','trap','poison','disease',
+              'subsystem','lore','section')
+TYPE_RANK = 'CASE e.type '+' '.join(f"WHEN '{t}' THEN {i}" for i,t in enumerate(TYPE_ORDER))+f' ELSE {len(TYPE_ORDER)} END'
+
+
 def register(db):
     db.create_function('browse_values',2,field_values,deterministic=True)
     db.create_function('browse_rank',2,sort_value,deterministic=True)
+    db.create_function('browse_name',1,name_key,deterministic=True)
 
 
 def add_filters(params,clauses,values):
@@ -179,7 +193,8 @@ def order_sql(params):
     sort=params.get('sort',['name'])[0]
     direction=params.get('dir',['asc'])[0]
     if direction not in {'asc','desc'}:raise ValueError('无效排序方向')
-    direct={'name':'e.name','name_en':"NULLIF(e.name_en,'')",'type':'e.type','ruleset':'e.ruleset','source':'e.page_path'}
+    direct={'name':"browse_name(COALESCE(NULLIF(e.name_zh,''),e.name))",'name_en':"browse_name(NULLIF(e.name_en,''))",
+            'type':TYPE_RANK,'ruleset':'e.ruleset','source':'e.page_path'}
     sortable={x for s in SCHEMAS.values() for x in s['sorts']}
     if sort not in sortable:raise ValueError('无效排序')
     expr=direct.get(sort) or "browse_rank(e.fields,'"+sort+"')"

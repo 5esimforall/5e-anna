@@ -26,10 +26,10 @@
     <div class="heading-row"><h1 id="title">全部条目</h1><span id="view-total" class="muted"></span><span class="heading-note">自动提取 · 未经全量核验</span></div>
     <form id="search-form" class="toolbar">
       <label class="searchbox"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="q" type="search" placeholder="搜索中文名 / 英文名" aria-label="搜索条目名称" autocomplete="off"><kbd>/</kbd></label>
-      <button type="button" id="toggle-filters" aria-controls="filter-panel" aria-expanded="true">筛选 <span id="filter-count"></span> ▾</button>
+      <button type="button" id="toggle-filters" aria-controls="filter-panel" aria-expanded="false">筛选 <span id="filter-count"></span> ▾</button>
       <button type="button" id="reset" class="quiet-button">重置</button><button type="button" id="export" class="quiet-button" disabled>导出 CSV</button>
     </form>
-    <section id="filter-panel" aria-label="筛选条件">
+    <section id="filter-panel" aria-label="筛选条件" hidden>
       <div class="filter-hint">同组多选取并集，不同组取交集。<span>全选包含未提取项；“否”不包含未知或冲突。</span></div>
       <div id="domain-filters"></div>
       <details id="source-details"><summary>来源与版本 <span id="common-count"></span></summary>

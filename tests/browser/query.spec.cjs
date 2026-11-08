@@ -22,6 +22,7 @@ async function queryMatchesAPI(page){
 
 test('spell multi-select, mutually exclusive flags, unknowns and retained active filters',async({page},testInfo)=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
+  await page.locator('#toggle-filters').click();
   await expect(page.locator('#domain-extra')).not.toHaveAttribute('open','');
   await page.getByRole('button',{name:'环阶清空',exact:true}).click();await ready(page);
   await expect(page.locator('#empty')).toBeVisible();
@@ -44,9 +45,57 @@ test('spell multi-select, mutually exclusive flags, unknowns and retained active
   await page.locator('#reset').click();await ready(page);await expect(page.locator('#active-filters button')).toHaveCount(0);
 });
 
+test('filters start collapsed while active conditions stay visible and results keep the first screen',async({page})=>{
+  for(const [width,height] of [[1280,800],[390,844]]){
+    await page.setViewportSize({width,height});await visit(page,spells+'&f_spell_level=1');
+    await expect(page.locator('#filter-panel')).toBeHidden();
+    await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','false');
+    await expect(page.locator('#active-filters')).toContainText('环阶：一环');
+    // Before collapsing by default, filters left 3 creature rows at 1280×800 and pushed the first
+    // spell row to y=743 at 375×812; the first screen now belongs to results.
+    const row=await page.locator('#results tr').first().boundingBox();
+    expect(row.y+row.height).toBeLessThanOrEqual(height*.7);
+    if(width>760){const table=await page.locator('.table-wrap').boundingBox();expect(table.height).toBeGreaterThanOrEqual(height*.5);}
+  }
+  await page.getByRole('button',{name:'移除 环阶：一环'}).click();await ready(page);
+  await expect(page.locator('#active-filters button')).toHaveCount(0);expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
+  await page.locator('#toggle-filters').click();
+  await expect(page.locator('#filter-panel')).toBeVisible();await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','true');
+  await page.reload();await ready(page);await expect(page.locator('#filter-panel')).toBeVisible();
+  await visit(page);await expect(page.locator('#filter-panel')).toBeHidden();
+});
+
+test('switching categories keeps dimmed results and paging consistent until the new view renders',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page);
+  const range=await page.locator('#range').textContent(),pages=await page.locator('#page').textContent();
+  const columns=await page.locator('#columns th').count(),rows=await page.locator('#results tr').count();
+  let release;const gate=new Promise(resolve=>release=resolve);let started;const waiting=new Promise(resolve=>started=resolve);
+  await page.route('**/api/entries?*',async route=>{
+    if(new URL(route.request().url()).searchParams.get('view')==='生物数据卡'){started();await gate;}
+    await route.continue();
+  });
+  await page.locator('#views [data-view="生物数据卡"]').click();await waiting;
+  await expect(page.locator('#title')).toHaveText('生物数据卡');
+  await expect(page.locator('#results')).toHaveAttribute('aria-busy','true');
+  // The previous rows remain under their own header instead of disappearing or mixing schemas.
+  await expect(page.locator('#results tr')).toHaveCount(rows);await expect(page.locator('#columns th')).toHaveCount(columns);
+  expect(await page.locator('#results tr').first().locator('td').count()).toBe(columns);
+  for(const [id,text] of [['#range',range],['#page',pages]]){
+    await expect(page.locator(id)).toHaveText(text);await expect(page.locator(id)).toHaveCSS('opacity','0.45');
+  }
+  for(const id of ['#prev','#next','#bottom-prev','#bottom-next','#export'])await expect(page.locator(id)).toBeDisabled();
+  release();await ready(page);await page.unrouteAll({behavior:'wait'});
+  const facets=await (await page.request.get(anna+'/api/facets?view='+encodeURIComponent('生物数据卡'))).json();
+  await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.length);
+  expect(await page.locator('#results tr').first().locator('td').count()).toBe(facets.schema.columns.length);
+  const data=await queryMatchesAPI(page);
+  await expect(page.locator('#range')).toHaveText(`1–150 / ${data.total.toLocaleString('zh-CN')}`);
+  await expect(page.locator('#page')).toHaveText(`1 / ${data.pages}`);await expect(page.locator('#range')).toHaveCSS('opacity','1');
+  expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(0);
+});
+
 test('wide reader remains non-modal, consecutive entries and keyboard return preserve list position',async({page},testInfo)=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
-  await page.locator('#toggle-filters').click();
   const first=await entry(page,8),second=await entry(page,9);
   await page.locator('#results .entry-name').nth(8).focus();
   const top=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
@@ -83,13 +132,14 @@ test('history and reload restore page, sorting, disclosure, reading tab and scro
   await page.locator('#entry-next').click();await read(page,second);
   await page.goBack();await read(page,first);
   await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
-  await expect(page.locator('#filter-panel')).toBeHidden();
+  await expect(page.locator('#filter-panel')).toBeVisible();await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','true');
   await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(180);
   const listTop=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
   await expect(page.getByRole('tab',{name:/^证据/})).toBeFocused();
   await page.keyboard.press('F6');await expect(page.locator(`#results [data-entry="${first}"]`)).toBeFocused();
   await page.keyboard.press('F6');
   await page.reload();await ready(page);await read(page,first);
+  await expect(page.locator('#filter-panel')).toBeVisible();
   await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
   await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(180);
   expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(listTop);
@@ -99,8 +149,7 @@ test('history and reload restore page, sorting, disclosure, reading tab and scro
 });
 
 test('narrow reader traps focus, tabs use arrow keys, resize keeps content and close restores focus',async({page},testInfo)=>{
-  await page.setViewportSize({width:390,height:844});await visit(page);
-  await page.locator('#toggle-filters').click();const id=await entry(page);
+  await page.setViewportSize({width:390,height:844});await visit(page);const id=await entry(page);
   await page.locator('#results .entry-name').first().click();await read(page,id);
   expect(await page.locator('#detail').evaluate(e=>e.matches(':modal'))).toBeTruthy();
   await expect(page.locator('#close-detail')).toBeFocused();
@@ -121,7 +170,7 @@ test('narrow reader traps focus, tabs use arrow keys, resize keeps content and c
 });
 
 test('changing filters or classification closes a stale reader without losing filter semantics',async({page})=>{
-  await page.setViewportSize({width:1440,height:900});await visit(page);
+  await page.setViewportSize({width:1440,height:900});await visit(page);await page.locator('#toggle-filters').click();
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
   await page.getByRole('checkbox',{name:'环阶：戏法',exact:true}).uncheck();await ready(page);
   await expect(page.locator('#detail')).toBeHidden();expect(new URL(page.url()).searchParams.has('entry')).toBeFalsy();
@@ -151,7 +200,7 @@ test('all category schemas share the workbench without losing their columns or f
     await page.setViewportSize({width:1440,height:900});
   }
   await visit(page,'/?view='+encodeURIComponent('魔法物品'));
-  await page.locator('#domain-extra summary').click();
+  await page.locator('#toggle-filters').click();await page.locator('#domain-extra summary').click();
   await expect(page.getByRole('button',{name:'同调：需要',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'同调：需要',exact:true}).click();await queryMatchesAPI(page);
   await shot(page,testInfo,'magic-items-filters.png');
@@ -193,13 +242,15 @@ test('query failures clear stale rows and recover through the existing controls'
   await page.locator('#q').fill('Shield');
   await expect(page.locator('#error')).toContainText('Injected query failure');
   await expect(page.locator('#results tr')).toHaveCount(0);await expect(page.locator('#export')).toBeDisabled();
+  await expect(page.locator('#range')).toHaveText('');await expect(page.locator('#page')).toHaveText('');
+  await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
   await page.locator('#reset').click();await ready(page);await expect(page.locator('#error')).toBeHidden();
   await expect(page.locator('#results tr').first()).toBeVisible();
 });
 
 
 test('responsive boundaries preserve readable content and reduced-motion preferences',async({page},testInfo)=>{
-  await visit(page);await page.locator('#toggle-filters').click();
+  await visit(page);
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
   for(const width of [320,760,761,1199,1200,1280,1920]){
     await page.setViewportSize({width,height:800});
@@ -213,5 +264,6 @@ test('responsive boundaries preserve readable content and reduced-motion prefere
   await page.setViewportSize({width:320,height:640});
   await shot(page,testInfo,'small-mobile-reader.png');
   await page.locator('#close-detail').click();await page.locator('#toggle-filters').click();
+  await expect(page.locator('#filter-panel')).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
 });

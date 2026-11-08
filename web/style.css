@@ -213,6 +213,8 @@ tbody tr:last-child td { border-bottom: 0; }
 #empty { padding: 40px 20px; text-align: center; color: var(--anna-secondary); }
 #empty strong { display: block; color: var(--anna-ink); font-size: 16px; margin-bottom: 7px; }
 #results[aria-busy=true] { opacity: .45; pointer-events: none; }
+/* Counts and the empty notice describe the dimmed rows, so they wait with them. */
+.workspace>main:has(#results[aria-busy=true]) :is(#empty,#range,#page) { opacity: .45; }
 
 /* One reader, two modes: non-modal desktop column / native modal on narrow screens. */
 #detail { margin: 0; padding: 0; color: var(--anna-ink); background: var(--anna-paper); border: 0; overflow: hidden; }

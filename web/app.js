@@ -46,7 +46,7 @@ history.scrollRestoration='manual';
 function captureUiState(){
   return {tableTop:$('.table-wrap').scrollTop,tableLeft:$('.table-wrap').scrollLeft,
     mainTop:$('#query-main').scrollTop,windowTop:window.scrollY,filterTop:$('#filter-panel').scrollTop,
-    filtersHidden:$('#filter-panel').hidden,sourceOpen:$('#source-details').open,auditOpen:$('#audit-details').open,extraOpen:$('#domain-extra')?.open,
+    filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,auditOpen:$('#audit-details').open,extraOpen:$('#domain-extra')?.open,
     sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,
     readerTop:$('#detail-content').scrollTop,lastResultEntry};
 }
@@ -61,8 +61,9 @@ function filterSources(){
 }
 function restoreUiState(state){
   if(!state)return;
-  $('#filter-panel').hidden=!!state.filtersHidden;
-  $('#toggle-filters').setAttribute('aria-expanded',!state.filtersHidden);
+  // The panel starts collapsed; only an explicit opening in this tab's history reopens it.
+  $('#filter-panel').hidden=!state.filtersOpen;
+  $('#toggle-filters').setAttribute('aria-expanded',!!state.filtersOpen);
   $('#source-details').open=!!state.sourceOpen;$('#audit-details').open=!!state.auditOpen;
   if($('#domain-extra')&&typeof state.extraOpen==='boolean')$('#domain-extra').open=state.extraOpen;
   $('#source-search').value=state.sourceSearch||'';filterSources();
@@ -131,11 +132,22 @@ function sync(){
     const text=k==='q'?'搜索：'+values[0]:(g?.label||fieldNames[k]||k)+'：'+(labels.length>4?labels.slice(0,3).join('、')+` 等 ${labels.length} 项`:labels.join('、'));
     return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
   }).join('');
-  renderColumns();
+}
+// The table keeps the last completed results, dimmed and inert, until the next response renders
+// header, rows and paging together; a failure clears them instead of leaving stale counts behind.
+const awaitingResults=()=>$('#results').getAttribute('aria-busy')==='true';
+function awaitResults(status){
+  $('#error').hidden=true;$('#result-count').textContent=status;$('#export').disabled=true;
+  for(const id of ['prev','next','bottom-prev','bottom-next'])$('#'+id).disabled=true;
+  $('#results').setAttribute('aria-busy','true');
+}
+function failResults(message,status){
+  currentData=null;$('#error').hidden=false;$('#error').textContent=message;$('#result-count').textContent=status;
+  $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';$('#page').textContent='';
 }
 async function changeView(){
-  const gen=++panelGeneration;request?.abort();generation++;ready=false;$('#export').disabled=true;
-  $('#results').replaceChildren();$('#result-count').textContent='正在读取筛选…';$('#error').hidden=true;
+  const gen=++panelGeneration;request?.abort();generation++;ready=false;
+  awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;
   const view=params.get('view')||'';
   try{
     const data=await api('/api/facets?'+new URLSearchParams({view}));if(gen!==panelGeneration)return;
@@ -166,7 +178,7 @@ async function changeView(){
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
     $('#audit-details').open=['status','legacy','conflict','sections'].some(k=>params.has(k));
     historyUpdate(true);sync();ready=true;await load();
-  }catch(e){if(gen===panelGeneration){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='读取失败';}}
+  }catch(e){if(gen===panelGeneration){failResults(e.message,'读取失败');$('#columns').replaceChildren();$('#results').setAttribute('aria-busy','false');}}
 }
 function renderColumns(){
   $('#columns').innerHTML='<tr>'+schema.columns.map(k=>{
@@ -196,21 +208,19 @@ function cell(row,key){
 }
 async function load(){
   if(!ready)return;request?.abort();request=new AbortController();const gen=++generation;
-  $('#error').hidden=true;$('#result-count').textContent='正在查询…';$('#export').disabled=true;
-  for(const id of ['prev','next','bottom-prev','bottom-next'])$('#'+id).disabled=true;
-  $('#results').setAttribute('aria-busy','true');updateReaderNavigation();
+  awaitResults('正在查询…');updateReaderNavigation();
   try{
     const data=await api('/api/entries?'+params,request.signal);if(gen!==generation)return;
     currentData=data;
     $('#result-count').innerHTML=`找到 <strong>${fmt(data.total)}</strong> 条`;
-    $('#results').innerHTML=data.rows.map(r=>'<tr>'+schema.columns.map(k=>cell(r,k)).join('')+'</tr>').join('');
+    renderColumns();$('#results').innerHTML=data.rows.map(r=>'<tr>'+schema.columns.map(k=>cell(r,k)).join('')+'</tr>').join('');
     updateReaderNavigation();
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
     $('#page').textContent=`${data.page} / ${data.pages}`;
     $('#range').textContent=data.total?`${fmt((data.page-1)*data.page_size+1)}–${fmt(Math.min(data.page*data.page_size,data.total))} / ${fmt(data.total)}`:'0 条结果';
     for(const id of ['prev','bottom-prev'])$('#'+id).disabled=data.page<=1;
     for(const id of ['next','bottom-next'])$('#'+id).disabled=data.page>=data.pages;
-  }catch(e){if(e.name==='AbortError'||gen!==generation)return;currentData=null;$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='查询失败';$('#results').replaceChildren();}
+  }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
   finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');updateReaderNavigation();saveUiState();}}
 }
 function page(delta){if(!currentData)return;params.set('page',currentData.page+delta);historyUpdate();$('.table-wrap').scrollTop=0;load();}
@@ -249,11 +259,11 @@ $('#views').addEventListener('click',e=>{
 $('#active-filters').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(!b)return;const key=b.dataset.remove;params.delete(key);if(['cr_min','cr_max'].includes(key))$('#'+key).value='';changed();});
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
-$('#columns').addEventListener('click',e=>{const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
+$('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
 $('#page-size').onchange=()=>{params.set('size',$('#page-size').value);changed();};
 $('#prev').onclick=$('#bottom-prev').onclick=()=>page(-1);$('#next').onclick=$('#bottom-next').onclick=()=>page(1);
 $('#export').onclick=()=>{location.href='/api/export?'+params;};
-$('#results').addEventListener('click',e=>{if($('#results').getAttribute('aria-busy')==='true')return;const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,'body',true);});
+$('#results').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,'body',true);});
 $('#results').addEventListener('keydown',e=>{
   if(e.isComposing||!['ArrowUp','ArrowDown'].includes(e.key))return;
   const b=e.target.closest('[data-entry]');if(!b)return;

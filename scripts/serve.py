@@ -361,7 +361,8 @@ def csv_export(rows, config=None):
 
 class Handler(BaseHTTPRequestHandler):
     db_path=DB
-    book_url=None
+    reader_url=None
+    content_origin=None
     db_signature=None
     source_root=paths.WEB
     def log_message(self,*args): pass
@@ -370,7 +371,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type',kind); self.send_header('Content-Length',str(len(body)))
         self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff')
-        self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        frames=self.content_origin if urlsplit(self.path).path=='/read' and self.content_origin else "'none'"
+        self.send_header('Content-Security-Policy',f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src {frames}")
         if download: self.send_header('Content-Disposition','attachment; filename="5e-anna.csv"')
         self.end_headers(); self.wfile.write(body)
     def do_GET(self):
@@ -389,11 +391,14 @@ class Handler(BaseHTTPRequestHandler):
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
             static['/theme.js']=('theme.js','text/javascript; charset=utf-8')
+            static['/read']=('reader.html','text/html; charset=utf-8')
+            static.update({f'/reader.{ext}':(f'reader.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
+            static['/reader-labels.js']=('reader-labels.js','text/javascript; charset=utf-8')
             static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             with closing(connect(self.db_path)) as db:
-                if url.path=='/api/meta': self.send({**meta(db),'book_url':self.book_url})
+                if url.path=='/api/meta': self.send({**meta(db),'reader_url':self.reader_url})
                 elif url.path=='/api/facets': self.send(facets(db,p))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))

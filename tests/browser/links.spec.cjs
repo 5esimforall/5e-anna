@@ -86,10 +86,11 @@ test('definition → new anna tab → reader → same definition; original pages
   const reader=await popupPromise;await reader.waitForLoadState('load');
   const frame=reader.frameLocator('#content');
   await expect(frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true})).toBeVisible();
-  await expect(reader.locator('#content')).toHaveAttribute('src',new RegExp('#anna-'+s.id+'$'));
+  await expect(reader).toHaveURL(new RegExp('/read\\?entry='+s.id));
+  await expect(reader.locator('#book-main')).toHaveAttribute('aria-busy','false');
   await expect.poll(async()=>frame.locator('#Shield').evaluate(e=>e.getBoundingClientRect().top)).toBeGreaterThanOrEqual(0);
   expect(await frame.locator('#Shield').evaluate(e=>e.getBoundingClientRect().top)).toBeLessThan(80);
-  await expect.poll(async()=>new URL(await reader.url()).searchParams.get('page')).toContain('#anna-'+s.id);
+  await expect.poll(async()=>new URL(reader.url()).searchParams.get('entry')).toBe(s.id);
   await reader.reload();
   await expect(frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true})).toBeVisible();
   expect(await frame.locator('#Shield').evaluate(e=>e.getBoundingClientRect().top)).toBeLessThan(80);

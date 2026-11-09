@@ -32,7 +32,7 @@
   if (failed.length) console.warn('anna: definition DOM binding mismatch', failed);
   const failedReferences = references.filter(r => !r.binding);
   if (failedReferences.length) console.warn('anna: reference DOM binding mismatch', failedReferences.map(r => r.id));
-  let root, queued = false;
+  let root, queued = false, interacted = false;
   const links = [];
   function navigateFragment() {
     let id;
@@ -46,11 +46,16 @@
   function render() {
     queued = false;
     if (!root) return;
-    for (const link of links) {
+    // Measure every source range before updating hit areas. Interleaving these reads and
+    // writes forced one layout per link on long lists, again on every scroll/resize.
+    const measurements = links.map(link => {
       const r = range(link.binding);
       const parent = r?.startContainer.parentElement;
-      const boxes = parent && getComputedStyle(parent).visibility !== 'hidden'
+      return parent && getComputedStyle(parent).visibility !== 'hidden'
         ? Array.from(r.getClientRects()).filter(b => b.width >= 1 && b.height >= 1) : [];
+    });
+    links.forEach((link, index) => {
+      const boxes = measurements[index];
       boxes.forEach((box, i) => {
         let a = link.anchors[i];
         if (!a) {
@@ -76,7 +81,7 @@
         Object.assign(a.style, {left:`${box.left}px`,top:`${box.top}px`,width:`${box.width}px`,height:`${box.height}px`});
       });
       while (link.anchors.length > boxes.length) link.anchors.pop().remove();
-    }
+    });
   }
   function schedule() { if (!queued) { queued = true; requestAnimationFrame(render); } }
   function init() {
@@ -99,8 +104,10 @@
     window.addEventListener('resize', schedule);
     window.addEventListener('hashchange', () => { navigateFragment(); schedule(); });
     new MutationObserver(schedule).observe(document.body, {subtree:true,childList:true,attributes:true});
-    document.fonts?.ready.then(() => { navigateFragment(); schedule(); });
-    window.addEventListener('load', () => { navigateFragment(); schedule(); });
+    for (const event of ['wheel','touchstart','pointerdown','keydown'])
+      window.addEventListener(event, () => { interacted = true; }, {passive:true});
+    document.fonts?.ready.then(() => { if (!interacted) navigateFragment(); schedule(); });
+    window.addEventListener('load', () => { if (!interacted) navigateFragment(); schedule(); });
     navigateFragment(); schedule();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true}); else init();

@@ -16,7 +16,7 @@ from html_extract import Document
 from linked_book import BOOK,inject,text_slice
 from paths import WEB
 import up
-import serve_5echm as search
+import book_search as search
 
 PORT=int(os.environ.get('ANNA_E2E_PORT','18380'))
 DB=Path(os.environ.get('ANNA_E2E_DB',up.serve.DB)).resolve()
@@ -87,8 +87,7 @@ def main():
         servers=list(up.create_servers(DB,BOOK,manifest,PORT+1,PORT+2))
         servers.append(ThreadingHTTPServer(('127.0.0.1',PORT),OriginalHandler))
         search.WEB=WEB;search.CACHE=PROJECT/'.cache/browser-search.pkl'
-        servers[1].RequestHandlerClass.entries=search.build_index(quiet=True)
-        servers[1].RequestHandlerClass.patched_search_page=search.build_patched_search_page()
+        servers[0].RequestHandlerClass.search_entries=search.build_index(quiet=True)
         for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
         for server in servers:
             t=threading.Thread(target=server.serve_forever,daemon=True);t.start();threads.append(t)

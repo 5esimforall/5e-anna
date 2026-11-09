@@ -4,8 +4,9 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const callbacks = {}, raf = [], warnings = [];
 let scrollY = 0, textTop = 100, rangeCount = 0;
+const renderPhases = [];
 class Element {
-  constructor(tag) { this.tag=tag; this.style={}; this.dataset={}; this.childNodes=[]; this.events={}; this.isConnected=true; }
+  constructor(tag) { this.tag=tag; this.style=new Proxy({}, {set(object,key,value){renderPhases.push('write');object[key]=value;return true;}}); this.dataset={}; this.childNodes=[]; this.events={}; this.isConnected=true; }
   append(e) { e.parentElement=this; this.childNodes.push(e); }
   setAttribute(k,v) { this[k]=v; }
   addEventListener(k,f) { this.events[k]=f; }
@@ -23,7 +24,7 @@ const document={body,documentElement:html,readyState:'complete',
     setStart(n,o){this.startContainer=n;this.startOffset=o}, setEnd(n,o){this.endContainer=n;this.endOffset=o},
     toString(){return 'Alpha'},compareBoundaryPoints(){return 0},
     getBoundingClientRect(){return {top:textTop-scrollY,bottom:textTop-scrollY+20}},
-    getClientRects(){return [{left:10,top:textTop-scrollY,width:50,height:20}]}
+    getClientRects(){renderPhases.push('read');return [{left:10,top:textTop-scrollY,width:50,height:20}]}
   }}
 };
 const window={addEventListener:(event,callback)=>{callbacks[event]=callback},scrollBy:(x,y)=>{scrollY+=y;callbacks.scroll?.()}};
@@ -34,7 +35,9 @@ vm.runInContext(fs.readFileSync(__dirname+'/../web/link-labels.js','utf8'),conte
 assert.equal(vm.runInContext('JSON.stringify(Object.keys(annaLinkLabels.zh)) === JSON.stringify(Object.keys(annaLinkLabels.en))',context),true);
 vm.runInContext(fs.readFileSync(__dirname+'/../book/links.js','utf8'),context);
 function flush(){while(raf.length)raf.shift()()}
+renderPhases.length=0;
 flush();
+assert.ok(renderPhases.lastIndexOf('read') < renderPhases.indexOf('write'),'batch geometry reads before overlay writes');
 const root=html.childNodes[0].shadowRoot,group=root.childNodes[1],anchor=group.childNodes[0];
 assert.equal(anchor.href,'/anna/entry/ver_a');assert.equal(anchor.style.top,'100px');
 const reference=root.childNodes[2].childNodes[0];assert.equal(reference.href,'/definition/ver_a');

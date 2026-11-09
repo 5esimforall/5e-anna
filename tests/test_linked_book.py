@@ -10,6 +10,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from html_extract import Document
 from review_store import load_events
 from linked_book import text_slice,inject,build_book,fingerprint,MARKER
+from reader import build_navigation,page_data,ReaderError
 
 class DOMBindingTests(unittest.TestCase):
     def test_offsets_unicode_whitespace_and_markup(self):
@@ -61,8 +62,12 @@ class LinkedBuildTests(unittest.TestCase):
             self.assertEqual(report['definitions'],1);self.assertEqual(report['linked_references'],1)
             self.assertEqual(report['unresolved'][0]['href'],'#missing')
             self.assertEqual((out/'style.css').read_bytes(),(source/'style.css').read_bytes())
-            self.assertEqual((out/'index.htm').read_bytes().split(MARKER)[0],(source/'index.htm').read_bytes())
-            self.assertIn(b'/anna-assets/reader.js',(out/'index.htm').read_bytes())
+            self.assertFalse((out/'index.htm').exists())
+            self.assertFalse((out/'anna-assets/reader.js').exists())
+            self.assertTrue((out/'anna-assets/topic.js').exists())
+            reader=json.loads((out/'anna-reader.json').read_text())
+            self.assertEqual(reader['default_page'],'topics/test.htm')
+            self.assertEqual(reader['pages']['topics/test.htm']['definitions'][0]['id'],'ver_test')
             self.assertEqual((out/'topics/test.htm').read_bytes().split(MARKER)[0],(source/'topics/test.htm').read_bytes())
             m2,_=build_book(source,db,out);self.assertEqual(manifest,m2)
             self.assertFalse((root/'book.previous').exists())
@@ -94,6 +99,85 @@ class LinkedBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);source,db=self.fixture(root)
             with self.assertRaises(ValueError):build_book(source,db,source/'nested')
+
+    def test_no_upstream_application_is_published(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'book'
+            for name in ['index.html','indexh.htm','webhelpframe.htm','webhelpleft.htm','webhelpsearch.htm','webhelpindex.htm','webhelpbookmark.htm']:
+                (source/name).write_text('<h1>old reader</h1>')
+            before={str(p):p.read_bytes() for p in source.rglob('*') if p.is_file()}
+            manifest,_=build_book(source,db,out)
+            self.assertEqual(before,{str(p):p.read_bytes() for p in source.rglob('*') if p.is_file()})
+            self.assertFalse(list(out.glob('*.htm*')))
+            self.assertIn('index.htm',manifest['inputs'])
+            self.assertNotIn('index.htm',manifest['outputs'])
+
+    def test_page_without_entries_and_snapshot_change(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'book'
+            conn=sqlite3.connect(db);conn.execute('DELETE FROM entries');conn.execute('DELETE FROM effective_references')
+            conn.execute("UPDATE pages SET text=''")  # Editorial pages are not extracted, but remain readable.
+            conn.commit();conn.close()
+            m,_=build_book(source,db,out)
+            reader=json.loads((out/'anna-reader.json').read_text())
+            self.assertEqual(reader['pages']['topics/test.htm']['definitions'],[])
+            self.assertIn(b'/anna-assets/topic.js',(out/'topics/test.htm').read_bytes())
+            self.assertEqual(page_data(reader,m,path='topics/test.htm')['title'],'test')
+            for kw,code in [({},'invalid_location'),({'path':'../style.css'},'page_missing'),({'entry':'unknown'},'entry_missing')]:
+                with self.assertRaises(ReaderError) as raised:page_data(reader,m,**kw)
+                self.assertEqual(raised.exception.code,code)
+            (source/'style.css').write_text('h2 {color:blue}')
+            build_book(source,db,out)
+            self.assertNotEqual(reader['snapshot'],json.loads((out/'anna-reader.json').read_text())['snapshot'])
+
+    def test_navigation_keeps_duplicate_pages_anchors_and_missing_nodes(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root)
+            (source/'webhelpcontents.htm').write_text('''<a target="content" href="#" onclick="LinkClick(0)">分组</a><div id="d0">
+              <a target="content" href="topics/test.htm#Spell" onclick="LinkClick(1)">入口一</a>
+              <a target="content" href="topics/test.htm#other" onclick="LinkClick(2)">入口二</a>
+              <a target="content" href="topics/missing.htm" onclick="LinkClick(3)">缺失</a></div>''')
+            data=build_navigation(source,{'topics/test.htm':{}})
+            self.assertEqual([n['status'] for n in data['nodes']],['placeholder','present','present','missing'])
+            self.assertEqual([n['parent_id'] for n in data['nodes']],['','0','0','0'])
+            self.assertEqual([n['fragment'] for n in data['nodes'][1:3]],['Spell','other'])
+            self.assertEqual(data['default_page'],'topics/test.htm')
+            (source/'webhelpcontents.htm').write_text('<a target="content" href="topics/test.htm">no id</a>')
+            with self.assertRaisesRegex(ValueError,'目录'):build_navigation(source,{'topics/test.htm':{}})
+
+    def test_presentation_uses_only_available_source_content_assets(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root)
+            self.assertEqual(build_navigation(source,{'topics/test.htm':{}})['presentation_resources'],[])
+            (source/'assets').mkdir()
+            for file in ['webhelp-topic.css','webhelp-contrast.js','webhelp-shell.js']:
+                (source/'assets'/file).write_text('fixture')
+            assets=build_navigation(source,{'topics/test.htm':{}})['presentation_resources']
+            self.assertEqual([asset['id'] for asset in assets],['webhelpTopicStyles','webhelpContrastScript'])
+            self.assertEqual([asset['kind'] for asset in assets],['style','script'])
+
+    def test_updated_source_and_database_publish_new_targets_without_name_fallback(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'book'
+            build_book(source,db,out)
+            before=json.loads((out/'anna-reader.json').read_text())['snapshot']
+            page=source/'topics/test.htm'
+            page.write_text('<h2 id="New">甲 Alpha</h2><p>更新后的规则。</p>')
+            with self.assertRaisesRegex(ValueError,'快照'):build_book(source,db,out)
+            doc=Document('topics/test.htm',page.read_text());candidate=doc.candidates()[0]
+            conn=sqlite3.connect(db)
+            entry=json.loads(conn.execute('SELECT data FROM entries').fetchone()[0])
+            entry.update(id='ver_updated',start=candidate.start,end=candidate.end,title_end=candidate.title_end,anchors=['New'])
+            conn.execute('UPDATE entries SET data=?',(json.dumps(entry),))
+            conn.execute('UPDATE pages SET text=?,sha256=?',(doc.text,fingerprint(page)))
+            conn.execute('DELETE FROM effective_references');conn.commit();conn.close();doc.close()
+            manifest,_=build_book(source,db,out)
+            reader=json.loads((out/'anna-reader.json').read_text())
+            self.assertNotEqual(before,reader['snapshot'])
+            self.assertEqual(page_data(reader,manifest,entry='ver_updated')['fragment'],'anna-ver_updated')
+            with self.assertRaises(ReaderError) as raised:page_data(reader,manifest,entry='ver_test')
+            self.assertEqual(raised.exception.code,'entry_missing')
+            self.assertEqual((out/'topics/test.htm').read_bytes().split(MARKER)[0],page.read_bytes())
 
     def test_formatted_reference_and_style_snapshot_guard(self):
         with tempfile.TemporaryDirectory() as td:

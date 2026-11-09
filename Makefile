@@ -3,20 +3,16 @@ WEB_DIR ?= ../5echm-web
 WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(WEB_DIR)")
 REPO ?= https://github.com/DND5eChm/5echm_web.git
 BRANCH ?= pages
-PORT ?= 8000
-HOST ?= 127.0.0.1
 ANNA_PORT ?= 8001
 BOOK_PORT ?= 8002
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := help
-.PHONY: help clone serve open update status index clean anna build inventory test audit check up linked test-unit test-browser browser-setup
+.PHONY: help clone update status index clean anna build inventory test audit check up linked test-unit test-browser browser-setup
 
 help:
 	@echo "anna 与共享不全书镜像（DnD 上层可使用相同命令）"
 	@echo "  make clone     镜像缺失时下载；已有镜像不更新"
-	@echo "  make serve     原文浏览与全文搜索 http://$(HOST):$(PORT)"
-	@echo "  make open      在浏览器打开原文"
 	@echo "  make index     重建原文全文搜索索引"
 	@echo "  make anna      分析查询页 http://127.0.0.1:$(ANNA_PORT)"
 	@echo "  make build     从同一原文生成数据库与 5echm-anna"
@@ -31,7 +27,7 @@ help:
 	@echo "  make update    显式拉取原文更新并刷新搜索索引；分析数据需 make build"
 	@echo "  make status    查看原文版本和搜索索引状态"
 	@echo "  make clean     删除共享原文镜像及搜索缓存（影响其他引用方）"
-	@echo "  变量: WEB_DIR=原文路径 PORT=8000 HOST=127.0.0.1 ANNA_PORT=8001 BOOK_PORT=8002 PYTHON=解释器"
+	@echo "  变量: WEB_DIR=原文路径 ANNA_PORT=8001 BOOK_PORT=8002 PYTHON=解释器"
 	@echo "  WEB_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web"
 
 clone:
@@ -41,16 +37,10 @@ clone:
 		echo "原文目录无 topics，拒绝覆盖：$(WEB_PATH)" >&2; exit 1; \
 	fi
 
-serve: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/serve_5echm.py --host "$(HOST)" --port "$(PORT)"
-
-open:
-	@open "http://$(HOST):$(PORT)/"
-
 update: clone
 	@git -C "$(WEB_PATH)" pull --ff-only
 	@git -C "$(WEB_PATH)" log -1 --format='已更新到 %h  %ad  %s' --date=iso
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/serve_5echm.py --rebuild --build-index
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
 
 status:
 	@if [ -d "$(WEB_PATH)/.git" ] || [ -f "$(WEB_PATH)/.git" ]; then \
@@ -63,13 +53,13 @@ status:
 		echo "尚未下载，运行 make clone"; \
 	fi
 	@if [ -f .cache/5echm-search.pkl ]; then \
-		printf '搜索索引: %s（启动时校验来源与提交）\n' "$$(du -h .cache/5echm-search.pkl | cut -f1 | tr -d ' ')"; \
+		printf '搜索索引: %s（启动时校验来源与内容指纹）\n' "$$(du -h .cache/5echm-search.pkl | cut -f1 | tr -d ' ')"; \
 	else \
-		echo "搜索索引: 尚未构建（make serve 时自动构建）"; \
+		echo "搜索索引: 尚未构建（make up 时自动构建）"; \
 	fi
 
 index: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/serve_5echm.py --rebuild --build-index
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
 
 clean:
 	@if [ -e "$(WEB_PATH)" ]; then \

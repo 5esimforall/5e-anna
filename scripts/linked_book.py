@@ -15,6 +15,7 @@ from html_extract import Document
 from build import read_page
 from paths import PROJECT, WEB
 from review_store import require_current, load_events
+from reader import SCHEMA, build_navigation, content_file
 
 BOOK=PROJECT/'data/5echm-anna'
 MARKER=b'<!-- anna-link-layer -->'
@@ -46,7 +47,7 @@ def text_slice(doc,a,b):
 def inject(raw,payload,encoding='utf-8'):
     # ASCII-only JSON also works for GB18030 pages. Original bytes remain untouched.
     data=json.dumps(payload,ensure_ascii=True,separators=(',',':')).replace('<','\\u003c')
-    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script charset="utf-8" src="/anna-assets/link-labels.js"></script><script charset="utf-8" src="/anna-assets/links.js"></script><!-- /anna-link-layer -->'
+    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script charset="utf-8" src="/anna-assets/link-labels.js"></script><script charset="utf-8" src="/anna-assets/links.js"></script><script charset="utf-8" src="/anna-assets/topic.js"></script><!-- /anna-link-layer -->'
     # Append after the document: the HTML parser handles trailing script elements;
     # binding paths refer to the original body before these extra siblings.
     return raw+addition
@@ -80,18 +81,24 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
     report={'definitions':len(entries),'clickable_definitions':0,'linked_references':0,'empty_definitions':[],'unlocatable_definitions':[],'unresolved':[]}
     report['unresolved']=[{'path':r['path'],'href':r['evidence']['href'],'label':r['text'],'reference_id':r['id'],'reason':r['reason']} for r in unresolved]
     report['reference_coverage']=reference_coverage
-    manifest={'review_snapshot':review_snapshot,'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
+    manifest={'reader_schema':SCHEMA,'review_snapshot':review_snapshot,'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
+    reader=build_navigation(source,pages)
+    reader['snapshot']=sha256(json.dumps({'inputs':inputs,'database':manifest['database_sha256'],'review':review_snapshot['sha256']},sort_keys=True).encode()).hexdigest()
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.linked-',dir=output.parent) as tmp:
         stage=Path(tmp)
         for path in inputs:
+            if not content_file(path):continue
             dest=stage/path;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(source/path,dest)
         for path in sorted(actual_pages):
-            if not by_page.get(path) and not pages[path]['text']:continue
             raw,encoding,_=read_page(source/path);doc=Document(path,raw)
-            if doc.text!=pages[path]['text']:raise ValueError('解析文本与数据库不一致：'+path)
+            # Editorial/template pages are byte-snapshotted but excluded from extraction.
+            # They still belong in the reader; only bound ranges require canonical text.
+            if (by_page.get(path) or pages[path]['text']) and doc.text!=pages[path]['text']:
+                raise ValueError('解析文本与数据库不一致：'+path)
             definitions=[];references=[]
-            for e in by_page[path]:
+            page_entries=[]
+            for e in sorted(by_page[path],key=lambda e:(e['start'],-e['end'],e['id'])):
                 body=text_slice(doc,e['start'],e['end'])
                 title=text_slice(doc,e['start'],min(e['title_end'],e['start']+250))
                 if not title or not title['text'].strip():
@@ -102,20 +109,21 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                 locatable=bool((body and body['text'].strip()) or (title and title['text'].strip()))
                 if not locatable:report['unlocatable_definitions'].append(e['id'])
                 manifest['entries'][e['id']]={'path':path,'fragment':'anna-'+e['id'],'locatable':locatable}
+                page_entries.append({'id':e['id'],'name':e['name'],'fragment':'anna-'+e['id'],'locatable':locatable})
                 if title and title['text'].strip():report['clickable_definitions']+=1
             for mention in mentions[path]:
                 r=text_slice(doc,mention['start'],mention['end'])
                 if not r:raise ValueError('有效引用无法绑定原文：'+mention['id'])
                 references.append({'id':mention['target_id'],'reference_id':mention['id'],'range':r});report['linked_references']+=1
-            if definitions or references:
-                (stage/path).write_bytes(inject((source/path).read_bytes(),{'definitions':definitions,'references':references},encoding))
+            reader['pages'][path]={'title':doc.title,'definitions':page_entries}
+            # Even pages without extracted entries participate in reader navigation and history.
+            (stage/path).write_bytes(inject((source/path).read_bytes(),{'definitions':definitions,'references':references},encoding))
             doc.close()
         assets=stage/'anna-assets';assets.mkdir(exist_ok=True)
         shutil.copyfile(PROJECT/'book/links.js',assets/'links.js')
-        shutil.copyfile(PROJECT/'book/reader.js',assets/'reader.js')
-        shell=stage/'index.htm'
-        if shell.is_file():shell.write_bytes(shell.read_bytes()+MARKER+b'<script charset="utf-8" src="/anna-assets/reader.js"></script>')
+        shutil.copyfile(PROJECT/'book/topic.js',assets/'topic.js')
         shutil.copyfile(PROJECT/'web/link-labels.js',assets/'link-labels.js')
+        (stage/'anna-reader.json').write_text(json.dumps(reader,ensure_ascii=False,separators=(',',':')))
         for p in stage.rglob('*'):
             if p.is_file():manifest['outputs'][p.relative_to(stage).as_posix()]=fingerprint(p)
         (stage/'anna-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False))

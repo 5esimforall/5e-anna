@@ -10,7 +10,7 @@ from unittest.mock import patch
 PROJECT = Path(__file__).resolve().parents[1]
 WORKSPACE = PROJECT.parent
 sys.path.insert(0, str(PROJECT / 'scripts'))
-import serve_5echm as search
+import book_search as search
 
 
 class WorkflowTests(unittest.TestCase):
@@ -24,20 +24,32 @@ class WorkflowTests(unittest.TestCase):
         for command in ('make build', 'make test', 'make update', 'make anna'):
             self.assertIn(command, result.stdout)
 
+    def test_status_with_and_without_search_cache(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for cached in (False, True):
+                if cached:
+                    (root / '.cache').mkdir()
+                    (root / '.cache/5echm-search.pkl').write_bytes(b'fixture')
+                result = self.make(root, '-f', str(PROJECT / 'Makefile'), 'status', f'WEB_DIR={root / "missing"}')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn('尚未下载', result.stdout)
+                self.assertIn('内容指纹' if cached else 'make up 时自动构建', result.stdout)
+
     def test_workspace_delegates_and_preserves_relative_path(self):
         # The outer Makefile is an optional consumer, not an anna dependency.
         wrapper = WORKSPACE / 'Makefile'
         if not wrapper.exists() or '5e-anna' not in wrapper.read_text():
             self.skipTest('standalone checkout without workspace wrapper')
-        result = self.make(WORKSPACE, '-n', 'serve', 'WEB_DIR=custom mirror', 'PORT=8123')
+        result = self.make(WORKSPACE, '-n', 'up', 'WEB_DIR=custom mirror', 'ANNA_PORT=8123')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f'WEB_DIR="{WORKSPACE / "custom mirror"}"', result.stdout)
-        self.assertIn('scripts/serve_5echm.py', result.stdout)
-        self.assertIn('--port "8123"', result.stdout)
+        self.assertIn('scripts/up.py', result.stdout)
+        self.assertIn('--anna-port "8123"', result.stdout)
         self.assertNotIn('git pull', result.stdout)
 
     def test_paths_independent_of_cwd_and_environment_override(self):
-        code = 'import paths, build, inventory, serve_5echm; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == inventory.WEB == serve_5echm.WEB'
+        code = 'import paths, build, inventory, book_search; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == inventory.WEB == book_search.WEB'
         with tempfile.TemporaryDirectory() as td:
             env = dict(os.environ, PYTHONPATH=str(PROJECT / 'scripts'))
             env.pop('WEB_DIR', None)
@@ -85,14 +97,20 @@ class WorkflowTests(unittest.TestCase):
                 self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
-        for command in ('serve', 'build', 'index', 'inventory'):
+        for command in ('up', 'build', 'index', 'inventory'):
             result = self.make(PROJECT, '-n', command)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('git pull', result.stdout)
             self.assertNotIn(' pull ', result.stdout)
         result = self.make(PROJECT, '-n', 'update')
         self.assertIn('pull --ff-only', result.stdout)
-        self.assertIn('--rebuild --build-index', result.stdout)
+        self.assertIn('--rebuild', result.stdout)
+
+    def test_old_reader_commands_are_removed(self):
+        for command in ('serve','open'):
+            result=self.make(PROJECT,'-n',command)
+            self.assertNotEqual(result.returncode,0)
+        self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())
 
 
 class SearchCacheTests(unittest.TestCase):
@@ -112,6 +130,8 @@ class SearchCacheTests(unittest.TestCase):
                 with patch.object(search, 'WEB', second):
                     self.assertEqual(search.build_index(quiet=True)[0]['title'], 'second')
                     (second / 'topics/page.htm').write_text('<title>changed</title>')
+                    # Working-tree changes invalidate the index even without a new commit.
+                    self.assertEqual(search.build_index(quiet=True)[0]['title'], 'changed')
                     with patch.object(search, 'web_commit', return_value='new-commit'):
                         self.assertEqual(search.build_index(quiet=True)[0]['title'], 'changed')
 

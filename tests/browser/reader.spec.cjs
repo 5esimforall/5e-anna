@@ -1,0 +1,252 @@
+/* Real-corpus reader checks. Faults below affect transport, never rule identity. */
+const {test:base,expect} = require('@playwright/test');
+const port=Number(process.env.ANNA_E2E_PORT||18380);
+const anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+2}`, original=`http://127.0.0.1:${port}`;
+const test=base.extend({context:async({context},use)=>{
+  const errors=[];context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
+  await context.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort());
+  await use(context);expect(errors,'reader JavaScript errors').toEqual([]);
+}});
+let cases,meta;
+test.beforeAll(async({request})=>{
+  cases=await (await request.get(original+'/__cases')).json();
+  meta=await (await request.get(anna+'/api/reader')).json();
+});
+async function ready(page){
+  await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');
+  await expect(page.locator('#book-error')).toBeHidden();
+  await expect(page.locator('#content')).toBeVisible();
+  await expect(page.locator('#content')).toHaveCSS('visibility','visible');
+}
+async function visit(page,params={}){await page.goto(anna+'/read?'+new URLSearchParams(params));await ready(page);}
+function content(page){return page.frames().find(f=>f.url().startsWith(book+'/topics/'));}
+async function sidebar(page,pane){
+  if(await page.locator('#book-sidebar').isHidden())await page.locator('#book-menu').click();
+  if(pane)await page.locator('#tab-'+pane).click();
+}
+async function shot(page,testInfo,name){await testInfo.attach(name,{body:await page.screenshot(),contentType:'image/png'});}
+
+test('query and reader use the new app; upstream reading entries are gone',async({page,request})=>{
+  await page.goto(anna);
+  await expect(page.getByRole('link',{name:'阅读不全书',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'阅读不全书',exact:true}).click();await ready(page);
+  await expect(page).toHaveURL(anna+'/read');
+  await expect(page).toHaveTitle('写在前面 · 5e anna');
+  await expect(page.locator('#book-main > h1, #book-title')).toHaveCount(0);
+  for(const path of ['/','/index.htm','/index.html','/indexh.htm','/webhelpframe.htm','/webhelpcontents.htm','/webhelpsearch.htm','/webhelpbookmark.htm'])
+    expect((await request.get(book+path)).status(),path).toBe(404);
+});
+
+test('duplicate directory entries retain their node; filtering restores expansion and keyboard navigation',async({page})=>{
+  const path='topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm';
+  const repeated=meta.nodes.filter(n=>n.path===path && n.status==='present');expect(repeated.length).toBeGreaterThan(1);
+  const selected=repeated.at(-1);
+  await visit(page,{page:path,node:selected.id});
+  await expect(page.locator('#book-tree a[aria-current=page]')).toHaveCount(1);
+  await expect(page.locator(`#book-tree [data-node="${selected.id}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
+  const expanded=await page.locator('#book-tree [aria-expanded=true]').evaluateAll(nodes=>nodes.map(n=>n.dataset.node));
+  await page.locator('#book-filter').fill('没有这个目录xyz');
+  await expect(page.locator('#book-tree-empty')).toBeVisible();
+  await page.locator('#book-filter').press('Escape');
+  await expect(page.locator('#book-filter')).toHaveValue('');
+  expect(await page.locator('#book-tree [aria-expanded=true]').evaluateAll(nodes=>nodes.map(n=>n.dataset.node))).toEqual(expanded);
+  await page.reload();await ready(page);
+  await expect(page.locator(`#book-tree [data-node="${selected.id}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
+  await page.locator('#book-collapse').click();
+  await expect(page.locator('#book-tree [aria-expanded=true]')).toHaveCount(0);
+  const first=page.locator('#book-tree [role=treeitem]').first();await first.focus();
+  await first.press('ArrowDown');
+  const second=page.locator('#book-tree [role=treeitem]').nth(1);await expect(second).toBeFocused();
+  await second.press('ArrowRight');await expect(second).toHaveAttribute('aria-expanded','true');
+  await second.press('ArrowLeft');await expect(second).toHaveAttribute('aria-expanded','false');
+});
+
+test('source reference navigation has one history entry and restores scroll on back, forward and reload',async({page})=>{
+  const m=cases.mention;
+  await visit(page,{page:m.path});
+  const source=content(page);
+  const link=source.getByRole('link',{name:'查看定义: '+m.text,exact:true}).first();
+  await source.evaluate(()=>scrollTo(0,1000));
+  await link.focus();await expect(link).toBeFocused();
+  await expect.poll(()=>page.evaluate(()=>history.state?.book?.position.y)).toBeGreaterThan(0);
+  const before=await page.evaluate(()=>history.state.book.position.y), url=page.url();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(new RegExp('entry='+m.target_id));await ready(page);
+  expect(content(page).url()).toContain('#'+m.target.fragment);
+  await page.goBack();await expect(page).toHaveURL(url);await ready(page);
+  await expect.poll(()=>content(page).evaluate(()=>scrollY)).toBeCloseTo(before,0);
+  await page.goForward();await ready(page);await expect(page).toHaveURL(new RegExp('entry='+m.target_id));
+  await content(page).evaluate(()=>scrollBy(0,250));
+  await expect.poll(()=>page.evaluate(()=>history.state.book.position.y)).toBeGreaterThan(200);
+  const position=await page.evaluate(()=>history.state.book.position.y);
+  await page.reload();await ready(page);
+  await expect.poll(()=>content(page).evaluate(()=>scrollY)).toBeCloseTo(position,0);
+});
+
+test('mobile drawer, focus, outline and resize keep the same document',async({page},testInfo)=>{
+  await page.setViewportSize({width:390,height:844});await visit(page,{entry:cases.spell.id});
+  await expect(page.locator('#book-sidebar')).not.toBeVisible();
+  await sidebar(page,'outline');await expect(page.locator('#book-sidebar')).toHaveJSProperty('open',true);
+  expect(await page.locator('#book-sidebar').evaluate(e=>e.matches(':modal'))).toBe(true);
+  await page.locator('#book-close').focus();
+  for(let i=0;i<12;i++)await page.keyboard.press('Tab');
+  expect(await page.evaluate(()=>document.querySelector('#book-sidebar').contains(document.activeElement))).toBe(true);
+  const target=page.locator('#book-outline li a').first();await target.click();await ready(page);
+  await expect(page.locator('#book-sidebar')).not.toBeVisible();
+  const url=page.url();
+  for(const width of [375,768,800,801,1280,1440,390]){
+    await page.setViewportSize({width,height:844});await ready(page);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expect(page).toHaveURL(url);
+    expect(await page.locator('#book-sidebar').evaluate(e=>e.matches(':modal'))).toBe(false);
+  }
+  await shot(page,testInfo,'reader-mobile.png');
+  await sidebar(page,'contents');await page.locator('#book-filter').fill('掩护');
+  await page.locator('#book-filter').press('Escape');await expect(page.locator('#book-filter')).toHaveValue('');
+  await expect(page.locator('#book-sidebar')).toBeVisible();
+  await page.keyboard.press('Escape');await expect(page.locator('#book-sidebar')).not.toBeVisible();
+  await expect(page.locator('#book-menu')).toBeFocused();
+  await page.setViewportSize({width:1440,height:900});
+  await shot(page,testInfo,'reader-desktop.png');
+});
+
+test('full-text results, paging and reading state survive reload; search failure is recoverable',async({page})=>{
+  await visit(page);await sidebar(page,'search');
+  await page.locator('#book-search').fill('护盾');await page.locator('#book-search-form button').click();
+  await expect(page.locator('#book-search-status')).toContainText('找到');
+  await expect(page.locator('#book-search-next')).toBeEnabled();await page.locator('#book-search-next').click();
+  await expect(page.locator('#book-search-page')).toContainText('第 2 /');
+  const name=await page.locator('#book-search-results a').first().innerText();
+  await page.reload();await ready(page);
+  await expect(page.locator('#tab-search')).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('#book-search-page')).toContainText('第 2 /');
+  await expect(page.locator('#book-search-results a').first()).toHaveText(name);
+  await page.locator('#book-search-results a').first().click();await ready(page);
+  await expect(page).not.toHaveTitle('写在前面 · 5e anna');
+  await page.route('**/api/book-search?**',route=>route.fulfill({status:503,json:{code:'network'}}));
+  await page.locator('#book-search-form button').click();
+  await expect(page.locator('#book-search-status')).toContainText('无法读取');
+  await expect(page.locator('#book-search-results a')).toHaveCount(0);
+  await page.unroute('**/api/book-search?**');await page.locator('#book-search-form button').click();
+  await expect(page.locator('#book-search-status')).toContainText('找到');
+});
+
+test('missing and conflicting targets fail explicitly; navigation remains available',async({page})=>{
+  await page.goto(anna+'/read?entry=missing');
+  await expect(page.locator('#book-error')).toContainText('不会自动跳到同名条目');
+  await expect(page.locator('#content')).not.toBeVisible();
+  // A failed first target must still leave the complete directory usable.
+  await page.locator('#book-error a').click();await ready(page);
+  await page.goto(anna+'/read?entry=missing&page=topics/test.htm');
+  await expect(page.locator('#book-error')).toContainText('阅读地址无效');
+});
+
+test('late responses and unrelated messages cannot replace the current page',async({page})=>{
+  await visit(page,{entry:cases.spell.id});await sidebar(page,'outline');
+  const links=page.locator('#book-outline li > a:first-child');
+  const slow=await links.nth(0).getAttribute('href'), fast=await links.nth(1).getAttribute('href');
+  const slowId=new URL(slow,anna).searchParams.get('entry');
+  await page.route('**/api/reader-page?**',async route=>{
+    if(new URL(route.request().url()).searchParams.get('entry')===slowId)await new Promise(resolve=>setTimeout(resolve,500));
+    await route.continue();
+  });
+  await links.nth(0).click();await links.nth(1).click();
+  await expect(page).toHaveURL(anna+fast);await ready(page);
+  await page.evaluate(snapshot=>window.postMessage({channel:'anna-reader',version:1,type:'navigate',snapshot,route:{page:'topics/写在前面.html'}},location.origin),meta.snapshot);
+  await page.waitForTimeout(650);await expect(page).toHaveURL(anna+fast);
+});
+
+test('disabled storage still permits navigation and shared shell theme; original text stays unchanged',async({page,context})=>{
+  await context.addInitScript(()=>{Storage.prototype.getItem=()=>{throw new Error('blocked')};Storage.prototype.setItem=()=>{throw new Error('blocked')};Storage.prototype.removeItem=()=>{throw new Error('blocked')};});
+  await visit(page,{entry:cases.spell.id});
+  const before=await content(page).locator('body').innerText();
+  await page.locator('#theme').click();
+  const theme=await page.locator('html').getAttribute('data-theme');
+  await expect(content(page).locator('html')).toHaveAttribute('data-webhelp-theme',theme);
+  expect(await content(page).locator('body').innerText()).toBe(before);
+  await page.reload();await ready(page);
+});
+
+for(const [label,path] of [
+  ['spells','topics/玩家手册2024/法术详述/1环.htm'],
+  ['wide-table','topics/玩家手册2024/装备/武器.htm'],
+  ['image','topics/玩家手册2024/附录A：多元宇宙.htm']
+ ]) for(const width of [1280,390]) for(const theme of ['light','dark']) {
+  test(`embedded original layout ${label} ${width}px ${theme}`,async({page,context},testInfo)=>{
+    const {PNG}=require('pngjs'),pixelmatch=(await import('pixelmatch')).default;
+    await page.emulateMedia({colorScheme:theme});
+    await page.setViewportSize({width,height:900});await visit(page,{page:path});
+    const f=content(page),size=await page.locator('#content').boundingBox();
+    const source=await context.newPage();await source.setViewportSize({width:Math.round(size.width)+(width>800?290:0),height:Math.round(size.height)});
+    // Use the actual upstream shell: it adds contrast repair and applies topic preferences.
+    await source.addInitScript(theme=>localStorage.setItem('5echm.webhelp.theme',theme),theme);
+    await source.goto(original+'/index.htm?'+new URLSearchParams({page:path}));
+    const sourceRect=await source.locator('#content').boundingBox();
+    await source.setViewportSize({width:Math.round(size.width+sourceRect.x),height:Math.round(size.height+sourceRect.y)});
+    const originalFrame=source.frames().find(f=>f.url().includes('/topics/'));
+    for(const frame of [f,originalFrame]) {
+      await frame.evaluate(()=>document.fonts.ready);
+      await expect(frame.locator('html')).toHaveAttribute('data-webhelp-theme',theme);
+      await expect(frame.locator('html')).toHaveAttribute('data-webhelp-contrast-repair-count',/\d+/);
+    }
+    const shape=()=>({text:document.body.innerText,geometry:Array.from(document.body.querySelectorAll('h1,h2,h3,h4,p,table,tr,td,img')).map(e=>{
+      const r=e.getBoundingClientRect();return [e.tagName,Math.round(r.x*100),Math.round((r.y+scrollY)*100),Math.round(r.width*100),Math.round(r.height*100)];
+    })});
+    expect(await f.evaluate(shape)).toEqual(await originalFrame.evaluate(shape));
+    if(label==='image')expect(await f.locator('img').evaluateAll(images=>images.every(image=>image.complete && image.naturalWidth>0))).toBe(true);
+    await page.mouse.move(0,0);await source.mouse.move(0,0);
+    const actual=await page.locator('#content').screenshot(),expected=await source.locator('#content').screenshot();
+    const a=PNG.sync.read(actual),b=PNG.sync.read(expected);
+    expect([a.width,a.height]).toEqual([b.width,b.height]);
+    const diff=new PNG({width:a.width,height:a.height});
+    const mismatches=pixelmatch(a.data,b.data,diff.data,a.width,a.height,{threshold:0,includeAA:true});
+    if(mismatches)await testInfo.attach('embedded-diff.png',{body:PNG.sync.write(diff),contentType:'image/png'});
+    expect(mismatches,'original source / embedded source pixels').toBe(0);
+  });
+}
+
+test('reader labels have matching Chinese and English resources',async()=>{
+  const vm=require('node:vm'),fs=require('node:fs');
+  const context=vm.createContext({});
+  vm.runInContext(fs.readFileSync('web/reader-labels.js','utf8'),context);
+  const labels=JSON.parse(vm.runInContext('JSON.stringify(annaReaderLabels)',context));
+  expect(Object.keys(labels.zh)).toEqual(Object.keys(labels.en));
+  expect(Object.keys(labels.zh.errors)).toEqual(Object.keys(labels.en.errors));
+});
+
+for(const width of [390,1280,1920]) test(`text fills the reading area without duplicate headings ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:900});await visit(page,{page:cases.spell.path});
+  const rect=await page.locator('#content').boundingBox();
+  expect(rect.y).toBeLessThanOrEqual(50);
+  expect(rect.height).toBeGreaterThanOrEqual(850);
+  expect(Math.round(rect.x+rect.width)).toBe(width);
+  expect(Math.round(rect.y+rect.height)).toBe(900);
+  await expect(page.locator('#book-title, .book-page-heading, .book-footer, #book-wide')).toHaveCount(0);
+});
+
+test('parsed text is available before delayed images and late loads do not replace the next page',async({page},testInfo)=>{
+  let release;
+  const held=new Promise(resolve=>{release=resolve;});
+  let imageRequested=false;
+  await page.route('**/*',async route=>{
+    if(route.request().resourceType()==='image' && route.request().url().startsWith(book+'/topics/')){
+      imageRequested=true;await held;
+    }
+    await route.continue();
+  });
+  try {
+    const started=Date.now();
+    await page.goto(anna+'/read?'+new URLSearchParams({page:'topics/玩家手册2024/附录A：多元宇宙.htm'}),{waitUntil:'domcontentloaded'});
+    await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false',{timeout:4000});
+    await expect.poll(()=>imageRequested).toBe(true);
+    await expect(page.locator('#book-error')).toBeHidden();
+    const f=content(page);
+    expect(await f.locator('img').evaluateAll(images=>images.some(image=>!image.complete))).toBe(true);
+    await testInfo.attach('text-ready-before-image.json',{body:Buffer.from(JSON.stringify({textReadyMs:Date.now()-started,imageStillPending:true})),contentType:'application/json'});
+    const next=await page.locator('#book-next').getAttribute('href');
+    await page.locator('#book-next').click();await ready(page);
+    release();
+    await expect(page).toHaveURL(anna+next);
+    await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');
+  } finally {release();}
+});

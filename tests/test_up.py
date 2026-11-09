@@ -23,6 +23,7 @@ class StackTests(unittest.TestCase):
     def test_routes_ports_and_no_wrong_target_fallback(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
+            (source/'literal%2e.css').write_text('literal percent path')
             m,_=build_book(source,db,book)
             servers=create_servers(db,book,m,0,0);ts=[]
             try:
@@ -30,12 +31,41 @@ class StackTests(unittest.TestCase):
                     t=threading.Thread(target=s.serve_forever,daemon=True);t.start();ts.append(t)
                 self.assertNotEqual(servers[0].server_port,servers[1].server_port)
                 self.assertEqual(self.request(servers[1],'/definition/ver_test')[:2],(302,'/topics/test.htm#anna-ver_test'))
-                self.assertIn('index.htm?page=',self.request(servers[1],'/definition/ver_test?reader=1')[1])
+                self.assertEqual(self.request(servers[0],'/read')[0],200)
+                reader=json.loads(self.request(servers[0],'/api/reader')[2])
+                self.assertEqual(reader['content_origin'],f'http://127.0.0.1:{servers[1].server_port}')
+                target=json.loads(self.request(servers[0],'/api/reader-page?entry=ver_test')[2])
+                self.assertEqual((target['path'],target['fragment']),('topics/test.htm','anna-ver_test'))
+                self.assertEqual(self.request(servers[0],'/api/reader-page?entry=ver_test&path=topics/test.htm')[0],400)
+                self.assertEqual(self.request(servers[0],'/api/reader-page?path=../style.css')[0],404)
+                self.assertEqual(self.request(servers[0],'/api/reader-page?entry=ver_test&snapshot=old')[0],409)
                 self.assertEqual(self.request(servers[1],'/anna/entry/ver_test')[1],f'http://127.0.0.1:{servers[0].server_port}/?entry=ver_test')
-                for p in ['/definition/missing','/anna/entry/missing','/../catalog.sqlite','/anna-manifest.json']:
+                for p in ['/definition/missing','/anna/entry/missing','/../catalog.sqlite','/anna-manifest.json','/anna-reader.json',
+                          '/','/index.htm','/index.html','/indexh.htm','/webhelpsearch.htm','/webhelpcontents.htm','/webhelpframe.htm']:
                     self.assertEqual(self.request(servers[1],p)[0],404)
                 self.assertEqual(self.request(servers[1],'/topics/test.htm',host='attacker.example')[0],403)
                 self.assertIn(b'anna-bindings',self.request(servers[1],'/topics/test.htm')[2])
+                self.assertEqual(self.request(servers[1],'/literal%252e.css')[2],b'literal percent path')
+                with closing(HTTPConnection('127.0.0.1', servers[1].server_port)) as c:
+                    c.request('GET', '/style.css')
+                    response = c.getresponse(); etag = response.getheader('ETag'); response.read()
+                    self.assertTrue(etag)
+                    self.assertEqual(response.getheader('Cache-Control'), 'private, no-cache')
+                    c.request('GET', '/style.css', headers={'If-None-Match': etag})
+                    response = c.getresponse()
+                    self.assertEqual(response.status, 304); self.assertEqual(response.read(), b'')
+                    c.request('GET', '/style.css', headers={'If-None-Match': '"different"'})
+                    response = c.getresponse()
+                    self.assertEqual(response.status, 200); self.assertTrue(response.read())
+                # A running reader cannot combine a rebuilt book with its old navigation/model.
+                (book/'anna-manifest.json').write_text('{}')
+                self.assertEqual(self.request(servers[0],'/read')[0],200)
+                self.assertEqual(self.request(servers[0],'/api/reader')[0],409)
+                self.assertEqual(self.request(servers[1],'/topics/test.htm')[0],409)
+                with closing(HTTPConnection('127.0.0.1', servers[1].server_port)) as c:
+                    c.request('GET', '/style.css', headers={'If-None-Match': etag})
+                    response = c.getresponse()
+                    self.assertEqual(response.status, 409); response.read()
             finally:
                 for s in servers:s.shutdown();s.server_close()
                 for t in ts:t.join()
@@ -73,7 +103,7 @@ class StackTests(unittest.TestCase):
                             if 'Ctrl-C' in output or process.poll() is not None:break
                             time.sleep(.02)
                         self.assertIn('Ctrl-C',output,output)
-                        ports=[int(line.split(':')[-1].rstrip('/')) for line in output.splitlines() if line.startswith(('anna:','5echm-anna:'))]
+                        ports=[int(line.split(':')[-1].rstrip('/')) for line in output.splitlines() if line.startswith(('anna:','content:'))]
                         self.assertEqual(len(ports),2)
                         for port,path in zip(ports,('/', '/topics/test.htm')):
                             with closing(HTTPConnection('127.0.0.1',port,timeout=2)) as c:

@@ -1,8 +1,11 @@
-/* One outer scroll surface. Documents are mounted only on explicit navigation/loading. */
+/* One scroll surface, bounded live documents, and measured placeholders for released pages. */
 class AnnaReaderFlow {
   constructor({scroll, container, snapshot, contentBase, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch}) {
     Object.assign(this,{scroll,container,snapshot,contentBase,fetchPage,labels,text,onActive,onNavigate,onTools,onSearch});
-    this.records = new Map(); this.serial = 0; this.locationSerial = 0; this.scope = null; this.active = null;
+    this.records = new Map(); this.documentSequence = 0; this.locationSequence = 0; this.scope = null; this.active = null;
+    this.windowRadius = 2; this.maxDocuments = 5;
+    new ResizeObserver(() => this.scheduleMaintenance()).observe(this.scroll);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.scheduleMaintenance(); });
     this.scroll.addEventListener('scroll', () => this.schedulePosition(), {passive:true});
     window.addEventListener('message', event => this.message(event));
     this.container.addEventListener('click', event => {
@@ -12,23 +15,19 @@ class AnnaReaderFlow {
       this.ensure(path).then(record => {
         if (button === document.activeElement || !document.activeElement || document.activeElement === document.body)
           record.heading.focus({preventScroll:true});
-        this.capture();
+        this.capture(); this.scheduleMaintenance();
       }).catch(() => {}); // The document slot owns its retry/error state.
     });
   }
   reset(scope) {
-    this.locationSerial++;
-    for (const record of this.records.values()) {
-      record.abort.abort(); clearTimeout(record.timer);
-      record.reject?.(new DOMException('Navigation superseded','AbortError'));
-      clearTimeout(record.location?.timer);
-      record.location?.reject(new DOMException('Navigation superseded','AbortError'));
-    }
+    this.locationSequence++;
+    for (const record of this.records.values()) this.cancel(record);
+    clearTimeout(this.maintenanceTimer); this.maintenanceTimer = 0; this.automaticRequest = null;
     clearTimeout(this.positionTimer); this.positionTimer = 0;
-    this.records.clear(); this.scope = scope; this.active = null; this.pending = false;
+    this.records.clear(); this.scope = scope; this.active = null; this.locating = false; this.locationTargetPath = '';
     this.container.replaceChildren(); this.scroll.scrollTop = 0;
   }
-  top(record) { return record.frame.getBoundingClientRect().top - this.scroll.getBoundingClientRect().top + this.scroll.scrollTop; }
+  top(record) { return record.surface.getBoundingClientRect().top - this.scroll.getBoundingClientRect().top + this.scroll.scrollTop; }
   updateSlots() {
     const location = this.viewport();
     // Preserve mounted iframe nodes: never append an existing frame to a fragment.
@@ -45,7 +44,7 @@ class AnnaReaderFlow {
       button.textContent = this.text(start === 0 ? 'loadPrevious' : 'loadNext',{name:next.label});
       gap.append(note,button); desired.push(gap);
     }
-    if (this.records.get(this.scope.pages.at(-1)?.path)?.status === 'ready') {
+    if (['ready','released'].includes(this.records.get(this.scope.pages.at(-1)?.path)?.status)) {
       const end = document.createElement('p'); end.className = 'book-scope-end'; end.textContent = this.labels.scopeEnd; desired.push(end);
     }
     for (const element of [...this.container.children]) if (!desired.includes(element)) element.remove();
@@ -61,85 +60,179 @@ class AnnaReaderFlow {
     if (!this.active || this.active.status !== 'ready') return null;
     return {path:this.active.item.path,position:{x:this.scroll.scrollLeft,y:Math.max(0,this.scroll.scrollTop-this.top(this.active))}};
   }
+  visibleRecord() {
+    const top = this.scroll.getBoundingClientRect().top + 2;
+    return [...this.records.values()].find(record => {
+      const rect = record.element.getBoundingClientRect();
+      return rect.top <= top && rect.bottom > top;
+    });
+  }
   viewport() {
-    return this.active?.status === 'ready' ? {path:this.active.item.path,position:{x:this.scroll.scrollLeft,y:this.scroll.scrollTop-this.top(this.active)}} : null;
+    const record = this.visibleRecord() || this.active;
+    return record ? {path:record.item.path,position:{x:this.scroll.scrollLeft,y:this.scroll.scrollTop-this.top(record)}} : null;
   }
   keepLocation(location) {
     const record = location && this.records.get(location.path);
-    if (record?.status === 'ready') this.scroll.scrollTop = this.top(record)+location.position.y;
+    if (record) this.scroll.scrollTop = this.top(record)+location.position.y;
   }
   schedulePosition() {
     if (this.positionTimer) return;
-    this.positionTimer = setTimeout(() => { this.positionTimer = 0; this.capture(); },100);
+    this.positionTimer = setTimeout(() => { this.positionTimer = 0; this.capture(); this.scheduleMaintenance(); },100);
   }
   capture() {
-    if (this.pending) return this.location();
+    if (this.locating) return this.location();
+    // A released/loading slot is not successfully displayed content. Keep the last confirmed position.
+    const visible = this.visibleRecord();
+    if (visible && visible.status !== 'ready') return null;
     const ready = [...this.records.values()].filter(r => r.status === 'ready').sort((a,b) => a.index-b.index);
     if (!ready.length) return null;
     const y = this.scroll.scrollTop + 2;
-    const record = ready.find(r => y >= this.top(r) && y < this.top(r)+r.height) ||
-      ready.find(r => this.top(r) > y) || ready.at(-1);
+    const record = visible || ready.find(r => this.top(r) > y) || ready.at(-1);
     this.activate(record);
     const location = this.location();
     this.onActive(record.data,location.position,record.item);
     return location;
   }
+  scheduleMaintenance() {
+    if (this.maintenanceTimer) return;
+    this.maintenanceTimer = setTimeout(() => { this.maintenanceTimer = 0; this.maintainWindow(); },100);
+  }
+  maintainWindow() {
+    if (this.locating || !this.active || document.hidden) return;
+    this.capture();
+    const current = this.visibleRecord() || this.active;
+    this.trim(current.index);
+    if (this.automaticRequest) return;
+    const top = this.scroll.getBoundingClientRect().top, bottom = top + this.scroll.clientHeight;
+    const margin = Math.min(600,this.scroll.clientHeight);
+    const nearby = [...this.records.values()].filter(record => {
+      const rect = record.element.getBoundingClientRect();
+      return Math.abs(record.index-current.index) <= this.windowRadius && rect.bottom >= top-margin && rect.top <= bottom+margin;
+    }).sort((a,b) => Math.abs(a.index-current.index)-Math.abs(b.index-current.index));
+    // Rehydrate measured slots in either direction before loading new forward content.
+    let path = nearby.find(record => record.status === 'released')?.item.path;
+    if (!path) {
+      for (const record of nearby) {
+        const next = this.scope.pages[record.index+1];
+        if (record.status === 'ready' && record.index >= current.index && next && record.index+1 <= current.index+this.windowRadius &&
+            record.surface.getBoundingClientRect().bottom <= bottom+margin && !this.records.has(next.path)) {
+          path = next.path; break;
+        }
+      }
+    }
+    if (!path) return;
+    const ticket = {path}; this.automaticRequest = ticket;
+    this.ensure(path).then(() => this.capture()).catch(() => {
+      // Errors stay in their slot. Only the reader's explicit Retry starts another attempt.
+    }).finally(() => {
+      if (this.automaticRequest !== ticket) return;
+      this.automaticRequest = null; this.scheduleMaintenance();
+    });
+  }
+  cancel(record) {
+    record.abort?.abort(); clearTimeout(record.timer); clearTimeout(record.location?.timer);
+    const error = new DOMException('Navigation superseded','AbortError');
+    record.reject?.(error); record.location?.reject(error);
+    record.location = null;
+  }
+  placeholder(record) {
+    const surface = document.createElement('div'); surface.className = 'book-page-placeholder';
+    surface.style.height = record.height+'px';
+    const controls = document.createElement('div'); controls.className = 'book-page-resume';
+    const note = document.createElement('span'); note.textContent = this.labels.releasedPage;
+    const button = document.createElement('button'); button.type = 'button'; button.dataset.loadPage = record.item.path;
+    button.textContent = this.text('reloadPage',{name:record.item.label});
+    controls.append(note,button); surface.append(controls); return surface;
+  }
+  release(record) {
+    const location = this.viewport();
+    this.cancel(record);
+    if (document.activeElement === record.frame || record.element.contains(document.activeElement)) this.scroll.focus({preventScroll:true});
+    const surface = this.placeholder(record);
+    record.surface.replaceWith(surface); record.surface = surface; record.frame = null;
+    record.statusElement.hidden = true; record.element.setAttribute('aria-busy','false');
+    record.status = 'released'; record.documentId = ''; record.data = null;
+    record.promise = null; record.resolve = null; record.reject = null;
+    this.keepLocation(location);
+  }
+  trim(center, reserve = false) {
+    const mounted = () => [...this.records.values()].filter(r => r.frame && r !== this.active && r.item.path !== this.locationTargetPath)
+      .sort((a,b) => Math.abs(b.index-center)-Math.abs(a.index-center));
+    for (const record of mounted()) if (Math.abs(record.index-center) > this.windowRadius) this.release(record);
+    if (reserve) {
+      let count = [...this.records.values()].filter(r => r.frame).length;
+      for (const record of mounted()) {
+        if (count < this.maxDocuments) break;
+        this.release(record); count--;
+      }
+    }
+  }
   activate(record) {
     if (this.active === record) return;
-    if (this.active) this.active.frame.removeAttribute('id');
+    if (this.active?.frame) this.active.frame.removeAttribute('id');
     this.active = record; record.frame.id = 'content';
   }
   resize(record, height) {
     if (!Number.isFinite(height) || height <= 0 || height > 20000000) return;
-    if (!this.pending) this.capture();
+    if (!this.locating) this.capture();
     const location = this.viewport();
     record.height = Math.ceil(height); record.frame.style.height = record.height+'px';
-    if (!this.pending) this.keepLocation(location);
+    if (!this.locating) this.keepLocation(location);
+    this.scheduleMaintenance();
   }
   async ensure(path, data) {
     const existing = this.records.get(path);
-    if (existing && existing.status !== 'error') return existing.promise;
+    if (existing && ['loading','ready'].includes(existing.status)) return existing.promise;
     const index = this.scope.pages.findIndex(item => item.path === path);
     if (index < 0) throw new Error('outside_scope');
+    const location = this.viewport();
+    const center = this.locating ? this.scope.pages.findIndex(item => item.path === this.locationTargetPath) : (this.visibleRecord() || this.active)?.index ?? index;
+    this.trim(center,true);
     const item = this.scope.pages[index], element = existing?.element || document.createElement('section');
     element.className = 'book-page'; element.dataset.path = path; element.setAttribute('aria-busy','true');
     const heading = document.createElement('div'); heading.className = 'book-page-divider'; heading.tabIndex = -1;
     heading.textContent = this.text('documentPage',{page:index+1,pages:this.scope.pages.length,name:item.label || data?.title || ''});
     const status = document.createElement('p'); status.className = 'book-page-state'; status.textContent = this.labels.loading; status.setAttribute('role','status');
+    const statusHost = document.createElement('div'); statusHost.className = 'book-page-status'; statusHost.append(status);
     const frame = document.createElement('iframe'); frame.className = 'book-document'; frame.title = item.label || this.labels.original;
     frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads');
-    frame.referrerPolicy = 'origin'; frame.style.height = '1px'; frame.style.visibility = 'hidden';
-    element.replaceChildren(heading,status,frame);
-    const record = {item,index,element,heading,statusElement:status,frame,status:'loading',height:1,
-      navigationId:++this.serial,documentId:'',abort:new AbortController(),data};
+    frame.referrerPolicy = 'origin'; frame.style.height = (existing?.height || 120)+'px'; frame.style.visibility = 'hidden';
+    element.replaceChildren(heading,statusHost,frame);
+    const record = {item,index,element,heading,statusElement:status,frame,surface:frame,status:'loading',height:existing?.height || 120,
+      navigationId:++this.documentSequence,documentId:'',abort:new AbortController(),data};
     record.promise = new Promise((resolve,reject) => { record.resolve=resolve; record.reject=reject; });
+    const completion = record.promise;
     // A rejection is also consumed by the caller; cancellation can happen before it awaits.
     record.promise.catch(() => {});
-    this.records.set(path,record); this.updateSlots();
+    this.records.set(path,record); this.updateSlots(); this.keepLocation(location);
     try {
-      record.data ||= await this.fetchPage(path,record.abort.signal);
+      const resolved = record.data || await this.fetchPage(path,record.abort.signal);
       if (record.abort.signal.aborted) throw new DOMException('Navigation superseded','AbortError');
+      record.data = resolved;
       frame.title = record.data.title;
       heading.textContent = this.text('documentPage',{page:index+1,pages:this.scope.pages.length,name:record.data.title});
       record.timer = setTimeout(() => this.fail(record,new Error('frame_timeout')),15000);
       frame.contentWindow.location.replace(this.contentBase + path.split('/').map(encodeURIComponent).join('/'));
     } catch (error) { this.fail(record,error); }
-    return record.promise;
+    return completion;
   }
   fail(record,error) {
-    if (this.records.get(record.item.path) !== record) return;
+    if (this.records.get(record.item.path) !== record || record.status !== 'loading') return;
     clearTimeout(record.timer); record.status = 'error'; record.element.setAttribute('aria-busy','false');
-    record.frame.hidden = true;
+    const location = this.viewport();
+    const surface = document.createElement('div'); surface.style.height = record.height+'px';
+    record.surface.replaceWith(surface); record.surface = surface; record.frame = null;
+    this.keepLocation(location);
     record.statusElement.textContent = this.labels.errors[error.message] || this.labels.errors.network;
     record.statusElement.setAttribute('role','alert');
     const retry = document.createElement('button'); retry.type = 'button'; retry.dataset.loadPage = record.item.path; retry.textContent = this.labels.retry;
-    record.statusElement.append(' ',retry); record.reject(error);
+    record.statusElement.append(' ',retry); record.data = null; record.documentId = ''; record.reject(error);
   }
   async open(data, {anchor='',position=null} = {}) {
-    const sequence = ++this.locationSerial; this.pending = true;
+    const sequence = ++this.locationSequence; this.locating = true; this.locationTargetPath = data.path;
     try {
       const record = await this.ensure(data.path,data);
-      if (sequence !== this.locationSerial) throw new DOMException('Navigation superseded','AbortError');
+      if (sequence !== this.locationSequence) throw new DOMException('Navigation superseded','AbortError');
       const result = await new Promise((resolve,reject) => {
         clearTimeout(record.location?.timer);
         record.location?.reject(new DOMException('Navigation superseded','AbortError'));
@@ -147,20 +240,21 @@ class AnnaReaderFlow {
         record.location = {sequence,resolve,reject,timer};
         this.send(record,'locate',{requestId:sequence,anchor});
       });
-      if (sequence !== this.locationSerial) throw new DOMException('Navigation superseded','AbortError');
+      if (sequence !== this.locationSequence) throw new DOMException('Navigation superseded','AbortError');
       this.activate(record);
       const destination = position || result.position;
       this.scroll.scrollTo({left:destination.x,top:this.top(record)+destination.y,behavior:'instant'});
-      this.pending = false;
+      this.locating = false; this.locationTargetPath = '';
       this.onActive(record.data,this.location().position,record.item);
+      this.scheduleMaintenance();
       return result;
     } catch (error) {
-      if (sequence === this.locationSerial) this.pending = false;
+      if (sequence === this.locationSequence) { this.locating = false; this.locationTargetPath = ''; }
       throw error;
     }
   }
   send(record,type,detail = {}) {
-    if (!record?.documentId) return;
+    if (!record?.documentId || !record.frame) return;
     record.frame.contentWindow.postMessage({channel:'anna-reader',version:2,type,documentId:record.documentId,
       snapshot:this.snapshot,navigationId:record.navigationId,...detail},location.origin);
   }
@@ -170,7 +264,7 @@ class AnnaReaderFlow {
     const data = event.data;
     if (event.origin !== location.origin || !data || data.channel !== 'anna-reader' || data.version !== 2 || data.snapshot !== this.snapshot) return;
     const record = this.records.get(data.path);
-    if (!record || event.source !== record.frame.contentWindow || record.status === 'error') return;
+    if (!record?.frame || event.source !== record.frame.contentWindow || record.status === 'error') return;
     if (data.type === 'ready' && record.status === 'loading' && typeof data.documentId === 'string' && data.documentId.length < 100) {
       record.documentId = data.documentId;
       this.resize(record,data.height);
@@ -181,7 +275,7 @@ class AnnaReaderFlow {
       if (record.status !== 'loading') return;
       clearTimeout(record.timer); this.resize(record,data.height); record.status = 'ready';
       record.frame.style.visibility = ''; record.statusElement.hidden = true; record.element.setAttribute('aria-busy','false');
-      this.updateSlots(); record.resolve(record);
+      this.updateSlots(); record.resolve(record); this.scheduleMaintenance();
     } else if (data.type === 'size') this.resize(record,data.height);
     else if (data.type === 'located' && data.requestId === record.location?.sequence && annaReaderModel.validPosition(data.position)) {
       this.resize(record,data.height); clearTimeout(record.location.timer); record.location.resolve(data); record.location = null;

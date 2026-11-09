@@ -24,7 +24,7 @@ test('only the selected subtree is sequenced; manual append keeps the original f
   expect(loaded).toEqual([paths[0]]);
   const first=page.frames().find(f=>decodeURI(f.url()).endsWith(paths[0]));
   await first.evaluate(()=>window.frameIdentity='retained');
-  await page.getByRole('button',{name:'加载下一页：child',exact:true}).click();
+  await page.getByRole('button',{name:'加载下一页：child',exact:true}).press('Enter');
   await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(2);
   expect(await first.evaluate(()=>window.frameIdentity)).toBe('retained');
   expect(loaded).toEqual(paths.slice(0,2));
@@ -43,6 +43,7 @@ test('only the selected subtree is sequenced; manual append keeps the original f
 
 test('pagination can jump past unloaded pages without fetching them; duplicates do not mount twice',async({page})=>{
   await visit(page);await page.locator('#book-page-select').selectOption('2');await ready(page);
+  await page.waitForTimeout(350); // Background loading must not fill skipped pages behind the destination.
   await expect(page.locator('.book-document')).toHaveCount(2);
   await expect(page.locator('.book-page-gap')).toContainText('第 2–2 页尚未加载');
   await expect(page.locator('#book-page-count')).toHaveText('3 / 3');
@@ -63,7 +64,7 @@ test('a failed append keeps successful text and position; retry loads just that 
   });
   const first=page.frames().find(f=>decodeURI(f.url()).endsWith(paths[0]));
   const text=await first.locator('body').innerText();
-  await page.getByRole('button',{name:'加载下一页：child',exact:true}).click();
+  await page.getByRole('button',{name:'加载下一页：child',exact:true}).press('Enter');
   await expect(page.locator('.book-page-state[role=alert]')).toContainText('无法读取');
   expect(await first.locator('body').innerText()).toBe(text);
   await expect(page.locator('#book-error')).toBeHidden();
@@ -106,7 +107,7 @@ test('grouping nodes and leaves never expand to siblings; outside or invalid sco
 });
 
 test('scrolling changes the current page without changing scope or adding browser history',async({page})=>{
-  await visit(page);await page.getByRole('button',{name:'加载下一页：child',exact:true}).click();
+  await visit(page);await page.getByRole('button',{name:'加载下一页：child',exact:true}).press('Enter');
   await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(2);
   const length=await page.evaluate(()=>history.length);
   await page.locator('.book-document').nth(1).evaluate(frame=>{
@@ -147,8 +148,8 @@ test('a source definition link within the selected subtree preserves its reading
   await visit(page,{root:'reference-root'});
   const frame=page.frameLocator('#content');
   const link=frame.getByRole('link',{name:'查看定义: '+mention.text,exact:true}).first();
-  await link.click();await ready(page);
-  expect(new URL(page.url()).searchParams.get('entry')).toBe(mention.target_id);
+  await link.click();
+  await expect.poll(()=>new URL(page.url()).searchParams.get('entry')).toBe(mention.target_id);
   await expect.poll(()=>new URL(page.url()).searchParams.get('root')).toBe('reference-root');
   await ready(page);
   await expect(page.locator('#book-page-count')).toHaveText('2 / 2');
@@ -167,7 +168,7 @@ test('late manual loads and forged messages cannot resurrect an abandoned subtre
     await route.continue().catch(()=>{});
   });
   try {
-    await page.getByRole('button',{name:'加载下一页：child',exact:true}).click();
+    await page.getByRole('button',{name:'加载下一页：child',exact:true}).press('Enter');
     await expect.poll(()=>requested).toBe(true);
     await page.locator('#book-tree [data-node="outside"] > .toc-row a').click();await ready(page);
     release();
@@ -187,7 +188,9 @@ for(const width of [390,800,1280])test(`chapter pagination remains keyboard acce
   await expect(page.locator('#book-next')).toBeFocused();
   await page.setViewportSize({width:width===1280?390:1280,height:844});await ready(page);
   await expect(page.locator('#book-page-count')).toHaveText('2 / 3');
-  await expect(page.locator('.book-document')).toHaveCount(2);
+  // A short current page may automatically bring in its next page after resizing.
+  for (const path of paths.slice(0,2)) await expect(page.locator(`.book-page[data-path="${path}"] iframe`)).toHaveCSS('visibility','visible');
+  expect(await page.locator('.book-document').count()).toBeLessThanOrEqual(3);
   await page.setViewportSize({width,height:844});
   await testInfo.attach('chapter-pagination.png',{body:await page.screenshot(),contentType:'image/png'});
 });

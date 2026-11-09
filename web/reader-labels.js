@@ -18,6 +18,7 @@ const annaReaderLabels = {
     pageCount:'{page} / {pages}', documentPage:'{page} / {pages} · {name}',
     unloadedPages:'第 {start}–{end} 页尚未加载', loadNext:'加载下一页：{name}', loadPrevious:'加载前一页：{name}',
     scopeEnd:'已到本章节末尾',
+    releasedPage:'此页已释放，接近时会自动重新载入。', reloadPage:'重新载入：{name}',
     errors: {
       empty_scope:'这个目录范围没有可阅读的正文页面。请选择其他章节。',
       outside_scope:'目标页面不在指定章节范围内，请重新选择阅读入口。',
@@ -50,6 +51,7 @@ const annaReaderLabels = {
     pageCount:'{page} / {pages}', documentPage:'{page} / {pages} · {name}',
     unloadedPages:'Pages {start}–{end} not loaded', loadNext:'Load next page: {name}', loadPrevious:'Load previous page: {name}',
     scopeEnd:'End of this chapter',
+    releasedPage:'This page was released and will reload as you approach.', reloadPage:'Reload: {name}',
     errors: {
       empty_scope:'This directory scope has no readable documents. Select another chapter.',
       outside_scope:'The target is outside the requested chapter. Choose another reading entry.',

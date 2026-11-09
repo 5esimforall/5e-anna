@@ -11,7 +11,7 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    moreTypes:'{first}等 {count} 类',nameField:'名称',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    moreTypes:'{first}等 {count} 类',nameField:'名称',and:'且',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
@@ -33,7 +33,7 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    moreTypes:'{first} and {count} types',nameField:'Name',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    moreTypes:'{first} and {count} types',nameField:'Name',and:'and',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
@@ -199,8 +199,8 @@ function sync(){
     for(const b of el.querySelectorAll('[data-action]'))b.disabled=!values.size;
     for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
   }
-  // The types lead the chips: they scope every other condition. Name searches follow as one ∧-joined
-  // condition; the term still being typed is not a chip yet.
+  // Every condition is its own chip, and chips always combine with ∧: the types lead, each kept name search
+  // follows, then the other fields. The text still being typed is not a chip yet.
   const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k)).sort((a,b)=>(b==='type')-(a==='type'));
   const terms=committedTerms();
   $('#filter-count').textContent=active.length+terms.length||'';
@@ -209,11 +209,11 @@ function sync(){
   $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(k))?'已筛选':'';
   $('#audit-count').textContent=active.some(k=>AUDIT_PARAMS.includes(k))?'已筛选':'';
   $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
-  const chip=k=>{const text=k==='cr_min'||k==='cr_max'?`${fieldNames[k]}：${params.get(k)}`:conditionText(k);
-    return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;};
-  const names=terms.length?`<span class="name-terms" role="group" aria-label="${esc(ui.nameField)}"><span aria-hidden="true">${esc(ui.nameField)}：</span>${terms.map((t,i)=>
-    `${i?'<span class="and" aria-label="且">∧</span>':''}<button type="button" data-remove="q${i}" aria-label="移除 ${esc(ui.nameField)}：${esc(t)}" title="移除 ${esc(ui.nameField)}：${esc(t)}">${esc(t)} <span aria-hidden="true">×</span></button>`).join('')}</span>`:'';
-  $('#active-filters').innerHTML=active.slice(0,active[0]==='type'?1:0).map(chip).join('')+names+active.slice(active[0]==='type'?1:0).map(chip).join('');
+  const chip=(key,text)=>`<button type="button" data-remove="${esc(key)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
+  const fieldChip=k=>chip(k,k==='cr_min'||k==='cr_max'?`${fieldNames[k]}：${params.get(k)}`:conditionText(k));
+  const lead=active[0]==='type'?1:0;
+  const chips=[...active.slice(0,lead).map(fieldChip),...terms.map((t,i)=>chip('q'+i,`${ui.nameField}：${t}`)),...active.slice(lead).map(fieldChip)];
+  $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
   markStripEdges($('#active-filters'));
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
@@ -444,15 +444,18 @@ $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();
 // Name searches are conditions like any other. The text being typed is a live draft: it is the last search
 // term in the URL while the field holds it, and Enter keeps it as a chip so another search can follow.
 const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boolean))];
-let draft='';
-const committedTerms=()=>{const terms=searchTerms();return draft&&terms.at(-1)===draft?terms.slice(0,-1):terms;};
-function setTerms(terms){params.delete('q');[...new Set(terms)].forEach(t=>params.append('q',t));}
+// Kept searches are page state, read from the URL only on load and history navigation. The URL trails the
+// field by the debounce, so inferring kept searches from it once took half-typed IME text for a kept search.
+let committed=[],draft='';
+const committedTerms=()=>committed;
+function writeTerms(){params.delete('q');[...new Set([...committed,draft].filter(Boolean))].forEach(t=>params.append('q',t));}
+function readTerms(){committed=searchTerms();draft='';}
 function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;$('#q').value='';closeSuggestions();}
 let composingSearch=false;
 function queueSearch(){
   clearTimeout(timer);if(composingSearch)return;
-  const committed=committedTerms();draft=$('#q').value.trim();renderSuggestions();
-  timer=setTimeout(()=>{setTerms(draft?[...committed,draft]:committed);changed(true);refreshSuggestionCounts();},160);
+  draft=$('#q').value.trim();renderSuggestions();
+  timer=setTimeout(()=>{writeTerms();changed(true);refreshSuggestionCounts();},160);
 }
 // Choosing a suggested value drops the draft, so suggestions count with the draft left out.
 let suggestionGroups=null,suggestionGeneration=0;
@@ -498,21 +501,22 @@ function moveSuggestion(step){
   $('#suggestion-'+activeSuggestion).scrollIntoView({block:'nearest'});
 }
 function applySuggestion(item){
-  clearTimeout(timer);const committed=committedTerms();
+  clearTimeout(timer);
   if(!item||item.kind==='name'){
     // Keep the draft as a search chip; the field empties for the next search.
     const text=$('#q').value.trim();clearDraft();if(!text)return;
-    setTerms([...committed,text]);changed();return;
+    committed=[...new Set([...committed,text])];writeTerms();changed();return;
   }
   // The typed text found the value; it was not meant as a name search.
-  clearDraft();setTerms(committed);
+  clearDraft();writeTerms();
   if(item.kind==='preset'){chooseTypes([item.preset.type],item.preset);return;}
   const g=item.group,values=[...selected(g),item.option.value];
   if(g.key==='type'){chooseTypes(values);return;}
   setSelection(g,values);changed();
 }
 $('#q').addEventListener('keydown',e=>{
-  if(e.isComposing||composingSearch)return;
+  // Safari reports the key that ends a composition after compositionend, with keyCode 229; it is not an Enter.
+  if(e.isComposing||composingSearch||e.keyCode===229)return;
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!$('#suggestions').hidden){e.preventDefault();moveSuggestion(e.key==='ArrowDown'?1:-1);}return;}
   if(e.key==='Enter'){e.preventDefault();applySuggestion($('#suggestions').hidden?null:suggestions[activeSuggestion]);return;}
   if(e.key==='Escape'&&!$('#suggestions').hidden){e.preventDefault();e.stopPropagation();closeSuggestions();return;}
@@ -523,13 +527,14 @@ $('#suggestions').addEventListener('pointerdown',e=>{const li=e.target.closest('
 $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#filter-panel').hidden=hidden;$('#toggle-filters').setAttribute('aria-expanded',!hidden);saveUiState();};
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
 $('#reset').onclick=()=>{
-  clearDraft();
+  clearDraft();committed=[];
   for(const key of [...params.keys()])if(!['sort','dir','versions','prefer'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 };
 function dropCondition(key){
   if(key==='type'){chooseTypes([]);return;}
-  if(/^q\d+$/.test(key)){const terms=committedTerms();setTerms(terms.filter((_,i)=>i!==Number(key.slice(1))));clearDraft();changed();return;}
+  // A chip's key indexes the kept searches; whatever is being typed stays in the field.
+  if(/^q\d+$/.test(key)){committed=committed.filter((_,i)=>i!==Number(key.slice(1)));writeTerms();changed();return;}
   if(key==='cr'){params.delete('cr_min');params.delete('cr_max');}else params.delete(key);
   changed();
 }
@@ -597,7 +602,7 @@ let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
   const gen=++navigationGeneration,state=e.state?.anna,oldTypes=chosenTypes().join();
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
-  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;clearDraft();
+  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;clearDraft();readTerms();
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
   if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
@@ -690,7 +695,11 @@ $('#elsewhere').addEventListener('click',()=>{
 });
 $('#empty-elsewhere').addEventListener('click',e=>{
   const b=e.target.closest('[data-drop]');if(!b)return;const key=b.dataset.drop;
-  if(/^q\d+$/.test(key)){const terms=searchTerms();setTerms(terms.filter((_,i)=>i!==Number(key.slice(1))));clearDraft();changed();return;}
+  if(/^q\d+$/.test(key)){
+    const term=searchTerms()[Number(key.slice(1))];
+    if(term===draft&&!committed.includes(term))clearDraft();else committed=committed.filter(t=>t!==term);
+    writeTerms();changed();return;
+  }
   dropCondition(key);
 });
 // Reading mode folds review apparatus away; filters already in the URL stay visible and editable.
@@ -727,7 +736,7 @@ async function init(){
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');restoreRows=saved?.loadedRows||0;
     // Category views became type filters; an old view link opens on all entries with its other conditions.
-    params.delete('view');
+    params.delete('view');readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);

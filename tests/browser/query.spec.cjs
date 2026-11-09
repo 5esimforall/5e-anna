@@ -438,7 +438,7 @@ test('compact rows join names and versions on one line, as a per-browser prefere
   expect(await page.evaluate(()=>localStorage.getItem('anna.density'))).toBeNull();
 });
 
-test('the condition bar keeps searches as ∧-joined chips and turns typed values into conditions',async({page})=>{
+test('the condition bar keeps each search as its own ∧-joined chip and turns typed values into conditions',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,spells);
   const q=page.locator('#q'),chips=page.locator('#active-filters');
   // The everyday path: typing filters live; Enter keeps the search and empties the field for the next one.
@@ -447,7 +447,9 @@ test('the condition bar keeps searches as ∧-joined chips and turns typed value
   await q.press('Enter');await expect(q).toHaveValue('');await expect(q).toBeFocused();
   await q.fill('球');await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火','球']);await ready(page);
   await q.press('Enter');
-  await expect(chips.locator('.name-terms')).toHaveText('名称：火 ×∧球 ×');
+  // Every condition is its own chip; chips always join with ∧.
+  await expect(chips.locator('[data-remove]')).toHaveText(['类型：法术 ×','名称：火 ×','名称：球 ×']);
+  await expect(chips.locator('.and')).toHaveText(['∧','∧']);
   const both=await queryMatchesAPI(page);
   expect(both.rows.every(r=>r.name.includes('火')&&r.name.includes('球'))).toBeTruthy();
   await expect(page.locator('#filter-count')).toHaveText('3');
@@ -472,7 +474,7 @@ test('the condition bar keeps searches as ∧-joined chips and turns typed value
   await expect(chips.locator('[data-remove]')).toHaveCount(before-1);
   // A term's × removes only that term; a reload shows every search in the URL as chips.
   await visit(page,spells+'&q='+encodeURIComponent('火')+'&q='+encodeURIComponent('球'));
-  await expect(q).toHaveValue('');await expect(chips.locator('.name-terms button')).toHaveCount(2);
+  await expect(q).toHaveValue('');await expect(chips.locator('[data-remove^="q"]')).toHaveCount(2);
   await chips.locator('[data-remove="q0"]').click();await ready(page);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['球']);
 });
@@ -784,6 +786,26 @@ test('detail failure is recoverable, missing IDs are explained, late responses c
   await expect(page.locator('#detail [role=alert]')).toContainText('无法读取条目');
   await expect(page.locator('#entry-next')).toBeDisabled();await page.locator('#close-detail').click();
   await expect(page.locator('#q')).toBeFocused();
+});
+
+test('IME commits in quick succession never keep a search without Enter',async({page})=>{
+  await visit(page,spells);const q=page.locator('#q');await q.focus();
+  // One commit as Chromium reports it: a still-composing input event inside the composition events.
+  const commit=text=>q.evaluate((el,text)=>{el.dispatchEvent(new CompositionEvent('compositionstart'));el.value+=text;
+    el.dispatchEvent(new InputEvent('input',{isComposing:true,data:text}));el.dispatchEvent(new CompositionEvent('compositionend',{data:text}));},text);
+  // Before: the second commit landed inside the 160ms debounce and “火” became a chip (q=火&q=火球术).
+  await commit('火');await expect(page).toHaveURL(/q=%E7%81%AB$/);await ready(page);
+  await commit('球');await page.waitForTimeout(60);await commit('术');
+  await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火球术']);await ready(page);
+  await expect(page.locator('#active-filters [data-remove^="q"]')).toHaveCount(0);
+  // Only Enter keeps it; the next commits stay a draft beside it.
+  await q.press('Enter');await expect(page.locator('#active-filters [data-remove="q0"]')).toHaveText('名称：火球术 ×');
+  await commit('塑');await page.waitForTimeout(30);await commit('能');
+  await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火球术','塑能']);await ready(page);
+  await expect(page.locator('#active-filters [data-remove^="q"]')).toHaveCount(1);
+  // Safari sends the key that ends a composition afterwards, as keyCode 229; it keeps nothing.
+  await q.evaluate(el=>el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:229,bubbles:true})));
+  await expect(page.locator('#active-filters [data-remove^="q"]')).toHaveCount(1);await expect(q).toHaveValue('塑能');
 });
 
 test('Chinese IME composition never submits intermediate query text',async({page})=>{

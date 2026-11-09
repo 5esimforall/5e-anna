@@ -169,6 +169,9 @@ h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px;
 .chip input:checked+span .chip-count { color: inherit; opacity: .75; }
 .chip.empty>span { opacity: .55; }
 .group-actions button:disabled { opacity: .4; cursor: default; }
+.group-actions [data-action=exclude][aria-pressed=true] { color: var(--anna-brand); font-weight: 600; }
+/* In exclude mode a chosen value is crossed out: the field keeps entries without it. */
+.facet.excluding .chip input:checked+span { background: transparent; border-style: dashed; text-decoration: line-through; }
 #type-filters .facet { border-bottom: 1px solid var(--anna-line); }
 .chip input:focus-visible+span { outline: 2px solid var(--anna-focus); outline-offset: 2px; }
 .chip:hover span { border-color: var(--anna-brand); }
@@ -200,8 +203,14 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .active-filters { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; max-width: 72%; padding: 2px; }
 .active-filters:empty { display: none; }
 .condition-bar>input { min-width: 120px; }
-.active-filters button { flex-shrink: 0; min-height: 26px; padding: 2px 7px; background: var(--anna-selected); border-color: var(--anna-selected-line); color: var(--anna-brand); font-size: var(--anna-type-ui); white-space: nowrap; }
-.active-filters button>span { margin-left: 5px; font-size: 14px; }
+/* A chip's text flips it between “is” and “is not”; its × removes it. An excluded condition reads as an outline. */
+.condition { display: inline-flex; flex-shrink: 0; align-items: center; border: 1px solid var(--anna-selected-line); border-radius: var(--anna-radius-sm); background: var(--anna-selected); color: var(--anna-brand); font-size: var(--anna-type-ui); white-space: nowrap; }
+.condition>button { min-height: 24px; border: 0; background: transparent; color: inherit; }
+.condition>.condition-text { padding: 2px 3px 2px 7px; }
+.condition>span.condition-text { padding-right: 3px; }
+.condition>.condition-remove { padding: 2px 6px 2px 3px; font-size: 14px; }
+.condition>button:hover { background: var(--anna-hover); }
+.condition.negated { border-style: dashed; background: transparent; }
 /* Chips always combine with ∧: each condition, each kept search included, stands on its own. */
 .active-filters>.and { flex-shrink: 0; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 15px; font-weight: 600; line-height: 1; }
 #suggestions { position: absolute; z-index: 9; top: calc(100% + 6px); left: 0; right: 0; max-height: min(60dvh,420px); overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); box-shadow: var(--anna-shadow); }

@@ -57,10 +57,30 @@ ENTRY_BODY = ("(SELECT substr(p.text,s.b+1,e.end-s.b) FROM pages p, (SELECT CASE
               "AND json_extract(e.data,'$.title_end')<e.end THEN json_extract(e.data,'$.title_end') ELSE e.start END AS b) s WHERE p.path=e.page_path)")
 
 
+# Any field of chosen values, and each name or body search, can be excluded: `not_<key>` holds the excluded
+# values or terms. Ranges, the conflict switch and the term being typed are not negated.
+NOT = 'not_'
+NEGATABLE = ('type','q','body','ruleset','legacy','status','source','origin')
+
+
+def field_of(key):
+    """The field a condition belongs to: `q0`, `not_q1` and `typing` are all the name field `q`."""
+    key = key.removeprefix(NOT)
+    return 'q' if key=='typing' else re.sub(r'^(q|body)\d+$',r'\1',key)
+
+
 def conditions(params):
     """Every condition a request sets, as (key, SQL, values). Values within one condition are alternatives;
-    an entry matches when it meets every condition. The keys name the URL parameter (one per name search,
-    `q0`, `q1`, …), so counts can say what each condition removes."""
+    an entry matches when it meets every condition. The keys name the URL parameter (one per search term,
+    `q0`, `body1`, `not_q0`, …), so counts can say what each condition removes. An excluded condition holds
+    for entries that meet none of its values; an entry whose value was not extracted is not excluded."""
+    excluded = {k[len(NOT):]:v for k,v in params.items() if k.startswith(NOT)}
+    for key in excluded:
+        if key not in NEGATABLE and not key.startswith('f_'): raise ValueError('无法排除：'+key)
+    return included(params)+[(NOT+key,f'NOT COALESCE(({sql}),0)',values) for key,sql,values in included(excluded)]
+
+
+def included(params):
     out = []
     types = entry_types(params)
     if types: out.append(('type','e.type IN ('+','.join('?' for _ in types)+')',types))
@@ -112,8 +132,8 @@ def facets(db, params):
     types = entry_types(params)
     config = browse.schema_for(types)
     conds = conditions(params)
-    index = {key:i for i,(key,_,_) in enumerate(conds)}
-    type_bound = {i:key[2:] if key.startswith('f_') else key for i,(key,_,_) in enumerate(conds) if key=='cr' or key.startswith('f_')}
+    fields_of = [field_of(key) for key,_,_ in conds]
+    type_bound = {i:f[2:] if f.startswith('f_') else f for i,f in enumerate(fields_of) if f=='cr' or f.startswith('f_')}
     answers = {t:set(browse.type_conditions(t)) for t in TYPES}
     columns = ''.join(f', ({sql}) AS c{i}' for i,(_,sql,_) in enumerate(conds))
     origin_of = dict(db.execute('SELECT id, origin FROM sources'))
@@ -129,10 +149,10 @@ def facets(db, params):
         ' FROM entries e WHERE '+base_clause(params), [v for _,_,vals in conds for v in vals])
     for row in rows:
         failed = [i for i in range(len(conds)) if not row[f'c{i}']]
-        in_scope = index.get('type') not in failed
+        in_scope = all(fields_of[i]!='type' for i in failed)
         # Choosing a type drops the type-specific conditions it cannot answer, so its count ignores those too.
         answerable = answers[row['type']]
-        counts_type = all(conds[i][0]=='type' or (i in type_bound and type_bound[i] not in answerable) for i in failed)
+        counts_type = all(fields_of[i]=='type' or (i in type_bound and type_bound[i] not in answerable) for i in failed)
         if not in_scope and not counts_type: continue
         fields = json.loads(row['fields']) if in_scope and domain else None
         source_ids = row['sources'].split('\x1f') if row['sources'] else []
@@ -150,12 +170,13 @@ def facets(db, params):
         if not failed: total += 1
         elif len(failed)==1: without[conds[failed[0]][0]] += 1
         if counts_type: counts['type'][row['type']] += 1
+        # A field's options count with every other field's conditions kept and its own, chosen or excluded, set aside.
         for key in counted[1:]:
-            if not failed or (len(failed)==1 and index.get(key)==failed[0]):
+            if all(fields_of[i]==key for i in failed):
                 counts[key].update(values(key))
     for key in counted:
         # A chosen value stays listed even when nothing in scope holds it, so it can be unchosen.
-        universe[key].update(v for v in params.get(key,[]) if v!=browse.NONE)
+        universe[key].update(v for v in [*params.get(key,[]),*params.get(NOT+key,[])] if v!=browse.NONE)
     held = [r[0] for r in db.execute("SELECT DISTINCT type FROM entries WHERE type!='section'")]
     universe['type'] = set(held)
     sources = {r['id']:json.loads(r['data']) for r in db.execute('SELECT id, data FROM sources')}

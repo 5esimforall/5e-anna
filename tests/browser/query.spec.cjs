@@ -71,7 +71,7 @@ test('filters start collapsed while active conditions stay visible and results k
     if(width>760){const table=await page.locator('.table-wrap').boundingBox();expect(table.height).toBeGreaterThanOrEqual(height*.5);}
   }
   await page.getByRole('button',{name:'移除 环阶：一环'}).click();await ready(page);
-  await expect(page.locator('#active-filters button')).toHaveText(['类型：法术 ×']);expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
+  await expect(page.locator('#active-filters .condition-text')).toHaveText(['类型：法术']);expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
   await page.locator('#toggle-filters').click();
   await expect(page.locator('#filter-panel')).toBeVisible();await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','true');
   await page.reload();await ready(page);await expect(page.locator('#filter-panel')).toBeVisible();
@@ -450,7 +450,7 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火']);
   await q.press('Enter');
   // Every condition is its own chip; chips always join with ∧.
-  await expect(chips.locator('[data-remove]')).toHaveText(['类型：法术 ×','名称：火 ×','名称：球 ×']);
+  await expect(chips.locator('.condition-text')).toHaveText(['类型：法术','名称：火','名称：球']);
   await expect(chips.locator('.and')).toHaveText(['∧','∧']);
   const both=await queryMatchesAPI(page);
   expect(both.rows.every(r=>r.name.includes('火')&&r.name.includes('球'))).toBeTruthy();
@@ -467,7 +467,7 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await q.press('ArrowDown');await q.press('Enter');await ready(page);
   expect(new URL(page.url()).searchParams.getAll('body')).toEqual(['专注']);
   expect(new URL(page.url()).searchParams.has('typing')).toBeFalsy();
-  await expect(chips.locator('[data-remove="body0"]')).toHaveText('正文：专注 ×');
+  await expect(chips.locator('[data-flip="body0"]')).toHaveText('正文：专注');
   await chips.locator('[data-remove="body0"]').click();await ready(page);
   expect(new URL(page.url()).searchParams.has('body')).toBeFalsy();
   // Types and presets are found the same way.
@@ -491,6 +491,43 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await expect(q).toHaveValue('');await expect(chips.locator('[data-remove^="q"]')).toHaveCount(2);
   await chips.locator('[data-remove="q0"]').click();await ready(page);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['球']);
+});
+
+test('any chip or field flips between is and is not; excluded values keep entries without them',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,spells+'&q='+encodeURIComponent('火')+'&f_school='+encodeURIComponent('塑能'));
+  const chips=page.locator('#active-filters'),url=()=>new URL(page.url()).searchParams;
+  const all=(await queryMatchesAPI(page)).versions_total;
+  // The chip's text flips it; its × still removes it.
+  await chips.locator('[data-flip="f_school"]').click();await ready(page);
+  expect(url().getAll('not_f_school')).toEqual(['塑能']);expect(url().has('f_school')).toBeFalsy();
+  await expect(chips.locator('.condition.negated .condition-text')).toHaveText(['学派不是：塑能']);
+  const notSchool=await queryMatchesAPI(page);
+  expect(notSchool.rows.every(r=>!r.quickref.school.includes('塑能'))).toBeTruthy();
+  // Name and body searches flip one term at a time.
+  await chips.locator('[data-flip="q0"]').click();await ready(page);
+  expect(url().getAll('not_q')).toEqual(['火']);expect(url().has('q')).toBeFalsy();
+  const notFire=await queryMatchesAPI(page);
+  expect(notFire.rows.every(r=>!r.name.includes('火'))).toBeTruthy();
+  await chips.locator('[data-flip="not_q0"]').click();await ready(page);
+  expect(url().getAll('q')).toEqual(['火']);expect(url().has('not_q')).toBeFalsy();
+  // The panel edits whichever list the field uses; 排除 flips the whole field.
+  await page.locator('#toggle-filters').click();
+  const school=page.locator('[data-group="f_school"]');
+  await expect(school).toHaveClass(/excluding/);await expect(school.locator('[data-action="exclude"]')).toHaveAttribute('aria-pressed','true');
+  await page.getByRole('checkbox',{name:'学派：咒法',exact:true}).check({force:true});await ready(page);
+  expect(url().getAll('not_f_school')).toEqual(['塑能','咒法']);
+  await school.locator('[data-action="exclude"]').click();await ready(page);
+  expect(url().getAll('f_school')).toEqual(['塑能','咒法']);expect(url().has('not_f_school')).toBeFalsy();
+  // A suggestion always includes; an excluded value it names leaves the excluded list.
+  await visit(page,spells+'&not_f_school='+encodeURIComponent('塑能'));
+  await page.locator('#q').fill('塑能');await page.getByRole('option',{name:/学派\s*塑能/}).click();await ready(page);
+  expect(url().getAll('f_school')).toEqual(['塑能']);expect(url().has('not_f_school')).toBeFalsy();
+  // Excluded types read in the heading; ranges and the conflict switch cannot flip.
+  await visit(page,'/?not_type=spell&not_type=lore');
+  await expect(page.locator('#title')).toHaveText('全部条目（不含法术、资料索引）');
+  await visit(page,'/?type=creature&cr_min=1');await expect(chips.locator('[data-flip="cr_min"]')).toHaveCount(0);
+  expect(all).toBeGreaterThan(0);
 });
 
 test('a search ranks closer names first until the reader picks a sort',async({page})=>{
@@ -814,7 +851,7 @@ test('IME commits in quick succession never keep a search without Enter',async({
   expect(new URL(page.url()).searchParams.has('q')).toBeFalsy();
   await expect(page.locator('#active-filters [data-remove^="q"]')).toHaveCount(0);
   // Only Enter keeps it; the next commits stay a draft beside it.
-  await q.press('Enter');await expect(page.locator('#active-filters [data-remove="q0"]')).toHaveText('名称：火球术 ×');
+  await q.press('Enter');await expect(page.locator('#active-filters [data-flip="q0"]')).toHaveText('名称：火球术');
   await commit('塑');await page.waitForTimeout(30);await commit('能');
   await expect.poll(()=>new URL(page.url()).searchParams.get('typing')).toBe('塑能');await ready(page);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火球术']);

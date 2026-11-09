@@ -11,7 +11,7 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
@@ -33,7 +33,7 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
@@ -153,21 +153,35 @@ function renderSortOptions(){
   $('#sort').value=effectiveSort();
 }
 // Every field reads the same way: nothing chosen sets no condition, choosing a value includes it, and values
-// chosen in one field are alternatives. Choosing every value is the same as choosing none.
-function selected(g){return new Set(params.getAll(g.key).filter(v=>v!==NONE));}
-function setSelection(g,values){
-  params.delete(g.key);
-  if(!values.length||g.options.every(o=>values.includes(o.value)))return;
-  values.forEach(v=>params.append(g.key,v));
+// chosen in one field are alternatives. Choosing every value is the same as choosing none. A field's values
+// can instead be excluded (`not_<key>`): the field then holds for entries with none of them. The panel edits
+// whichever list the field uses; a field holding only excluded values is in exclude mode.
+const NOT='not_';
+const baseKey=key=>key.replace(/^not_/,'');
+const excluding=g=>params.has(NOT+g.key)&&!params.has(g.key);
+const modeKey=g=>excluding(g)?NOT+g.key:g.key;
+function selected(g){return new Set(params.getAll(modeKey(g)).filter(v=>v!==NONE));}
+function setSelection(g,values,key=modeKey(g)){
+  params.delete(key);
+  if(!values.length||key===g.key&&g.options.every(o=>values.includes(o.value)))return;
+  values.forEach(v=>params.append(key,v));
+}
+function clearField(key){params.delete(key);params.delete(NOT+key);}
+// Flipping a field moves its values between included and excluded, merging with any already on the other side.
+function flipField(key){
+  const to=key.startsWith(NOT)?baseKey(key):NOT+key,values=[...new Set([...params.getAll(to),...params.getAll(key)])].filter(v=>v!==NONE);
+  params.delete(key);params.delete(to);values.forEach(v=>params.append(to,v));
+  if(baseKey(key)==='type'){chooseTypes(params.getAll('type'));return;}
+  changed();
 }
 function changed(replace=false){
   clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();refreshFacets();
 }
 // Each option counts what choosing it would match under every other condition (serve.facets).
-const optionTitle=o=>`${o.title||o.label} · ${ui.optionCount.replace('{count}',fmt(o.count||0))}`;
+const optionTitle=(o,g)=>`${o.title||o.label} · ${(g&&excluding(g)?ui.excludeCount:ui.optionCount).replace('{count}',fmt(o.count||0))}`;
 function multiGroup(g){
   const chosen=selected(g),free=!chosen.size;
-  return `<fieldset class="facet ${free?'unconstrained':''}" data-group="${esc(g.key)}"><legend>${esc(g.label)}</legend><div class="facet-line"><div class="group-actions"><button type="button" data-action="clear" aria-label="${esc(g.label)}${ui.clearGroup}" ${free?'disabled':''}>${ui.clearGroup}</button><button type="button" data-action="invert" aria-label="${esc(g.label)}${ui.invertGroup}" ${free?'disabled':''}>${ui.invertGroup}</button></div><div class="choices">${g.options.map(o=>`<label class="chip ${o.count?'':'empty'}" title="${esc(optionTitle(o))}" data-option-search="${esc((o.search||o.label).toLowerCase())}"><input type="checkbox" value="${esc(o.value)}" aria-label="${esc(g.label+'：'+o.label)}" ${chosen.has(o.value)?'checked':''}><span>${esc(o.label)}<small class="chip-count">${fmt(o.count||0)}</small></span></label>`).join('')}</div></div></fieldset>`;
+  return `<fieldset class="facet ${free?'unconstrained':''} ${excluding(g)?'excluding':''}" data-group="${esc(g.key)}"><legend>${esc(g.label)}</legend><div class="facet-line"><div class="group-actions"><button type="button" data-action="clear" aria-label="${esc(g.label)}${ui.clearGroup}" ${free?'disabled':''}>${ui.clearGroup}</button><button type="button" data-action="invert" aria-label="${esc(g.label)}${ui.invertGroup}" ${free?'disabled':''}>${ui.invertGroup}</button><button type="button" data-action="exclude" aria-label="${esc(g.label)}${ui.excludeGroup}" aria-pressed="${excluding(g)}" ${free?'disabled':''}>${ui.excludeGroup}</button></div><div class="choices">${g.options.map(o=>`<label class="chip ${o.count?'':'empty'}" title="${esc(optionTitle(o,g))}" data-option-search="${esc((o.search||o.label).toLowerCase())}"><input type="checkbox" value="${esc(o.value)}" aria-label="${esc(g.label+'：'+o.label)}" ${chosen.has(o.value)?'checked':''}><span>${esc(o.label)}<small class="chip-count">${fmt(o.count||0)}</small></span></label>`).join('')}</div></div></fieldset>`;
 }
 function flagGroup(g){
   const active=params.get(g.key)||'';
@@ -194,26 +208,33 @@ function sync(){
   for(const key of ['cr_min','cr_max'])if($('#'+key))$('#'+key).value=params.get(key)||'';
   for(const g of groups){
     const el=document.querySelector(`[data-group="${g.key}"]`);if(!el)continue;
-    const values=selected(g);el.classList.toggle('unconstrained',!values.size);
+    const values=selected(g);el.classList.toggle('unconstrained',!values.size);el.classList.toggle('excluding',excluding(g));
     for(const input of el.querySelectorAll('input[type=checkbox]'))input.checked=values.has(input.value);
     for(const b of el.querySelectorAll('[data-action]'))b.disabled=!values.size;
+    el.querySelector('[data-action=exclude]')?.setAttribute('aria-pressed',String(excluding(g)));
     for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
   }
-  // Every condition is its own chip, and chips always combine with ∧: the types lead, each kept name search
-  // follows, then the other fields. The text still being typed is not a chip yet.
-  const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k)).sort((a,b)=>(b==='type')-(a==='type'));
-  const terms=committedTerms();
-  $('#filter-count').textContent=active.length+terms.length+bodyTerms().length||'';
-  const extraCount=groups.filter(g=>params.has(g.key)&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
+  // Every condition is its own chip, and chips always combine with ∧: the types lead, each kept name and body
+  // search follows, then the other fields. Clicking a chip's text flips it between “is” and “is not”; ×
+  // removes it. The text still being typed is not a chip yet.
+  const fieldKey=k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k);
+  const active=[...new Set(params.keys())].filter(k=>fieldKey(k)||k.startsWith(NOT)&&fieldKey(baseKey(k))&&!['cr_min','cr_max'].includes(baseKey(k)))
+    .sort((a,b)=>(baseKey(b)==='type')-(baseKey(a)==='type')||(b==='type')-(a==='type'));
+  const terms=committedTerms(),termKeys=[...terms.map((_,i)=>'q'+i),...termList('not_q').map((_,i)=>'not_q'+i),...bodyTerms().map((_,i)=>'body'+i),...termList('not_body').map((_,i)=>'not_body'+i)];
+  $('#filter-count').textContent=active.length+termKeys.length||'';
+  const extraCount=groups.filter(g=>(params.has(g.key)||params.has(NOT+g.key))&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
-  $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(k))?'已筛选':'';
-  $('#audit-count').textContent=active.some(k=>AUDIT_PARAMS.includes(k))?'已筛选':'';
+  $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(baseKey(k)))?'已筛选':'';
+  $('#audit-count').textContent=active.some(k=>AUDIT_PARAMS.includes(baseKey(k)))?'已筛选':'';
   $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
-  const chip=(key,text)=>`<button type="button" data-remove="${esc(key)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
-  const fieldChip=k=>chip(k,k==='cr_min'||k==='cr_max'?`${fieldNames[k]}：${params.get(k)}`:conditionText(k));
-  const lead=active[0]==='type'?1:0;
-  const chips=[...active.slice(0,lead).map(fieldChip),...terms.map((t,i)=>chip('q'+i,`${ui.nameField}：${t}`)),
-    ...bodyTerms().map((t,i)=>chip('body'+i,`${ui.bodyField}：${t}`)),...active.slice(lead).map(fieldChip)];
+  const chip=key=>{
+    const text=key==='cr_min'||key==='cr_max'?`${fieldNames[key]}：${params.get(key)}`:conditionText(key),negated=key.startsWith(NOT);
+    const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
+    return `<span class="condition ${negated?'negated':''}">${flippable?`<button type="button" class="condition-text" data-flip="${esc(key)}" aria-label="${esc(text)}，${esc(flip)}" title="${esc(flip)}">${esc(text)}</button>`:`<span class="condition-text">${esc(text)}</span>`}`+
+      `<button type="button" class="condition-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">×</button></span>`;
+  };
+  const lead=active.filter(k=>baseKey(k)==='type').length;
+  const chips=[...active.slice(0,lead),...termKeys,...active.slice(lead)].map(chip);
   $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
   markStripEdges($('#active-filters'));
 }
@@ -245,7 +266,7 @@ function renderPanel(){
   const focusAt=focused&&{group:focused.closest('[data-group]')?.dataset.group,value:focused.value,action:focused.dataset.action};
   $('#type-filters').innerHTML=multiGroup(groups.find(g=>g.key==='type'));
   $('#domain-filters').innerHTML=(schema.range?rangeGroup():'')+multi.slice(0,2).map(multiGroup).join('')+
-    (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
+    (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key)||params.has(NOT+g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
   $('#domain-extra')?.addEventListener('toggle',queueUiSave);
   $('#common-filters').innerHTML=groups.filter(g=>['ruleset','origin'].includes(g.key)).map(multiGroup).join('');
   $('#source-filters').innerHTML=multiGroup(groups.find(g=>g.key==='source'));filterSources();
@@ -260,7 +281,7 @@ function updateCounts(){
     const box=document.querySelector(`[data-group="${CSS.escape(g.key)}"]`);if(!box)continue;
     for(const o of g.options){
       const input=box.querySelector(`input[value="${CSS.escape(o.value)}"]`);if(!input)continue;
-      const chip=input.closest('.chip');chip.classList.toggle('empty',!o.count);chip.title=optionTitle(o);chip.querySelector('.chip-count').textContent=fmt(o.count||0);
+      const chip=input.closest('.chip');chip.classList.toggle('empty',!o.count);chip.title=optionTitle(o,g);chip.querySelector('.chip-count').textContent=fmt(o.count||0);
     }
   }
 }
@@ -285,7 +306,7 @@ async function changeTable(){
     const data=await api(facetsURL());if(gen!==panelGeneration||fgen!==facetGeneration)return;
     // A link may carry conditions the table cannot answer; they leave with the old types.
     const answerable=new Set([...data.schema.facets,...data.schema.flags]);
-    const stale=[...params.keys()].filter(key=>key.startsWith('f_')&&!answerable.has(key.slice(2))||['cr_min','cr_max'].includes(key)&&!data.schema.range);
+    const stale=[...params.keys()].filter(key=>baseKey(key).startsWith('f_')&&!answerable.has(baseKey(key).slice(2))||['cr_min','cr_max'].includes(key)&&!data.schema.range);
     if(stale.length){stale.forEach(k=>params.delete(k));return changeTable();}
     applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
@@ -426,7 +447,7 @@ $('#filter-panel').addEventListener('change',e=>{
   if(el.type==='checkbox'&&el.closest('[data-group]')){
     const g=groups.find(g=>g.key===el.closest('[data-group]').dataset.group);const set=selected(g);
     el.checked?set.add(el.value):set.delete(el.value);
-    if(g.key==='type'){chooseTypes([...set]);return;}
+    if(g.key==='type'&&!excluding(g)){chooseTypes([...set]);return;}
     setSelection(g,[...set]);
     if(g.key==='status'&&set.size===1&&set.has('未分类段落'))params.set('sections','1');changed();
   }else if(['cr_min','cr_max'].includes(el.id)){
@@ -437,8 +458,10 @@ $('#filter-panel').addEventListener('change',e=>{
 $('#filter-panel').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;const group=b.closest('[data-group]');if(!group)return;const g=groups.find(g=>g.key===group.dataset.group);
   if(b.hasAttribute('data-flag')){setParam(g.key,b.dataset.flag);changed();return;}
-  const current=selected(g),next=b.dataset.action==='clear'?[]:g.options.map(o=>o.value).filter(v=>!current.has(v));
-  if(g.key==='type'){chooseTypes(next);return;}
+  if(b.dataset.action==='exclude'){flipField(modeKey(g));return;}
+  if(b.dataset.action==='clear'){clearField(g.key);if(g.key==='type')chooseTypes([]);else changed();return;}
+  const current=selected(g),next=g.options.map(o=>o.value).filter(v=>!current.has(v));
+  if(g.key==='type'&&!excluding(g)){chooseTypes(next);return;}
   setSelection(g,next);changed();
 });
 $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();});
@@ -448,7 +471,17 @@ $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();
 // debounce, and inferring kept searches from it once took half-typed IME text for a kept search.
 const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boolean))];
 // Body searches look in an entry's text after its title; they are added from the suggestions, never typed live.
-const bodyTerms=()=>[...new Set(params.getAll('body').map(t=>t.trim()).filter(Boolean))];
+// Excluded searches (`not_q`, `not_body`) come from flipping a search chip.
+const termList=key=>[...new Set(params.getAll(key).map(t=>t.trim()).filter(Boolean))];
+const bodyTerms=()=>termList('body');
+function setList(key,terms){params.delete(key);[...new Set(terms)].forEach(t=>params.append(key,t));}
+// A search chip's key names its list and position: q0, not_q1, body0, not_body2.
+function termAt(key){const [,list,i]=key.match(/^((?:not_)?(?:q|body))(\d+)$/);return {list,index:Number(i),terms:list==='q'?committed:termList(list)};}
+function writeList(list,terms){if(list==='q'){committed=terms;writeTerms();}else setList(list,terms);}
+function flipTerm(key){
+  const {list,index,terms}=termAt(key),term=terms[index],to=list.startsWith(NOT)?baseKey(list):NOT+list;
+  writeList(list,terms.filter((_,i)=>i!==index));writeList(to,[...(to==='q'?committed:termList(to)),term]);changed();
+}
 let committed=[],draft='';
 const committedTerms=()=>committed;
 const searching=()=>committed.length>0||!!draft;
@@ -481,7 +514,7 @@ const fold=t=>String(t||'').normalize('NFKC').toLowerCase();
 function suggestionList(text){
   const q=fold(text);if(!q)return [];
   const visible=g=>auditMode||!['legacy','status'].includes(g.key);
-  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&visible(g)).flatMap(g=>{const chosen=selected(g);
+  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&visible(g)).flatMap(g=>{const chosen=new Set(params.getAll(g.key));
     return g.options.filter(o=>!chosen.has(o.value)&&(fold(o.label).includes(q)||fold(o.search).includes(q)))
       .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2}));});
   const presets=(metadata?.presets||[]).filter(p=>fold(p.name).includes(q)).map(p=>({kind:'preset',preset:p,field:ui.presetField,label:`${p.name}（${typeName(p.type)}）`,count:null,rank:fold(p.name)===q?0:1}));
@@ -518,9 +551,11 @@ function applySuggestion(item){
   // The typed text found the value; it was not meant as a name search.
   clearDraft();writeTerms();
   if(item.kind==='preset'){chooseTypes([item.preset.type],item.preset);return;}
-  const g=item.group,values=[...selected(g),item.option.value];
+  // A suggestion always includes its value; if the value was excluded, it leaves the excluded list.
+  const g=item.group,v=item.option.value,values=[...params.getAll(g.key).filter(x=>x!==NONE),v];
+  setSelection(g,params.getAll(NOT+g.key).filter(x=>x!==v),NOT+g.key);
   if(g.key==='type'){chooseTypes(values);return;}
-  setSelection(g,values);changed();
+  setSelection(g,values,g.key);changed();
 }
 $('#q').addEventListener('keydown',e=>{
   // Safari reports the key that ends a composition after compositionend, with keyCode 229; it is not an Enter.
@@ -542,12 +577,15 @@ $('#reset').onclick=()=>{
 function dropCondition(key){
   if(key==='type'){chooseTypes([]);return;}
   // A chip's key indexes the kept searches; whatever is being typed stays in the field.
-  if(/^q\d+$/.test(key)){committed=committed.filter((_,i)=>i!==Number(key.slice(1)));writeTerms();changed();return;}
-  if(/^body\d+$/.test(key)){const terms=bodyTerms().filter((_,i)=>i!==Number(key.slice(4)));params.delete('body');terms.forEach(t=>params.append('body',t));changed();return;}
+  if(/^(not_)?(q|body)\d+$/.test(key)){const {list,index,terms}=termAt(key);writeList(list,terms.filter((_,i)=>i!==index));changed();return;}
   if(key==='cr'){params.delete('cr_min');params.delete('cr_max');}else params.delete(key);
   changed();
 }
-$('#active-filters').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(b)dropCondition(b.dataset.remove);});
+$('#active-filters').addEventListener('click',e=>{
+  const remove=e.target.closest('[data-remove]');if(remove){dropCondition(remove.dataset.remove);return;}
+  const flip=e.target.closest('[data-flip]');if(!flip)return;
+  const key=flip.dataset.flip;/^(not_)?(q|body)\d+$/.test(key)?flipTerm(key):flipField(key);
+});
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
@@ -663,7 +701,8 @@ function activePreset(){
   return metadata.presets.find(p=>p.type===types[0]&&params.getAll('f_'+p.field).join()===p.value)||null;
 }
 function typeTitle(){
-  const types=chosenTypes();if(!types.length)return ui.allEntries;
+  const types=chosenTypes(),left=params.getAll(NOT+'type');
+  if(!types.length)return left.length?ui.allExcept.replace('{list}',left.map(typeName).join('、')):ui.allEntries;
   const preset=activePreset();if(preset)return preset.name;
   return types.length<=2?types.map(typeName).join('、'):ui.moreTypes.replace('{first}',typeName(types[0])).replace('{count}',types.length);
 }
@@ -674,7 +713,7 @@ function chooseTypes(types,preset=null){
   params.delete('type');types.forEach(t=>params.append('type',t));
   const shared=types.length?types.map(t=>new Set(metadata.type_conditions[t])).reduce((a,b)=>new Set([...a].filter(x=>b.has(x)))):new Set();
   for(const key of [...params.keys()]){
-    const condition=key.startsWith('f_')?key.slice(2):['cr_min','cr_max'].includes(key)?'cr':null;
+    const base=baseKey(key),condition=base.startsWith('f_')?base.slice(2):['cr_min','cr_max'].includes(key)?'cr':null;
     if(condition&&(preset||!shared.has(condition)))params.delete(key);
   }
   if(preset)params.set('f_'+preset.field,preset.value);
@@ -694,11 +733,11 @@ function renderElsewhere(){
 function conditionText(key){
   if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
   if(key==='conflict')return fieldNames.conflict;
-  if(/^q\d+$/.test(key))return `${ui.nameField}：${searchTerms()[Number(key.slice(1))]}`;
   if(key==='typing')return `${ui.nameField}：${draft}`;
-  if(/^body\d+$/.test(key))return `${ui.bodyField}：${bodyTerms()[Number(key.slice(4))]}`;
-  const g=groups.find(g=>g.key===key),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
-  return labels.length?`${g?.label||fieldNames[key]||key}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
+  const negated=key.startsWith(NOT);
+  if(/^(not_)?(q|body)\d+$/.test(key)){const {list,index,terms}=termAt(key);return `${baseKey(list)==='q'?ui.nameField:ui.bodyField}${negated?ui.lacks:''}：${terms[index]}`;}
+  const g=groups.find(g=>g.key===baseKey(key)),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
+  return labels.length?`${g?.label||fieldNames[baseKey(key)]||key}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }
 $('#elsewhere').addEventListener('click',()=>{
   $('#filter-panel').hidden=false;$('#toggle-filters').setAttribute('aria-expanded','true');

@@ -199,6 +199,29 @@ class WebTests(unittest.TestCase):
         for bad in [{'body':[str(i) for i in range(21)]},{'body':['x'*201]}]:
             with self.assertRaises(ValueError):query(self.db,bad)
 
+    def test_excluded_conditions_keep_entries_without_their_values(self):
+        total=lambda p:query(self.db,{**p,'versions':['each']})['total']
+        spells=total({'type':['spell']})
+        # Including and excluding the same values split the table; unextracted values are not excluded.
+        for key,value in [('f_school','塑能'),('q','火'),('body','专注'),('ruleset','5r')]:
+            self.assertEqual(total({'type':['spell'],key:[value]})+total({'type':['spell'],'not_'+key:[value]}),spells,key)
+        unknown=total({'type':['spell'],'f_school':[browse.UNKNOWN]})
+        self.assertEqual(total({'type':['spell'],'not_f_school':['塑能']}),spells-total({'type':['spell'],'f_school':['塑能']}))
+        self.assertGreaterEqual(total({'type':['spell'],'not_f_school':['塑能']}),unknown)
+        self.assertEqual(total({'not_type':['spell']}),total({})-spells)
+        # A field can include and exclude at once; each list is its own condition.
+        both=facets(self.db,{'type':['spell'],'f_school':['塑能','咒法'],'not_f_school':['咒法']})
+        self.assertEqual(both['total'],total({'type':['spell'],'f_school':['塑能']}))
+        self.assertEqual(both['without']['not_f_school'],total({'type':['spell'],'f_school':['咒法']}))
+        # Counts set aside both lists of their own field; excluded values stay listed.
+        school={o['value']:o['count'] for g in both['groups'] if g['key']=='f_school' for o in g['options']}
+        self.assertEqual(school['咒法'],total({'type':['spell'],'f_school':['咒法']}))
+        notq=facets(self.db,{'type':['spell'],'q':['火'],'not_q':['球']})
+        self.assertEqual(notq['total'],total({'type':['spell'],'q':['火']})-total({'type':['spell'],'q':['火','球']}))
+        self.assertIn('not_q0',notq['without'])
+        for bad in [{'not_cr_min':['1']},{'not_typing':['x']},{'not_conflict':['1']},{'not_type':['section']}]:
+            with self.assertRaises(ValueError):query(self.db,bad)
+
     def test_counts_say_what_choosing_each_option_would_match(self):
         params={'type':['spell'],'q':['火'],'f_school':['塑能']}
         data=facets(self.db,params)

@@ -144,11 +144,11 @@ function setParam(key,value){value!==''&&value!==null?params.set(key,value):para
 // The URL records only a sort the reader chose. Without one, a search ranks by match quality and an
 // empty search uses the table's default; the server applies the same rule (browse.sort_key).
 function effectiveSort(){
-  const searching=searchTerms().length>0,sort=params.get('sort')||(searching?'match':schema.default_sort);
-  return sort==='match'&&!searching?schema.default_sort:sort;
+  const sort=params.get('sort')||(searching()?'match':schema.default_sort);
+  return sort==='match'&&!searching()?schema.default_sort:sort;
 }
 function renderSortOptions(){
-  const sorts=[...(searchTerms().length?['match']:[]),...schema.sorts];
+  const sorts=[...(searching()?['match']:[]),...schema.sorts];
   $('#sort').innerHTML=sorts.map(k=>`<option value="${esc(k)}">${esc(k==='match'?ui.sortMatch:fieldNames[k]||k)}</option>`).join('');
   $('#sort').value=effectiveSort();
 }
@@ -441,15 +441,16 @@ $('#filter-panel').addEventListener('click',e=>{
   setSelection(g,next);changed();
 });
 $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();});
-// Name searches are conditions like any other. The text being typed is a live draft: it is the last search
-// term in the URL while the field holds it, and Enter keeps it as a chip so another search can follow.
+// Name searches are conditions like any other. Kept searches are `q`; the text being typed is `typing`, a live
+// search that Enter keeps as a chip, so a reload returns it to the field rather than making it a chip.
+// Both are page state, read from the URL only on load and history navigation: the URL trails the field by the
+// debounce, and inferring kept searches from it once took half-typed IME text for a kept search.
 const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boolean))];
-// Kept searches are page state, read from the URL only on load and history navigation. The URL trails the
-// field by the debounce, so inferring kept searches from it once took half-typed IME text for a kept search.
 let committed=[],draft='';
 const committedTerms=()=>committed;
-function writeTerms(){params.delete('q');[...new Set([...committed,draft].filter(Boolean))].forEach(t=>params.append('q',t));}
-function readTerms(){committed=searchTerms();draft='';}
+const searching=()=>committed.length>0||!!draft;
+function writeTerms(){params.delete('q');[...new Set(committed)].forEach(t=>params.append('q',t));setParam('typing',draft);}
+function readTerms(){committed=searchTerms();draft=(params.get('typing')||'').trim();$('#q').value=draft;}
 function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;$('#q').value='';closeSuggestions();}
 let composingSearch=false;
 function queueSearch(){
@@ -460,8 +461,7 @@ function queueSearch(){
 // Choosing a suggested value drops the draft, so suggestions count with the draft left out.
 let suggestionGroups=null,suggestionGeneration=0;
 async function refreshSuggestionCounts(){
-  const gen=++suggestionGeneration,query=new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','versions','prefer','q'].includes(k)));
-  committedTerms().forEach(t=>query.append('q',t));
+  const gen=++suggestionGeneration,query=new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','versions','prefer','typing'].includes(k)));
   try{const data=await api('/api/facets?'+query);if(gen!==suggestionGeneration)return;suggestionGroups=readGroups(data);
     if(!$('#suggestions').hidden){const keep=activeSuggestion;renderSuggestions();if(keep<suggestions.length){activeSuggestion=0;moveSuggestion(keep);}}}catch{/* Suggestions keep their last counts. */}
 }
@@ -674,8 +674,8 @@ function chooseTypes(types,preset=null){
 // While searching within some types, matches in the others stay one step away; an empty result names the
 // conditions whose removal would bring results back.
 function renderElsewhere(){
-  const types=chosenTypes(),searching=searchTerms().length>0,typeGroup=groups.find(g=>g.key==='type');
-  const others=searching&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
+  const types=chosenTypes(),typeGroup=groups.find(g=>g.key==='type');
+  const others=searching()&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
   const total=others.reduce((sum,o)=>sum+o.count,0);
   $('#elsewhere').hidden=!total;$('#elsewhere').textContent=total?ui.elsewhere.replace('{count}',fmt(total)):'';
   $('#elsewhere').title=total?ui.elsewhereTitle.replace('{list}',others.map(o=>`${o.label} ${fmt(o.count)}`).join(' · ')):'';
@@ -686,6 +686,7 @@ function conditionText(key){
   if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
   if(key==='conflict')return fieldNames.conflict;
   if(/^q\d+$/.test(key))return `${ui.nameField}：${searchTerms()[Number(key.slice(1))]}`;
+  if(key==='typing')return `${ui.nameField}：${draft}`;
   const g=groups.find(g=>g.key===key),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
   return labels.length?`${g?.label||fieldNames[key]||key}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }
@@ -695,11 +696,7 @@ $('#elsewhere').addEventListener('click',()=>{
 });
 $('#empty-elsewhere').addEventListener('click',e=>{
   const b=e.target.closest('[data-drop]');if(!b)return;const key=b.dataset.drop;
-  if(/^q\d+$/.test(key)){
-    const term=searchTerms()[Number(key.slice(1))];
-    if(term===draft&&!committed.includes(term))clearDraft();else committed=committed.filter(t=>t!==term);
-    writeTerms();changed();return;
-  }
+  if(key==='typing'){clearDraft();writeTerms();changed();return;}
   dropCondition(key);
 });
 // Reading mode folds review apparatus away; filters already in the URL stay visible and editable.

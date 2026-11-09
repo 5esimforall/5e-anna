@@ -442,10 +442,12 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await page.setViewportSize({width:1440,height:900});await visit(page,spells);
   const q=page.locator('#q'),chips=page.locator('#active-filters');
   // The everyday path: typing filters live; Enter keeps the search and empties the field for the next one.
-  await q.fill('火');await expect(page).toHaveURL(/q=%E7%81%AB/);await ready(page);
+  // The text being typed is `typing`, not yet a kept search `q`.
+  await q.fill('火');await expect(page).toHaveURL(/typing=%E7%81%AB/);await ready(page);
   await expect(page.getByRole('option').first()).toContainText('包含“火”');
   await q.press('Enter');await expect(q).toHaveValue('');await expect(q).toBeFocused();
-  await q.fill('球');await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火','球']);await ready(page);
+  await q.fill('球');await expect.poll(()=>new URL(page.url()).searchParams.get('typing')).toBe('球');await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火']);
   await q.press('Enter');
   // Every condition is its own chip; chips always join with ∧.
   await expect(chips.locator('[data-remove]')).toHaveText(['类型：法术 ×','名称：火 ×','名称：球 ×']);
@@ -472,7 +474,11 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   const before=await chips.locator('[data-remove]').count();
   await q.press('Backspace');await ready(page);
   await expect(chips.locator('[data-remove]')).toHaveCount(before-1);
-  // A term's × removes only that term; a reload shows every search in the URL as chips.
+  // A reload returns the text being typed to the field, not to a chip.
+  await q.fill('冰');await expect(page).toHaveURL(/typing=/);await ready(page);
+  await page.reload();await ready(page);
+  await expect(q).toHaveValue('冰');await expect(chips.locator('[data-remove="typing"]')).toHaveCount(0);
+  // A term's × removes only that term; a reload shows every kept search as a chip.
   await visit(page,spells+'&q='+encodeURIComponent('火')+'&q='+encodeURIComponent('球'));
   await expect(q).toHaveValue('');await expect(chips.locator('[data-remove^="q"]')).toHaveCount(2);
   await chips.locator('[data-remove="q0"]').click();await ready(page);
@@ -481,7 +487,7 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
 
 test('a search ranks closer names first until the reader picks a sort',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,spells);
-  await page.locator('#q').fill('火球');await expect(page).toHaveURL(/q=/);await ready(page);
+  await page.locator('#q').fill('火球');await expect(page).toHaveURL(/typing=/);await ready(page);
   await queryMatchesAPI(page);
   await expect(page.locator('#results .entry-name')).toHaveText(['火球术','延迟爆裂火球']);
   await expect(page.locator('#sort')).toHaveValue('match');await expect(page.locator('#sort option').first()).toHaveText('匹配度');
@@ -490,7 +496,7 @@ test('a search ranks closer names first until the reader picks a sort',async({pa
   await page.locator('#sort').selectOption('name');await ready(page);
   expect(new URL(page.url()).searchParams.get('sort')).toBe('name');await queryMatchesAPI(page);
   // The draft search leaves with the text; the chosen sort stays.
-  await page.locator('#q').fill('');await expect(page).not.toHaveURL(/q=/);await ready(page);
+  await page.locator('#q').fill('');await expect(page).not.toHaveURL(/typing=/);await ready(page);
   await expect(page.locator('#sort option[value="match"]')).toHaveCount(0);await expect(page.locator('#sort')).toHaveValue('name');
 });
 
@@ -794,14 +800,16 @@ test('IME commits in quick succession never keep a search without Enter',async({
   const commit=text=>q.evaluate((el,text)=>{el.dispatchEvent(new CompositionEvent('compositionstart'));el.value+=text;
     el.dispatchEvent(new InputEvent('input',{isComposing:true,data:text}));el.dispatchEvent(new CompositionEvent('compositionend',{data:text}));},text);
   // Before: the second commit landed inside the 160ms debounce and “火” became a chip (q=火&q=火球术).
-  await commit('火');await expect(page).toHaveURL(/q=%E7%81%AB$/);await ready(page);
+  await commit('火');await expect(page).toHaveURL(/typing=%E7%81%AB$/);await ready(page);
   await commit('球');await page.waitForTimeout(60);await commit('术');
-  await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火球术']);await ready(page);
+  await expect.poll(()=>new URL(page.url()).searchParams.get('typing')).toBe('火球术');await ready(page);
+  expect(new URL(page.url()).searchParams.has('q')).toBeFalsy();
   await expect(page.locator('#active-filters [data-remove^="q"]')).toHaveCount(0);
   // Only Enter keeps it; the next commits stay a draft beside it.
   await q.press('Enter');await expect(page.locator('#active-filters [data-remove="q0"]')).toHaveText('名称：火球术 ×');
   await commit('塑');await page.waitForTimeout(30);await commit('能');
-  await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火球术','塑能']);await ready(page);
+  await expect.poll(()=>new URL(page.url()).searchParams.get('typing')).toBe('塑能');await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火球术']);
   await expect(page.locator('#active-filters [data-remove^="q"]')).toHaveCount(1);
   // Safari sends the key that ends a composition afterwards, as keyCode 229; it keeps nothing.
   await q.evaluate(el=>el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',keyCode:229,bubbles:true})));
@@ -810,7 +818,7 @@ test('IME commits in quick succession never keep a search without Enter',async({
 
 test('Chinese IME composition never submits intermediate query text',async({page})=>{
   await visit(page);const requests=[];
-  page.on('request',r=>{if(r.url().includes('/api/entries?'))requests.push(new URL(r.url()).searchParams.get('q'));});
+  page.on('request',r=>{if(r.url().includes('/api/entries?'))requests.push(new URL(r.url()).searchParams.get('typing'));});
   await page.locator('#q').dispatchEvent('compositionstart');
   await page.locator('#q').fill('huo');await page.locator('#q').press('Enter');
   await page.waitForTimeout(220);expect(requests).toEqual([]);

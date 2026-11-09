@@ -61,7 +61,10 @@ def conditions(params):
     types = entry_types(params)
     if types: out.append(('type','e.type IN ('+','.join('?' for _ in types)+')',types))
     # Literal substring searches, not SQL LIKE patterns; each must match the name.
-    for i, term in enumerate(browse.search_terms(params)): out.append((f'q{i}','instr(lower(e.name),lower(?))>0',[term]))
+    terms = browse.search_terms(params)
+    for i, term in enumerate(terms): out.append((f'q{i}','instr(lower(e.name),lower(?))>0',[term]))
+    typing = browse.typing_term(params)
+    if typing and typing not in terms: out.append(('typing','instr(lower(e.name),lower(?))>0',[typing]))
     for key,(column,allowed) in COMMON_CHOICES.items():
         chosen = list(dict.fromkeys(params.get(key,[])))
         if not chosen: continue
@@ -196,8 +199,7 @@ def result_window(params):
 
 def query(db, params, export=False):
     where, values = filters(db,params)
-    # Match ranking follows the latest search term, the one the reader is typing or just added.
-    terms = browse.search_terms(params); latest = terms[-1] if terms else ''
+    latest = browse.latest_term(params)
     db.create_function('browse_query',0,lambda:latest)
     config = browse.schema_for(entry_types(params))
     order = browse.order_sql(params,config['default_sort'])

@@ -251,15 +251,27 @@ def match_rank(zh, en, name, query):
 
 
 def search_terms(params):
-    """The name searches in force, in the order the reader added them; every one must match."""
+    """The kept name searches, in the order the reader added them; every one must match."""
     terms=list(dict.fromkeys(t.strip() for t in params.get('q',[]) if t.strip()))
     if len(terms)>20 or any(len(t)>200 for t in terms):raise ValueError('关键词过多或过长')
     return terms
 
 
+def typing_term(params):
+    """The name search still being typed (`typing`): it filters like a kept one until Enter keeps it."""
+    term=params.get('typing',[''])[0].strip()
+    if len(term)>200:raise ValueError('关键词过长')
+    return term
+
+
+def latest_term(params):
+    """Match ranking follows the search the reader is typing, else the one kept last."""
+    return typing_term(params) or (search_terms(params) or [''])[-1]
+
+
 def sort_key(params, default):
     """The sort in effect: an explicit choice, else match quality while searching, else the table's default."""
-    searching=bool(search_terms(params))
+    searching=bool(latest_term(params))
     sort=params.get('sort',[MATCH if searching else default])[0]
     return default if sort==MATCH and not searching else sort
 

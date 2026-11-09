@@ -175,7 +175,12 @@ class WebTests(unittest.TestCase):
         # Repeated and blank terms add nothing; the latest term decides match order.
         self.assertEqual(query(self.db,{'q':['火','球','火',' ']})['total'],query(self.db,{'q':['火','球']})['total'])
         self.assertEqual(query(self.db,{'q':['球','火球术']})['rows'][0]['name_zh'],'火球术')
-        for bad in [{'q':[str(i) for i in range(21)]},{'q':['x'*201]}]:
+        # The term being typed filters like a kept one and decides match order; a repeat adds nothing.
+        self.assertEqual(query(self.db,{'q':['火'],'typing':['球']})['total'],query(self.db,{'q':['火','球']})['total'])
+        self.assertEqual(query(self.db,{'q':['球'],'typing':['火球术']})['rows'][0]['name_zh'],'火球术')
+        self.assertNotIn('typing',facets(self.db,{'q':['火'],'typing':['火']})['without'])
+        self.assertIn('typing',facets(self.db,{'type':['spell'],'typing':['成年红龙']})['without'])
+        for bad in [{'q':[str(i) for i in range(21)]},{'q':['x'*201]},{'typing':['x'*201]}]:
             with self.assertRaises(ValueError):query(self.db,bad)
 
     def test_counts_say_what_choosing_each_option_would_match(self):

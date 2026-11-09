@@ -11,7 +11,7 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    moreTypes:'{first}等 {count} 类',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    moreTypes:'{first}等 {count} 类',nameField:'名称',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
@@ -33,7 +33,7 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    moreTypes:'{first} and {count} types',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    moreTypes:'{first} and {count} types',nameField:'Name',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
@@ -144,11 +144,11 @@ function setParam(key,value){value!==''&&value!==null?params.set(key,value):para
 // The URL records only a sort the reader chose. Without one, a search ranks by match quality and an
 // empty search uses the table's default; the server applies the same rule (browse.sort_key).
 function effectiveSort(){
-  const searching=!!params.get('q'),sort=params.get('sort')||(searching?'match':schema.default_sort);
+  const searching=searchTerms().length>0,sort=params.get('sort')||(searching?'match':schema.default_sort);
   return sort==='match'&&!searching?schema.default_sort:sort;
 }
 function renderSortOptions(){
-  const sorts=[...(params.get('q')?['match']:[]),...schema.sorts];
+  const sorts=[...(searchTerms().length?['match']:[]),...schema.sorts];
   $('#sort').innerHTML=sorts.map(k=>`<option value="${esc(k)}">${esc(k==='match'?ui.sortMatch:fieldNames[k]||k)}</option>`).join('');
   $('#sort').value=effectiveSort();
 }
@@ -182,7 +182,6 @@ function rangeGroup(){
 }
 function sync(){
   if(!schema)return;
-  $('#q').value=params.get('q')||'';
   $('#conflict').checked=params.get('conflict')==='1';$('#sections').checked=params.get('sections')==='1';
   renderSortOptions();
   const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
@@ -200,20 +199,21 @@ function sync(){
     for(const b of el.querySelectorAll('[data-action]'))b.disabled=!values.size;
     for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
   }
-  // The types lead the chips: they scope every other condition.
-  const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max','q'].includes(k)).sort((a,b)=>(b==='type')-(a==='type'));
-  $('#filter-count').textContent=active.length||'';
+  // The types lead the chips: they scope every other condition. Name searches follow as one ∧-joined
+  // condition; the term still being typed is not a chip yet.
+  const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k)).sort((a,b)=>(b==='type')-(a==='type'));
+  const terms=committedTerms();
+  $('#filter-count').textContent=active.length+terms.length||'';
   const extraCount=groups.filter(g=>params.has(g.key)&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
   $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(k))?'已筛选':'';
   $('#audit-count').textContent=active.some(k=>AUDIT_PARAMS.includes(k))?'已筛选':'';
   $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
-  $('#active-filters').innerHTML=active.map(k=>{
-    const g=groups.find(g=>g.key===k);const values=params.getAll(k);
-    const labels=values.map(v=>v===NONE?'无选项':g?.options.find(o=>o.value===v)?.label||v);
-    const text=k==='q'?'搜索：'+values[0]:(g?.label||fieldNames[k]||k)+'：'+(labels.length>4?labels.slice(0,3).join('、')+` 等 ${labels.length} 项`:labels.join('、'));
-    return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
-  }).join('');
+  const chip=k=>{const text=k==='cr_min'||k==='cr_max'?`${fieldNames[k]}：${params.get(k)}`:conditionText(k);
+    return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;};
+  const names=terms.length?`<span class="name-terms" role="group" aria-label="${esc(ui.nameField)}"><span aria-hidden="true">${esc(ui.nameField)}：</span>${terms.map((t,i)=>
+    `${i?'<span class="and" aria-label="且">∧</span>':''}<button type="button" data-remove="q${i}" aria-label="移除 ${esc(ui.nameField)}：${esc(t)}" title="移除 ${esc(ui.nameField)}：${esc(t)}">${esc(t)} <span aria-hidden="true">×</span></button>`).join('')}</span>`:'';
+  $('#active-filters').innerHTML=active.slice(0,active[0]==='type'?1:0).map(chip).join('')+names+active.slice(active[0]==='type'?1:0).map(chip).join('');
   markStripEdges($('#active-filters'));
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
@@ -441,20 +441,95 @@ $('#filter-panel').addEventListener('click',e=>{
   setSelection(g,next);changed();
 });
 $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();});
+// Name searches are conditions like any other. The text being typed is a live draft: it is the last search
+// term in the URL while the field holds it, and Enter keeps it as a chip so another search can follow.
+const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boolean))];
+let draft='';
+const committedTerms=()=>{const terms=searchTerms();return draft&&terms.at(-1)===draft?terms.slice(0,-1):terms;};
+function setTerms(terms){params.delete('q');[...new Set(terms)].forEach(t=>params.append('q',t));}
+function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;$('#q').value='';closeSuggestions();}
 let composingSearch=false;
-function queueSearch(){clearTimeout(timer);if(!composingSearch)timer=setTimeout(()=>{setParam('q',$('#q').value.trim());changed(true);},160);}
+function queueSearch(){
+  clearTimeout(timer);if(composingSearch)return;
+  const committed=committedTerms();draft=$('#q').value.trim();renderSuggestions();
+  timer=setTimeout(()=>{setTerms(draft?[...committed,draft]:committed);changed(true);refreshSuggestionCounts();},160);
+}
+// Choosing a suggested value drops the draft, so suggestions count with the draft left out.
+let suggestionGroups=null,suggestionGeneration=0;
+async function refreshSuggestionCounts(){
+  const gen=++suggestionGeneration,query=new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','versions','prefer','q'].includes(k)));
+  committedTerms().forEach(t=>query.append('q',t));
+  try{const data=await api('/api/facets?'+query);if(gen!==suggestionGeneration)return;suggestionGroups=readGroups(data);
+    if(!$('#suggestions').hidden){const keep=activeSuggestion;renderSuggestions();if(keep<suggestions.length){activeSuggestion=0;moveSuggestion(keep);}}}catch{/* Suggestions keep their last counts. */}
+}
 $('#q').addEventListener('compositionstart',()=>{composingSearch=true;clearTimeout(timer);});
 $('#q').addEventListener('compositionend',()=>{composingSearch=false;queueSearch();});
 $('#q').addEventListener('input',e=>{if(!e.isComposing)queueSearch();});
-$('#search-form').addEventListener('submit',e=>{e.preventDefault();if(composingSearch)return;setParam('q',$('#q').value.trim());changed();});
+$('#q').addEventListener('focus',()=>{if($('#q').value.trim())renderSuggestions();});
+$('#q').addEventListener('blur',()=>setTimeout(()=>{if(document.activeElement!==$('#q'))closeSuggestions();},0));
+$('#search-form').addEventListener('submit',e=>e.preventDefault());
+// Typing offers the name search first, then any field value whose label matches: “法术” finds the type,
+// “塑能” the school, “PHB” the sources, “坐骑” the preset. Choosing a value adds it to its field.
+let suggestions=[],activeSuggestion=0;
+const fold=t=>String(t||'').normalize('NFKC').toLowerCase();
+function suggestionList(text){
+  const q=fold(text);if(!q)return [];
+  const visible=g=>auditMode||!['legacy','status'].includes(g.key);
+  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&visible(g)).flatMap(g=>{const chosen=selected(g);
+    return g.options.filter(o=>!chosen.has(o.value)&&(fold(o.label).includes(q)||fold(o.search).includes(q)))
+      .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2}));});
+  const presets=(metadata?.presets||[]).filter(p=>fold(p.name).includes(q)).map(p=>({kind:'preset',preset:p,field:ui.presetField,label:`${p.name}（${typeName(p.type)}）`,count:null,rank:fold(p.name)===q?0:1}));
+  const ranked=[...values,...presets].sort((a,b)=>a.rank-b.rank||(b.count??-1)-(a.count??-1)).slice(0,8);
+  return [{kind:'name',field:ui.nameField,label:ui.nameContains.replace('{text}',text)},...ranked];
+}
+function renderSuggestions(){
+  const text=$('#q').value.trim();suggestions=suggestionList(text);activeSuggestion=0;
+  const list=$('#suggestions');
+  if(!suggestions.length){closeSuggestions();return;}
+  list.innerHTML=suggestions.map((s,i)=>`<li role="option" id="suggestion-${i}" data-index="${i}" aria-selected="${i===activeSuggestion}"><span class="field">${esc(s.field)}</span><span class="value">${esc(s.label)}</span>${s.kind==='name'?'<kbd>Enter</kbd>':s.count!==null?`<span class="count">${fmt(s.count)}</span>`:''}</li>`).join('');
+  list.hidden=false;$('#q').setAttribute('aria-expanded','true');$('#q').setAttribute('aria-activedescendant','suggestion-0');
+}
+function closeSuggestions(){$('#suggestions').hidden=true;$('#q').setAttribute('aria-expanded','false');$('#q').removeAttribute('aria-activedescendant');}
+function moveSuggestion(step){
+  if($('#suggestions').hidden)return;
+  activeSuggestion=(activeSuggestion+step+suggestions.length)%suggestions.length;
+  for(const li of $('#suggestions').children)li.setAttribute('aria-selected',String(Number(li.dataset.index)===activeSuggestion));
+  $('#q').setAttribute('aria-activedescendant','suggestion-'+activeSuggestion);
+  $('#suggestion-'+activeSuggestion).scrollIntoView({block:'nearest'});
+}
+function applySuggestion(item){
+  clearTimeout(timer);const committed=committedTerms();
+  if(!item||item.kind==='name'){
+    // Keep the draft as a search chip; the field empties for the next search.
+    const text=$('#q').value.trim();clearDraft();if(!text)return;
+    setTerms([...committed,text]);changed();return;
+  }
+  // The typed text found the value; it was not meant as a name search.
+  clearDraft();setTerms(committed);
+  if(item.kind==='preset'){chooseTypes([item.preset.type],item.preset);return;}
+  const g=item.group,values=[...selected(g),item.option.value];
+  if(g.key==='type'){chooseTypes(values);return;}
+  setSelection(g,values);changed();
+}
+$('#q').addEventListener('keydown',e=>{
+  if(e.isComposing||composingSearch)return;
+  if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!$('#suggestions').hidden){e.preventDefault();moveSuggestion(e.key==='ArrowDown'?1:-1);}return;}
+  if(e.key==='Enter'){e.preventDefault();applySuggestion($('#suggestions').hidden?null:suggestions[activeSuggestion]);return;}
+  if(e.key==='Escape'&&!$('#suggestions').hidden){e.preventDefault();e.stopPropagation();closeSuggestions();return;}
+  // An empty field gives Backspace to the conditions: it removes the last chip.
+  if(e.key==='Backspace'&&!$('#q').value){const last=[...$('#active-filters').querySelectorAll('[data-remove]')].at(-1);if(last){e.preventDefault();dropCondition(last.dataset.remove);}}
+});
+$('#suggestions').addEventListener('pointerdown',e=>{const li=e.target.closest('[data-index]');if(!li)return;e.preventDefault();applySuggestion(suggestions[Number(li.dataset.index)]);});
 $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#filter-panel').hidden=hidden;$('#toggle-filters').setAttribute('aria-expanded',!hidden);saveUiState();};
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
 $('#reset').onclick=()=>{
+  clearDraft();
   for(const key of [...params.keys()])if(!['sort','dir','versions','prefer'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 };
 function dropCondition(key){
   if(key==='type'){chooseTypes([]);return;}
+  if(/^q\d+$/.test(key)){const terms=committedTerms();setTerms(terms.filter((_,i)=>i!==Number(key.slice(1))));clearDraft();changed();return;}
   if(key==='cr'){params.delete('cr_min');params.delete('cr_max');}else params.delete(key);
   changed();
 }
@@ -522,7 +597,7 @@ let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
   const gen=++navigationGeneration,state=e.state?.anna,oldTypes=chosenTypes().join();
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
-  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;
+  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;clearDraft();
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
   if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
@@ -594,7 +669,7 @@ function chooseTypes(types,preset=null){
 // While searching within some types, matches in the others stay one step away; an empty result names the
 // conditions whose removal would bring results back.
 function renderElsewhere(){
-  const types=chosenTypes(),searching=params.getAll('q').some(Boolean),typeGroup=groups.find(g=>g.key==='type');
+  const types=chosenTypes(),searching=searchTerms().length>0,typeGroup=groups.find(g=>g.key==='type');
   const others=searching&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
   const total=others.reduce((sum,o)=>sum+o.count,0);
   $('#elsewhere').hidden=!total;$('#elsewhere').textContent=total?ui.elsewhere.replace('{count}',fmt(total)):'';
@@ -605,7 +680,7 @@ function renderElsewhere(){
 function conditionText(key){
   if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
   if(key==='conflict')return fieldNames.conflict;
-  if(/^q\d+$/.test(key))return '名称：'+params.getAll('q').filter(Boolean)[Number(key.slice(1))];
+  if(/^q\d+$/.test(key))return `${ui.nameField}：${searchTerms()[Number(key.slice(1))]}`;
   const g=groups.find(g=>g.key===key),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
   return labels.length?`${g?.label||fieldNames[key]||key}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }
@@ -615,7 +690,7 @@ $('#elsewhere').addEventListener('click',()=>{
 });
 $('#empty-elsewhere').addEventListener('click',e=>{
   const b=e.target.closest('[data-drop]');if(!b)return;const key=b.dataset.drop;
-  if(/^q\d+$/.test(key)){const terms=params.getAll('q').filter(Boolean);params.delete('q');terms.filter((_,i)=>i!==Number(key.slice(1))).forEach(t=>params.append('q',t));changed();return;}
+  if(/^q\d+$/.test(key)){const terms=searchTerms();setTerms(terms.filter((_,i)=>i!==Number(key.slice(1))));clearDraft();changed();return;}
   dropCondition(key);
 });
 // Reading mode folds review apparatus away; filters already in the URL stay visible and editable.

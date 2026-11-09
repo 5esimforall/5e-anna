@@ -51,7 +51,7 @@ test('theme follows the system, explicit choices persist without resetting query
   await choose(page,'dark');
   await expect(root(page)).toHaveAttribute('data-theme','dark');
   expect(page.url()).toBe(url);
-  await expect(page.locator('#q')).toHaveValue('Shield');
+  await expect(page.locator('#active-filters')).toContainText('名称：Shield');
   await expect(page.locator('#entry-title')).toHaveText(title);
   await expect(page.locator('#detail')).toBeVisible();
   await page.emulateMedia({colorScheme:'dark'});await page.emulateMedia({colorScheme:'light'});

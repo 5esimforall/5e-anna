@@ -194,10 +194,26 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .audit-toggles { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 0; font-size: var(--anna-type-ui); }
 .audit-toggles label { display: flex; gap: 5px; align-items: center; }
 /* Active filters stay one line that scrolls sideways, like the narrow view rail. */
-.active-filters { display: flex; gap: 5px; padding: 3px; margin: 9px -3px 0; }
+/* The condition bar holds every condition as a chip before the text field. Chips scroll sideways inside it, so
+   the bar stays one line at any width; the field keeps room to type. */
+.condition-bar { position: relative; gap: 7px; padding-left: 10px; }
+.active-filters { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; max-width: 72%; padding: 2px; }
 .active-filters:empty { display: none; }
-.active-filters button { flex-shrink: 0; min-height: 28px; padding: 3px 8px; background: var(--anna-selected); border-color: var(--anna-selected-line); color: var(--anna-brand); font-size: var(--anna-type-ui); }
+.condition-bar>input { min-width: 120px; }
+.active-filters button { flex-shrink: 0; min-height: 26px; padding: 2px 7px; background: var(--anna-selected); border-color: var(--anna-selected-line); color: var(--anna-brand); font-size: var(--anna-type-ui); white-space: nowrap; }
 .active-filters button>span { margin-left: 5px; font-size: 14px; }
+/* Name searches all have to match; they read as one condition joined by ∧. */
+.name-terms { display: inline-flex; flex-shrink: 0; align-items: center; gap: 2px; padding: 0 2px 0 7px; border: 1px solid var(--anna-selected-line); border-radius: var(--anna-radius-sm); background: var(--anna-selected); color: var(--anna-brand); font-size: var(--anna-type-ui); white-space: nowrap; }
+.name-terms>button { min-height: 22px; padding: 0 5px; border: 0; background: transparent; }
+.name-terms>button:hover { background: var(--anna-hover); }
+.name-terms>.and { color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 15px; font-weight: 600; padding: 0 1px; }
+#suggestions { position: absolute; z-index: 9; top: calc(100% + 6px); left: 0; right: 0; max-height: min(60dvh,420px); overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); box-shadow: var(--anna-shadow); }
+#suggestions>li { display: flex; align-items: baseline; gap: 10px; min-height: 34px; padding: 6px 9px; border-radius: var(--anna-radius-sm); color: var(--anna-ink); cursor: pointer; }
+#suggestions>li[aria-selected=true] { background: var(--anna-selected); color: var(--anna-brand); }
+#suggestions>li>.field { flex-shrink: 0; min-width: 4em; color: var(--anna-muted); font-size: var(--anna-type-ui); }
+#suggestions>li>.value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#suggestions>li>.count { margin-left: auto; color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
+#suggestions>li>kbd { margin-left: auto; }
 /* A strip that scrolls sideways shows no scrollbar (its thumb reads as a selection) and fades only the
    side that still hides more. */
 .fade-strip { overflow-x: auto; scrollbar-width: none; }
@@ -482,6 +498,11 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 }
 @media(max-width:760px) {
   .topbar { padding: 0 16px; height: 52px; }
+  /* Phones give the condition bar its own row: typing on the first line, the chips scrolling on the second. */
+  .toolbar { flex-wrap: wrap; }
+  .condition-bar { flex: 1 1 100%; flex-wrap: wrap; height: auto; min-height: 40px; padding-block: 4px; row-gap: 3px; }
+  .condition-bar>input { flex: 1; }
+  .active-filters { order: 3; flex: 1 1 100%; max-width: none; }
   .workspace { display: block; height: auto; min-height: 0; }
   .workspace>main { overflow: visible; padding: 18px 14px; }
   .heading-row { margin-bottom: 12px; }

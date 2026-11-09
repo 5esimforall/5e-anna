@@ -438,6 +438,45 @@ test('compact rows join names and versions on one line, as a per-browser prefere
   expect(await page.evaluate(()=>localStorage.getItem('anna.density'))).toBeNull();
 });
 
+test('the condition bar keeps searches as ∧-joined chips and turns typed values into conditions',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells);
+  const q=page.locator('#q'),chips=page.locator('#active-filters');
+  // The everyday path: typing filters live; Enter keeps the search and empties the field for the next one.
+  await q.fill('火');await expect(page).toHaveURL(/q=%E7%81%AB/);await ready(page);
+  await expect(page.getByRole('option').first()).toContainText('包含“火”');
+  await q.press('Enter');await expect(q).toHaveValue('');await expect(q).toBeFocused();
+  await q.fill('球');await expect.poll(()=>new URL(page.url()).searchParams.getAll('q')).toEqual(['火','球']);await ready(page);
+  await q.press('Enter');
+  await expect(chips.locator('.name-terms')).toHaveText('名称：火 ×∧球 ×');
+  const both=await queryMatchesAPI(page);
+  expect(both.rows.every(r=>r.name.includes('火')&&r.name.includes('球'))).toBeTruthy();
+  await expect(page.locator('#filter-count')).toHaveText('3');
+  // A typed field value is offered after the name search; choosing it adds the value, not a name search.
+  await q.fill('塑能');await expect(page.getByRole('option',{name:/学派\s*塑能/})).toBeVisible();
+  await q.press('ArrowDown');await expect(q).toHaveAttribute('aria-activedescendant','suggestion-1');
+  await q.press('Enter');await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火','球']);
+  expect(new URL(page.url()).searchParams.getAll('f_school')).toEqual(['塑能']);
+  await expect(chips).toContainText('学派：塑能');
+  // Types and presets are found the same way.
+  await q.fill('坐骑');await page.getByRole('option',{name:/预设\s*坐骑/}).click();await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['creature']);
+  expect(new URL(page.url()).searchParams.getAll('f_role')).toEqual(['坐骑']);
+  await expect(page.locator('#title')).toHaveText('坐骑');
+  // Esc closes the suggestions first; Backspace in an empty field removes the last chip.
+  await q.fill('x');await expect(page.locator('#suggestions')).toBeVisible();
+  await q.press('Escape');await expect(page.locator('#suggestions')).toBeHidden();await expect(q).toBeFocused();
+  await q.fill('');await ready(page);
+  const before=await chips.locator('[data-remove]').count();
+  await q.press('Backspace');await ready(page);
+  await expect(chips.locator('[data-remove]')).toHaveCount(before-1);
+  // A term's × removes only that term; a reload shows every search in the URL as chips.
+  await visit(page,spells+'&q='+encodeURIComponent('火')+'&q='+encodeURIComponent('球'));
+  await expect(q).toHaveValue('');await expect(chips.locator('.name-terms button')).toHaveCount(2);
+  await chips.locator('[data-remove="q0"]').click();await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['球']);
+});
+
 test('a search ranks closer names first until the reader picks a sort',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,spells);
   await page.locator('#q').fill('火球');await expect(page).toHaveURL(/q=/);await ready(page);
@@ -448,7 +487,8 @@ test('a search ranks closer names first until the reader picks a sort',async({pa
   // A chosen sort is recorded and kept while searching; clearing the search drops the match option.
   await page.locator('#sort').selectOption('name');await ready(page);
   expect(new URL(page.url()).searchParams.get('sort')).toBe('name');await queryMatchesAPI(page);
-  await page.getByRole('button',{name:/^移除 搜索/}).click();await ready(page);
+  // The draft search leaves with the text; the chosen sort stays.
+  await page.locator('#q').fill('');await expect(page).not.toHaveURL(/q=/);await ready(page);
   await expect(page.locator('#sort option[value="match"]')).toHaveCount(0);await expect(page.locator('#sort')).toHaveValue('name');
 });
 

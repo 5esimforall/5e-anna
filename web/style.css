@@ -45,7 +45,6 @@
   --anna-type-name: 15px;
   --anna-type-reading: 15px;
   --anna-leading-reading: 1.75;
-  --anna-sidebar: 188px;
   /* The name column has one width at every table width, so a row is as tall beside the reader as without it. */
   --anna-name-column: 248px;
   /* The reader and the results share the space beside the categories; each keeps at least this much. */
@@ -128,22 +127,41 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .theme-button[data-preference=system] .theme-icon-system,
 .theme-button[data-preference=light] .theme-icon-light,
 .theme-button[data-preference=dark] .theme-icon-dark { display: block; }
-.workspace { display: grid; grid-template-columns: var(--anna-sidebar) minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }
-.sidebar { min-height: 0; overflow: auto; padding: 16px 10px 24px; border-right: 1px solid var(--anna-line); }
-.side-title { font-size: var(--anna-type-ui); color: var(--anna-muted); padding: 0 10px 10px; }
-.sidebar nav { display: grid; gap: 2px; overflow: visible; }
-.view-group { display: grid; gap: 1px; margin-top: 12px; }
-.view-group-label { padding: 4px 10px 3px; color: var(--anna-muted); font-size: var(--anna-type-ui); }
-.sidebar button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; border: 0; padding: 5px 10px; background: transparent; text-align: left; color: var(--anna-ink); }
-.sidebar button span { color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
-.sidebar button.active { background: var(--anna-selected); color: var(--anna-brand); font-weight: 600; }
-.sidebar button.active span { color: var(--anna-brand); }
+.workspace { display: grid; grid-template-columns: minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }
 .workspace>main { container: query / inline-size; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: auto; padding: 22px 24px 14px; background: var(--anna-surface); }
 .workspace>main>* { flex-shrink: 0; }
 /* Every line above the table keeps one height at any width: text that does not fit is cut, never wrapped,
    so the reader taking width from the results never pushes the rows down. */
 .heading-row { display: flex; align-items: baseline; gap: 14px; margin-bottom: 17px; white-space: nowrap; }
 h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px; font-weight: 600; line-height: 1.25; }
+/* The heading names the chosen types and opens the type picker; it is the table's title and its scope. */
+.type-menu { flex-shrink: 1; min-width: 0; margin-left: -8px; }
+.type-menu>h1 { display: flex; min-width: 0; }
+#type-toggle { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 100%; margin: 0; padding: 0 8px; border: 0; border-radius: var(--anna-radius); background: transparent; color: inherit; font: inherit; }
+#type-toggle:hover, #type-toggle[aria-expanded=true] { background: var(--anna-hover); }
+#title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#type-toggle>.menu-caret { flex-shrink: 0; color: var(--anna-muted); font-family: var(--anna-sans); font-size: 15px; }
+#type-panel { left: 0; right: auto; display: block; width: min(820px,calc(100vw - 32px)); max-height: min(70dvh,640px); overflow: auto; padding: 12px; white-space: normal; }
+/* Columns sit inside the scrolling panel, so a short window scrolls the groups instead of adding columns. */
+.type-columns { columns: 4 180px; column-gap: 18px; }
+.type-group { display: grid; gap: 1px; margin-bottom: 12px; break-inside: avoid; }
+.type-group-label { justify-self: start; min-height: 28px; padding: 3px 8px; border: 0; background: transparent; color: var(--anna-muted); font-size: var(--anna-type-ui); }
+.type-group-label:hover { color: var(--anna-ink); background: var(--anna-hover); }
+.type-row { display: flex; align-items: center; gap: 2px; border-radius: var(--anna-radius-sm); }
+.type-row:hover { background: var(--anna-hover); }
+.type-row>input { flex-shrink: 0; margin: 0 2px 0 8px; }
+.type-only { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 32px; padding: 4px 8px; border: 0; background: transparent; color: var(--anna-ink); text-align: left; }
+.type-only>span, .type-all>span { color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
+.type-row.chosen .type-only, .type-all.chosen { color: var(--anna-brand); font-weight: 600; }
+.type-row.chosen { background: var(--anna-selected); }
+.type-row.empty .type-only { color: var(--anna-muted); }
+.type-all { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 4px 8px; border: 0; border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-ink); text-align: left; }
+.type-all:hover { background: var(--anna-hover); }
+.type-presets { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 8px 4px 32px; }
+.type-presets>button { min-height: 24px; padding: 1px 7px; border: 1px solid var(--anna-line); border-radius: 999px; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
+.type-presets>button.chosen { border-color: var(--anna-brand); color: var(--anna-brand); }
+#elsewhere { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#empty-elsewhere { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 10px; }
 .heading-row>.muted, .heading-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--anna-type-ui); }
 .heading-note { color: var(--anna-muted); margin-left: auto; }
 .toolbar { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; }
@@ -418,10 +436,10 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 
 #reader-resizer { display: none; }
 @media(min-width:1200px) {
-  /* The reader's share of the space beside the categories is the reader's own preference (detail.js);
+  /* The reader's share of the workspace is the reader's own preference (detail.js);
      the track keeps the minimum widths for the reader and the results whatever the stored share. */
-  body.detail-open .workspace { grid-template-columns: var(--anna-sidebar) minmax(0,1fr) clamp(var(--anna-reader-min), calc((100% - var(--anna-sidebar)) * var(--anna-reader-share,.6)), calc(100% - var(--anna-sidebar) - var(--anna-list-min))); }
-  #detail { position: relative; inset: auto; grid-column: 3; grid-row: 1; width: auto; height: 100%; max-width: none; max-height: none; min-width: 0; border-left: 1px solid var(--anna-line-strong); }
+  body.detail-open .workspace { grid-template-columns: minmax(0,1fr) clamp(var(--anna-reader-min), calc(100% * var(--anna-reader-share,.6)), calc(100% - var(--anna-list-min))); }
+  #detail { position: relative; inset: auto; grid-column: 2; grid-row: 1; width: auto; height: 100%; max-width: none; max-height: none; min-width: 0; border-left: 1px solid var(--anna-line-strong); }
   #reader-resizer { display: block; position: absolute; z-index: 6; top: 0; bottom: 0; left: 0; width: 7px; cursor: col-resize; touch-action: none; }
   #reader-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: transparent; transition: background var(--anna-fast); }
   #reader-resizer:hover::after, body.reader-resizing #reader-resizer::after { background: var(--anna-brand); }
@@ -429,8 +447,8 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   #reader-resizer:focus-visible::after { width: 3px; background: var(--anna-focus); }
   body.reader-resizing { cursor: col-resize; user-select: none; }
   /* Full-width reading lays the reader over the results, which keep their layout and scroll position. */
-  body.detail-open .workspace>main { grid-row: 1; grid-column: 2; }
-  body.detail-open.reader-full :is(.workspace>main, .sidebar) { visibility: hidden; }
+  body.detail-open .workspace>main { grid-row: 1; grid-column: 1; }
+  body.detail-open.reader-full .workspace>main { visibility: hidden; }
   body.reader-full #detail { grid-column: 1 / -1; border-left: 0; }
   body.reader-full #reader-resizer { display: none; }
 }
@@ -488,13 +506,6 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 @media(max-width:760px) {
   .topbar { padding: 0 16px; height: 52px; }
   .workspace { display: block; height: auto; min-height: 0; }
-  .sidebar { padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--anna-line); }
-  .side-title { display: none; }
-  .sidebar nav { display: flex; gap: 4px; overflow-x: auto; }
-  .view-group { display: contents; }
-  .view-group-label { display: none; }
-  .sidebar button { flex-shrink: 0; }
-  .sidebar button:not(.active) span { display: none; }
   .workspace>main { overflow: visible; padding: 18px 14px; }
   .heading-row { margin-bottom: 12px; }
   h1 { font-size: 24px; }

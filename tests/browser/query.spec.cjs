@@ -7,9 +7,14 @@ const test=base.extend({context:async({context},use)=>{
 }});
 const port=Number(process.env.ANNA_E2E_PORT||18380);
 const anna=`http://127.0.0.1:${port+1}`;
-const spells='/?view='+encodeURIComponent('法术');
+const spells='/?type=spell';
 async function ready(page){await expect(page.locator('#result-count')).toContainText('找到');await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');}
 async function visit(page,query=spells){await page.goto(anna+query);await ready(page);}
+// The heading opens the type picker; “only” buttons choose one type and close it.
+async function chooseOnly(page,type){
+  await page.locator('#type-toggle').click();await page.locator(`#type-panel [data-only="${type}"]`).click();
+  await expect(page.locator('#type-panel')).toBeHidden();
+}
 async function entry(page,index=0){return page.locator('#results .entry-name').nth(index).getAttribute('data-entry');}
 async function read(page,id){await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');await expect(page.locator('#detail .footnote')).toContainText(id);}
 // Audit tabs belong to audit mode, a per-browser preference stored like the theme.
@@ -46,7 +51,8 @@ test('spell multi-select, mutually exclusive flags, unknowns and retained active
   await expect(page.locator('#active-filters')).toContainText('一环、二环');
   await expect(page.locator('#active-filters')).toContainText('专注');
   await shot(page,testInfo,'spell-active-filters.png');
-  await page.locator('#reset').click();await ready(page);await expect(page.locator('#active-filters button')).toHaveCount(0);
+  // Reset clears the conditions within the chosen type; only the type's own chip remains.
+  await page.locator('#reset').click();await ready(page);await expect(page.locator('#active-filters button')).toHaveText(['类型：法术 ×']);
 });
 
 test('filters start collapsed while active conditions stay visible and results keep the first screen',async({page})=>{
@@ -62,7 +68,7 @@ test('filters start collapsed while active conditions stay visible and results k
     if(width>760){const table=await page.locator('.table-wrap').boundingBox();expect(table.height).toBeGreaterThanOrEqual(height*.5);}
   }
   await page.getByRole('button',{name:'移除 环阶：一环'}).click();await ready(page);
-  await expect(page.locator('#active-filters button')).toHaveCount(0);expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
+  await expect(page.locator('#active-filters button')).toHaveText(['类型：法术 ×']);expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
   await page.locator('#toggle-filters').click();
   await expect(page.locator('#filter-panel')).toBeVisible();await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','true');
   await page.reload();await ready(page);await expect(page.locator('#filter-panel')).toBeVisible();
@@ -70,16 +76,16 @@ test('filters start collapsed while active conditions stay visible and results k
   const fresh=await page.context().newPage();await visit(fresh);await expect(fresh.locator('#filter-panel')).toBeHidden();
 });
 
-test('switching categories keeps dimmed results and counts consistent until the new view renders',async({page})=>{
+test('switching types keeps dimmed results and counts consistent until the new table renders',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
   const range=await page.locator('#range').textContent();
   const columns=await page.locator('#columns th').count(),rows=await page.locator('#results tr').count();
   let release;const gate=new Promise(resolve=>release=resolve);let started;const waiting=new Promise(resolve=>started=resolve);
   await page.route('**/api/entries?*',async route=>{
-    if(new URL(route.request().url()).searchParams.get('view')==='生物数据卡'){started();await gate;}
+    if(new URL(route.request().url()).searchParams.getAll('type').join()==='creature'){started();await gate;}
     await route.continue();
   });
-  await page.locator('#views [data-view="生物数据卡"]').click();await waiting;
+  await chooseOnly(page,'creature');await waiting;
   await expect(page.locator('#title')).toHaveText('生物数据卡');
   await expect(page.locator('#results')).toHaveAttribute('aria-busy','true');
   // The previous rows remain under their own header instead of disappearing or mixing schemas.
@@ -89,7 +95,7 @@ test('switching categories keeps dimmed results and counts consistent until the 
   for(const id of ['#range','#load-more-row'])await expect(page.locator(id)).toHaveCSS('opacity','0.45');
   for(const id of ['#load-more','#export'])await expect(page.locator(id)).toBeDisabled();
   release();await ready(page);await page.unrouteAll({behavior:'wait'});
-  const facets=await (await page.request.get(anna+'/api/facets?view='+encodeURIComponent('生物数据卡'))).json();
+  const facets=await (await page.request.get(anna+'/api/facets?type=creature')).json();
   await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.length);
   expect(await page.locator('#results tr').first().locator('td').count()).toBe(facets.schema.columns.length);
   const data=await queryMatchesAPI(page);
@@ -121,7 +127,7 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
   await expect(page.locator(`#results .entry-name[data-entry="${second}"]`)).toBeFocused();
   expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(top);
   // Existing URL query, sort and size survive the entire reader session.
-  expect(new URL(page.url()).searchParams.get('view')).toBe('法术');
+  expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['spell']);
   expect(new URL(page.url()).searchParams.has('entry')).toBeFalsy();
   await page.locator('#results .entry-name').nth(8).click();await read(page,first);
   // A non-modal reader never blocks a different result from being clicked.
@@ -188,21 +194,23 @@ test('changing filters or classification closes a stale reader without losing fi
   await page.getByRole('checkbox',{name:'环阶：戏法',exact:true}).uncheck();await ready(page);
   await expect(page.locator('#detail')).toBeHidden();expect(new URL(page.url()).searchParams.has('entry')).toBeFalsy();
   await page.locator('#results .entry-name').first().click();await read(page,await entry(page));
-  // The categories stay beside the results while reading; choosing one closes the reader.
-  await page.locator('#views [data-view="生物数据卡"]').click();await ready(page);
+  // Choosing other types closes the reader and drops the conditions the new table cannot answer.
+  await chooseOnly(page,'creature');await ready(page);
   await expect(page.locator('#detail')).toBeHidden();await expect(page.locator('#cr_min')).toBeVisible();
   await page.locator('#cr_min').selectOption('1/2');await page.locator('#cr_max').selectOption('2');
   const data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
   expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
 });
 
-test('all category schemas share the workbench without losing their columns or filters',async({page},testInfo)=>{
-  test.setTimeout(120000);
+test('every type and preset shares the workbench without losing its columns or filters',async({page},testInfo)=>{
+  test.setTimeout(150000);
   const meta=await (await page.request.get(anna+'/api/meta')).json();
   await page.setViewportSize({width:1440,height:900});
-  for(const view of [{name:''},...meta.views]){
-    await visit(page,'/?view='+encodeURIComponent(view.name));
-    const facets=await (await page.request.get(anna+'/api/facets?view='+encodeURIComponent(view.name))).json();
+  const choices=[{search:'',title:'全部条目'},...meta.type_order.map(t=>({search:'type='+t,types:[t],title:meta.types[t]})),
+    ...meta.presets.map(p=>({search:`type=${p.type}&f_${p.field}=${encodeURIComponent(p.value)}`,types:[p.type],title:p.name}))];
+  for(const choice of choices){
+    await visit(page,'/?'+choice.search);
+    const facets=await (await page.request.get(anna+'/api/facets?'+new URLSearchParams((choice.types||[]).map(t=>['type',t])))).json();
     await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.filter(k=>!AUDIT_COLUMNS.includes(k)).length);
     for(const group of facets.groups)await expect(page.locator(`[data-group="f_${group.key}"]`)).toHaveCount(1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
@@ -210,30 +218,81 @@ test('all category schemas share the workbench without losing their columns or f
     await page.locator('#close-detail').click();
     await page.setViewportSize({width:390,height:844});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
-    await expect(page.locator('#title')).toHaveText(view.name||'全部条目');
+    await expect(page.locator('#title')).toHaveText(choice.title);
     await page.setViewportSize({width:1440,height:900});
   }
-  await visit(page,'/?view='+encodeURIComponent('魔法物品'));
+  await visit(page,'/?type=magic_item');
   await page.locator('#toggle-filters').click();await page.locator('#domain-extra summary').click();
   await expect(page.getByRole('button',{name:'同调：需要',exact:true})).toBeVisible();
   await page.getByRole('button',{name:'同调：需要',exact:true}).click();await queryMatchesAPI(page);
   await shot(page,testInfo,'magic-items-filters.png');
 });
 
-test('category rail groups every view once and flattens into one strip on narrow screens',async({page})=>{
+test('the heading picks types: groups, presets, multi-select, search counts and a removable chip',async({page})=>{
   const meta=await (await page.request.get(anna+'/api/meta')).json();
   await page.setViewportSize({width:1440,height:900});await visit(page);
-  const names=await page.locator('#views [data-view]').evaluateAll(els=>els.map(e=>e.dataset.view));
-  expect(names.slice(0,2)).toEqual(['','法术']);
-  expect([...names].sort()).toEqual(['',...meta.views.map(v=>v.name)].sort());
-  for(const [label,view] of [['怪物','生物数据卡'],['物品','魔法物品'],['角色选项','职业'],['规则','状态动作规则']])
-    await expect(page.getByRole('group',{name:label}).locator(`[data-view="${view}"]`)).toHaveCount(1);
-  await expect(page.locator('#views [data-view="法术"]')).toHaveAttribute('aria-pressed','true');
-  await page.setViewportSize({width:390,height:844});
-  await expect(page.locator('.view-group-label').first()).toBeHidden();
-  expect((await page.locator('#views').boundingBox()).height).toBeLessThan(60);
-  await page.locator('#views [data-view="生物数据卡"]').click();await ready(page);
-  await expect(page.locator('#title')).toHaveText('生物数据卡');
+  await expect(page.locator('#title')).toHaveText('法术');
+  await page.locator('#type-toggle').click();
+  await expect(page.locator('#type-toggle')).toHaveAttribute('aria-expanded','true');
+  // Every type the data holds appears once; the first group leads with all entries and spells.
+  const offered=await page.locator('#type-panel [data-only]').evaluateAll(els=>els.map(e=>e.dataset.only));
+  expect(offered.slice(0,2)).toEqual(['','spell']);
+  expect([...offered].sort()).toEqual(['',...meta.type_order].sort());
+  for(const [label,type] of [['怪物','creature'],['物品','magic_item'],['角色选项','class'],['规则','condition']])
+    await expect(page.getByRole('group',{name:label}).locator(`[data-only="${type}"]`)).toHaveCount(1);
+  await expect(page.locator('#type-panel [data-only="spell"]')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#type-panel [data-only="spell"]')).toBeFocused();
+  // A preset is one type and one facet value: it names the heading and shows as an ordinary chip.
+  await page.locator('#type-panel [data-preset="坐骑"]').click();await ready(page);
+  await expect(page.locator('#type-panel')).toBeHidden();await expect(page.locator('#type-toggle')).toBeFocused();
+  await expect(page.locator('#title')).toHaveText('坐骑');
+  expect(new URL(page.url()).searchParams.getAll('f_role')).toEqual(['坐骑']);
+  expect((await queryMatchesAPI(page)).versions_total).toBe(20);
+  await expect(page.locator('#active-filters')).toContainText('使用角色：坐骑');
+  // Adding a type keeps only the conditions every chosen type can answer, so the new type's entries appear.
+  await page.locator('#type-toggle').click();await page.getByRole('checkbox',{name:'加入法术'}).check();await ready(page);
+  await expect(page.locator('#type-panel')).toBeVisible();await expect(page.getByRole('checkbox',{name:'移出法术'})).toBeFocused();
+  expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['spell','creature']);
+  expect(new URL(page.url()).searchParams.has('f_role')).toBeFalsy();
+  await expect(page.locator('#title')).toHaveText('法术、生物数据卡');
+  await page.keyboard.press('Escape');await expect(page.locator('#type-panel')).toBeHidden();await expect(page.locator('#type-toggle')).toBeFocused();
+  // Group labels choose every type in the group.
+  await page.locator('#type-toggle').click();
+  const items=await page.getByRole('group',{name:'物品'}).locator('[data-only]').evaluateAll(els=>els.map(e=>e.dataset.only));
+  await page.getByRole('group',{name:'物品'}).locator('.type-group-label').click();await ready(page);
+  expect([...new URL(page.url()).searchParams.getAll('type')].sort()).toEqual([...items].sort());
+  // The chip removes the types and returns to all entries; reset keeps the types and clears the rest.
+  await chooseOnly(page,'spell');await page.locator('#q').fill('火');await page.locator('#q').press('Enter');await ready(page);
+  await page.locator('#reset').click();await ready(page);
+  expect(new URL(page.url()).search).toBe('?type=spell');
+  await page.locator('#active-filters [data-remove="type"]').click();await ready(page);
+  await expect(page.locator('#title')).toHaveText('全部条目');expect(new URL(page.url()).search).toBe('');
+  // A pointer outside the picker closes it without choosing.
+  await page.locator('#type-toggle').click();await page.locator('.bottom-bar').click();await expect(page.locator('#type-panel')).toBeHidden();
+});
+
+test('a search within some types shows its matches in the others',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,spells+'&q='+encodeURIComponent('火')+'&f_school='+encodeURIComponent('塑能'));
+  const data=await queryMatchesAPI(page);
+  const others=Object.entries(data.type_counts).filter(([t])=>t!=='spell').reduce((sum,[,n])=>sum+n,0);
+  expect(others).toBeGreaterThan(0);
+  await expect(page.locator('#elsewhere')).toHaveText(`其他类型另有 ${fmt(others)} 条`);
+  // The picker's counts follow the search, not the spell-only school filter.
+  await page.locator('#elsewhere').click();await expect(page.locator('#type-panel')).toBeVisible();
+  await expect(page.locator('#type-panel [data-only="magic_item"] span')).toHaveText(fmt(data.type_counts.magic_item));
+  await expect(page.locator('#type-panel [data-only="spell"] span')).toHaveText(fmt(data.type_counts.spell));
+  await page.keyboard.press('Escape');
+  // An empty result offers the types where the search does match.
+  await visit(page,spells+'&q='+encodeURIComponent('成年红龙'));
+  await expect(page.locator('#empty')).toBeVisible();
+  await page.locator('#empty-elsewhere [data-only="creature"]').click();await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['creature']);
+  expect(new URL(page.url()).searchParams.get('q')).toBe('成年红龙');
+  await expect(page.locator('#results .entry-name').first()).toHaveText('成年红龙');
+  await expect(page.locator('#elsewhere')).toBeVisible();
+  // Without a search, or across all types, there is nothing elsewhere to point at.
+  await visit(page);await expect(page.locator('#elsewhere')).toBeHidden();
 });
 
 test('spell components read as glyph strips while filters and export keep every component',async({page})=>{
@@ -370,7 +429,7 @@ test('a field reads the same in the table, the reader attributes, the notes and 
 test('compact rows join names and versions on one line, as a per-browser preference above a 13px floor',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('亡者丧钟'));
   // Chinese interface text stays at 13px or more; 12px is left to codes, counts and English names.
-  for(const selector of ['.result-actions label','.view-group-label','#result-count','.bottom-bar'])
+  for(const selector of ['.result-actions label','#result-count','.bottom-bar'])
     expect(parseFloat(await page.locator(selector).first().evaluate(e=>getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(13);
   const row=page.locator('#results tr').first(),comfortable=(await row.boundingBox()).height;
   const url=page.url();await page.locator('#display-toggle').click();await page.locator('#compact-rows').check();
@@ -398,15 +457,17 @@ test('a search ranks closer names first until the reader picks a sort',async({pa
   await expect(page.locator('#sort option[value="match"]')).toHaveCount(0);await expect(page.locator('#sort')).toHaveValue('name');
 });
 
-test('phones hide keyboard hints and keep the current view in sight on the view rail',async({browser})=>{
+test('phones hide keyboard hints and fit the type picker to the screen',async({browser})=>{
   const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
-  const page=await context.newPage();await visit(page,'/?view='+encodeURIComponent('专长'));
-  const rail=page.locator('#views'),r=await rail.boundingBox(),a=await rail.locator('.active').boundingBox();
-  expect(a.x).toBeGreaterThanOrEqual(r.x);expect(a.x+a.width).toBeLessThanOrEqual(r.x+r.width+1);
-  // No scrollbar thumb under the first view; faded edges show where more views wait.
-  expect(await rail.evaluate(e=>getComputedStyle(e).scrollbarWidth)).toBe('none');
-  await expect(rail).toHaveClass(/more-before/);await expect(rail).toHaveClass(/more-after/);
-  await rail.evaluate(e=>{e.scrollLeft=0;});await expect(rail).not.toHaveClass(/more-before/);
+  const page=await context.newPage();await visit(page,'/?type=feat');
+  // The picker scrolls within the screen and brings the chosen type into view.
+  await page.locator('#type-toggle').click();const panel=page.locator('#type-panel');await expect(panel).toBeVisible();
+  const box=await panel.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
+  expect(box.y+box.height).toBeLessThanOrEqual(844);
+  expect(await panel.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
+  await expect(panel.locator('[data-only="feat"]')).toBeInViewport();
+  await panel.locator('[data-only="feat"]').click();await expect(panel).toBeHidden();
   await expect(page.locator('.searchbox kbd')).toBeHidden();
   // Version pills are the one target inside a row, so on touch they keep a fingertip's height.
   expect((await page.locator('#results .version-pill').first().boundingBox()).height).toBeGreaterThanOrEqual(30);
@@ -418,7 +479,7 @@ test('phones hide keyboard hints and keep the current view in sight on the view 
 });
 
 test('stacking never merges class features from different classes',async({page})=>{
-  await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业能力')+'&q='+encodeURIComponent('属性值提升'));
+  await page.setViewportSize({width:1440,height:900});await visit(page,'/?type=class_feature&q='+encodeURIComponent('属性值提升'));
   const data=await queryMatchesAPI(page);
   expect(data.total).toBe(data.versions_total);await expect(page.locator('#results .version-pill')).toHaveCount(0);
 });
@@ -474,7 +535,7 @@ test('reader sets label lines as a parameter card, starts after the title and gr
 test('stat blocks keep their tables in the reader without widening the page',async({page})=>{
   for(const [width,height] of [[1440,900],[390,844]]){
     await page.setViewportSize({width,height});
-    await visit(page,'/?view='+encodeURIComponent('生物数据卡')+'&q='+encodeURIComponent('成年红龙'));
+    await visit(page,'/?type=creature&q='+encodeURIComponent('成年红龙'));
     await page.locator('#results .entry-name').first().click();
     const tables=page.locator('#detail-panel .layout-text table');await expect(tables.first()).toBeVisible();
     expect(await tables.count()).toBeGreaterThanOrEqual(2);
@@ -484,20 +545,19 @@ test('stat blocks keep their tables in the reader without widening the page',asy
   }
 });
 
-test('opening, stepping and closing an entry leave the categories and every row where they were',async({page})=>{
+test('opening, stepping and closing an entry leave the heading and every row where they were',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&f_spell_level=1&f_spell_level=2&sort=name');
   const row=n=>page.locator('#results tr').nth(n);
   const place=async n=>{const b=await row(n).locator('.name-cell').boundingBox();return [b.x,b.y,b.width,b.height].map(Math.round);};
   const places=async()=>[await place(3),await place(4)];
   const lines=()=>page.locator('.heading-row,.toolbar,#active-filters,.results-bar').evaluateAll(els=>els.map(e=>Math.round(e.getBoundingClientRect().height)));
-  const before=await places(),chrome=await lines(),sidebar=await page.locator('.sidebar').boundingBox();
+  const before=await places(),chrome=await lines();
   // Before: the rail folded to 44px and the results turned into a list, moving a clicked row from y=587 to y=854.
   const id=await entry(page,3);await row(3).locator('td[data-label="学派"]').click();await read(page,id);
   expect(await places()).toEqual(before);expect(await lines()).toEqual(chrome);
-  await expect(page.locator('#columns')).toBeVisible();await expect(page.locator('#views')).toBeVisible();
-  expect(await page.locator('.sidebar').boundingBox()).toEqual(sidebar);
-  // The reader takes its share of the space beside the categories.
-  expect(Math.round((await page.locator('#detail').boundingBox()).width)).toBe(Math.round((1440-188)*.6));
+  await expect(page.locator('#columns')).toBeVisible();await expect(page.locator('#type-toggle')).toBeVisible();
+  // The reader takes its share of the workspace.
+  expect(Math.round((await page.locator('#detail').boundingBox()).width)).toBe(Math.round(1440*.6));
   // Another row opens in place of the first; closing leaves every row and line where it was.
   const next=await entry(page,4);await row(4).locator('.english').click();await read(page,next);
   expect(await places()).toEqual(before);
@@ -506,7 +566,7 @@ test('opening, stepping and closing an entry leave the categories and every row 
 });
 
 test('the reader starts its text high, keeps its tabs pinned and steps without a loading flash',async({page},testInfo)=>{
-  await page.setViewportSize({width:1440,height:900});await visit(page,'/?view='+encodeURIComponent('职业')+'&q='+encodeURIComponent('法师'));
+  await page.setViewportSize({width:1440,height:900});await visit(page,'/?type=class&q='+encodeURIComponent('法师'));
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
   const reader=await page.locator('#detail').boundingBox();
   const panel=await page.locator('#detail-panel').boundingBox();expect(panel.y-reader.y).toBeLessThan(240);
@@ -534,30 +594,30 @@ test('the reader width is a per-browser preference set by dragging or the separa
   await page.setViewportSize({width:1440,height:900});await visit(page);
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
   const separator=page.getByRole('separator',{name:'调整阅读栏宽度'}),width=async()=>Math.round((await page.locator('#detail').boundingBox()).width);
-  // Shares are of the space beside the categories, 1440 - 188 = 1252px.
-  await expect(separator).toHaveAttribute('aria-valuenow','60');expect(await width()).toBe(Math.round(1252*.6));
+  // Shares are of the whole 1440px workspace.
+  await expect(separator).toHaveAttribute('aria-valuenow','60');expect(await width()).toBe(Math.round(1440*.6));
   await separator.focus();await page.keyboard.press('ArrowLeft');
-  await expect(separator).toHaveAttribute('aria-valuenow','62');expect(await width()).toBe(Math.round(1252*.62));
-  // Home and End stop at the bounds: the reader keeps 400px and the results keep 360px beside the categories.
+  await expect(separator).toHaveAttribute('aria-valuenow','62');expect(await width()).toBe(Math.round(1440*.62));
+  // Home and End stop at the bounds: the reader keeps 400px and the results keep 360px.
   await page.keyboard.press('Home');expect(await width()).toBe(400);
-  await page.keyboard.press('End');expect(await width()).toBe(1440-188-360);
-  await expect(separator).toHaveAttribute('aria-valuetext','阅读栏占 71%');
+  await page.keyboard.press('End');expect(await width()).toBe(1440-360);
+  await expect(separator).toHaveAttribute('aria-valuetext','阅读栏占 75%');
   // Dragging the separator follows the pointer; the share survives a reload but never enters the URL.
   const box=await separator.boundingBox();
   await page.mouse.move(box.x+2,box.y+300);await page.mouse.down();await page.mouse.move(720,400,{steps:4});await page.mouse.up();
   expect(await width()).toBe(720);
-  expect(await page.evaluate(()=>localStorage.getItem('anna.readerShare'))).toBe('0.575');
+  expect(await page.evaluate(()=>localStorage.getItem('anna.readerShare'))).toBe('0.500');
   const url=page.url();await page.reload();await ready(page);await read(page,id);
   expect(await width()).toBe(720);expect(page.url()).toBe(url);
   // Double-clicking restores the default and forgets the preference.
-  await separator.dblclick();expect(await width()).toBe(Math.round(1252*.6));
+  await separator.dblclick();expect(await width()).toBe(Math.round(1440*.6));
   expect(await page.evaluate(()=>localStorage.getItem('anna.readerShare'))).toBeNull();
   // The modal reader has no separator.
   await page.setViewportSize({width:1100,height:820});await expect(separator).toBeHidden();
 });
 
 test('full-width reading shows a wide table whole and F6 gives the results their place back',async({page},testInfo)=>{
-  await page.setViewportSize({width:1280,height:800});await visit(page,'/?view='+encodeURIComponent('职业')+'&q='+encodeURIComponent('法师'));
+  await page.setViewportSize({width:1280,height:800});await visit(page,'/?type=class&q='+encodeURIComponent('法师'));
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
   // The class table is wider than the side reader: it scrolls inside its own frame and offers full width.
   const wide=page.locator('#detail-panel .table-frame.overflowing');await expect(wide).toHaveCount(1);

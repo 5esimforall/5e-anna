@@ -38,7 +38,7 @@ test('compact theme button replaces status text and supports pointer and keyboar
 
 test('theme follows the system, explicit choices persist without resetting query or reader',async({page})=>{
   await page.emulateMedia({colorScheme:'dark'});
-  await page.goto(anna+'/?view='+encodeURIComponent('法术')+'&q=Shield');await ready(page);
+  await page.goto(anna+'/?type=spell&q=Shield');await ready(page);
   await expect(root(page)).toHaveAttribute('data-theme','dark');
   await expect(control(page)).toHaveAttribute('data-preference','system');
   await expect(root(page)).toHaveCSS('color-scheme','dark');
@@ -112,7 +112,7 @@ test('blocked storage does not prevent theme changes or query startup',async({br
 });
 
 test('dark palette keeps text contrast, narrow controls and error messages readable',async({page},testInfo)=>{
-  await page.goto(anna+'/?view='+encodeURIComponent('法术'));await ready(page);
+  await page.goto(anna+'/?type=spell');await ready(page);
   await choose(page,'dark');
   const contrast=await page.evaluate(()=>{
     const css=getComputedStyle(document.documentElement);

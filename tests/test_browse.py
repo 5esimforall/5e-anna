@@ -53,9 +53,9 @@ class NormalizeTests(unittest.TestCase):
         self.assertEqual(sorted(names,key=browse.name_key),['1 平方码丝绸','１级：全角','2级：乙','10级：甲','alpha','Ｂeta'])
         self.assertIsNone(browse.name_key(''))
         from serve import TYPES
-        # Every entry type has a place in the reading order, so a mixed view never falls back to code order.
+        # Every entry type has a place in the reading order, so mixed results never fall back to code order.
         self.assertEqual(set(browse.TYPE_ORDER),set(TYPES))
-        self.assertEqual(browse.schema(None,'')['default_sort'],'type')
+        self.assertEqual(browse.schema_for([])['default_sort'],'type')
         db=sqlite3.connect(':memory:');browse.register(db)
         db.execute('create table entries(id,name,name_zh,name_en,type,page_path,start)')
         for i,(t,n) in enumerate([('rule','甲'),('spell','乙'),('class','丙'),('mystery','丁')]):db.execute('insert into entries values(?,?,?,?,?,?,?)',(str(i),n,n,'',t,'',0))
@@ -89,46 +89,46 @@ class BrowseCorpusTests(unittest.TestCase):
     def tearDown(self):self.db.close()
     def ids(self,params):return {e['id'] for e in query(self.db,params,export=True)['rows']}
     def test_facets_differ_by_type(self):
-        spells=browse.facets(self.db,'法术');monsters=browse.facets(self.db,'生物数据卡');items=browse.facets(self.db,'魔法物品')
+        spells=browse.facets(self.db,['spell']);monsters=browse.facets(self.db,['creature']);items=browse.facets(self.db,['magic_item'])
         self.assertIn('spell_classes',spells['schema']['facets']);self.assertNotIn('rarity',spells['schema']['facets'])
         self.assertEqual(monsters['schema']['range'],'cr');self.assertIn('rarity',items['schema']['facets'])
         self.assertEqual(spells['total'],1385)
     def test_multiselect_union_and_intersection(self):
-        base={'view':['法术']};a=self.ids(base|{'f_school':['塑能']});b=self.ids(base|{'f_school':['防护']})
+        base={'type':['spell']};a=self.ids(base|{'f_school':['塑能']});b=self.ids(base|{'f_school':['防护']})
         self.assertEqual(self.ids(base|{'f_school':['塑能','防护']}),a|b)
         wizard=self.ids(base|{'f_spell_classes':['法师']})
         self.assertEqual(self.ids(base|{'f_school':['塑能','防护'],'f_spell_classes':['法师']}),(a|b)&wizard)
         self.assertEqual(self.ids(base|{'f_school':[browse.NONE]}),set())
     def test_source_union_and_versions(self):
         sources=[r[0] for r in self.db.execute("select id from sources where name in ('玩家手册2014','玩家手册2024')")]
-        base={'view':['法术']}
+        base={'type':['spell']}
         a=self.ids(base|{'source':sources[:1]});b=self.ids(base|{'source':sources[1:]})
         self.assertEqual(self.ids(base|{'source':sources}),a|b)
         self.assertEqual(self.ids(base|{'ruleset':['5e','5r']}),self.ids(base|{'ruleset':['5e']})|self.ids(base|{'ruleset':['5r']}))
     def test_origin_multiselect(self):
-        base={'view':['魔法物品']}
+        base={'type':['magic_item']}
         self.assertEqual(self.ids(base|{'origin':['官方','合作']}),self.ids(base|{'origin':['官方']})|self.ids(base|{'origin':['合作']}))
         self.assertEqual(self.ids(base|{'origin':[browse.NONE]}),set())
     def test_boolean_conflict_disjoint(self):
-        base={'view':['法术']};states=[self.ids(base|{'f_concentration':[v]}) for v in ['true','false',browse.UNKNOWN,browse.CONFLICT]]
+        base={'type':['spell']};states=[self.ids(base|{'f_concentration':[v]}) for v in ['true','false',browse.UNKNOWN,browse.CONFLICT]]
         for a in range(len(states)):
             for b in range(a):self.assertFalse(states[a]&states[b])
         self.assertEqual(set.union(*states),self.ids(base))
         self.assertEqual(len(states[-1]),13)
     def test_cr_inclusive_range_and_order(self):
-        rows=query(self.db,{'view':['生物数据卡'],'cr_min':['1/8'],'cr_max':['1/2'],'sort':['cr']},export=True)['rows']
+        rows=query(self.db,{'type':['creature'],'cr_min':['1/8'],'cr_max':['1/2'],'sort':['cr']},export=True)['rows']
         ranks=[browse.sort_value(json.dumps(e['fields']),'cr') for e in rows]
         self.assertTrue(ranks);self.assertEqual(ranks,sorted(ranks));self.assertTrue(all(.125<=x<=.5 for x in ranks))
         for p in [{'cr_min':['2'],'cr_max':['1']},{'cr_min':['nan']},{'cr_max':['1/0']},{'dir':['DROP']},{'limit':['-1']}]:
             with self.assertRaises(ValueError):query(self.db,p)
     def test_special_material_false_requires_material(self):
-        rows=query(self.db,{'view':['法术'],'f_special_material':['false']})['rows']
+        rows=query(self.db,{'type':['spell'],'f_special_material':['false']})['rows']
         self.assertTrue(rows);self.assertTrue(all(r['fields']['material']=='M' for r in rows))
     def test_export_matches_sorted_rows_and_columns(self):
-        p={'view':['魔法物品'],'f_rarity':['普通','珍稀'],'sort':['rarity'],'dir':['desc'],'limit':['50']}
+        p={'type':['magic_item'],'f_rarity':['普通','珍稀'],'sort':['rarity'],'dir':['desc'],'limit':['50']}
         allrows=query(self.db,p,export=True)['rows'];first=query(self.db,p|{'versions':['each']})['rows']
         self.assertEqual([r['id'] for r in allrows[:50]],[r['id'] for r in first])
-        csv=csv_export(allrows,browse.schema(self.db,'魔法物品')).decode('utf-8-sig')
+        csv=csv_export(allrows,browse.schema_for(['magic_item'])).decode('utf-8-sig')
         self.assertIn('稀有度',csv.splitlines()[0]);self.assertIn('同调条件',csv.splitlines()[0])
     def stacked_pages(self,params):
         rows=[]
@@ -137,7 +137,7 @@ class BrowseCorpusTests(unittest.TestCase):
             rows+=data['rows']
             if len(rows)>=data['total']:return data,rows
     def test_stacked_versions_partition_the_matched_set(self):
-        for params in [{'view':['法术'],'sort':['name']},{'view':['生物数据卡'],'sort':['cr'],'dir':['desc']},{'sort':['name']}]:
+        for params in [{'type':['spell'],'sort':['name']},{'type':['creature'],'sort':['cr'],'dir':['desc']},{'sort':['name']}]:
             data,rows=self.stacked_pages(params)
             flat=[r['id'] for r in query(self.db,params,export=True)['rows']]
             listed=[v['id'] for r in rows for v in r['versions']]
@@ -149,30 +149,30 @@ class BrowseCorpusTests(unittest.TestCase):
             for r in rows:
                 self.assertEqual(r['versions'][0]['id'],r['id'])
                 if len(r['versions'])>1:self.assertIsNotNone(r['stack'])
-        self.assertEqual(query(self.db,{'view':['法术']})['total'],933)
+        self.assertEqual(query(self.db,{'type':['spell']})['total'],933)
     def test_class_features_never_stack_across_classes(self):
-        data,rows=self.stacked_pages({'view':['职业能力'],'q':['属性值提升']})
+        data,rows=self.stacked_pages({'type':['class_feature'],'q':['属性值提升']})
         self.assertGreater(len(rows),10);self.assertTrue(all(len(r['versions'])==1 for r in rows))
         self.assertEqual(data['total'],data['versions_total'])
     def test_ruleset_preference_and_filters_shape_stacks(self):
         for prefer,other in [('5r','5e'),('5e','5r')]:
-            _,rows=self.stacked_pages({'view':['法术'],'prefer':[prefer]})
+            _,rows=self.stacked_pages({'type':['spell'],'prefer':[prefer]})
             for r in rows:
                 rulesets=[v['ruleset'] for v in r['versions']]
                 if prefer in rulesets:self.assertEqual(r['ruleset'],prefer)
                 elif other in rulesets:self.assertEqual(r['ruleset'],other)
-        _,rows=self.stacked_pages({'view':['法术'],'ruleset':['5e']})
+        _,rows=self.stacked_pages({'type':['spell'],'ruleset':['5e']})
         self.assertTrue(all(v['ruleset']=='5e' for r in rows for v in r['versions']))
-        each=query(self.db,{'view':['法术'],'versions':['each']})
+        each=query(self.db,{'type':['spell'],'versions':['each']})
         self.assertEqual(each['total'],1385);self.assertTrue(all('versions' not in r for r in each['rows']))
         for bad in [{'versions':['merge']},{'prefer':['2014']}]:
             with self.assertRaises(ValueError):query(self.db,bad)
     def test_version_differences_and_reader_comparison(self):
-        row=query(self.db,{'view':['法术'],'q':['以太化']})['rows'][0]
+        row=query(self.db,{'type':['spell'],'q':['以太化']})['rows'][0]
         other=row['versions'][1]
         self.assertEqual((row['ruleset'],other['ruleset']),('5r','5e'))
         self.assertEqual(row['version_diffs'],{'school':[other['id']]})
-        fireball=query(self.db,{'view':['法术'],'q':['火球术']})['rows'][0]
+        fireball=query(self.db,{'type':['spell'],'q':['火球术']})['rows'][0]
         self.assertEqual(len(fireball['versions']),2);self.assertNotIn('components',fireball['version_diffs'])
         compare=detail(self.db,other['id'])['versions']
         self.assertEqual([m['id'] for m in compare['members']],[row['id'],other['id']])
@@ -180,7 +180,7 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertIn('school',differs);self.assertIn('duration',differs);self.assertNotIn('spell_level',differs)
         # Every version in a stack is still its own entry with its own detail.
         self.assertNotEqual(detail(self.db,row['id'])['body'],detail(self.db,other['id'])['body'])
-        single=query(self.db,{'view':['法术'],'q':['不动物件']})['rows'][0]
+        single=query(self.db,{'type':['spell'],'q':['不动物件']})['rows'][0]
         self.assertEqual(len(single['versions']),1);self.assertIsNone(single['stack']);self.assertIsNone(detail(self.db,single['id'])['versions'])
     def test_search_order_puts_closer_names_first_in_stacked_and_flat_results(self):
         for versions in ('stacked','each'):
@@ -188,28 +188,28 @@ class BrowseCorpusTests(unittest.TestCase):
             names=[r['name_zh'] for r in rows]
             self.assertEqual(names[0],'火球术');self.assertLess(names.index('火球魔杖'),names.index('延迟爆裂火球'))
         # An explicit sort still wins over match quality.
-        rows=query(self.db,{'view':['法术'],'q':['火球'],'sort':['spell_level'],'dir':['desc']})['rows']
+        rows=query(self.db,{'type':['spell'],'q':['火球'],'sort':['spell_level'],'dir':['desc']})['rows']
         self.assertEqual([r['name_zh'] for r in rows],['延迟爆裂火球','火球术'])
     def test_export_ignores_stacking(self):
-        p={'view':['法术'],'f_spell_level':['7']}
-        csv=csv_export(query(self.db,p,export=True)['rows'],browse.schema(self.db,'法术')).decode('utf-8-sig').strip().splitlines()
+        p={'type':['spell'],'f_spell_level':['7']}
+        csv=csv_export(query(self.db,p,export=True)['rows'],browse.schema_for(['spell'])).decode('utf-8-sig').strip().splitlines()
         self.assertEqual(len(csv)-1,query(self.db,p|{'versions':['each']})['total'])
         self.assertGreater(len(csv)-1,query(self.db,p)['total'])
     def test_composite_spell_columns_keep_exported_parts(self):
-        config=browse.schema(self.db,'法术')
+        config=browse.schema_for(['spell'])
         self.assertEqual(config['composites'],{'components':['verbal','somatic','material'],'spell_markers':['ritual','concentration']})
         self.assertFalse({'verbal','somatic','material','ritual','concentration'}&set(config['columns']))
-        rows=query(self.db,{'view':['法术'],'f_verbal':['false'],'limit':['50']})['rows']
+        rows=query(self.db,{'type':['spell'],'f_verbal':['false'],'limit':['50']})['rows']
         self.assertTrue(rows);self.assertTrue(all(r['quickref']['verbal']==['false'] for r in rows))
         header=csv_export(rows,config).decode('utf-8-sig').splitlines()[0].split(',')
         for label in ['言语','姿势','材料','仪式','专注']:self.assertIn(label,header)
         self.assertNotIn('成分',header)
-        # Views without composites keep identical table and export columns.
-        items=browse.schema(self.db,'魔法物品')
+        # Tables without composites keep identical table and export columns.
+        items=browse.schema_for(['magic_item'])
         self.assertEqual(items['composites'],{})
         self.assertEqual(items['export_columns'],items['columns'])
 
-    def test_view_schema_follows_the_entry_types_it_holds(self):
+    def test_schema_follows_the_chosen_entry_types(self):
         # One kind keeps its own table; kinds that mix widen the generic table with each kind's readings.
         self.assertEqual(browse.schema_for({'magic_item'})['columns'],browse.configure('item')['columns'])
         self.assertEqual(browse.schema_for({'rule','condition'})['kinds'],['generic'])
@@ -225,26 +225,26 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertEqual(browse.schema_for({'reward','feat'})['facets'],['feat_category'])
         features=browse.schema_for({'class_feature'})
         self.assertEqual((features['columns'][:2],features['facets'],features['default_sort']),(['name','level'],['level'],'level'))
-        # The live 装备 view holds both kinds, so mundane gear shows its own price and weight.
-        self.assertEqual(browse.schema(self.db,'装备')['kinds'],['generic','equipment','item'])
-        rows=query(self.db,{'view':['装备'],'limit':['40']})['rows']
+        # Choosing mundane gear with magic items mixes both kinds, so mundane gear shows its own price and weight.
+        self.assertEqual(browse.schema_for(['equipment','magic_item'])['kinds'],['generic','equipment','item'])
+        rows=query(self.db,{'type':['equipment','magic_item'],'limit':['40']})['rows']
         gear=[r for r in rows if r['type']=='equipment']
         self.assertTrue(gear);self.assertTrue(all(r['fields'].get('price') for r in gear))
         self.assertEqual(rows[0]['type'],'equipment')
         # Its leading facets are the ones most of its entries can answer.
-        self.assertEqual([g['key'] for g in browse.facets(self.db,'装备')['groups']][:2],['rarity','item_type'])
-        header=csv_export(query(self.db,{'view':['装备']},export=True)['rows'],browse.schema(self.db,'装备')).decode('utf-8-sig').splitlines()[0].split(',')
+        self.assertEqual([g['key'] for g in browse.facets(self.db,['equipment','magic_item'])['groups']][:2],['rarity','item_type'])
+        header=csv_export(query(self.db,{'type':['equipment','magic_item']},export=True)['rows'],browse.schema_for(['equipment','magic_item'])).decode('utf-8-sig').splitlines()[0].split(',')
         for label in ['价格','重量','稀有度']:self.assertIn(label,header)
 
     def test_class_features_read_their_level_apart_from_the_name(self):
-        rows=query(self.db,{'view':['职业能力'],'limit':['60']})['rows']
+        rows=query(self.db,{'type':['class_feature'],'limit':['60']})['rows']
         # The level label left the display name and became a field the view sorts and filters by.
         self.assertTrue(all(not re.match(r'\d+\s*级\s*[:：]',r['name_zh']) for r in rows))
         levels=[browse.number(r['quickref']['level'][0]) for r in rows]
         self.assertEqual(levels,sorted(levels));self.assertEqual(levels[0],1)
-        options=[o['value'] for o in next(g for g in browse.facets(self.db,'职业能力')['groups'] if g['key']=='level')['options']]
+        options=[o['value'] for o in next(g for g in browse.facets(self.db,['class_feature'])['groups'] if g['key']=='level')['options']]
         self.assertEqual(options[:3],['1','2','3'])
-        tenth=query(self.db,{'view':['职业能力'],'f_level':['10'],'limit':['20']})['rows']
+        tenth=query(self.db,{'type':['class_feature'],'f_level':['10'],'limit':['20']})['rows']
         self.assertTrue(tenth);self.assertTrue(all(r['fields']['level']==10 for r in tenth))
         fact=self.db.execute("select status,rule from facts where field='level' and entry_id=?",(tenth[0]['id'],)).fetchone()
         self.assertEqual(tuple(fact),('原文明示','name_level_label'))

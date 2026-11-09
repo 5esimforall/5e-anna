@@ -11,7 +11,9 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    viewGroups:{monsters:'怪物',items:'物品',options:'角色选项',rules:'规则',other:'其他'},
+    typeGroups:{monsters:'怪物',items:'物品',options:'角色选项',rules:'规则',other:'其他'},
+    typePicker:'条目类型',onlyGroup:'只看{name}的全部类型',addType:'加入{name}',removeType:'移出{name}',moreTypes:'{first}等 {count} 类',
+    elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
@@ -32,7 +34,9 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    viewGroups:{monsters:'Monsters',items:'Items',options:'Character options',rules:'Rules',other:'Other'},
+    typeGroups:{monsters:'Monsters',items:'Items',options:'Character options',rules:'Rules',other:'Other'},
+    typePicker:'Entry types',onlyGroup:'Show every type under {name}',addType:'Add {name}',removeType:'Remove {name}',moreTypes:'{first} and {count} types',
+    elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
@@ -52,6 +56,7 @@ const rulesetShort=r=>ui.rulesets[r]?.[0]||r, rulesetFull=r=>ui.rulesets[r]?.[1]
 document.querySelector('#prefer').innerHTML=['5r','5e'].map(value=>`<option value="${value}" title="${esc(rulesetFull(value))}">${esc(rulesetShort(value))}</option>`).join('');
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
 for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('aria-label',ui[el.dataset.uiLabel]);el.title=ui[el.dataset.uiLabel];}
+$('#type-panel').setAttribute('aria-label',ui.typePicker);
 const fmt = n => Number(n).toLocaleString('zh-CN');
 const pretty = v => typeof v==='boolean'?ui.flags[v]:typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
@@ -62,16 +67,16 @@ const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','�
 const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions']);
 const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections']);
-// The rail groups views the way a table looks things up; views missing here still appear under “other”.
-const viewGroups=[[null,['法术']],['monsters',['生物数据卡','NPC','伙伴','坐骑']],['items',['装备','魔法物品','魔法武器','载具','动物购置','奖励']],
-  ['options',['职业','子职','职业能力','种族物种','背景','专长','战斗风格','传奇恩惠']],['rules',['状态动作规则','危害','扩展机制','设施','资料索引']]];
+// The type picker groups entry types the way a reader looks things up; types missing here still appear under “other”.
+const typeGroups=[[null,['spell']],['monsters',['creature']],['items',['equipment','magic_item','vehicle','animal_offer','reward']],
+  ['options',['class','subclass','class_feature','species','background','feat']],['rules',['condition','action','rule','hazard','trap','poison','disease','subsystem','facility','lore']]];
 // Audit mode is a per-browser viewing preference, never part of a shared query URL.
 const AUDIT_KEY='anna.audit', AUDIT_COLUMNS=new Set(['classification_status','legacy']), AUDIT_PARAMS=['status','legacy','conflict','sections'];
 const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
 let auditMode=(()=>{try{return localStorage.getItem(AUDIT_KEY)==='on';}catch{return false;}})();
 const visibleColumns=()=>schema.columns.filter(k=>auditMode||!AUDIT_COLUMNS.has(k));
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
-let currentData, currentEntry, detailGeneration=0, ready=false;
+let currentData, currentEntry, detailGeneration=0, ready=false, typeCounts=null;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const sourceURL=(path,start=0,end=0)=>'/source?'+new URLSearchParams({path,start,end})+'#evidence';
 const sourceOf=id=>metadata.sources.find(s=>s.id===id);
@@ -143,7 +148,7 @@ for(const el of [$('#source-details'),$('#audit-details')])el.addEventListener('
 window.addEventListener('pagehide',saveUiState);
 function setParam(key,value){value!==''&&value!==null?params.set(key,value):params.delete(key);}
 // The URL records only a sort the reader chose. Without one, a search ranks by match quality and an
-// empty search uses the view's default; the server applies the same rule (browse.sort_key).
+// empty search uses the table's default; the server applies the same rule (browse.sort_key).
 function effectiveSort(){
   const searching=!!params.get('q'),sort=params.get('sort')||(searching?'match':schema.default_sort);
   return sort==='match'&&!searching?schema.default_sort:sort;
@@ -188,8 +193,7 @@ function sync(){
   $('#display-toggle').classList.toggle('changed',!stacked||params.has('prefer'));
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
-  for(const button of $('#views').querySelectorAll('[data-view]')){const active=button.dataset.view===(params.get('view')||'');button.classList.toggle('active',active);button.setAttribute('aria-pressed',active);}
-  revealActiveView();
+  $('#title').textContent=typeTitle();renderTypePanel();
   for(const g of groups){
     const el=document.querySelector(`[data-group="${g.key}"]`);if(!el)continue;
     const values=selected(g);el.classList.toggle('all-selected',!params.has(g.key));
@@ -197,7 +201,8 @@ function sync(){
     el.querySelector('[data-action=all]')?.classList.toggle('on',!params.has(g.key));
     for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
   }
-  const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['cr_min','cr_max','q'].includes(k));
+  // The types lead the chips: they scope every other condition.
+  const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max','q'].includes(k)).sort((a,b)=>(b==='type')-(a==='type'));
   $('#filter-count').textContent=active.length||'';
   const extraCount=groups.filter(g=>params.has(g.key)&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
@@ -206,7 +211,7 @@ function sync(){
   $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
   $('#active-filters').innerHTML=active.map(k=>{
     const g=groups.find(g=>g.key===k);const values=params.getAll(k);
-    const labels=values.map(v=>v===NONE?'无选项':g?.options.find(o=>o.value===v)?.label||v);
+    const labels=values.map(v=>k==='type'?typeName(v):v===NONE?'无选项':g?.options.find(o=>o.value===v)?.label||v);
     const text=k==='q'?'搜索：'+values[0]:(g?.label||fieldNames[k]||k)+'：'+(labels.length>4?labels.slice(0,3).join('、')+` 等 ${labels.length} 项`:labels.join('、'));
     return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
   }).join('');
@@ -226,10 +231,12 @@ function failResults(message,status){
 async function changeView(){
   const gen=++panelGeneration;request?.abort();generation++;ready=false;
   awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;
-  const view=params.get('view')||'';
   try{
-    const data=await api('/api/facets?'+new URLSearchParams({view}));if(gen!==panelGeneration)return;
+    const data=await api('/api/facets?'+new URLSearchParams(chosenTypes().map(t=>['type',t])));if(gen!==panelGeneration)return;
     schema=data.schema;groups=data.groups.map(g=>({...g,key:'f_'+g.key}));
+    // Conditions the new table cannot answer leave with the old types; shared ones (search, sources, rules) stay.
+    const answerable=new Set([...schema.facets,...schema.flags]);
+    for(const key of [...params.keys()])if(key.startsWith('f_')&&!answerable.has(key.slice(2))||['cr_min','cr_max'].includes(key)&&!schema.range)params.delete(key);
     groups.push(...[
       {key:'ruleset',label:'规则版本',options:['5e','5r','待核'].map(value=>({value,label:rulesetShort(value),title:rulesetFull(value)}))},
       {key:'origin',label:'来源性质',mode:'single',options:['官方','合作','待核'].map(value=>({value,label:value}))},
@@ -249,7 +256,7 @@ async function changeView(){
     $('#source-filters').innerHTML=multiGroup(groups.find(g=>g.key==='source'));
     $('#audit-filters').innerHTML=groups.filter(g=>['legacy','status'].includes(g.key)).map(multiGroup).join('');
     $('#source-search').value='';
-    $('#title').textContent=view||'全部条目';$('#view-total').textContent=`${fmt(data.total)} 个版本候选`;
+    $('#type-total').textContent=`${fmt(data.total)} 个版本候选`;
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
     $('#audit-details').open=AUDIT_PARAMS.some(k=>params.has(k));
@@ -369,7 +376,7 @@ async function load(){
   const limit=Math.min(RESTORE_LIMIT,Math.max(BATCH,Math.ceil(restoreRows/BATCH)*BATCH));restoreRows=0;
   try{
     const data=await api(entriesURL(0,limit),request.signal);if(gen!==generation)return;
-    currentData=data;
+    currentData=data;if(data.type_counts)typeCounts=data.type_counts;renderTypePanel();renderElsewhere();
     $('#result-count').innerHTML=data.versions==='stacked'?ui.stackedCount.replace('{rows}',`<strong>${fmt(data.total)}</strong>`).replace('{versions}',fmt(data.versions_total)):`找到 <strong>${fmt(data.total)}</strong> 条`;
     // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.
     $('#result-count').title=$('#result-count').textContent;
@@ -408,13 +415,13 @@ $('#q').addEventListener('compositionend',()=>{composingSearch=false;queueSearch
 $('#q').addEventListener('input',e=>{if(!e.isComposing)queueSearch();});
 $('#search-form').addEventListener('submit',e=>{e.preventDefault();if(composingSearch)return;setParam('q',$('#q').value.trim());changed();});
 $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#filter-panel').hidden=hidden;$('#toggle-filters').setAttribute('aria-expanded',!hidden);saveUiState();};
-$('#reset').onclick=()=>{const view=params.get('view');params=new URLSearchParams();if(view)params.set('view',view);historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();};
-$('#views').addEventListener('click',e=>{
-  const b=e.target.closest('[data-view]');if(!b)return;
-  for(const key of [...params.keys()])if(key.startsWith('f_')||['entry','sort','dir','cr_min','cr_max','field','value'].includes(key))params.delete(key);
-  setParam('view',b.dataset.view);historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();
+// Reset clears the conditions within the chosen types; the types name the table, and their chip removes them.
+$('#reset').onclick=()=>{const types=chosenTypes();params=new URLSearchParams(types.map(t=>['type',t]));historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();};
+$('#active-filters').addEventListener('click',e=>{
+  const b=e.target.closest('[data-remove]');if(!b)return;const key=b.dataset.remove;
+  if(key==='type'){chooseTypes([]);return;}
+  params.delete(key);if(['cr_min','cr_max'].includes(key))$('#'+key).value='';changed();
 });
-$('#active-filters').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(!b)return;const key=b.dataset.remove;params.delete(key);if(['cr_min','cr_max'].includes(key))$('#'+key).value='';changed();});
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
@@ -476,11 +483,11 @@ $('#detail').addEventListener('keydown',e=>{
 $('#entry-prev').onclick=()=>stepEntry(-1);$('#entry-next').onclick=()=>stepEntry(1);
 let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
-  const gen=++navigationGeneration,state=e.state?.anna,oldView=params.get('view');
+  const gen=++navigationGeneration,state=e.state?.anna,oldTypes=chosenTypes().join();
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
   params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
-  if(oldView===params.get('view')&&ready){sync();await load();}else await changeView();
+  if(oldTypes===chosenTypes().join()&&ready){sync();await load();}else await changeView();
   if(gen!==navigationGeneration)return;
   if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:'body');
   if(gen!==navigationGeneration)return;
@@ -491,6 +498,7 @@ window.addEventListener('popstate',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.isComposing)return;
+  if(e.key==='Escape'&&!$('#type-panel').hidden){e.preventDefault();setTypePanel(false,{focus:true});return;}
   if(e.key==='Escape'&&!$('#display-panel').hidden){e.preventDefault();setDisplayMenu(false,{focus:true});return;}
   if(e.key==='Escape'&&$('#detail').open){e.preventDefault();closeEntry();return;}
   // F6 moves to the results, so full-width reading gives them their place back first.
@@ -499,21 +507,12 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='/'&&!$('#detail').matches(':modal')&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!e.target.isContentEditable){e.preventDefault();$('#q').focus();}
 });
-// Sideways strips (the narrow view rail, the active filters) scroll without a scrollbar, whose thumb read as a
-// selection under the first item; only an edge that still hides more fades.
+// The active filters scroll sideways without a scrollbar, whose thumb read as a selection under the first
+// item; only an edge that still hides more fades.
 function markStripEdges(strip){
   strip.classList.toggle('more-before',strip.scrollLeft>1);strip.classList.toggle('more-after',strip.scrollLeft+strip.clientWidth<strip.scrollWidth-1);
 }
-// The current view is kept in sight on the narrow rail.
-function revealActiveView(){
-  const nav=$('#views'),active=nav.querySelector('.active');
-  if(active&&nav.scrollWidth>nav.clientWidth){
-    const rail=nav.getBoundingClientRect(),box=active.getBoundingClientRect();
-    if(box.left<rail.left||box.right>rail.right)nav.scrollLeft+=box.left-rail.left-(rail.width-box.width)/2;
-  }
-  markStripEdges(nav);
-}
-for(const strip of [$('#views'),$('#active-filters')]){
+for(const strip of [$('#active-filters')]){
   strip.addEventListener('scroll',()=>markStripEdges(strip),{passive:true});
   new ResizeObserver(()=>markStripEdges(strip)).observe(strip);
 }
@@ -525,17 +524,90 @@ function setDisplayMenu(open,{focus=false}={}){
   if(!open&&focus)$('#display-toggle').focus();
 }
 $('#display-toggle').addEventListener('click',()=>setDisplayMenu($('#display-panel').hidden));
-document.addEventListener('pointerdown',e=>{if(!$('#display-panel').hidden&&!e.target.closest('.menu'))setDisplayMenu(false);});
-function renderViews(){
-  const button=v=>`<button data-view="${esc(v.name)}">${esc(v.name||ui.allEntries)}<span>${fmt(v.count)}</span></button>`;
-  const byName=new Map(metadata.views.map(v=>[v.name,v])),listed=new Set(viewGroups.flatMap(([,names])=>names));
-  const groupsWithOther=[...viewGroups,['other',metadata.views.map(v=>v.name).filter(n=>!listed.has(n))]];
-  $('#views').innerHTML=button({name:'',count:metadata.summary.typed_versions})+groupsWithOther.map(([key,names])=>{
-    const views=names.map(n=>byName.get(n)).filter(Boolean);if(!views.length)return '';
-    if(!key)return views.map(button).join('');
-    return `<div class="view-group" role="group" aria-labelledby="view-group-${key}"><div class="view-group-label" id="view-group-${key}">${esc(ui.viewGroups[key])}</div>${views.map(button).join('')}</div>`;
-  }).join('');
+document.addEventListener('pointerdown',e=>{
+  if(!$('#display-panel').hidden&&!e.target.closest('#display-panel,#display-toggle'))setDisplayMenu(false);
+  if(!$('#type-panel').hidden&&!e.target.closest('#type-panel,#type-toggle,#elsewhere'))setTypePanel(false);
+});
+// Entry types are the first filter: they scope the results and pick the table's columns, facets and sorts.
+// The heading names them and opens the picker; their chip among the active filters removes them.
+const chosenTypes=()=>params.getAll('type');
+const typeName=t=>metadata?.types[t]||t;
+const typeRank=t=>{const i=metadata.type_order.indexOf(t);return i<0?metadata.type_order.length:i;};
+// A preset is one type plus one facet value; it names the heading while exactly that slice is chosen.
+function activePreset(){
+  const types=chosenTypes();if(types.length!==1||!metadata)return null;
+  return metadata.presets.find(p=>p.type===types[0]&&params.getAll('f_'+p.field).join()===p.value)||null;
 }
+function typeTitle(){
+  const types=chosenTypes();if(!types.length)return ui.allEntries;
+  const preset=activePreset();if(preset)return preset.name;
+  return types.length<=2?types.map(typeName).join('、'):ui.moreTypes.replace('{first}',typeName(types[0])).replace('{count}',types.length);
+}
+// Changing the types keeps a type-specific condition only when every chosen type can answer it: adding 法术 to
+// 魔法武器 lists the spells too instead of filtering them all out by item category.
+function chooseTypes(types,preset=null){
+  types=[...new Set(types)].sort((a,b)=>typeRank(a)-typeRank(b));
+  params.delete('type');types.forEach(t=>params.append('type',t));
+  const shared=types.length?types.map(t=>new Set(metadata.type_conditions[t])).reduce((a,b)=>new Set([...a].filter(x=>b.has(x)))):new Set();
+  for(const key of [...params.keys()]){
+    const condition=key.startsWith('f_')?key.slice(2):['cr_min','cr_max'].includes(key)?'cr':null;
+    if(condition&&(preset||!shared.has(condition)))params.delete(key);
+  }
+  if(preset)params.set('f_'+preset.field,preset.value);
+  params.delete('entry');historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();
+}
+// Counts follow the search and the shared filters (browse: serve.type_counts), so the picker shows where a search hits.
+function renderTypePanel(){
+  if(!metadata)return;
+  const panel=$('#type-panel'),focused=panel.contains(document.activeElement)?document.activeElement:null;
+  const focusKey=focused&&['type','only','preset','groupTypes'].map(k=>k in focused.dataset?`[data-${k.replace(/[A-Z]/g,c=>'-'+c.toLowerCase())}="${CSS.escape(focused.dataset[k])}"]`:'').find(Boolean);
+  const chosen=new Set(chosenTypes()),preset=activePreset(),count=t=>typeCounts?.[t]||0;
+  const listed=new Set(typeGroups.flatMap(([,types])=>types));
+  const total=metadata.type_order.reduce((sum,t)=>sum+count(t),0);
+  const row=t=>{
+    const name=typeName(t),only=chosen.size===1&&chosen.has(t)&&!preset,presets=metadata.presets.filter(p=>p.type===t);
+    return `<div class="type-row ${chosen.has(t)?'chosen':''} ${count(t)?'':'empty'}"><input type="checkbox" data-type="${esc(t)}" ${chosen.has(t)?'checked':''} aria-label="${esc((chosen.has(t)?ui.removeType:ui.addType).replace('{name}',name))}">`+
+      `<button type="button" class="type-only" data-only="${esc(t)}" aria-pressed="${only}">${esc(name)}<span>${fmt(count(t))}</span></button></div>`+
+      (presets.length?`<div class="type-presets">${presets.map(p=>`<button type="button" data-preset="${esc(p.name)}" class="${preset===p?'chosen':''}" aria-pressed="${preset===p}">${esc(p.name)}</button>`).join('')}</div>`:'');
+  };
+  const all=`<button type="button" class="type-all ${chosen.size?'':'chosen'}" data-only="" aria-pressed="${!chosen.size}">${esc(ui.allEntries)}<span>${fmt(total)}</span></button>`;
+  panel.innerHTML='<div class="type-columns">'+[...typeGroups,['other',metadata.type_order.filter(t=>!listed.has(t))]].map(([key,types])=>{
+    types=types.filter(t=>metadata.type_order.includes(t));if(!types.length&&key)return '';
+    const label=key?`<button type="button" class="type-group-label" data-group-types="${esc(types.join(' '))}" title="${esc(ui.onlyGroup.replace('{name}',ui.typeGroups[key]))}">${esc(ui.typeGroups[key])}</button>`:'';
+    return `<div class="type-group" role="group" aria-label="${esc(key?ui.typeGroups[key]:ui.typePicker)}">${key?label:all}${types.map(row).join('')}</div>`;
+  }).join('')+'</div>';
+  if(focusKey)panel.querySelector(focusKey)?.focus();
+}
+// While searching within some types, matches in the others stay one step away.
+function renderElsewhere(){
+  const types=chosenTypes(),searching=!!params.get('q');
+  const others=searching&&types.length?Object.entries(typeCounts||{}).filter(([t,n])=>n&&t!=='section'&&!types.includes(t)).sort(([a],[b])=>typeRank(a)-typeRank(b)):[];
+  const total=others.reduce((sum,[,n])=>sum+n,0),list=others.map(([t,n])=>`${typeName(t)} ${fmt(n)}`).join(' · ');
+  $('#elsewhere').hidden=!total;$('#elsewhere').textContent=total?ui.elsewhere.replace('{count}',fmt(total)):'';
+  $('#elsewhere').title=total?ui.elsewhereTitle.replace('{list}',list):'';
+  $('#empty-elsewhere').innerHTML=others.map(([t,n])=>`<button type="button" data-only="${esc(t)}">${esc(typeName(t))} <span class="muted">${fmt(n)}</span></button>`).join('');
+}
+function setTypePanel(open,{focus=false}={}){
+  $('#type-panel').hidden=!open;$('#type-toggle').setAttribute('aria-expanded',String(open));
+  if(open)setDisplayMenu(false);
+  if(open&&focus)($('#type-panel [aria-pressed=true]')||$('#type-panel button'))?.focus();
+  if(!open&&focus)$('#type-toggle').focus();
+}
+$('#type-toggle').addEventListener('click',()=>setTypePanel($('#type-panel').hidden,{focus:true}));
+$('#elsewhere').addEventListener('click',()=>setTypePanel(true,{focus:true}));
+$('#type-panel').addEventListener('change',e=>{
+  const t=e.target.dataset?.type;if(!t)return;
+  const types=new Set(chosenTypes());e.target.checked?types.add(t):types.delete(t);chooseTypes([...types]);
+});
+$('#type-panel').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if('only' in b.dataset)chooseTypes(b.dataset.only?[b.dataset.only]:[]);
+  else if(b.dataset.groupTypes)chooseTypes(b.dataset.groupTypes.split(' '));
+  else if(b.dataset.preset){const p=metadata.presets.find(p=>p.name===b.dataset.preset);chooseTypes([p.type],p);}
+  else return;
+  setTypePanel(false,{focus:true});
+});
+$('#empty-elsewhere').addEventListener('click',e=>{const b=e.target.closest('[data-only]');if(b)chooseTypes([b.dataset.only]);});
 // Reading mode folds review apparatus away; filters already in the URL stay visible and editable.
 function applyAuditMode(){
   document.documentElement.dataset.audit=auditMode?'on':'off';
@@ -566,10 +638,11 @@ async function init(){
   const saved=history.state?.anna;restoringUi=true;
   try{
     metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
-    renderViews();
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');restoreRows=saved?.loadedRows||0;
+    // Category views became type filters; an old view link opens on all entries with its other conditions.
+    params.delete('view');
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     await changeView();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);

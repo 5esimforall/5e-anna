@@ -40,7 +40,7 @@ SCHEMAS = {
               'columns':['name','spell_level','school','spell_classes','casting_time','components','spell_markers','sources','ruleset'],
               'export_columns':['name','spell_level','school','spell_classes','casting_time','verbal','somatic','material','ritual','concentration','sources','ruleset'],
               'sorts':['source','name','name_en','spell_level','school','casting_time'], 'default_sort':'spell_level'},
-    'creature': {'facets':['size','creature_type'], 'flags':['legendary_actions'], 'range':'cr',
+    'creature': {'facets':['size','creature_type','role'], 'flags':['legendary_actions'], 'range':'cr',
                  'columns':['name','size','creature_type','cr','ac','hp','legendary_actions','sources','ruleset'],
                  'sorts':['source','name','name_en','cr','size','creature_type','ac','hp'], 'default_sort':'cr'},
     'item': {'facets':['rarity','item_type'], 'flags':['attunement'],
@@ -70,13 +70,13 @@ def finish(config):
     return config
 
 
-# An entry's own type picks its quick-reference schema wherever it is read, whichever view opened it.
+# An entry's own type picks its quick-reference schema wherever it is read, whichever filter listed it.
 TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal', 'class_feature':'feature'}
 GENERIC = 'generic'
 
 
 def combine(kinds):
-    """A view mixing kinds reads as the generic table (name, type, then identity columns)
+    """Mixed kinds read as the generic table (name, type, then identity columns)
     widened by each kind's own columns, facets and sorts, in the kinds' reading order."""
     base,own = SCHEMAS[GENERIC],[SCHEMAS[k] for k in kinds]
     merge = lambda key:list(dict.fromkeys(x for s in [base,*own] for x in s.get(key,[])))
@@ -90,6 +90,12 @@ def combine(kinds):
                    'sorts':merge('sorts'), 'default_sort':base['default_sort']})
 
 
+def type_conditions(entry_type):
+    """The type-specific conditions an entry type can answer: its kind's facets, flags and range."""
+    own=SCHEMAS[TYPE_KINDS.get(entry_type,GENERIC)]
+    return [*own['facets'],*own['flags'],*([own['range']] if own.get('range') else [])]
+
+
 def schema_for(types):
     """The table a set of entry types reads as: one kind's own schema, or the generic table
     widened by every kind present when types mix (装备 lists mundane gear beside magic items)."""
@@ -99,10 +105,16 @@ def schema_for(types):
     return combine([k for k in kinds if k!=GENERIC])
 
 
-def schema(db, view):
-    """A view's schema follows the entry types it actually holds; all entries read as the generic table."""
-    if not view:return configure(GENERIC)
-    return schema_for(r[0] for r in db.execute('SELECT DISTINCT type FROM "'+view.replace('"','""')+'"'))
+# Presets name a common slice of one type: the type plus one facet value. They are ordinary filters
+# (the reader sees and removes the facet like any other); the type picker offers them beside their type.
+PRESETS = (
+    {'name':'NPC','type':'creature','field':'role','value':'NPC'},
+    {'name':'伙伴','type':'creature','field':'role','value':'伙伴'},
+    {'name':'坐骑','type':'creature','field':'role','value':'坐骑'},
+    {'name':'魔法武器','type':'magic_item','field':'item_type','value':'武器'},
+    {'name':'战斗风格','type':'feat','field':'feat_category','value':'战斗风格'},
+    {'name':'传奇恩惠','type':'feat','field':'feat_category','value':'传奇恩惠'},
+)
 
 
 # These fields name or locate a version (what it is, which book, which rules); they are not readings of its rules.
@@ -189,7 +201,7 @@ def name_key(text):
     return re.sub(r'\d+',lambda m:m[0].zfill(8),unicodedata.normalize('NFKC',text).casefold())
 
 
-# Mixed views list kinds in the order a reader meets them: character options, spells, gear, creatures, then rules.
+# Mixed results list kinds in the order a reader meets them: character options, spells, gear, creatures, then rules.
 TYPE_ORDER = ('class','subclass','class_feature','species','background','feat','spell','equipment','magic_item','creature',
               'animal_offer','vehicle','reward','facility','condition','action','rule','hazard','trap','poison','disease',
               'subsystem','lore','section')
@@ -236,7 +248,7 @@ def match_rank(zh, en, name, query):
 
 
 def sort_key(params, default):
-    """The sort in effect: an explicit choice, else match quality while searching, else the view's default."""
+    """The sort in effect: an explicit choice, else match quality while searching, else the table's default."""
     searching=bool(params.get('q',[''])[0].strip())
     sort=params.get('sort',[MATCH if searching else default])[0]
     return default if sort==MATCH and not searching else sort
@@ -251,7 +263,7 @@ def order_sql(params, default='name'):
     direct={'name':"browse_name(COALESCE(NULLIF(e.name_zh,''),e.name))",'name_en':"browse_name(NULLIF(e.name_en,''))",
             'type':TYPE_RANK,'ruleset':'e.ruleset','source':'e.page_path'}
     if sort==MATCH:
-        # Within one match class, shorter names are closer matches; then the view's usual order.
+        # Within one match class, shorter names are closer matches; then the table's usual order.
         rank="browse_match(e.name_zh,e.name_en,e.name,browse_query())"
         return f"{rank} {direction.upper()},length(COALESCE(NULLIF(e.name_zh,''),e.name)),"+order_sql({'sort':[default]},default)
     sortable={x for s in SCHEMAS.values() for x in s['sorts']}
@@ -315,22 +327,21 @@ def option_order(field,value):
     return (1,0,value)
 
 
-def facets(db,view):
-    allowed=[r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name!='entry_text'")]
-    if view and view not in allowed:raise ValueError('未知分类视图')
-    config=schema(db,view)
-    where='e.id IN (SELECT id FROM "'+view.replace('"','""')+'")' if view else "e.type!='section'"
+def facets(db,types):
+    """Facet options and counts for the chosen entry types (all typed entries when none is chosen)."""
+    config=schema_for(types)
+    where=('e.type IN ('+','.join('?' for _ in types)+')') if types else "e.type!='section'"
     counts={f:Counter() for f in config['facets']+config['flags']}
     total=0
-    for row in db.execute('SELECT e.fields FROM entries e WHERE '+where):
+    for row in db.execute('SELECT e.fields FROM entries e WHERE '+where,list(types)):
         total+=1;fields=json.loads(row[0])
         for f in counts:counts[f].update(normalized(fields,f))
-    source_counts=dict(db.execute('SELECT es.source_id,count(*) FROM entry_sources es JOIN entries e ON e.id=es.entry_id WHERE '+where+' GROUP BY es.source_id'))
+    source_counts=dict(db.execute('SELECT es.source_id,count(*) FROM entry_sources es JOIN entries e ON e.id=es.entry_id WHERE '+where+' GROUP BY es.source_id',list(types)))
     groups=[]
     for field,c in counts.items():
         groups.append({'key':field,'label':LABELS[field],'mode':'flag' if field in config['flags'] else 'multi',
                        'options':[{'value':v,'label':option_label(field,v),'count':c[v]} for v in sorted(c,key=lambda v:option_order(field,v))]})
-    # A mixed view leads with the facets most of its entries can answer (rarity before weapon mastery).
+    # Mixed types lead with the facets most of their entries can answer (rarity before weapon mastery).
     if len(config['kinds'])>1:groups.sort(key=lambda g:-(total-counts[g['key']][UNKNOWN]))
     return {'schema':config,'groups':groups,'source_counts':source_counts,'total':total}
 

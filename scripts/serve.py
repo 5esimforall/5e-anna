@@ -39,17 +39,30 @@ def first(params, name, default=''):
     return params.get(name, [default])[0]
 
 
-def views(db):
-    return [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name!='entry_text' ORDER BY name")]
+def entry_types(params):
+    """The chosen entry types. They scope the table and pick its schema; untyped sections stay behind `sections`."""
+    chosen = list(dict.fromkeys(params.get('type', [])))
+    if any(t not in TYPES or t=='section' for t in chosen): raise ValueError('未知条目类型')
+    return chosen
+
+
+# Type-specific conditions read one table; the counts by type keep only what every type can answer.
+TYPE_SPECIFIC = ('type','cr_min','cr_max','field','value')
+
+
+def type_counts(db, params):
+    """Matches per entry type under the search and the shared filters, so a search shows where else it hits."""
+    shared = {k:v for k,v in params.items() if k not in TYPE_SPECIFIC and not k.startswith('f_')}
+    where, values = filters(db, shared)
+    return dict(db.execute('SELECT e.type, count(*) FROM entries e'+where+' GROUP BY e.type', values).fetchall())
 
 
 def filters(db, params):
     clauses, values = [], []
     if first(params, 'sections') != '1': clauses.append("e.type!='section'")
-    view = first(params, 'view')
-    if view:
-        if view not in views(db): raise ValueError('未知分类视图')
-        clauses.append('e.id IN (SELECT id FROM "'+view.replace('"','""')+'")')
+    types = entry_types(params)
+    if types:
+        clauses.append('e.type IN ('+','.join('?' for _ in types)+')'); values.extend(types)
     q = first(params, 'q').strip()
     if len(q) > 200: raise ValueError('关键词过长')
     if q:
@@ -114,7 +127,7 @@ def query(db, params, export=False):
     where, values = filters(db,params)
     q = first(params,'q').strip()
     db.create_function('browse_query',0,lambda:q)
-    config = browse.schema(db,first(params,'view'))
+    config = browse.schema_for(entry_types(params))
     order = browse.order_sql(params,config['default_sort'])
     offset, limit = result_window(params)
     versions = first(params,'versions','stacked')
@@ -127,7 +140,9 @@ def query(db, params, export=False):
         sql = 'SELECT e.data FROM entries e'+where+' ORDER BY '+order
         if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[limit,offset]
         rows = [browse.enrich(json.loads(r[0])) for r in db.execute(sql,values)]
-        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows}
+        result = {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows}
+        if not export and offset==0: result['type_counts'] = type_counts(db,params)
+        return result
     # Stacking happens inside the matched set: filters decide which versions exist, then each
     # candidate group shows its preferred-ruleset version at that version's sorted position.
     first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
@@ -156,7 +171,10 @@ def query(db, params, export=False):
         row['stack'] = {'id':head['stack'],'status':head['status']} if head['status'] else None
         row['version_diffs'] = browse.version_diffs(config,row,stacked[1:])
         rows.append(row)
-    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows}
+    result = {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows}
+    # Later batches continue the same query, so only the first carries the counts by type.
+    if offset==0: result['type_counts'] = type_counts(db,params)
+    return result
 
 
 def meta(db):
@@ -164,11 +182,14 @@ def meta(db):
     sources = []
     for r in db.execute('SELECT s.data,count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id LEFT JOIN entries e ON e.id=es.entry_id AND e.type!=\'section\' GROUP BY s.id ORDER BY s.name'):
         s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'short_name':s['label'],'count':r['n']})
+    held = {r[0] for r in db.execute('SELECT DISTINCT type FROM entries')}
     review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
     review = json.loads(review[0]) if review else None
     if review: review['pending_rebuild'] = load_events(review['path'])[1] != review['sha256']
     return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
-            'views':[{'name':v,'count':db.execute('SELECT count(*) FROM "'+v.replace('"','""')+'"').fetchone()[0]} for v in views(db)]}
+            # Only types the data holds are offered; the picker lists them in reading order.
+            'type_order':[t for t in browse.TYPE_ORDER if t!='section' and t in held],'presets':list(browse.PRESETS),
+            'type_conditions':{t:browse.type_conditions(t) for t in TYPES if t!='section'}}
 
 
 def version_compare(db, entry):
@@ -277,7 +298,7 @@ class Handler(BaseHTTPRequestHandler):
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             with closing(connect(self.db_path)) as db:
                 if url.path=='/api/meta': self.send({**meta(db),'book_url':self.book_url})
-                elif url.path=='/api/facets': self.send(browse.facets(db,first(p,'view')))
+                elif url.path=='/api/facets': self.send(browse.facets(db,entry_types(p)))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))
                 elif url.path=='/api/entry-layout': self.send(entry_layout(db,first(p,'id'),Path(self.source_root)))
@@ -291,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
                 elif url.path=='/api/review-decisions': self.send(query_decisions(db,status=first(p,'status'),
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
-                elif url.path=='/api/export': self.send(csv_export(query(db,p,export=True)['rows'],browse.schema(db,first(p,'view'))),'text/csv; charset=utf-8',download=True)
+                elif url.path=='/api/export': self.send(csv_export(query(db,p,export=True)['rows'],browse.schema_for(entry_types(p))),'text/csv; charset=utf-8',download=True)
                 elif url.path=='/source':
                     row=db.execute('SELECT text FROM pages WHERE path=?',(first(p,'path'),)).fetchone()
                     if not row: raise LookupError('页面不存在')

@@ -13,6 +13,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from serve import DB, Handler, ThreadingHTTPServer, connect, query, detail, meta, csv_export
+import browse
 
 @unittest.skipUnless(DB.exists(),'Build the dataset first')
 class WebTests(unittest.TestCase):
@@ -42,14 +43,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(query(self.db,{'offset':['999999999']})['rows'],[])
     def test_phb_feats_and_intersection(self):
         sid=self.db.execute("select id from sources where name='玩家手册2024'").fetchone()[0]
-        p={'view':['专长'],'source':[sid],'ruleset':['5r']}
+        p={'type':['feat'],'source':[sid],'ruleset':['5r']}
         self.assertEqual(query(self.db,p)['total'],75)
         p['ruleset']=['5e'];self.assertEqual(query(self.db,p)['total'],0)
     def test_name_literal_and_case(self):
         self.assertEqual(query(self.db,{'q':["%' OR 1=1 --"]})['total'],0)
         self.assertEqual(query(self.db,{'q':['alert']})['total'],query(self.db,{'q':['ALERT']})['total'])
     def test_fields_and_conflicts(self):
-        rows=query(self.db,{'view':['法术'],'field':['school'],'value':['塑能']})['rows']
+        rows=query(self.db,{'type':['spell'],'field':['school'],'value':['塑能']})['rows']
         self.assertTrue(rows);self.assertTrue(all('塑能' in str(r['fields']['school']) for r in rows))
         rows=query(self.db,{'conflict':['1']})['rows'];self.assertTrue(rows);self.assertTrue(all(r['field_conflicts'] for r in rows))
     def test_detail_evidence(self):
@@ -72,11 +73,11 @@ class WebTests(unittest.TestCase):
                 self.assertEqual([c['id'] for c in m['candidate_entries']],m['candidates'])
                 self.assertTrue(all(c['name'] for c in m['candidate_entries']))
     def test_invalid_query(self):
-        for p in [{'view':['entries; DROP TABLE entries']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
+        for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)
         with self.assertRaises(LookupError):detail(self.db,'absent')
     def test_export_all_not_one_page(self):
-        data=query(self.db,{'view':['专长']},export=True)
+        data=query(self.db,{'type':['feat']},export=True)
         output=csv_export(data['rows']).decode('utf-8-sig')
         self.assertEqual(len(list(csv.reader(io.StringIO(output))))-1,data['total'])
         row=data['rows'][0].copy();row['name_en']='=1+1'
@@ -84,7 +85,9 @@ class WebTests(unittest.TestCase):
     def test_http_and_host_guard(self):
         self.assertEqual(self.request('/')[0],200)
         self.assertEqual(self.request('/api/meta')[0],200)
-        self.assertEqual(self.request('/api/entries?view=invalid')[0],400)
+        self.assertEqual(self.request('/api/entries?type=invalid')[0],400)
+        self.assertEqual(self.request('/api/facets?type=invalid')[0],400)
+        self.assertEqual(self.request('/api/export?type=invalid')[0],400)
         self.assertEqual(self.request('/api/entries',{'Host':'attacker.example'})[0],403)
         self.assertEqual(self.request('/../scripts/serve.py')[0],404)
         self.assertEqual(self.request('/source?path=/etc/passwd')[0],404)
@@ -140,21 +143,46 @@ class WebTests(unittest.TestCase):
         self.assertIn(b'<button class="theme-button"',page)
         self.assertNotIn(b'id="snapshot"',page)
         self.assertNotIn(b'class="theme-control"',page)
-    def test_mount_and_animal_catalog_views(self):
-        mounts=query(self.db,{'view':['坐骑'],'versions':['each']})
+    def test_mount_and_animal_catalog_types(self):
+        mounts=query(self.db,{'type':['creature'],'f_role':['坐骑'],'versions':['each']})
         self.assertEqual(mounts['total'],20)
         self.assertEqual(sum(e['ruleset']=='5e' for e in mounts['rows']),12)
         self.assertEqual(sum(e['ruleset']=='5r' for e in mounts['rows']),8)
         self.assertFalse(any(e['name_en'] in {'Flying Snake','Wolf','Warhorse Skeleton'} for e in mounts['rows']))
-        offers=query(self.db,{'view':['动物购置'],'versions':['each']})
+        offers=query(self.db,{'type':['animal_offer'],'versions':['each']})
         self.assertEqual(offers['total'],19)
         self.assertTrue(all(e['type']=='animal_offer' for e in offers['rows']))
         horse=next(e for e in mounts['rows'] if e['name_en']=='Warhorse' and e['ruleset']=='5r')
         d=detail(self.db,horse['id'])
         self.assertTrue(any(r['predicate']=='catalog_offer' for r in d['relations']))
-        data=self.request('/api/entries?'+urlencode({'view':'动物购置'}))
+        data=self.request('/api/entries?'+urlencode({'type':'animal_offer'}))
         self.assertEqual(data[0],200)
         self.assertEqual(json.loads(data[2])['versions_total'],19)
+
+    def test_presets_are_one_type_and_one_facet_value(self):
+        # Each preset reproduces the catalog's SQL view of the same name through ordinary filters.
+        for preset in browse.PRESETS:
+            params={'type':[preset['type']],'f_'+preset['field']:[preset['value']],'versions':['each']}
+            ids={e['id'] for e in query(self.db,params,export=True)['rows']}
+            view={r[0] for r in self.db.execute('SELECT id FROM "'+preset['name']+'"')}
+            self.assertEqual(ids,view,preset['name'])
+
+    def test_type_counts_show_where_a_search_hits(self):
+        spells=query(self.db,{'type':['spell'],'q':['火'],'f_school':['塑能']})
+        counts=spells['type_counts']
+        # The counts ignore the chosen types and their own facets, and match the search in every type.
+        unscoped=query(self.db,{'q':['火'],'versions':['each']})
+        self.assertEqual(sum(counts.values()),unscoped['total'])
+        self.assertEqual(counts['spell'],query(self.db,{'type':['spell'],'q':['火'],'versions':['each']})['total'])
+        self.assertGreater(counts['magic_item'],0);self.assertNotIn('section',counts)
+        self.assertLess(spells['versions_total'],counts['spell'])
+        # Shared filters still apply: a ruleset narrows every type's count.
+        narrowed=query(self.db,{'type':['spell'],'q':['火'],'ruleset':['5r']})['type_counts']
+        self.assertTrue(all(narrowed.get(t,0)<=n for t,n in counts.items()))
+        self.assertLess(sum(narrowed.values()),sum(counts.values()))
+        # Later batches continue the same query and carry no counts; neither does an export.
+        self.assertNotIn('type_counts',query(self.db,{'type':['spell'],'offset':['150']}))
+        self.assertNotIn('type_counts',query(self.db,{'type':['spell']},export=True))
 
     def test_entry_layout_endpoint(self):
         eid=self.db.execute("SELECT id FROM entries WHERE type='spell' AND name_en='Etherealness' AND ruleset='5r'").fetchone()[0]
@@ -167,7 +195,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(detail(self.db,eid)['quickref']['spell_level'],['7'])
 
     def test_metadata(self):
-        m=meta(self.db);self.assertEqual(len(m['views']),24);self.assertIn('动物购置',{v['name'] for v in m['views']})
+        m=meta(self.db)
+        # The picker offers the types the data holds, in reading order; untyped sections stay behind their own filter.
+        held={r[0] for r in self.db.execute("SELECT DISTINCT type FROM entries WHERE type!='section'")}
+        self.assertEqual(set(m['type_order']),held);self.assertNotIn('hazard',m['type_order'])
+        self.assertEqual(m['type_order'],sorted(m['type_order'],key=browse.TYPE_ORDER.index))
+        self.assertEqual(m['type_conditions']['creature'],['size','creature_type','role','legendary_actions','cr'])
+        self.assertEqual(m['type_conditions']['class'],[])
+        self.assertEqual({p['name'] for p in m['presets']},{'NPC','伙伴','坐骑','魔法武器','战斗风格','传奇恩惠'})
         self.assertEqual(len(m['sources']),155)
         self.assertTrue(all(s['count']==0 for s in m['sources'] if s['coverage']=='catalog_only'))
         # Short labels come from the abbreviation catalog, never from guessing at aliases.

@@ -21,9 +21,9 @@
   </button></div>
 </header>
 <div class="workspace">
-  <aside class="sidebar"><nav id="views" class="fade-strip" aria-label="分类视图">正在读取…</nav></aside>
   <main id="query-main">
-    <div class="heading-row"><h1 id="title">全部条目</h1><span id="view-total" class="muted"></span><span class="heading-note">自动提取 · 未经全量核验</span></div>
+    <div class="heading-row"><div class="menu type-menu"><h1><button type="button" id="type-toggle" aria-expanded="false" aria-controls="type-panel" aria-haspopup="true"><span id="title">全部条目</span><span class="menu-caret" aria-hidden="true">▾</span></button></h1>
+      <div id="type-panel" class="menu-panel" role="group" aria-label="条目类型" hidden></div></div><span id="type-total" class="muted"></span><span class="heading-note">自动提取 · 未经全量核验</span></div>
     <form id="search-form" class="toolbar">
       <label class="searchbox"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><input id="q" type="search" placeholder="搜索中文名 / 英文名" aria-label="搜索条目名称" autocomplete="off"><kbd>/</kbd></label>
       <button type="button" id="toggle-filters" aria-controls="filter-panel" aria-expanded="false">筛选 <span id="filter-count"></span> ▾</button>
@@ -43,14 +43,14 @@
     </section>
     <div id="active-filters" class="active-filters fade-strip" aria-label="已选筛选"></div>
     <div class="results-bar">
-      <span id="result-count" role="status" aria-live="polite">正在查询…</span>
+      <span id="result-count" role="status" aria-live="polite">正在查询…</span><button type="button" id="elsewhere" class="quiet-button" aria-controls="type-panel" hidden></button>
       <div class="result-actions"><label class="sort-control"><span class="sort-label" data-ui="sortLabel"></span><select id="sort" aria-label="排序字段"></select></label><button type="button" id="direction" aria-label="切换排序方向">升序 ↑</button>
         <div class="menu"><button type="button" id="display-toggle" aria-expanded="false" aria-controls="display-panel"><span data-ui="displayOptions"></span><span class="menu-mark" aria-hidden="true"></span> ▾</button>
           <div id="display-panel" class="menu-panel" role="group" aria-labelledby="display-toggle" hidden><label class="check-toggle"><input type="checkbox" id="stack-versions" checked><span data-ui="stackVersions"></span></label><label class="prefer-control"><span data-ui="preferRuleset"></span><select id="prefer"></select></label><label class="check-toggle"><input type="checkbox" id="compact-rows"><span data-ui="compactRows"></span></label></div>
         </div></div>
     </div>
     <div id="error" role="alert" hidden></div>
-    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden><strong data-ui="emptyTitle"></strong><span data-ui="emptyHint"></span></div><div id="load-more-row" hidden><button type="button" id="load-more"></button><span id="load-error" role="alert" hidden></span></div></div>
+    <div class="table-wrap" role="region" aria-label="速查结果表，可横向滚动" tabindex="0"><table><thead id="columns"></thead><tbody id="results"></tbody></table><div id="empty" hidden><strong data-ui="emptyTitle"></strong><span data-ui="emptyHint"></span><div id="empty-elsewhere"></div></div><div id="load-more-row" hidden><button type="button" id="load-more"></button><span id="load-error" role="alert" hidden></span></div></div>
     <div class="bottom-bar"><span id="range" role="status" aria-live="polite"></span><span class="legend" data-ui="legend"></span><button type="button" id="export" class="quiet-button" disabled>导出 CSV</button></div>
   </main>
   <dialog id="detail" aria-labelledby="reader-title">

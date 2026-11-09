@@ -38,17 +38,17 @@ function placeReader(){
   $('#detail-content').scrollTop=top;
 }
 wideReader.addEventListener('change',()=>{if(currentReaderId)placeReader();});
-// The reader's share of the space beside the categories is a per-browser preference like density and theme.
+// The reader's share of the workspace is a per-browser preference like density and theme.
 // Full-width reading, which sets the results aside entirely, belongs to one reading session: it lasts until
 // the reader closes, and this tab's history restores it.
 const READER_SHARE_KEY='anna.readerShare';
 const DEFAULT_READER_SHARE=.6, MIN_READER_WIDTH=400, MIN_LIST_WIDTH=360;
 const storedReaderShare=()=>{try{const v=Number(localStorage.getItem(READER_SHARE_KEY));return v>0&&v<1?v:DEFAULT_READER_SHARE;}catch{return DEFAULT_READER_SHARE;}};
 let readerShare=storedReaderShare(), readerFull=false;
-// The space the reader and the results share: the workspace beside the categories, which never fold.
+// The reader and the results share the whole workspace.
 function sharedBox(){
-  const box=$('.workspace').getBoundingClientRect(),sidebar=$('.sidebar').getBoundingClientRect().width;
-  return {left:box.left+sidebar,right:box.right,width:(box.width||innerWidth)-sidebar};
+  const box=$('.workspace').getBoundingClientRect();
+  return {left:box.left,right:box.right,width:box.width||innerWidth};
 }
 // The same bounds as the grid track in style.css (--anna-reader-min, --anna-list-min).
 function readerShareBounds(){

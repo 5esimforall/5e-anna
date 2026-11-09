@@ -12,8 +12,8 @@ const annaReaderLabels = {
     previousResults:'上一批结果', nextResults:'下一批结果', noOutline:'本页尚未提取到可定位条目；原文仍完整展示。',
     entry:'在 anna 查看条目', pageEntries:'本页条目', previous:'上一章', next:'下一章',
     original:'原貌正文', print:'打印正文', loading:'正在打开原文…', ready:'原文已就绪',
-    notInContents:'未编入目录的页面', snapshot:'构建快照 {id}', retry:'重试', home:'回到阅读首页',
-    keyboard:'目录方向键导航 · / 搜索 · F6 切换正文与工具栏', emptyTitle:'原文阅读',
+    notInContents:'未编入目录的页面', sourceVersion:'不全书 v{version}', retry:'重试', home:'回到阅读首页',
+    keyboard:'/ 搜索', emptyTitle:'原文阅读',
     errors: {
       unavailable:'阅读服务未启动。请运行 make up，启动 anna 查询与阅读。',
       network:'无法读取阅读数据，请检查服务后重试。', invalid_location:'阅读地址无效，请选择一个页面或条目。',
@@ -38,8 +38,8 @@ const annaReaderLabels = {
     previousResults:'Previous results', nextResults:'Next results', noOutline:'No locatable entries have been extracted on this page. The complete source is still available.',
     entry:'Open entry in anna', pageEntries:'Entries on this page', previous:'Previous chapter', next:'Next chapter',
     original:'Original layout', print:'Print text', loading:'Opening the source…', ready:'Source ready',
-    notInContents:'Page outside the contents', snapshot:'Build snapshot {id}', retry:'Retry', home:'Reader home',
-    keyboard:'Arrow keys in contents · / to search · F6 to switch text and toolbar', emptyTitle:'Source reader',
+    notInContents:'Page outside the contents', sourceVersion:'Collection v{version}', retry:'Retry', home:'Reader home',
+    keyboard:'/ Search', emptyTitle:'Source reader',
     errors: {
       unavailable:'The reading service is not running. Run make up to start anna with its reader.',
       network:'Could not load reading data. Check the service and retry.', invalid_location:'Invalid reading address. Select one page or entry.',

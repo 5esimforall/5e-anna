@@ -37,6 +37,21 @@ test('query and reader use the new app; upstream reading entries are gone',async
     expect((await request.get(book+path)).status(),path).toBe(404);
 });
 
+test('reader footer shows the printed source release and only the search shortcut',async({page})=>{
+  await visit(page);
+  expect(meta.source_release.path).toBe('topics/写在前面.html');
+  expect(meta.source_release.version).toMatch(/^\d{8}(?:\.\d+)*$/);
+  await expect(page.locator('.book-sidebar-foot')).toHaveText('不全书 v'+meta.source_release.version+'/ 搜索');
+  await expect(page.locator('#book-snapshot')).toHaveCount(0);
+  await page.route('**/api/reader',async route=>{
+    const response=await route.fetch();const data=await response.json();data.source_release=null;
+    await route.fulfill({response,json:data});
+  });
+  await page.reload();await ready(page);
+  await expect(page.locator('#book-version')).toBeHidden();
+  await expect(page.locator('.book-sidebar-foot')).toHaveText('/ 搜索');
+});
+
 test('duplicate directory entries retain their node; filtering restores expansion and keyboard navigation',async({page})=>{
   const path='topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm';
   const repeated=meta.nodes.filter(n=>n.path===path && n.status==='present');expect(repeated.length).toBeGreaterThan(1);

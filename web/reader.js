@@ -412,7 +412,8 @@
           pageNodes.get(node.path).push(node);
         }
       }
-      $('#book-snapshot').textContent = text('snapshot',{id:metadata.snapshot.slice(0,8)});
+      $('#book-version').hidden = !metadata.source_release;
+      $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
       const params = new URL(location.href).searchParams;
       const remembered = !current && !['entry','page','anchor','node'].some(key => params.has(key))

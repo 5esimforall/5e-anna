@@ -36,6 +36,7 @@ class StackTests(unittest.TestCase):
                     self.assertEqual(self.request(servers[0],old_path)[0],404)
                 reader=json.loads(self.request(servers[0],'/api/reader')[2])
                 self.assertEqual(reader['content_base'],'/book/')
+                self.assertIsNone(reader['source_release'])
                 target=json.loads(self.request(servers[0],'/api/reader-page?entry=ver_test')[2])
                 self.assertEqual((target['path'],target['fragment']),('topics/test.htm','anna-ver_test'))
                 self.assertEqual(self.request(servers[0],'/api/reader-page?entry=ver_test&path=topics/test.htm')[0],400)

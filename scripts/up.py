@@ -90,7 +90,7 @@ def create_server(db, book, manifest, anna_port):
                 if 'snapshot' in params and params['snapshot'] != [reader['snapshot']]:
                     raise ReaderError('snapshot_changed', 409)
                 if url.path == '/api/reader':
-                    self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page')} | {'content_base': '/book/'})
+                    self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page', 'source_release')} | {'content_base': '/book/'})
                 elif url.path == '/api/reader-page':
                     if any(len(v) != 1 for v in params.values()):
                         raise ReaderError('invalid_location', 400)

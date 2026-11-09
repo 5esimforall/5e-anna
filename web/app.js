@@ -5,7 +5,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;',
 const annaUiLabels = {
   zh: {skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或重置筛选。',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
-    fullWidth:'全宽阅读',showViews:'分类目录',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
+    fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
     outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
@@ -16,17 +16,17 @@ const annaUiLabels = {
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
-    stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',
+    stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',sortLabel:'排序',displayOptions:'显示',
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
     stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
     layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
-    flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击名称查看正文与证据'},
+    flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
   en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
-    fullWidth:'Full-width reading',showViews:'Categories',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
+    fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
     outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
@@ -37,14 +37,14 @@ const annaUiLabels = {
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
-    stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',
+    stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',sortLabel:'Sort',displayOptions:'Display',
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
     stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
     layoutUnavailable:{missing:'The source page is missing; showing extracted text.',stale:'The source changed since this database snapshot; showing extracted text.',empty:'The source layout is empty; showing extracted text.',error:'Unable to load the source layout; showing extracted text.'},
     versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current',
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']},
-    flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a name for its text and evidence'}
+    flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a row for its text and evidence'}
 };
 const ui = annaUiLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
 // A ruleset is a rules generation, not a publication year: short labels name it, the full label says so.
@@ -184,6 +184,8 @@ function sync(){
   renderSortOptions();
   const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
   $('#prefer').value=params.get('prefer')||'5r';$('#prefer').disabled=!stacked;$('.prefer-control').classList.toggle('inactive',!stacked);
+  // A shared link may carry a presentation other than the default; the menu marks it so the rows explain themselves.
+  $('#display-toggle').classList.toggle('changed',!stacked||params.has('prefer'));
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
   for(const button of $('#views').querySelectorAll('[data-view]')){const active=button.dataset.view===(params.get('view')||'');button.classList.toggle('active',active);button.setAttribute('aria-pressed',active);}
@@ -208,12 +210,13 @@ function sync(){
     const text=k==='q'?'搜索：'+values[0]:(g?.label||fieldNames[k]||k)+'：'+(labels.length>4?labels.slice(0,3).join('、')+` 等 ${labels.length} 项`:labels.join('、'));
     return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
   }).join('');
+  markStripEdges($('#active-filters'));
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
 // header, rows and paging together; a failure clears them instead of leaving stale counts behind.
 const awaitingResults=()=>$('#results').getAttribute('aria-busy')==='true';
 function awaitResults(status){
-  $('#error').hidden=true;$('#result-count').textContent=status;$('#export').disabled=true;$('#load-more').disabled=true;
+  $('#error').hidden=true;$('#result-count').textContent=status;$('#result-count').title='';$('#export').disabled=true;$('#load-more').disabled=true;
   $('#results').setAttribute('aria-busy','true');
 }
 function failResults(message,status){
@@ -368,6 +371,8 @@ async function load(){
     const data=await api(entriesURL(0,limit),request.signal);if(gen!==generation)return;
     currentData=data;
     $('#result-count').innerHTML=data.versions==='stacked'?ui.stackedCount.replace('{rows}',`<strong>${fmt(data.total)}</strong>`).replace('{versions}',fmt(data.versions_total)):`找到 <strong>${fmt(data.total)}</strong> 条`;
+    // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.
+    $('#result-count').title=$('#result-count').textContent;
     renderResults();
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
   }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
@@ -424,8 +429,8 @@ $('#results').addEventListener('click',e=>{
   const target=pill||row?.querySelector('.entry-name');if(!target)return;
   resultClick=true;openEntry(target.dataset.entry,true,'body',true);
 });
-// A double click reads the result at full width. The first click has already opened the entry and may have
-// moved the layout under the pointer, so the rest of the gesture means only that, wherever it lands.
+// A double click reads the result at full width. The first click has already opened the entry, so the second,
+// which lands on the same row, means only that: it neither reopens the row nor selects its text.
 document.addEventListener('click',e=>{
   if(e.detail<2){resultClick=false;return;}
   if(!resultClick)return;
@@ -486,7 +491,7 @@ window.addEventListener('popstate',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.isComposing)return;
-  if(e.key==='Escape'&&$('.sidebar').classList.contains('rail-open')){e.preventDefault();setRailOpen(false,{focus:true});return;}
+  if(e.key==='Escape'&&!$('#display-panel').hidden){e.preventDefault();setDisplayMenu(false,{focus:true});return;}
   if(e.key==='Escape'&&$('#detail').open){e.preventDefault();closeEntry();return;}
   // F6 moves to the results, so full-width reading gives them their place back first.
   if(e.key==='F6'&&$('#detail').open&&wideReader.matches){
@@ -494,30 +499,33 @@ document.addEventListener('keydown',e=>{
   }
   if(e.key==='/'&&!$('#detail').matches(':modal')&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!e.target.isContentEditable){e.preventDefault();$('#q').focus();}
 });
-// On narrow screens the view rail scrolls sideways without a scrollbar (its thumb read as a selection under
-// the first view): the current view is kept in sight, and only an edge that hides more views fades.
-function updateRailEdges(){
-  const nav=$('#views');
-  nav.classList.toggle('more-before',nav.scrollLeft>1);nav.classList.toggle('more-after',nav.scrollLeft+nav.clientWidth<nav.scrollWidth-1);
+// Sideways strips (the narrow view rail, the active filters) scroll without a scrollbar, whose thumb read as a
+// selection under the first item; only an edge that still hides more fades.
+function markStripEdges(strip){
+  strip.classList.toggle('more-before',strip.scrollLeft>1);strip.classList.toggle('more-after',strip.scrollLeft+strip.clientWidth<strip.scrollWidth-1);
 }
+// The current view is kept in sight on the narrow rail.
 function revealActiveView(){
   const nav=$('#views'),active=nav.querySelector('.active');
   if(active&&nav.scrollWidth>nav.clientWidth){
     const rail=nav.getBoundingClientRect(),box=active.getBoundingClientRect();
     if(box.left<rail.left||box.right>rail.right)nav.scrollLeft+=box.left-rail.left-(rail.width-box.width)/2;
   }
-  updateRailEdges();
+  markStripEdges(nav);
 }
-$('#views').addEventListener('scroll',updateRailEdges,{passive:true});window.addEventListener('resize',updateRailEdges);
-// While an entry is read beside the results, the rail folds to one button; it opens the categories over the
-// results, and choosing one closes the reader as before.
-function setRailOpen(open,{focus=false}={}){
-  $('.sidebar').classList.toggle('rail-open',open);$('#rail-toggle').setAttribute('aria-expanded',String(open));
-  if(open&&focus)($('#views .active')||$('#views button'))?.focus();
-  if(!open&&focus)$('#rail-toggle').focus();
+for(const strip of [$('#views'),$('#active-filters')]){
+  strip.addEventListener('scroll',()=>markStripEdges(strip),{passive:true});
+  new ResizeObserver(()=>markStripEdges(strip)).observe(strip);
 }
-$('#rail-toggle').addEventListener('click',()=>setRailOpen(!$('.sidebar').classList.contains('rail-open'),{focus:true}));
-document.addEventListener('pointerdown',e=>{if($('.sidebar').classList.contains('rail-open')&&!e.target.closest('.sidebar'))setRailOpen(false);});
+// Presentation choices open as one menu over the results; it stays open while choices change and closes on
+// Esc or a pointer elsewhere.
+function setDisplayMenu(open,{focus=false}={}){
+  $('#display-panel').hidden=!open;$('#display-toggle').setAttribute('aria-expanded',String(open));
+  if(open&&focus)$('#display-panel input,#display-panel select')?.focus();
+  if(!open&&focus)$('#display-toggle').focus();
+}
+$('#display-toggle').addEventListener('click',()=>setDisplayMenu($('#display-panel').hidden));
+document.addEventListener('pointerdown',e=>{if(!$('#display-panel').hidden&&!e.target.closest('.menu'))setDisplayMenu(false);});
 function renderViews(){
   const button=v=>`<button data-view="${esc(v.name)}">${esc(v.name||ui.allEntries)}<span>${fmt(v.count)}</span></button>`;
   const byName=new Map(metadata.views.map(v=>[v.name,v])),listed=new Set(viewGroups.flatMap(([,names])=>names));

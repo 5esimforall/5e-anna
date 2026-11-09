@@ -5,32 +5,55 @@ const widenableReader=window.matchMedia('(min-width: 761px)');
 // Touch-only devices have neither Esc nor F6, so their hint names only the on-screen arrows.
 const touchOnly=window.matchMedia('(hover: none) and (pointer: coarse)');
 const readerHint=()=>touchOnly.matches?ui.readerHintTouch:wideReader.matches?ui.readerHint:ui.readerHintNarrow;
+// The row being read is the reader's anchor in the results: whatever the reader does to the workspace, that
+// row stays where the pointer left it. The layout keeps rows and the lines above them at one height, so the
+// correction is normally zero; it covers what CSS cannot promise, such as an open filter panel reflowing.
+const resultRow=id=>id?$('#results').querySelector(`[data-entry="${CSS.escape(id)}"]`)?.closest('tr'):null;
+function holdResultRow(id,change){
+  const row=resultRow(id),before=row?.getBoundingClientRect().top;
+  change();
+  if(!row?.isConnected)return;
+  const shift=row.getBoundingClientRect().top-before;if(Math.abs(shift)>=1)$('.table-wrap').scrollTop+=shift;
+}
+// Stepping through the results from the reader keeps the current row in sight, below the pinned header.
+function revealResultRow(id){
+  const row=resultRow(id);if(!row)return;
+  const wrap=$('.table-wrap'),view=wrap.getBoundingClientRect(),box=row.getBoundingClientRect(),head=$('#columns').getBoundingClientRect().height;
+  if(box.top<view.top+head)wrap.scrollTop-=view.top+head-box.top;else if(box.bottom>view.bottom)wrap.scrollTop+=box.bottom-view.bottom;
+}
 function placeReader(){
   const dialog=$('#detail'),active=document.activeElement,top=$('#detail-content').scrollTop;
-  if(dialog.open)dialog.close();
-  document.body.classList.toggle('detail-open',!!currentReaderId);
-  document.body.classList.toggle('detail-modal',!!currentReaderId&&!wideReader.matches);
+  holdResultRow(currentReaderId||lastResultEntry,()=>{
+    if(dialog.open)dialog.close();
+    document.body.classList.toggle('detail-open',!!currentReaderId);
+    document.body.classList.toggle('detail-modal',!!currentReaderId&&!wideReader.matches);
+    if(!currentReaderId)return;
+    wideReader.matches?dialog.show():dialog.showModal();
+    dialog.setAttribute('aria-modal',String(!wideReader.matches));
+    applyReaderLayout();
+  });
   if(!currentReaderId)return;
-  wideReader.matches?dialog.show():dialog.showModal();
-  dialog.setAttribute('aria-modal',String(!wideReader.matches));
   const hint=$('#detail-content .reader-hint');if(hint)hint.textContent=readerHint();
-  applyReaderLayout();
   if(active&&dialog.contains(active))active.focus({preventScroll:true});
   $('#detail-content').scrollTop=top;
 }
 wideReader.addEventListener('change',()=>{if(currentReaderId)placeReader();});
-// The reader's share of the workspace is a per-browser preference like density and theme. Full-width
-// reading, which sets the results aside entirely, belongs to one reading session: it lasts until the
-// reader closes, and this tab's history restores it.
+// The reader's share of the space beside the categories is a per-browser preference like density and theme.
+// Full-width reading, which sets the results aside entirely, belongs to one reading session: it lasts until
+// the reader closes, and this tab's history restores it.
 const READER_SHARE_KEY='anna.readerShare';
-const DEFAULT_READER_SHARE=.55, MIN_READER_WIDTH=400, MIN_LIST_WIDTH=360, FOLDED_RAIL_WIDTH=44;
+const DEFAULT_READER_SHARE=.6, MIN_READER_WIDTH=400, MIN_LIST_WIDTH=360;
 const storedReaderShare=()=>{try{const v=Number(localStorage.getItem(READER_SHARE_KEY));return v>0&&v<1?v:DEFAULT_READER_SHARE;}catch{return DEFAULT_READER_SHARE;}};
 let readerShare=storedReaderShare(), readerFull=false;
-// The same bounds as the grid track in style.css: the reader keeps 400px, the results keep 360px beside
-// the folded rail.
+// The space the reader and the results share: the workspace beside the categories, which never fold.
+function sharedBox(){
+  const box=$('.workspace').getBoundingClientRect(),sidebar=$('.sidebar').getBoundingClientRect().width;
+  return {left:box.left+sidebar,right:box.right,width:(box.width||innerWidth)-sidebar};
+}
+// The same bounds as the grid track in style.css (--anna-reader-min, --anna-list-min).
 function readerShareBounds(){
-  const width=$('.workspace').clientWidth||innerWidth;
-  return [Math.min(MIN_READER_WIDTH/width,.5),Math.max(1-(MIN_LIST_WIDTH+FOLDED_RAIL_WIDTH)/width,.5)];
+  const {width}=sharedBox();
+  return [Math.min(MIN_READER_WIDTH/width,.5),Math.max(1-MIN_LIST_WIDTH/width,.5)];
 }
 function applyReaderLayout(){
   const [min,max]=readerShareBounds(),share=Math.min(max,Math.max(min,readerShare)),percent=Math.round(share*100);
@@ -51,9 +74,9 @@ function setReaderShare(share,save=true){
 function setReaderFull(on,{save=true}={}){readerFull=on;applyReaderLayout();markTableFrames();if(save)saveUiState();}
 // Runs from app.js once the shared helpers and labels exist.
 function initReaderLayout(){
-  const separator=$('#reader-resizer'),workspace=$('.workspace');
+  const separator=$('#reader-resizer');
   separator.title=ui.resizeReaderHint;separator.setAttribute('aria-label',ui.resizeReader);
-  const shareAt=x=>{const box=workspace.getBoundingClientRect();return (box.right-x)/box.width;};
+  const shareAt=x=>{const box=sharedBox();return (box.right-x)/box.width;};
   separator.addEventListener('pointerdown',e=>{if(e.button!==0)return;e.preventDefault();separator.setPointerCapture(e.pointerId);document.body.classList.add('reader-resizing');});
   separator.addEventListener('pointermove',e=>{if(separator.hasPointerCapture(e.pointerId))setReaderShare(shareAt(e.clientX),false);});
   separator.addEventListener('lostpointercapture',()=>{document.body.classList.remove('reader-resizing');setReaderShare(readerShare);});
@@ -100,7 +123,7 @@ function focusResult(){
 async function stepEntry(delta){
   const index=(currentData?.rows||[]).findIndex(r=>rowHas(r,currentReaderId));if(index<0)return;
   if(delta>0&&index===currentData.rows.length-1&&!(await loadMore()))return;
-  const next=currentData?.rows[index+delta];if(next)openEntry(next.id,true,'body',true);
+  const next=currentData?.rows[index+delta];if(next){openEntry(next.id,true,'body',true);revealResultRow(next.id);}
 }
 function renderDetail(tab='body') {
   const e=currentEntry;if(!e)return;
@@ -136,8 +159,12 @@ function renderDetail(tab='body') {
   $('#reader-name').textContent=name;watchReaderTitle();markTableFrames();
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
+// The entry and its source layout load together, and the text appears once, already in the book's layout;
+// a layout slower than this still follows, replacing the extracted text that stands in for it.
+const LAYOUT_WAIT=400;
+const layoutOf=id=>api('/api/entry-layout?id='+encodeURIComponent(id)).catch(()=>({status:'error'}));
 async function openEntry(id,update=true,tab='body',fromResult=false) {
-  const gen=++detailGeneration;
+  const gen=++detailGeneration,content=$('#detail-content');
   if(fromResult&&!currentReaderId)lastResultEntry=id;
   if(update){params.set('entry',id);historyUpdate();}
   if(fromResult)lastResultEntry=id;
@@ -145,16 +172,21 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   currentReaderId=id;currentEntry=null;detailTab=tab;
   if(!wasOpen)placeReader();
   $('#detail').setAttribute('aria-labelledby','reader-title');$('#detail').classList.remove('title-away');readerTitleObserver?.disconnect();
-  $('#detail-content').setAttribute('aria-busy','true');
-  $('#detail-content').innerHTML=`<p class="reader-message" role="status">${esc(ui.loading)}</p>`;
-  $('#detail-content').scrollTop=0;updateReaderNavigation();
+  content.setAttribute('aria-busy','true');
+  // Stepping keeps the current entry in place until the next one is ready, instead of flashing a loading line;
+  // a reader that was closed starts empty rather than showing the entry it last held.
+  if(!wasOpen||!content.querySelector('.reader-head')){content.innerHTML=`<p class="reader-message" role="status">${esc(ui.loading)}</p>`;content.scrollTop=0;}
+  updateReaderNavigation();
+  const layout=layoutOf(id);
   try {
     const e=await api('/api/entry?id='+encodeURIComponent(id));if(gen!==detailGeneration)return;
-    currentEntry=e;renderDetail(tab);
+    e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
+    if(gen!==detailGeneration)return;
+    currentEntry=e;renderDetail(tab);content.scrollTop=0;
   } catch(e) {
-    if(gen===detailGeneration)$('#detail-content').innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;
+    if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
-    if(gen===detailGeneration){$('#detail-content').setAttribute('aria-busy','false');saveUiState();}
+    if(gen===detailGeneration){content.setAttribute('aria-busy','false');saveUiState();}
   }
 }
 // The body shows the book's own layout; anna's readings of it sit beside the text as notes.
@@ -199,8 +231,8 @@ function watchReaderTitle(){
   readerTitleObserver.observe($('#entry-title'));
 }
 function loadLayout(e){
-  if(e.layout||e.layoutRequest)return;
-  e.layoutRequest=api('/api/entry-layout?id='+encodeURIComponent(e.id)).catch(()=>({status:'error'})).then(layout=>{
+  if(e.layout||e.layoutAwaited)return;
+  e.layoutAwaited=(e.layoutRequest||layoutOf(e.id)).then(layout=>{
     e.layout=layout;
     if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();}
   });
@@ -224,10 +256,12 @@ function renderVersions(e){
 function closeEntry({update=true,restoreFocus=true}={}) {
   detailGeneration++;
   if(restoreFocus)lastResultEntry=lastResultEntry||currentReaderId;
-  if($('#detail').open)$('#detail').close();
+  holdResultRow(currentReaderId,()=>{
+    if($('#detail').open)$('#detail').close();
+    document.body.classList.remove('detail-open','detail-modal');
+    if(readerFull)setReaderFull(false,{save:false});
+  });
   currentReaderId=null;currentEntry=null;detailTab='body';readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
-  document.body.classList.remove('detail-open','detail-modal');setRailOpen(false);
-  if(readerFull)setReaderFull(false,{save:false});
   if(restoreFocus)focusResult();
   updateReaderNavigation();
   if(update&&params.has('entry')){params.delete('entry');historyUpdate(true);}

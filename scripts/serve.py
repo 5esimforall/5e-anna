@@ -362,7 +362,6 @@ def csv_export(rows, config=None):
 class Handler(BaseHTTPRequestHandler):
     db_path=DB
     reader_url=None
-    content_origin=None
     db_signature=None
     source_root=paths.WEB
     def log_message(self,*args): pass
@@ -371,7 +370,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type',kind); self.send_header('Content-Length',str(len(body)))
         self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff')
-        frames=self.content_origin if urlsplit(self.path).path=='/read' and self.content_origin else "'none'"
+        frames="'self'" if urlsplit(self.path).path=='/read' and self.reader_url else "'none'"
         self.send_header('Content-Security-Policy',f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src {frames}")
         if download: self.send_header('Content-Disposition','attachment; filename="5e-anna.csv"')
         self.end_headers(); self.wfile.write(body)
@@ -430,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--port',type=int,default=8001); ap.add_argument('--db',type=Path,default=DB); args=ap.parse_args()
+    ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--port',type=int,default=8000); ap.add_argument('--db',type=Path,default=DB); args=ap.parse_args()
     if not args.db.is_file(): ap.error('数据库不存在，请先运行 build.py')
     Handler.db_path=args.db
     server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)

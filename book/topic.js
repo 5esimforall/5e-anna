@@ -1,5 +1,5 @@
 /* Reader bridge. The source bytes and DOM remain intact; only navigation is mediated.
-   A separate origin and a versioned, validated protocol isolate the upstream scripts. */
+   A versioned protocol coordinates the source document and application. */
 (() => {
   'use strict';
   if (parent === window) return;
@@ -7,7 +7,7 @@
   const documentId = crypto.randomUUID();
   let appOrigin, snapshot, navigationId, initialized = false, positionTimer;
   let initialLocation, interacted = false;
-  const path = decodeURIComponent(location.pathname.slice(1));
+  const path = decodeURIComponent(location.pathname.slice('/book/'.length));
   const send = (type, detail = {}) => {
     if (appOrigin) parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, appOrigin);
   };
@@ -20,9 +20,9 @@
     try { url = new URL(href, location.href); } catch { return null; }
     if (url.origin !== location.origin) return null;
     try {
-      if (url.pathname.startsWith('/definition/')) return {entry: decodeURIComponent(url.pathname.slice('/definition/'.length))};
-      if (!url.pathname.startsWith('/topics/')) return null;
-      return {page: decodeURIComponent(url.pathname.slice(1)), anchor: decodeURIComponent(url.hash.slice(1))};
+      if (url.pathname.startsWith('/book/definition/')) return {entry: decodeURIComponent(url.pathname.slice('/book/definition/'.length))};
+      if (!url.pathname.startsWith('/book/topics/')) return null;
+      return {page: decodeURIComponent(url.pathname.slice('/book/'.length)), anchor: decodeURIComponent(url.hash.slice(1))};
     } catch { return null; }
   }
   function readerURL(route) {
@@ -107,9 +107,9 @@
       const element = document.createElement(asset.kind === 'style' ? 'link' : 'script');
       element.id = asset.id;
       if (asset.kind === 'style') {
-        element.rel = 'stylesheet'; element.href = '/' + asset.path;
+        element.rel = 'stylesheet'; element.href = '/book/' + asset.path;
         styles.push(new Promise(resolve => { element.onload = resolve; element.onerror = resolve; }));
-      } else { element.src = '/' + asset.path; element.async = false; }
+      } else { element.src = '/book/' + asset.path; element.async = false; }
       document.head.append(element);
     }
     if (resources.some(asset => asset.id === 'webhelpTopicStyles')) document.documentElement.classList.add('webhelp-topic-document');
@@ -122,7 +122,7 @@
   window.addEventListener('load', () => { if (initialLocation && !interacted) locate(initialLocation); });
   async function ready() {
     try {
-      const response = await fetch('/api/reader-context');
+      const response = await fetch('/book/api/reader-context');
       if (!response.ok) return;
       const context = await response.json();
       const referrer = document.referrer ? new URL(document.referrer).origin : '';

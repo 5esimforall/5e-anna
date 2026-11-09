@@ -1,7 +1,7 @@
 /* Real-corpus reader checks. Faults below affect transport, never rule identity. */
 const {test:base,expect} = require('@playwright/test');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
-const anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+2}`, original=`http://127.0.0.1:${port}`;
+const anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+1}/book`, original=`http://127.0.0.1:${port}`;
 const test=base.extend({context:async({context},use)=>{
   const errors=[];context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
   await context.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort());

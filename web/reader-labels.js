@@ -15,7 +15,7 @@ const annaReaderLabels = {
     notInContents:'未编入目录的页面', snapshot:'构建快照 {id}', retry:'重试', home:'回到阅读首页',
     keyboard:'目录方向键导航 · / 搜索 · F6 切换正文与工具栏', emptyTitle:'原文阅读',
     errors: {
-      unavailable:'阅读服务未启动。请运行 make up，同时启动 anna 与正文服务。',
+      unavailable:'阅读服务未启动。请运行 make up，启动 anna 查询与阅读。',
       network:'无法读取阅读数据，请检查服务后重试。', invalid_location:'阅读地址无效，请选择一个页面或条目。',
       page_missing:'当前快照中没有这个页面。原文可能已更新，请从目录重新查找。',
       entry_missing:'当前快照中没有这个条目版本。不会自动跳到同名条目，请重新查询。',
@@ -41,7 +41,7 @@ const annaReaderLabels = {
     notInContents:'Page outside the contents', snapshot:'Build snapshot {id}', retry:'Retry', home:'Reader home',
     keyboard:'Arrow keys in contents · / to search · F6 to switch text and toolbar', emptyTitle:'Source reader',
     errors: {
-      unavailable:'The reading service is not running. Run make up to start anna and the content service together.',
+      unavailable:'The reading service is not running. Run make up to start anna with its reader.',
       network:'Could not load reading data. Check the service and retry.', invalid_location:'Invalid reading address. Select one page or entry.',
       page_missing:'This page is not in the current snapshot. The source may have changed; find it in the contents.',
       entry_missing:'This entry version is not in the current snapshot. No same-name substitution was made; search again.',

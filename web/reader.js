@@ -138,7 +138,7 @@
   }
   function send(type, detail = {}) {
     if (!documentId || !metadata) return;
-    frame.contentWindow.postMessage({channel, version, type, documentId, snapshot:metadata.snapshot, navigationId, ...detail}, metadata.content_origin);
+    frame.contentWindow.postMessage({channel, version, type, documentId, snapshot:metadata.snapshot, navigationId, ...detail}, location.origin);
   }
   function locateFrame() {
     send('locate', {anchor:route.entry ? page.fragment : route.anchor || '', position:pendingPosition, theme:document.documentElement.dataset.theme});
@@ -181,7 +181,7 @@
       if (framePath === page.path && frameReady) locateFrame();
       else {
         frameReady = false; documentId = ''; framePath = page.path;
-        const url = metadata.content_origin + '/' + page.path.split('/').map(encodeURIComponent).join('/');
+        const url = metadata.content_base + page.path.split('/').map(encodeURIComponent).join('/');
         frame.contentWindow.location.replace(url);
       }
       loadTimer = setTimeout(() => { if (id === navigationId) showError('frame_timeout'); }, 15000);
@@ -237,7 +237,7 @@
 
   window.addEventListener('message', event => {
     const data = event.data;
-    if (!metadata || event.source !== frame.contentWindow || event.origin !== metadata.content_origin || !data ||
+    if (!metadata || event.source !== frame.contentWindow || event.origin !== location.origin || !data ||
         data.channel !== channel || data.version !== version || data.snapshot !== metadata.snapshot || !page || data.path !== page.path || frameNavigationId !== navigationId) return;
     if (data.type === 'ready' && typeof data.documentId === 'string' && data.documentId.length < 100) {
       documentId = data.documentId; frameReady = true; locateFrame(); return;

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Run anna's query/reader app and its isolated source-content origin together."""
+"""Serve anna, its reader and source resources on one local port."""
 import argparse
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
+import mimetypes
+import shutil
 import json
 from pathlib import Path
 import signal
@@ -45,9 +47,7 @@ def validate_bundle(source, db, book):
     return m
 
 
-def create_servers(db, book, manifest, anna_port, book_port):
-    if anna_port == book_port and anna_port != 0:
-        raise ValueError('两个站点必须使用不同端口')
+def create_server(db, book, manifest, anna_port):
     book = Path(book).resolve()
     reader = json.loads((book / 'anna-reader.json').read_text())
     book_signature, db_signature = signature(book / 'anna-manifest.json'), signature(db)
@@ -64,11 +64,20 @@ def create_servers(db, book, manifest, anna_port, book_port):
         reader_url = '/read'
         search_entries = []
 
+        def handle(self):
+            try:
+                super().handle()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
         def do_GET(self):
             if self.headers.get('Host', '') not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}:
                 self.send({'code': 'invalid_host'}, status=403)
                 return
             url = urlsplit(self.path)
+            if url.path.startswith('/book/'):
+                self.serve_book(url.path[len('/book'):])
+                return
             # Keep the independent UI loadable so a refresh can explain stale data.
             if (url.path.startswith('/api/') or url.path == '/source') and not current_bundle():
                 self.send({'code': 'bundle_changed'}, status=409)
@@ -81,7 +90,7 @@ def create_servers(db, book, manifest, anna_port, book_port):
                 if 'snapshot' in params and params['snapshot'] != [reader['snapshot']]:
                     raise ReaderError('snapshot_changed', 409)
                 if url.path == '/api/reader':
-                    self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page')} | {'content_origin': content_origin})
+                    self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page')} | {'content_base': '/book/'})
                 elif url.path == '/api/reader-page':
                     if any(len(v) != 1 for v in params.values()):
                         raise ReaderError('invalid_location', 400)
@@ -95,28 +104,12 @@ def create_servers(db, book, manifest, anna_port, book_port):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
-    first = ThreadingHTTPServer(('127.0.0.1', anna_port), AnnaHandler)
-    app_origin = f'http://127.0.0.1:{first.server_port}'
-
-    class BookHandler(SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=str(book), **kwargs)
-
-        def log_message(self, *args):
-            pass
-
-        def handle(self):
-            try:
-                super().handle()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-
         def end_headers(self):
-            # Revalidate against the live bundle before using cached bytes. Rebuilds still
-            # fail with 409; shared CSS/JS/images need not be transferred for every chapter.
-            self.send_header('Cache-Control', 'private, no-cache' if getattr(self, 'resource_response', False) else 'no-store')
-            self.send_header('Content-Security-Policy', f"frame-ancestors {app_origin} http://localhost:{first.server_port}")
-            self.send_header('Referrer-Policy', 'same-origin')
+            if urlsplit(self.path).path.startswith('/book/'):
+                self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
+                self.send_header('Referrer-Policy', 'same-origin')
+                if not getattr(self, 'resource_response', False):
+                    self.send_header('Cache-Control', 'no-store')
             super().end_headers()
 
         def redirect(self, url):
@@ -125,21 +118,13 @@ def create_servers(db, book, manifest, anna_port, book_port):
             self.send_header('Content-Length', '0')
             self.end_headers()
 
-        def list_directory(self, path):
-            self.send_error(404)
-            return None
-
-        def do_GET(self):
-            if self.headers.get('Host', '') not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}:
-                self.send_error(403)
-                return
+        def serve_book(self, path):
             if not current_bundle():
                 self.send_error(409, 'Bundle rebuilt; restart make up')
                 return
-            url = urlsplit(self.path)
-            path = unquote(url.path)
+            path = unquote(path)
             if path == '/api/reader-context':
-                body = json.dumps({'app_origins': [app_origin, f'http://localhost:{first.server_port}'],
+                body = json.dumps({'app_origins': [f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'],
                                    'snapshot': reader['snapshot'],
                                    'presentation_resources': reader['presentation_resources']}).encode()
                 self.send_response(200)
@@ -154,11 +139,11 @@ def create_servers(db, book, manifest, anna_port, book_port):
                 if not entry:
                     self.send_error(404, 'Unknown entry')
                 elif path.startswith('/anna/'):
-                    self.redirect(app_origin + '/?entry=' + quote(eid))
+                    self.redirect('/?entry=' + quote(eid))
                 elif not entry['locatable']:
                     self.send_error(422, 'Entry has no source content range')
                 else:
-                    self.redirect('/' + quote(entry['path'], safe='/') + '#' + quote(entry['fragment']))
+                    self.redirect('/book/' + quote(entry['path'], safe='/') + '#' + quote(entry['fragment']))
                 return
             # Exact manifest membership prevents traversal, directory listings, stale files and
             # accidental publication of the upstream shell or internal build metadata.
@@ -180,70 +165,60 @@ def create_servers(db, book, manifest, anna_port, book_port):
                         self.send_response(304)
                         self.send_header('ETag', etag)
                         self.resource_response = True
+                        self.send_header('Cache-Control', 'private, no-cache')
                         self.end_headers()
                         return
+                    self.resource_response = True
                     self.send_response(200)
                     self.send_header('ETag', etag)
-                    self.resource_response = True
-                    self.send_header('Content-Type', self.guess_type(str(resolved)))
+                    self.send_header('Cache-Control', 'private, no-cache')
+                    self.send_header('Content-Type', mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream')
                     self.send_header('Content-Length', str(resolved.stat().st_size))
                     self.end_headers()
-                    self.copyfile(file, self.wfile)
+                    shutil.copyfileobj(file, self.wfile)
             except FileNotFoundError:
                 self.send_error(404)
 
         def do_HEAD(self):
             self.send_error(405)
 
-    try:
-        second = ThreadingHTTPServer(('127.0.0.1', book_port), BookHandler)
-    except BaseException:
-        first.server_close()
-        raise
-    content_origin = f'http://127.0.0.1:{second.server_port}'
-    AnnaHandler.content_origin = content_origin
-    return first, second
+    return ThreadingHTTPServer(('127.0.0.1', anna_port), AnnaHandler)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--anna-port', type=int, default=8001)
-    parser.add_argument('--book-port', type=int, default=8002)
+    parser.add_argument('--anna-port', type=int, default=8000)
     parser.add_argument('--db', type=Path, default=serve.DB)
     parser.add_argument('--book', type=Path, default=BOOK)
     parser.add_argument('--source', type=Path, default=WEB)
     args = parser.parse_args()
-    servers, threads, stop = [], [], threading.Event()
+    server, thread, stop = None, None, threading.Event()
     try:
         manifest = validate_bundle(args.source, args.db, args.book)
-        servers = list(create_servers(args.db, args.book, manifest, args.anna_port, args.book_port))
+        server = create_server(args.db, args.book, manifest, args.anna_port)
         search.WEB = args.source.resolve()
-        servers[0].RequestHandlerClass.search_entries = search.build_index(quiet=True)
+        server.RequestHandlerClass.search_entries = search.build_index(quiet=True)
         # Updating the mirror concurrently with startup must not publish a new index
         # beside old definitions/content. Once started, both are immutable in memory/on disk.
         validate_bundle(args.source, args.db, args.book)
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())
-        for server in servers:
-            thread = threading.Thread(target=server.serve_forever, daemon=True)
-            thread.start()
-            threads.append(thread)
-        print(f'anna: http://127.0.0.1:{servers[0].server_port}/\n'
-              f'reader: http://127.0.0.1:{servers[0].server_port}/read\n'
-              f'content: http://127.0.0.1:{servers[1].server_port}/\n'
-              'Ctrl-C 同时停止两个站点。', flush=True)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        print(f'anna: http://127.0.0.1:{server.server_port}/\n'
+              f'reader: http://127.0.0.1:{server.server_port}/read\n'
+              'Ctrl-C 停止服务。', flush=True)
         while not stop.wait(.5):
-            if not all(t.is_alive() for t in threads):
+            if not thread.is_alive():
                 raise RuntimeError('站点服务意外退出')
     except (OSError, ValueError, RuntimeError) as exc:
         parser.exit(1, str(exc) + '\n')
     finally:
-        for server, thread in zip(servers, threads):
-            if thread.is_alive():
-                server.shutdown()
-        for server in servers:
+        if thread and thread.is_alive():
+            server.shutdown()
+        if server:
             server.server_close()
-        for thread in threads:
+        if thread:
             thread.join()
 
 

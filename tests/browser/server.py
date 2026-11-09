@@ -75,8 +75,8 @@ def main():
             path=urlsplit(self.path).path
             special={'/__ready':(b'OK','text/plain'),'/__cases':(data,'application/json'),
                      '/__fixture__/source':(raw,'text/html; charset=utf-8'),'/__fixture__/linked':(linked,'text/html; charset=utf-8'),
-                     '/anna-assets/links.js':((PROJECT/'book/links.js').read_bytes(),'text/javascript'),
-                     '/anna-assets/link-labels.js':((PROJECT/'web/link-labels.js').read_bytes(),'text/javascript')}
+                     '/book/anna-assets/links.js':((PROJECT/'book/links.js').read_bytes(),'text/javascript'),
+                     '/book/anna-assets/link-labels.js':((PROJECT/'web/link-labels.js').read_bytes(),'text/javascript')}
             if path in special:
                 body,kind=special[path];self.send_response(200);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             if any(x.startswith('.') for x in path.split('/') if x):self.send_error(404);return
@@ -84,7 +84,7 @@ def main():
         def list_directory(self,path):self.send_error(404);return None
     servers=[];threads=[];stop=threading.Event()
     try:
-        servers=list(up.create_servers(DB,BOOK,manifest,PORT+1,PORT+2))
+        servers=[up.create_server(DB,BOOK,manifest,PORT+1)]
         servers.append(ThreadingHTTPServer(('127.0.0.1',PORT),OriginalHandler))
         search.WEB=WEB;search.CACHE=PROJECT/'.cache/browser-search.pkl'
         servers[0].RequestHandlerClass.search_entries=search.build_index(quiet=True)

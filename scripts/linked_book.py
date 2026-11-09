@@ -47,7 +47,7 @@ def text_slice(doc,a,b):
 def inject(raw,payload,encoding='utf-8'):
     # ASCII-only JSON also works for GB18030 pages. Original bytes remain untouched.
     data=json.dumps(payload,ensure_ascii=True,separators=(',',':')).replace('<','\\u003c')
-    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script charset="utf-8" src="/anna-assets/link-labels.js"></script><script charset="utf-8" src="/anna-assets/links.js"></script><script charset="utf-8" src="/anna-assets/topic.js"></script><!-- /anna-link-layer -->'
+    addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script charset="utf-8" src="/book/anna-assets/link-labels.js"></script><script charset="utf-8" src="/book/anna-assets/links.js"></script><script charset="utf-8" src="/book/anna-assets/topic.js"></script><!-- /anna-link-layer -->'
     # Append after the document: the HTML parser handles trailing script elements;
     # binding paths refer to the original body before these extra siblings.
     return raw+addition

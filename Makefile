@@ -3,8 +3,7 @@ WEB_DIR ?= ../5echm-web
 WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(WEB_DIR)")
 REPO ?= https://github.com/DND5eChm/5echm_web.git
 BRANCH ?= pages
-ANNA_PORT ?= 8001
-BOOK_PORT ?= 8002
+ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := help
@@ -16,7 +15,7 @@ help:
 	@echo "  make index     重建原文全文搜索索引"
 	@echo "  make anna      分析查询页 http://127.0.0.1:$(ANNA_PORT)"
 	@echo "  make build     从同一原文生成数据库与 5echm-anna"
-	@echo "  make up        同时启动 anna 与链接版（Ctrl-C 同时停止）"
+	@echo "  make up        启动 anna 查询与阅读（单一端口）"
 	@echo "  make linked    由现有数据库生成链接版（校验原文快照）"
 	@echo "  make inventory 盘点原文页面与目录"
 	@echo "  make test      运行单元测试和浏览器回归（需先构建数据）"
@@ -27,7 +26,7 @@ help:
 	@echo "  make update    显式拉取原文更新并刷新搜索索引；分析数据需 make build"
 	@echo "  make status    查看原文版本和搜索索引状态"
 	@echo "  make clean     删除共享原文镜像及搜索缓存（影响其他引用方）"
-	@echo "  变量: WEB_DIR=原文路径 ANNA_PORT=8001 BOOK_PORT=8002 PYTHON=解释器"
+	@echo "  变量: WEB_DIR=原文路径 ANNA_PORT=8000 PYTHON=解释器"
 	@echo "  WEB_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web"
 
 clone:
@@ -95,7 +94,7 @@ linked:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/linked_book.py
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --anna-port "$(ANNA_PORT)" --book-port "$(BOOK_PORT)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --anna-port "$(ANNA_PORT)"
 
 # Test services use separate localhost ports and stop automatically.
 browser-setup:

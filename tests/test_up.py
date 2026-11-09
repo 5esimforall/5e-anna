@@ -11,7 +11,7 @@ import tempfile
 import threading
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from up import validate_bundle,create_servers
+from up import validate_bundle,create_server
 from linked_book import build_book
 import test_linked_book as fixtures
 
@@ -25,45 +25,47 @@ class StackTests(unittest.TestCase):
             root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
             (source/'literal%2e.css').write_text('literal percent path')
             m,_=build_book(source,db,book)
-            servers=create_servers(db,book,m,0,0);ts=[]
+            servers=[create_server(db,book,m,0)];ts=[]
             try:
                 for s in servers:
                     t=threading.Thread(target=s.serve_forever,daemon=True);t.start();ts.append(t)
-                self.assertNotEqual(servers[0].server_port,servers[1].server_port)
-                self.assertEqual(self.request(servers[1],'/definition/ver_test')[:2],(302,'/topics/test.htm#anna-ver_test'))
+                self.assertEqual(len(servers),1)
+                self.assertEqual(self.request(servers[0],'/book/definition/ver_test')[:2],(302,'/book/topics/test.htm#anna-ver_test'))
                 self.assertEqual(self.request(servers[0],'/read')[0],200)
+                for old_path in ('/topics/test.htm', '/definition/ver_test', '/anna/entry/ver_test'):
+                    self.assertEqual(self.request(servers[0],old_path)[0],404)
                 reader=json.loads(self.request(servers[0],'/api/reader')[2])
-                self.assertEqual(reader['content_origin'],f'http://127.0.0.1:{servers[1].server_port}')
+                self.assertEqual(reader['content_base'],'/book/')
                 target=json.loads(self.request(servers[0],'/api/reader-page?entry=ver_test')[2])
                 self.assertEqual((target['path'],target['fragment']),('topics/test.htm','anna-ver_test'))
                 self.assertEqual(self.request(servers[0],'/api/reader-page?entry=ver_test&path=topics/test.htm')[0],400)
                 self.assertEqual(self.request(servers[0],'/api/reader-page?path=../style.css')[0],404)
                 self.assertEqual(self.request(servers[0],'/api/reader-page?entry=ver_test&snapshot=old')[0],409)
-                self.assertEqual(self.request(servers[1],'/anna/entry/ver_test')[1],f'http://127.0.0.1:{servers[0].server_port}/?entry=ver_test')
-                for p in ['/definition/missing','/anna/entry/missing','/../catalog.sqlite','/anna-manifest.json','/anna-reader.json',
-                          '/','/index.htm','/index.html','/indexh.htm','/webhelpsearch.htm','/webhelpcontents.htm','/webhelpframe.htm']:
-                    self.assertEqual(self.request(servers[1],p)[0],404)
-                self.assertEqual(self.request(servers[1],'/topics/test.htm',host='attacker.example')[0],403)
-                self.assertIn(b'anna-bindings',self.request(servers[1],'/topics/test.htm')[2])
-                self.assertEqual(self.request(servers[1],'/literal%252e.css')[2],b'literal percent path')
-                with closing(HTTPConnection('127.0.0.1', servers[1].server_port)) as c:
-                    c.request('GET', '/style.css')
+                self.assertEqual(self.request(servers[0],'/book/anna/entry/ver_test')[1],'/?entry=ver_test')
+                for p in ['/book/definition/missing','/book/anna/entry/missing','/book/../catalog.sqlite','/book/anna-manifest.json','/book/anna-reader.json',
+                          '/book/','/book/index.htm','/book/index.html','/book/indexh.htm','/book/webhelpsearch.htm','/book/webhelpcontents.htm','/book/webhelpframe.htm']:
+                    self.assertEqual(self.request(servers[0],p)[0],404)
+                self.assertEqual(self.request(servers[0],'/book/topics/test.htm',host='attacker.example')[0],403)
+                self.assertIn(b'anna-bindings',self.request(servers[0],'/book/topics/test.htm')[2])
+                self.assertEqual(self.request(servers[0],'/book/literal%252e.css')[2],b'literal percent path')
+                with closing(HTTPConnection('127.0.0.1', servers[0].server_port)) as c:
+                    c.request('GET', '/book/style.css')
                     response = c.getresponse(); etag = response.getheader('ETag'); response.read()
                     self.assertTrue(etag)
                     self.assertEqual(response.getheader('Cache-Control'), 'private, no-cache')
-                    c.request('GET', '/style.css', headers={'If-None-Match': etag})
+                    c.request('GET', '/book/style.css', headers={'If-None-Match': etag})
                     response = c.getresponse()
                     self.assertEqual(response.status, 304); self.assertEqual(response.read(), b'')
-                    c.request('GET', '/style.css', headers={'If-None-Match': '"different"'})
+                    c.request('GET', '/book/style.css', headers={'If-None-Match': '"different"'})
                     response = c.getresponse()
                     self.assertEqual(response.status, 200); self.assertTrue(response.read())
                 # A running reader cannot combine a rebuilt book with its old navigation/model.
                 (book/'anna-manifest.json').write_text('{}')
                 self.assertEqual(self.request(servers[0],'/read')[0],200)
                 self.assertEqual(self.request(servers[0],'/api/reader')[0],409)
-                self.assertEqual(self.request(servers[1],'/topics/test.htm')[0],409)
-                with closing(HTTPConnection('127.0.0.1', servers[1].server_port)) as c:
-                    c.request('GET', '/style.css', headers={'If-None-Match': etag})
+                self.assertEqual(self.request(servers[0],'/book/topics/test.htm')[0],409)
+                with closing(HTTPConnection('127.0.0.1', servers[0].server_port)) as c:
+                    c.request('GET', '/book/style.css', headers={'If-None-Match': etag})
                     response = c.getresponse()
                     self.assertEqual(response.status, 409); response.read()
             finally:
@@ -75,17 +77,12 @@ class StackTests(unittest.TestCase):
             m,_=build_book(source,db,book);self.assertEqual(validate_bundle(source,db,book),m)
             (book/'style.css').write_text('changed')
             with self.assertRaisesRegex(ValueError,'修改'):validate_bundle(source,db,book)
-    def test_second_port_failure_releases_first(self):
-        with closing(socket.socket()) as occupied:
-            occupied.bind(('127.0.0.1',0));occupied.listen()
-            with closing(socket.socket()) as available:
-                available.bind(('127.0.0.1',0));port=available.getsockname()[1]
-            with self.assertRaises(OSError):create_servers('/none','/none',{'entries':{}},port,occupied.getsockname()[1])
-            with closing(socket.socket()) as probe:probe.bind(('127.0.0.1',port))
-    def test_duplicate_ports_rejected(self):
-        with self.assertRaises(ValueError):create_servers('/none','/none',{},8123,8123)
+    def test_removed_book_port_argument_is_rejected(self):
+        result=subprocess.run([sys.executable, 'scripts/up.py', '--book-port', '8002'],capture_output=True,text=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('unrecognized arguments',result.stderr)
 
-    def test_sigint_and_sigterm_stop_both_endpoints(self):
+    def test_sigint_and_sigterm_stops_single_server(self):
         for sig in (signal.SIGINT, signal.SIGTERM):
             with self.subTest(signal=sig), tempfile.TemporaryDirectory() as td:
                 root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
@@ -94,7 +91,7 @@ class StackTests(unittest.TestCase):
                 code="import sys; from pathlib import Path; import up; up.search.CACHE=Path(sys.argv.pop(1)); up.main()"
                 script=Path(__file__).resolve().parents[1]/'scripts'
                 with (root/'log').open('w+') as log:
-                    process=subprocess.Popen([sys.executable,'-c',code,str(root/'search.pkl'),'--source',str(source),'--db',str(db),'--book',str(book),'--anna-port','0','--book-port','0'],cwd=script,stdout=log,stderr=log)
+                    process=subprocess.Popen([sys.executable,'-c',code,str(root/'search.pkl'),'--source',str(source),'--db',str(db),'--book',str(book),'--anna-port','0'],cwd=script,stdout=log,stderr=log)
                     try:
                         deadline=time.monotonic()+10
                         output=''
@@ -103,9 +100,10 @@ class StackTests(unittest.TestCase):
                             if 'Ctrl-C' in output or process.poll() is not None:break
                             time.sleep(.02)
                         self.assertIn('Ctrl-C',output,output)
-                        ports=[int(line.split(':')[-1].rstrip('/')) for line in output.splitlines() if line.startswith(('anna:','content:'))]
-                        self.assertEqual(len(ports),2)
-                        for port,path in zip(ports,('/', '/topics/test.htm')):
+                        ports=[int(line.split(':')[-1].rstrip('/')) for line in output.splitlines() if line.startswith(('anna:',))]
+                        self.assertEqual(len(ports),1)
+                        for path in ('/', '/read', '/book/topics/test.htm'):
+                            port=ports[0]
                             with closing(HTTPConnection('127.0.0.1',port,timeout=2)) as c:
                                 c.request('GET',path);r=c.getresponse();self.assertEqual(r.status,200);r.read()
                         process.send_signal(sig);self.assertEqual(process.wait(timeout=5),0)
@@ -118,12 +116,12 @@ class StackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
             m,_=build_book(source,db,book);m['entries']['ver_test']['locatable']=False
-            servers=create_servers(db,book,m,0,0)
-            t=threading.Thread(target=servers[1].serve_forever,daemon=True);t.start()
+            servers=[create_server(db,book,m,0)]
+            t=threading.Thread(target=servers[0].serve_forever,daemon=True);t.start()
             try:
-                self.assertEqual(self.request(servers[1],'/definition/ver_test')[0],422)
-                self.assertEqual(self.request(servers[1],'/anna/entry/ver_test')[0],302)
+                self.assertEqual(self.request(servers[0],'/book/definition/ver_test')[0],422)
+                self.assertEqual(self.request(servers[0],'/book/anna/entry/ver_test')[0],302)
             finally:
-                servers[1].shutdown()
+                servers[0].shutdown()
                 for s in servers:s.server_close()
                 t.join()

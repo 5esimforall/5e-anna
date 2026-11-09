@@ -24,6 +24,12 @@ class WorkflowTests(unittest.TestCase):
         for command in ('make build', 'make test', 'make update', 'make anna'):
             self.assertIn(command, result.stdout)
 
+    def test_default_single_port_command(self):
+        result = self.make(PROJECT, '-n', 'up')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--anna-port "8000"', result.stdout)
+        self.assertNotIn('--book-port', result.stdout)
+
     def test_status_with_and_without_search_cache(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

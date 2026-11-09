@@ -2,7 +2,7 @@ const {test:base,expect} = require('@playwright/test');
 const fs = require('node:fs/promises');
 const {PNG} = require('pngjs');
 const port=Number(process.env.ANNA_E2E_PORT || 18380);
-const original=`http://127.0.0.1:${port}`, anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+2}`;
+const original=`http://127.0.0.1:${port}`, anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+1}/book`;
 const topic=(origin,path)=>origin+'/'+path.split('/').map(encodeURIComponent).join('/');
 // Uncaught JS errors and failed bindings must fail the test, including popup/frame errors.
 const test=base.extend({context:async({context},use)=>{
@@ -111,7 +111,7 @@ test('existing reference reaches the exact target in the current page',async({pa
   await expect(link).toHaveAttribute('target','_self');
   await link.focus();await link.click();
   await expect(page).toHaveURL(topic(book,ref.path)+'#'+ref.fragment);await ready(page);
-  const anchor=page.locator(`anna-links a[href="/anna/entry/${ref.id}"]`).first();
+  const anchor=page.locator(`anna-links a[href="/book/anna/entry/${ref.id}"]`).first();
   await expect(anchor).toBeVisible();
   const box=await anchor.boundingBox();expect(box.y).toBeGreaterThanOrEqual(0);expect(box.y).toBeLessThan(80);
   await attach(testInfo,'reference-target.png',await page.screenshot(),'image/png');
@@ -193,7 +193,7 @@ test('fixture table links track moved nodes, focus, scrolling and narrow reflow'
   await expect(page.locator('#wrapper table')).toHaveCount(1);
   async function aligned(){
     await expect.poll(()=>page.evaluate(()=>{
-      const a=document.querySelector('anna-links').shadowRoot.querySelector('a[href="/anna/entry/cell"]').getBoundingClientRect();
+      const a=document.querySelector('anna-links').shadowRoot.querySelector('a[href="/book/anna/entry/cell"]').getBoundingClientRect();
       const r=document.createRange();r.selectNodeContents(document.querySelector('#cell'));
       const b=r.getBoundingClientRect();return Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y));
     })).toBeLessThan(1);
@@ -216,14 +216,14 @@ test('reference links survive source-table pagination and filtering',async({page
   const ref=cases.reference;
   await page.goto(topic(book,cases.reference_source));await ready(page);
   const link=page.getByRole('link',{name:'查看定义: '+ref.text,exact:true}).first();
-  await expect(link).toHaveAttribute('href','/definition/'+ref.id);
+  await expect(link).toHaveAttribute('href','/book/definition/'+ref.id);
   await page.getByRole('button',{name:'下一页',exact:true}).click();
   await expect(link).toHaveCount(0);
   await page.getByRole('button',{name:'上一页',exact:true}).click();
-  await expect(link).toHaveAttribute('href','/definition/'+ref.id);
+  await expect(link).toHaveAttribute('href','/book/definition/'+ref.id);
   await page.getByRole('searchbox',{name:'搜索物品',exact:true}).fill('Abjurer');
   await expect(page.getByText(/找到 1 \/ \d+ 条/)).toBeVisible();
-  await expect(link).toHaveAttribute('href','/definition/'+ref.id);
+  await expect(link).toHaveAttribute('href','/book/definition/'+ref.id);
   const overlay=await link.boundingBox();
   const originalLink=page.getByRole('link',{name:ref.text,exact:true});
   const source=await originalLink.boundingBox();

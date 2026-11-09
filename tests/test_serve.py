@@ -12,7 +12,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 from urllib.parse import urlencode
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from serve import DB, Handler, ThreadingHTTPServer, connect, query, detail, meta, csv_export
+from serve import DB, Handler, ThreadingHTTPServer, connect, query, detail, meta, csv_export, facets
 import browse
 
 @unittest.skipUnless(DB.exists(),'Build the dataset first')
@@ -167,22 +167,44 @@ class WebTests(unittest.TestCase):
             view={r[0] for r in self.db.execute('SELECT id FROM "'+preset['name']+'"')}
             self.assertEqual(ids,view,preset['name'])
 
-    def test_type_counts_show_where_a_search_hits(self):
-        spells=query(self.db,{'type':['spell'],'q':['火'],'f_school':['塑能']})
-        counts=spells['type_counts']
-        # The counts ignore the chosen types and their own facets, and match the search in every type.
-        unscoped=query(self.db,{'q':['火'],'versions':['each']})
-        self.assertEqual(sum(counts.values()),unscoped['total'])
-        self.assertEqual(counts['spell'],query(self.db,{'type':['spell'],'q':['火'],'versions':['each']})['total'])
-        self.assertGreater(counts['magic_item'],0);self.assertNotIn('section',counts)
-        self.assertLess(spells['versions_total'],counts['spell'])
-        # Shared filters still apply: a ruleset narrows every type's count.
-        narrowed=query(self.db,{'type':['spell'],'q':['火'],'ruleset':['5r']})['type_counts']
-        self.assertTrue(all(narrowed.get(t,0)<=n for t,n in counts.items()))
-        self.assertLess(sum(narrowed.values()),sum(counts.values()))
-        # Later batches continue the same query and carry no counts; neither does an export.
-        self.assertNotIn('type_counts',query(self.db,{'type':['spell'],'offset':['150']}))
-        self.assertNotIn('type_counts',query(self.db,{'type':['spell']},export=True))
+    def test_search_terms_all_match_and_rank_by_the_latest(self):
+        both=query(self.db,{'q':['火','球'],'versions':['each']},export=True)['rows']
+        self.assertTrue(both);self.assertTrue(all('火' in r['name'] and '球' in r['name'] for r in both))
+        one=query(self.db,{'q':['火'],'versions':['each']})['total']
+        self.assertLess(len(both),one)
+        # Repeated and blank terms add nothing; the latest term decides match order.
+        self.assertEqual(query(self.db,{'q':['火','球','火',' ']})['total'],query(self.db,{'q':['火','球']})['total'])
+        self.assertEqual(query(self.db,{'q':['球','火球术']})['rows'][0]['name_zh'],'火球术')
+        for bad in [{'q':[str(i) for i in range(21)]},{'q':['x'*201]}]:
+            with self.assertRaises(ValueError):query(self.db,bad)
+
+    def test_counts_say_what_choosing_each_option_would_match(self):
+        params={'type':['spell'],'q':['火'],'f_school':['塑能']}
+        data=facets(self.db,params)
+        self.assertEqual(data['total'],query(self.db,{**params,'versions':['each']})['total'])
+        self.assertEqual(data['scope_total'],1385)
+        groups={g['key']:g for g in data['groups']}
+        self.assertEqual(list(groups)[0],'type')
+        # An option counts the matches with it chosen and every other condition kept.
+        school={o['value']:o['count'] for o in groups['f_school']['options']}
+        for value in ['塑能','咒法','防护']:
+            self.assertEqual(school[value],query(self.db,{**params,'f_school':[value],'versions':['each']})['total'])
+        # A type counts what switching to it matches: conditions that type cannot answer drop out.
+        types={o['value']:o['count'] for o in groups['type']['options']}
+        self.assertEqual(types['spell'],data['total'])
+        self.assertEqual(types['magic_item'],query(self.db,{'type':['magic_item'],'q':['火'],'versions':['each']})['total'])
+        self.assertNotIn('section',types)
+        # Removing one condition: each search term and field is its own condition.
+        self.assertEqual(data['without']['q0'],query(self.db,{'type':['spell'],'f_school':['塑能'],'versions':['each']})['total']-data['total'])
+        self.assertEqual(data['without']['f_school'],query(self.db,{'type':['spell'],'q':['火'],'versions':['each']})['total']-data['total'])
+        # A chosen value stays listed when nothing in scope holds it, so it can be unchosen.
+        elsewhere=self.db.execute("SELECT es.source_id FROM entry_sources es JOIN entries e ON e.id=es.entry_id GROUP BY es.source_id HAVING sum(e.type='spell')=0 LIMIT 1").fetchone()[0]
+        odd={g['key']:g for g in facets(self.db,{'type':['spell'],'source':[elsewhere]})['groups']}
+        self.assertEqual([o['count'] for o in odd['source']['options'] if o['value']==elsewhere],[0])
+        # Shared filters narrow every count.
+        narrowed={o['value']:o['count'] for o in facets(self.db,{**params,'ruleset':['5r']})['groups'][0]['options']}
+        self.assertTrue(all(narrowed[t]<=n for t,n in types.items()))
+        self.assertEqual(self.request('/api/facets?'+urlencode({'type':'spell','q':'火'}))[0],200)
 
     def test_entry_layout_endpoint(self):
         eid=self.db.execute("SELECT id FROM entries WHERE type='spell' AND name_en='Etherealness' AND ruleset='5r'").fetchone()[0]

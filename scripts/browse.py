@@ -216,14 +216,15 @@ def register(db):
     db.create_function('browse_query',0,lambda:'')
 
 
-def add_filters(params,clauses,values):
+def facet_conditions(params):
+    """One condition per facet field the request constrains, keyed by its URL parameter; a CR range is one condition."""
+    out=[]
     for field in LABELS:
         chosen=list(dict.fromkeys(params.get('f_'+field,[])))
         if not chosen:continue
         if len(chosen)>200 or any(len(x)>200 for x in chosen):raise ValueError('筛选值过多或过长')
-        if chosen==[NONE]:clauses.append('0');continue
-        clauses.append('EXISTS(SELECT 1 FROM json_each(browse_values(e.fields,?)) f WHERE f.value IN ('+','.join('?' for _ in chosen)+'))')
-        values.extend([field]+chosen)
+        if chosen==[NONE]:out.append(('f_'+field,'0',[]));continue
+        out.append(('f_'+field,'EXISTS(SELECT 1 FROM json_each(browse_values(e.fields,?)) f WHERE f.value IN ('+','.join('?' for _ in chosen)+'))',[field]+chosen))
     bounds={}
     for name in ['cr_min','cr_max']:
         if params.get(name):
@@ -231,8 +232,10 @@ def add_filters(params,clauses,values):
             if value is None:raise ValueError('CR 必须是非负数字或分数')
             bounds[name]=value
     if bounds.get('cr_min',0)>bounds.get('cr_max',math.inf):raise ValueError('最低 CR 不能大于最高 CR')
-    for name,value in bounds.items():
-        clauses.append("browse_rank(e.fields,'cr')"+('>=?' if name=='cr_min' else '<=?'));values.append(value)
+    if bounds:
+        sql=' AND '.join("browse_rank(e.fields,'cr')"+('>=?' if name=='cr_min' else '<=?') for name in bounds)
+        out.append(('cr',sql,list(bounds.values())))
+    return out
 
 
 MATCH = 'match'
@@ -247,15 +250,22 @@ def match_rank(zh, en, name, query):
     return 0 if q in names else 1 if any(n.startswith(q) for n in names) else 2
 
 
+def search_terms(params):
+    """The name searches in force, in the order the reader added them; every one must match."""
+    terms=list(dict.fromkeys(t.strip() for t in params.get('q',[]) if t.strip()))
+    if len(terms)>20 or any(len(t)>200 for t in terms):raise ValueError('关键词过多或过长')
+    return terms
+
+
 def sort_key(params, default):
     """The sort in effect: an explicit choice, else match quality while searching, else the table's default."""
-    searching=bool(params.get('q',[''])[0].strip())
+    searching=bool(search_terms(params))
     sort=params.get('sort',[MATCH if searching else default])[0]
     return default if sort==MATCH and not searching else sort
 
 
 def order_sql(params, default='name'):
-    """ORDER BY for the effective sort. Match ranking reads the search through browse_query(),
+    """ORDER BY for the effective sort. Match ranking reads the latest search term through browse_query(),
     which the caller registers on its connection (one connection per request)."""
     sort=sort_key(params,default)
     direction=params.get('dir',['asc'])[0]
@@ -325,25 +335,6 @@ def option_order(field,value):
     if value==UNKNOWN:return (3,0,'')
     if value==CONFLICT:return (2,0,'')
     return (1,0,value)
-
-
-def facets(db,types):
-    """Facet options and counts for the chosen entry types (all typed entries when none is chosen)."""
-    config=schema_for(types)
-    where=('e.type IN ('+','.join('?' for _ in types)+')') if types else "e.type!='section'"
-    counts={f:Counter() for f in config['facets']+config['flags']}
-    total=0
-    for row in db.execute('SELECT e.fields FROM entries e WHERE '+where,list(types)):
-        total+=1;fields=json.loads(row[0])
-        for f in counts:counts[f].update(normalized(fields,f))
-    source_counts=dict(db.execute('SELECT es.source_id,count(*) FROM entry_sources es JOIN entries e ON e.id=es.entry_id WHERE '+where+' GROUP BY es.source_id',list(types)))
-    groups=[]
-    for field,c in counts.items():
-        groups.append({'key':field,'label':LABELS[field],'mode':'flag' if field in config['flags'] else 'multi',
-                       'options':[{'value':v,'label':option_label(field,v),'count':c[v]} for v in sorted(c,key=lambda v:option_order(field,v))]})
-    # Mixed types lead with the facets most of their entries can answer (rarity before weapon mastery).
-    if len(config['kinds'])>1:groups.sort(key=lambda g:-(total-counts[g['key']][UNKNOWN]))
-    return {'schema':config,'groups':groups,'source_counts':source_counts,'total':total}
 
 
 def enrich(row):

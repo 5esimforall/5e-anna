@@ -10,10 +10,12 @@ const anna=`http://127.0.0.1:${port+1}`;
 const spells='/?type=spell';
 async function ready(page){await expect(page.locator('#result-count')).toContainText('找到');await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');}
 async function visit(page,query=spells){await page.goto(anna+query);await ready(page);}
-// The heading opens the type picker; “only” buttons choose one type and close it.
+// Type is an ordinary field: choosing one type unchooses the others, then picks it.
 async function chooseOnly(page,type){
-  await page.locator('#type-toggle').click();await page.locator(`#type-panel [data-only="${type}"]`).click();
-  await expect(page.locator('#type-panel')).toBeHidden();
+  const panel=page.locator('#filter-panel');if(await panel.isHidden())await page.locator('#toggle-filters').click();
+  const group=page.locator('[data-group="type"]');
+  if(await group.locator('[data-action="clear"]').isEnabled()){await group.locator('[data-action="clear"]').click();await ready(page);}
+  await group.locator(`input[value="${type}"]`).check({force:true});
 }
 async function entry(page,index=0){return page.locator('#results .entry-name').nth(index).getAttribute('data-entry');}
 async function read(page,id){await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');await expect(page.locator('#detail .footnote')).toContainText(id);}
@@ -33,8 +35,9 @@ test('spell multi-select, mutually exclusive flags, unknowns and retained active
   await page.setViewportSize({width:1440,height:900});await visit(page);
   await page.locator('#toggle-filters').click();
   await expect(page.locator('#domain-extra')).not.toHaveAttribute('open','');
-  await page.getByRole('button',{name:'环阶清空',exact:true}).click();await ready(page);
-  await expect(page.locator('#empty')).toBeVisible();
+  // Nothing chosen sets no condition; choosing values includes just those.
+  await expect(page.getByRole('button',{name:'环阶清除',exact:true})).toBeDisabled();
+  await expect(page.getByRole('checkbox',{name:'环阶：一环',exact:true})).not.toBeChecked();
   await page.getByRole('checkbox',{name:'环阶：一环',exact:true}).check();await ready(page);
   await page.getByRole('checkbox',{name:'环阶：二环',exact:true}).check();
   let data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
@@ -51,8 +54,8 @@ test('spell multi-select, mutually exclusive flags, unknowns and retained active
   await expect(page.locator('#active-filters')).toContainText('一环、二环');
   await expect(page.locator('#active-filters')).toContainText('专注');
   await shot(page,testInfo,'spell-active-filters.png');
-  // Reset clears the conditions within the chosen type; only the type's own chip remains.
-  await page.locator('#reset').click();await ready(page);await expect(page.locator('#active-filters button')).toHaveText(['类型：法术 ×']);
+  // Clearing removes every condition, the type included.
+  await page.locator('#reset').click();await ready(page);await expect(page.locator('#active-filters button')).toHaveCount(0);
 });
 
 test('filters start collapsed while active conditions stay visible and results keep the first screen',async({page})=>{
@@ -78,6 +81,8 @@ test('filters start collapsed while active conditions stay visible and results k
 
 test('switching types keeps dimmed results and counts consistent until the new table renders',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);
+  await page.locator('#toggle-filters').click();
+  await page.getByRole('checkbox',{name:'类型：法术',exact:true}).uncheck({force:true});await ready(page);
   const range=await page.locator('#range').textContent();
   const columns=await page.locator('#columns th').count(),rows=await page.locator('#results tr').count();
   let release;const gate=new Promise(resolve=>release=resolve);let started;const waiting=new Promise(resolve=>started=resolve);
@@ -191,7 +196,7 @@ test('narrow reader traps focus, tabs use arrow keys, resize keeps content and c
 test('changing filters or classification closes a stale reader without losing filter semantics',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page);await page.locator('#toggle-filters').click();
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
-  await page.getByRole('checkbox',{name:'环阶：戏法',exact:true}).uncheck();await ready(page);
+  await page.getByRole('checkbox',{name:'环阶：戏法',exact:true}).check();await ready(page);
   await expect(page.locator('#detail')).toBeHidden();expect(new URL(page.url()).searchParams.has('entry')).toBeFalsy();
   await page.locator('#results .entry-name').first().click();await read(page,await entry(page));
   // Choosing other types closes the reader and drops the conditions the new table cannot answer.
@@ -212,7 +217,7 @@ test('every type and preset shares the workbench without losing its columns or f
     await visit(page,'/?'+choice.search);
     const facets=await (await page.request.get(anna+'/api/facets?'+new URLSearchParams((choice.types||[]).map(t=>['type',t])))).json();
     await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.filter(k=>!AUDIT_COLUMNS.includes(k)).length);
-    for(const group of facets.groups)await expect(page.locator(`[data-group="f_${group.key}"]`)).toHaveCount(1);
+    for(const group of facets.groups)await expect(page.locator(`[data-group="${group.key}"]`)).toHaveCount(1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
     const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
     await page.locator('#close-detail').click();
@@ -228,69 +233,59 @@ test('every type and preset shares the workbench without losing its columns or f
   await shot(page,testInfo,'magic-items-filters.png');
 });
 
-test('the heading picks types: groups, presets, multi-select, search counts and a removable chip',async({page})=>{
+test('type is an ordinary field: counts, include on click, invert, removable chip and clear all',async({page})=>{
   const meta=await (await page.request.get(anna+'/api/meta')).json();
   await page.setViewportSize({width:1440,height:900});await visit(page);
   await expect(page.locator('#title')).toHaveText('法术');
-  await page.locator('#type-toggle').click();
-  await expect(page.locator('#type-toggle')).toHaveAttribute('aria-expanded','true');
-  // Every type the data holds appears once; the first group leads with all entries and spells.
-  const offered=await page.locator('#type-panel [data-only]').evaluateAll(els=>els.map(e=>e.dataset.only));
-  expect(offered.slice(0,2)).toEqual(['','spell']);
-  expect([...offered].sort()).toEqual(['',...meta.type_order].sort());
-  for(const [label,type] of [['怪物','creature'],['物品','magic_item'],['角色选项','class'],['规则','condition']])
-    await expect(page.getByRole('group',{name:label}).locator(`[data-only="${type}"]`)).toHaveCount(1);
-  await expect(page.locator('#type-panel [data-only="spell"]')).toHaveAttribute('aria-pressed','true');
-  await expect(page.locator('#type-panel [data-only="spell"]')).toBeFocused();
-  // A preset is one type and one facet value: it names the heading and shows as an ordinary chip.
-  await page.locator('#type-panel [data-preset="坐骑"]').click();await ready(page);
-  await expect(page.locator('#type-panel')).toBeHidden();await expect(page.locator('#type-toggle')).toBeFocused();
-  await expect(page.locator('#title')).toHaveText('坐骑');
-  expect(new URL(page.url()).searchParams.getAll('f_role')).toEqual(['坐骑']);
-  expect((await queryMatchesAPI(page)).versions_total).toBe(20);
-  await expect(page.locator('#active-filters')).toContainText('使用角色：坐骑');
+  await expect(page.locator('#title')).not.toHaveAttribute('role','button');
+  await page.locator('#toggle-filters').click();
+  const group=page.locator('[data-group="type"]');
+  // Every type the data holds is an option, in reading order, under the same field layout as the others.
+  expect(await group.locator('input').evaluateAll(els=>els.map(e=>e.value))).toEqual(meta.type_order);
+  await expect(group.locator('legend')).toHaveText('类型');
+  await expect(page.getByRole('checkbox',{name:'类型：法术',exact:true})).toBeChecked();
   // Adding a type keeps only the conditions every chosen type can answer, so the new type's entries appear.
-  await page.locator('#type-toggle').click();await page.getByRole('checkbox',{name:'加入法术'}).check();await ready(page);
-  await expect(page.locator('#type-panel')).toBeVisible();await expect(page.getByRole('checkbox',{name:'移出法术'})).toBeFocused();
+  await visit(page,'/?type=creature&f_role='+encodeURIComponent('坐骑'));await page.locator('#toggle-filters').click();
+  expect((await queryMatchesAPI(page)).versions_total).toBe(20);
+  await page.getByRole('checkbox',{name:'类型：法术',exact:true}).check({force:true});await ready(page);
   expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['spell','creature']);
   expect(new URL(page.url()).searchParams.has('f_role')).toBeFalsy();
   await expect(page.locator('#title')).toHaveText('法术、生物数据卡');
-  await page.keyboard.press('Escape');await expect(page.locator('#type-panel')).toBeHidden();await expect(page.locator('#type-toggle')).toBeFocused();
-  // Group labels choose every type in the group.
-  await page.locator('#type-toggle').click();
-  const items=await page.getByRole('group',{name:'物品'}).locator('[data-only]').evaluateAll(els=>els.map(e=>e.dataset.only));
-  await page.getByRole('group',{name:'物品'}).locator('.type-group-label').click();await ready(page);
-  expect([...new URL(page.url()).searchParams.getAll('type')].sort()).toEqual([...items].sort());
-  // The chip removes the types and returns to all entries; reset keeps the types and clears the rest.
-  await chooseOnly(page,'spell');await page.locator('#q').fill('火');await page.locator('#q').press('Enter');await ready(page);
-  await page.locator('#reset').click();await ready(page);
-  expect(new URL(page.url()).search).toBe('?type=spell');
+  await expect(page.getByRole('checkbox',{name:'类型：法术',exact:true})).toBeFocused();
+  // Invert chooses every other type; the chip removes the field and returns to all entries.
+  await page.getByRole('button',{name:'类型反选',exact:true}).click();await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('type')).not.toContain('spell');
   await page.locator('#active-filters [data-remove="type"]').click();await ready(page);
   await expect(page.locator('#title')).toHaveText('全部条目');expect(new URL(page.url()).search).toBe('');
-  // A pointer outside the picker closes it without choosing.
-  await page.locator('#type-toggle').click();await page.locator('.bottom-bar').click();await expect(page.locator('#type-panel')).toBeHidden();
+  // Clear all removes every condition, types included, and keeps presentation choices.
+  await visit(page,spells+'&q='+encodeURIComponent('火')+'&sort=name');
+  await page.locator('#reset').click();await ready(page);
+  expect(new URL(page.url()).search).toBe('?sort=name');
 });
 
-test('a search within some types shows its matches in the others',async({page})=>{
+test('counts say what choosing each option would match, and an empty result offers conditions to drop',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await visit(page,spells+'&q='+encodeURIComponent('火')+'&f_school='+encodeURIComponent('塑能'));
-  const data=await queryMatchesAPI(page);
-  const others=Object.entries(data.type_counts).filter(([t])=>t!=='spell').reduce((sum,[,n])=>sum+n,0);
-  expect(others).toBeGreaterThan(0);
+  const facets=await (await page.request.get(anna+'/api/facets'+new URL(page.url()).search)).json();
+  const types=Object.fromEntries(facets.groups[0].options.map(o=>[o.value,o.count]));
+  const others=Object.entries(types).filter(([t])=>t!=='spell').reduce((sum,[,n])=>sum+n,0);
   await expect(page.locator('#elsewhere')).toHaveText(`其他类型另有 ${fmt(others)} 条`);
-  // The picker's counts follow the search, not the spell-only school filter.
-  await page.locator('#elsewhere').click();await expect(page.locator('#type-panel')).toBeVisible();
-  await expect(page.locator('#type-panel [data-only="magic_item"] span')).toHaveText(fmt(data.type_counts.magic_item));
-  await expect(page.locator('#type-panel [data-only="spell"] span')).toHaveText(fmt(data.type_counts.spell));
-  await page.keyboard.press('Escape');
-  // An empty result offers the types where the search does match.
+  await page.locator('#elsewhere').click();await expect(page.locator('#filter-panel')).toBeVisible();
+  await expect(page.locator('[data-group="type"] input').first()).toBeFocused();
+  await expect(page.locator('[data-group="type"] input[value="magic_item"] + span .chip-count')).toHaveText(fmt(types.magic_item));
+  const school=facets.groups.find(g=>g.key==='f_school').options.find(o=>o.value==='咒法');
+  await expect(page.locator('[data-group="f_school"] input[value="咒法"] + span .chip-count')).toHaveText(fmt(school.count));
+  // Counts follow every change without rebuilding the panel, so focus stays on the chosen option.
+  await page.getByRole('checkbox',{name:'学派：咒法',exact:true}).check({force:true});await ready(page);
+  await expect(page.getByRole('checkbox',{name:'学派：咒法',exact:true})).toBeFocused();
+  // An empty result lists each condition whose removal brings results back.
   await visit(page,spells+'&q='+encodeURIComponent('成年红龙'));
   await expect(page.locator('#empty')).toBeVisible();
-  await page.locator('#empty-elsewhere [data-only="creature"]').click();await ready(page);
-  expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['creature']);
+  await expect(page.locator('#empty-elsewhere [data-drop="type"]')).toContainText('去掉 类型：法术');
+  await page.locator('#empty-elsewhere [data-drop="type"]').click();await ready(page);
+  expect(new URL(page.url()).searchParams.has('type')).toBeFalsy();
   expect(new URL(page.url()).searchParams.get('q')).toBe('成年红龙');
   await expect(page.locator('#results .entry-name').first()).toHaveText('成年红龙');
-  await expect(page.locator('#elsewhere')).toBeVisible();
   // Without a search, or across all types, there is nothing elsewhere to point at.
   await visit(page);await expect(page.locator('#elsewhere')).toBeHidden();
 });
@@ -457,17 +452,13 @@ test('a search ranks closer names first until the reader picks a sort',async({pa
   await expect(page.locator('#sort option[value="match"]')).toHaveCount(0);await expect(page.locator('#sort')).toHaveValue('name');
 });
 
-test('phones hide keyboard hints and fit the type picker to the screen',async({browser})=>{
+test('phones hide keyboard hints and keep the filter panel within the screen',async({browser})=>{
   const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
   const page=await context.newPage();await visit(page,'/?type=feat');
-  // The picker scrolls within the screen and brings the chosen type into view.
-  await page.locator('#type-toggle').click();const panel=page.locator('#type-panel');await expect(panel).toBeVisible();
-  const box=await panel.boundingBox();expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
-  expect(box.y+box.height).toBeLessThanOrEqual(844);
-  expect(await panel.evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
+  await page.locator('#toggle-filters').click();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
-  await expect(panel.locator('[data-only="feat"]')).toBeInViewport();
-  await panel.locator('[data-only="feat"]').click();await expect(panel).toBeHidden();
+  await expect(page.getByRole('checkbox',{name:'类型：专长',exact:true})).toBeChecked();
+  await page.locator('#toggle-filters').click();
   await expect(page.locator('.searchbox kbd')).toBeHidden();
   // Version pills are the one target inside a row, so on touch they keep a fingertip's height.
   expect((await page.locator('#results .version-pill').first().boundingBox()).height).toBeGreaterThanOrEqual(30);
@@ -555,7 +546,7 @@ test('opening, stepping and closing an entry leave the heading and every row whe
   // Before: the rail folded to 44px and the results turned into a list, moving a clicked row from y=587 to y=854.
   const id=await entry(page,3);await row(3).locator('td[data-label="学派"]').click();await read(page,id);
   expect(await places()).toEqual(before);expect(await lines()).toEqual(chrome);
-  await expect(page.locator('#columns')).toBeVisible();await expect(page.locator('#type-toggle')).toBeVisible();
+  await expect(page.locator('#columns')).toBeVisible();await expect(page.locator('#title')).toBeVisible();
   // The reader takes its share of the workspace.
   expect(Math.round((await page.locator('#detail').boundingBox()).width)).toBe(Math.round(1440*.6));
   // Another row opens in place of the first; closing leaves every row and line where it was.

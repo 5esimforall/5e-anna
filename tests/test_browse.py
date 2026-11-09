@@ -7,7 +7,7 @@ import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 import browse
-from serve import DB,connect,query,csv_export,detail
+from serve import DB,connect,query,csv_export,detail,facets
 
 class NormalizeTests(unittest.TestCase):
     def test_level_alias(self):
@@ -89,7 +89,7 @@ class BrowseCorpusTests(unittest.TestCase):
     def tearDown(self):self.db.close()
     def ids(self,params):return {e['id'] for e in query(self.db,params,export=True)['rows']}
     def test_facets_differ_by_type(self):
-        spells=browse.facets(self.db,['spell']);monsters=browse.facets(self.db,['creature']);items=browse.facets(self.db,['magic_item'])
+        spells=facets(self.db,{'type':['spell']});monsters=facets(self.db,{'type':['creature']});items=facets(self.db,{'type':['magic_item']})
         self.assertIn('spell_classes',spells['schema']['facets']);self.assertNotIn('rarity',spells['schema']['facets'])
         self.assertEqual(monsters['schema']['range'],'cr');self.assertIn('rarity',items['schema']['facets'])
         self.assertEqual(spells['total'],1385)
@@ -232,7 +232,7 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertTrue(gear);self.assertTrue(all(r['fields'].get('price') for r in gear))
         self.assertEqual(rows[0]['type'],'equipment')
         # Its leading facets are the ones most of its entries can answer.
-        self.assertEqual([g['key'] for g in browse.facets(self.db,['equipment','magic_item'])['groups']][:2],['rarity','item_type'])
+        self.assertEqual([g['key'] for g in facets(self.db,{'type':['equipment','magic_item']})['groups'] if g['key'].startswith('f_')][:2],['f_rarity','f_item_type'])
         header=csv_export(query(self.db,{'type':['equipment','magic_item']},export=True)['rows'],browse.schema_for(['equipment','magic_item'])).decode('utf-8-sig').splitlines()[0].split(',')
         for label in ['价格','重量','稀有度']:self.assertIn(label,header)
 
@@ -242,7 +242,7 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertTrue(all(not re.match(r'\d+\s*级\s*[:：]',r['name_zh']) for r in rows))
         levels=[browse.number(r['quickref']['level'][0]) for r in rows]
         self.assertEqual(levels,sorted(levels));self.assertEqual(levels[0],1)
-        options=[o['value'] for o in next(g for g in browse.facets(self.db,['class_feature'])['groups'] if g['key']=='level')['options']]
+        options=[o['value'] for o in next(g for g in facets(self.db,{'type':['class_feature']})['groups'] if g['key']=='f_level')['options']]
         self.assertEqual(options[:3],['1','2','3'])
         tenth=query(self.db,{'type':['class_feature'],'f_level':['10'],'limit':['20']})['rows']
         self.assertTrue(tenth);self.assertTrue(all(r['fields']['level']==10 for r in tenth))

@@ -134,32 +134,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
    so the reader taking width from the results never pushes the rows down. */
 .heading-row { display: flex; align-items: baseline; gap: 14px; margin-bottom: 17px; white-space: nowrap; }
 h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px; font-weight: 600; line-height: 1.25; }
-/* The heading names the chosen types and opens the type picker; it is the table's title and its scope. */
-.type-menu { flex-shrink: 1; min-width: 0; margin-left: -8px; }
-.type-menu>h1 { display: flex; min-width: 0; }
-#type-toggle { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; max-width: 100%; margin: 0; padding: 0 8px; border: 0; border-radius: var(--anna-radius); background: transparent; color: inherit; font: inherit; }
-#type-toggle:hover, #type-toggle[aria-expanded=true] { background: var(--anna-hover); }
-#title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#type-toggle>.menu-caret { flex-shrink: 0; color: var(--anna-muted); font-family: var(--anna-sans); font-size: 15px; }
-#type-panel { left: 0; right: auto; display: block; width: min(820px,calc(100vw - 32px)); max-height: min(70dvh,640px); overflow: auto; padding: 12px; white-space: normal; }
-/* Columns sit inside the scrolling panel, so a short window scrolls the groups instead of adding columns. */
-.type-columns { columns: 4 180px; column-gap: 18px; }
-.type-group { display: grid; gap: 1px; margin-bottom: 12px; break-inside: avoid; }
-.type-group-label { justify-self: start; min-height: 28px; padding: 3px 8px; border: 0; background: transparent; color: var(--anna-muted); font-size: var(--anna-type-ui); }
-.type-group-label:hover { color: var(--anna-ink); background: var(--anna-hover); }
-.type-row { display: flex; align-items: center; gap: 2px; border-radius: var(--anna-radius-sm); }
-.type-row:hover { background: var(--anna-hover); }
-.type-row>input { flex-shrink: 0; margin: 0 2px 0 8px; }
-.type-only { display: flex; flex: 1; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 32px; padding: 4px 8px; border: 0; background: transparent; color: var(--anna-ink); text-align: left; }
-.type-only>span, .type-all>span { color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
-.type-row.chosen .type-only, .type-all.chosen { color: var(--anna-brand); font-weight: 600; }
-.type-row.chosen { background: var(--anna-selected); }
-.type-row.empty .type-only { color: var(--anna-muted); }
-.type-all { display: flex; align-items: center; justify-content: space-between; min-height: 32px; padding: 4px 8px; border: 0; border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-ink); text-align: left; }
-.type-all:hover { background: var(--anna-hover); }
-.type-presets { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 8px 4px 32px; }
-.type-presets>button { min-height: 24px; padding: 1px 7px; border: 1px solid var(--anna-line); border-radius: 999px; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
-.type-presets>button.chosen { border-color: var(--anna-brand); color: var(--anna-brand); }
 #elsewhere { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #empty-elsewhere { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 10px; }
 .heading-row>.muted, .heading-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--anna-type-ui); }
@@ -183,7 +157,6 @@ h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px;
 .facet-line { grid-column: 2; display: flex; align-items: start; gap: 12px; min-width: 0; }
 .group-actions { display: flex; gap: 1px; padding-top: 2px; flex-shrink: 0; }
 .group-actions button { padding: 3px 5px; min-height: 26px; border-color: transparent; background: transparent; font-size: var(--anna-type-ui); color: var(--anna-muted); }
-.group-actions button.on { color: var(--anna-brand); font-weight: 600; }
 .choices { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .chip { display: inline-flex; position: relative; cursor: pointer; user-select: none; font-size: var(--anna-type-ui); max-width: 100%; }
 .chip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
@@ -191,8 +164,12 @@ h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px;
 .chip>span::before { content: ''; width: 10px; height: 10px; flex-shrink: 0; border: 1px solid var(--anna-line-strong); border-radius: 3px; }
 .chip input:checked+span { color: var(--anna-brand); background: var(--anna-selected); border-color: var(--anna-selected-line); }
 .chip input:checked+span::before { background: var(--anna-brand); border-color: var(--anna-brand); box-shadow: inset 0 0 0 2px var(--anna-selected); }
-.facet.all-selected .chip input:checked+span { background: var(--anna-surface); border-color: var(--anna-line); color: var(--anna-secondary); }
-.facet.all-selected .chip input:checked+span::before { background: var(--anna-muted); border-color: var(--anna-muted); box-shadow: inset 0 0 0 2px var(--anna-surface); }
+/* A count says what choosing the option would match; an option that would match nothing fades but stays choosable. */
+.chip-count { color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
+.chip input:checked+span .chip-count { color: inherit; opacity: .75; }
+.chip.empty>span { opacity: .55; }
+.group-actions button:disabled { opacity: .4; cursor: default; }
+#type-filters .facet { border-bottom: 1px solid var(--anna-line); }
 .chip input:focus-visible+span { outline: 2px solid var(--anna-focus); outline-offset: 2px; }
 .chip:hover span { border-color: var(--anna-brand); }
 .flag-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px 20px; padding: 12px 0; }

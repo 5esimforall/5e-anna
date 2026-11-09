@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
-  zh: {skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或重置筛选。',
+  zh: {skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
@@ -11,9 +11,8 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    typeGroups:{monsters:'怪物',items:'物品',options:'角色选项',rules:'规则',other:'其他'},
-    typePicker:'条目类型',onlyGroup:'只看{name}的全部类型',addType:'加入{name}',removeType:'移出{name}',moreTypes:'{first}等 {count} 类',
-    elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',
+    moreTypes:'{first}等 {count} 类',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
@@ -26,7 +25,7 @@ const annaUiLabels = {
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
-  en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active filter or reset the filters.',
+  en: {skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
@@ -34,9 +33,8 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    typeGroups:{monsters:'Monsters',items:'Items',options:'Character options',rules:'Rules',other:'Other'},
-    typePicker:'Entry types',onlyGroup:'Show every type under {name}',addType:'Add {name}',removeType:'Remove {name}',moreTypes:'{first} and {count} types',
-    elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',
+    moreTypes:'{first} and {count} types',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
@@ -56,7 +54,6 @@ const rulesetShort=r=>ui.rulesets[r]?.[0]||r, rulesetFull=r=>ui.rulesets[r]?.[1]
 document.querySelector('#prefer').innerHTML=['5r','5e'].map(value=>`<option value="${value}" title="${esc(rulesetFull(value))}">${esc(rulesetShort(value))}</option>`).join('');
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
 for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('aria-label',ui[el.dataset.uiLabel]);el.title=ui[el.dataset.uiLabel];}
-$('#type-panel').setAttribute('aria-label',ui.typePicker);
 const fmt = n => Number(n).toLocaleString('zh-CN');
 const pretty = v => typeof v==='boolean'?ui.flags[v]:typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
@@ -67,16 +64,13 @@ const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','�
 const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions']);
 const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections']);
-// The type picker groups entry types the way a reader looks things up; types missing here still appear under “other”.
-const typeGroups=[[null,['spell']],['monsters',['creature']],['items',['equipment','magic_item','vehicle','animal_offer','reward']],
-  ['options',['class','subclass','class_feature','species','background','feat']],['rules',['condition','action','rule','hazard','trap','poison','disease','subsystem','facility','lore']]];
 // Audit mode is a per-browser viewing preference, never part of a shared query URL.
 const AUDIT_KEY='anna.audit', AUDIT_COLUMNS=new Set(['classification_status','legacy']), AUDIT_PARAMS=['status','legacy','conflict','sections'];
 const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
 let auditMode=(()=>{try{return localStorage.getItem(AUDIT_KEY)==='on';}catch{return false;}})();
 const visibleColumns=()=>schema.columns.filter(k=>auditMode||!AUDIT_COLUMNS.has(k));
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
-let currentData, currentEntry, detailGeneration=0, ready=false, typeCounts=null;
+let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='';
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const sourceURL=(path,start=0,end=0)=>'/source?'+new URLSearchParams({path,start,end})+'#evidence';
 const sourceOf=id=>metadata.sources.find(s=>s.id===id);
@@ -158,18 +152,22 @@ function renderSortOptions(){
   $('#sort').innerHTML=sorts.map(k=>`<option value="${esc(k)}">${esc(k==='match'?ui.sortMatch:fieldNames[k]||k)}</option>`).join('');
   $('#sort').value=effectiveSort();
 }
-function selected(g){return new Set(params.has(g.key)?params.getAll(g.key):g.options.map(o=>o.value));}
+// Every field reads the same way: nothing chosen sets no condition, choosing a value includes it, and values
+// chosen in one field are alternatives. Choosing every value is the same as choosing none.
+function selected(g){return new Set(params.getAll(g.key).filter(v=>v!==NONE));}
 function setSelection(g,values){
   params.delete(g.key);
-  if(values.length===g.options.length&&g.options.every(o=>values.includes(o.value)))return;
-  (values.length?values:[NONE]).forEach(v=>params.append(g.key,v));
+  if(!values.length||g.options.every(o=>values.includes(o.value)))return;
+  values.forEach(v=>params.append(g.key,v));
 }
 function changed(replace=false){
-  clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();
+  clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();refreshFacets();
 }
+// Each option counts what choosing it would match under every other condition (serve.facets).
+const optionTitle=o=>`${o.title||o.label} · ${ui.optionCount.replace('{count}',fmt(o.count||0))}`;
 function multiGroup(g){
-  const choices=selected(g);const all=!params.has(g.key);
-  return `<fieldset class="facet ${all?'all-selected':''}" data-group="${esc(g.key)}"><legend>${esc(g.label)}</legend><div class="facet-line"><div class="group-actions"><button type="button" data-action="all" aria-label="${esc(g.label)}全选" class="${all?'on':''}">全选</button><button type="button" data-action="none" aria-label="${esc(g.label)}清空">清空</button><button type="button" data-action="invert" aria-label="${esc(g.label)}反选">反选</button></div><div class="choices">${g.options.map(o=>`<label class="chip" title="${esc(o.title||o.label)}${o.count!==undefined?' · 本视图 '+fmt(o.count)+' 条':''}" data-option-search="${esc((o.search||o.label).toLowerCase())}"><input type="checkbox" value="${esc(o.value)}" aria-label="${esc(g.label+'：'+o.label)}" ${choices.has(o.value)?'checked':''}><span>${esc(o.label)}</span></label>`).join('')}</div></div></fieldset>`;
+  const chosen=selected(g),free=!chosen.size;
+  return `<fieldset class="facet ${free?'unconstrained':''}" data-group="${esc(g.key)}"><legend>${esc(g.label)}</legend><div class="facet-line"><div class="group-actions"><button type="button" data-action="clear" aria-label="${esc(g.label)}${ui.clearGroup}" ${free?'disabled':''}>${ui.clearGroup}</button><button type="button" data-action="invert" aria-label="${esc(g.label)}${ui.invertGroup}" ${free?'disabled':''}>${ui.invertGroup}</button></div><div class="choices">${g.options.map(o=>`<label class="chip ${o.count?'':'empty'}" title="${esc(optionTitle(o))}" data-option-search="${esc((o.search||o.label).toLowerCase())}"><input type="checkbox" value="${esc(o.value)}" aria-label="${esc(g.label+'：'+o.label)}" ${chosen.has(o.value)?'checked':''}><span>${esc(o.label)}<small class="chip-count">${fmt(o.count||0)}</small></span></label>`).join('')}</div></div></fieldset>`;
 }
 function flagGroup(g){
   const active=params.get(g.key)||'';
@@ -193,12 +191,13 @@ function sync(){
   $('#display-toggle').classList.toggle('changed',!stacked||params.has('prefer'));
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
-  $('#title').textContent=typeTitle();renderTypePanel();
+  $('#title').textContent=typeTitle();
+  for(const key of ['cr_min','cr_max'])if($('#'+key))$('#'+key).value=params.get(key)||'';
   for(const g of groups){
     const el=document.querySelector(`[data-group="${g.key}"]`);if(!el)continue;
-    const values=selected(g);el.classList.toggle('all-selected',!params.has(g.key));
+    const values=selected(g);el.classList.toggle('unconstrained',!values.size);
     for(const input of el.querySelectorAll('input[type=checkbox]'))input.checked=values.has(input.value);
-    el.querySelector('[data-action=all]')?.classList.toggle('on',!params.has(g.key));
+    for(const b of el.querySelectorAll('[data-action]'))b.disabled=!values.size;
     for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
   }
   // The types lead the chips: they scope every other condition.
@@ -211,7 +210,7 @@ function sync(){
   $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
   $('#active-filters').innerHTML=active.map(k=>{
     const g=groups.find(g=>g.key===k);const values=params.getAll(k);
-    const labels=values.map(v=>k==='type'?typeName(v):v===NONE?'无选项':g?.options.find(o=>o.value===v)?.label||v);
+    const labels=values.map(v=>v===NONE?'无选项':g?.options.find(o=>o.value===v)?.label||v);
     const text=k==='q'?'搜索：'+values[0]:(g?.label||fieldNames[k]||k)+'：'+(labels.length>4?labels.slice(0,3).join('、')+` 等 ${labels.length} 项`:labels.join('、'));
     return `<button type="button" data-remove="${esc(k)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
   }).join('');
@@ -228,35 +227,66 @@ function failResults(message,status){
   currentData=null;$('#error').hidden=false;$('#error').textContent=message;$('#result-count').textContent=status;
   $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';renderLoadState();
 }
-async function changeView(){
-  const gen=++panelGeneration;request?.abort();generation++;ready=false;
+const RULESET_ORDER=['5e','5r','待核'];
+// Server groups carry counts; the interface supplies its own words for rules versions and legacy marks.
+function readGroups(data){
+  return data.groups.map(g=>({...g,options:g.options.map(o=>g.key==='ruleset'?{...o,label:rulesetShort(o.value),title:rulesetFull(o.value)}:g.key==='legacy'?{...o,label:legacy[o.value]||o.label}:o)}));
+}
+// The panel is rebuilt only when its fields or options change (new types, other sources in scope);
+// otherwise counts and states update in place, so focus and open sections stay put while choosing.
+function renderPanel(){
+  const multi=groups.filter(g=>g.key.startsWith('f_')&&g.mode==='multi'),flags=groups.filter(g=>g.mode==='flag');
+  const extraGroups=[...multi.slice(2),...flags];
+  const extra=multi.slice(2).map(multiGroup).join('')+
+    (flags.length?`<div class="flag-grid">${flags.map(flagGroup).join('')}</div>`:'')+
+    (schema.flags.includes('special_material')?'<p class="material-note">特殊材料：注明价值或会消耗的材料；“是 / 否”均限含材料的法术。</p>':'');
+  const focused=$('#filter-panel').contains(document.activeElement)?document.activeElement:null;
+  const focusAt=focused&&{group:focused.closest('[data-group]')?.dataset.group,value:focused.value,action:focused.dataset.action};
+  $('#type-filters').innerHTML=multiGroup(groups.find(g=>g.key==='type'));
+  $('#domain-filters').innerHTML=(schema.range?rangeGroup():'')+multi.slice(0,2).map(multiGroup).join('')+
+    (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
+  $('#domain-extra')?.addEventListener('toggle',queueUiSave);
+  $('#common-filters').innerHTML=groups.filter(g=>['ruleset','origin'].includes(g.key)).map(multiGroup).join('');
+  $('#source-filters').innerHTML=multiGroup(groups.find(g=>g.key==='source'));filterSources();
+  $('#audit-filters').innerHTML=groups.filter(g=>['legacy','status'].includes(g.key)).map(multiGroup).join('');
+  if(focusAt?.group){
+    const box=document.querySelector(`[data-group="${CSS.escape(focusAt.group)}"]`);
+    (focusAt.action?box?.querySelector(`[data-action="${focusAt.action}"]`):box?.querySelector(`input[value="${CSS.escape(focusAt.value||'')}"]`))?.focus();
+  }
+}
+function updateCounts(){
+  for(const g of groups){
+    const box=document.querySelector(`[data-group="${CSS.escape(g.key)}"]`);if(!box)continue;
+    for(const o of g.options){
+      const input=box.querySelector(`input[value="${CSS.escape(o.value)}"]`);if(!input)continue;
+      const chip=input.closest('.chip');chip.classList.toggle('empty',!o.count);chip.title=optionTitle(o);chip.querySelector('.chip-count').textContent=fmt(o.count||0);
+    }
+  }
+}
+function applyFacets(data){
+  facetData=data;schema=data.schema;groups=readGroups(data);
+  const shape=JSON.stringify(groups.map(g=>[g.key,g.mode,g.options.map(o=>o.value)]));
+  if(shape!==panelShape){panelShape=shape;renderPanel();}else updateCounts();
+  $('#type-total').textContent=`${fmt(data.scope_total)} 个版本候选`;
+  renderElsewhere();sync();
+}
+const facetsURL=()=>'/api/facets?'+new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','versions','prefer'].includes(k)));
+// Counts follow every condition, so they refresh beside each query; a late response never replaces a newer one.
+async function refreshFacets(){
+  const gen=++facetGeneration;
+  try{const data=await api(facetsURL());if(gen===facetGeneration)applyFacets(data);}catch{/* The results report query errors; counts keep their last values. */}
+}
+// New types change the table itself: its columns, fields and sorts arrive before the rows are read.
+async function changeTable(){
+  const gen=++panelGeneration,fgen=++facetGeneration;request?.abort();generation++;ready=false;
   awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;
   try{
-    const data=await api('/api/facets?'+new URLSearchParams(chosenTypes().map(t=>['type',t])));if(gen!==panelGeneration)return;
-    schema=data.schema;groups=data.groups.map(g=>({...g,key:'f_'+g.key}));
-    // Conditions the new table cannot answer leave with the old types; shared ones (search, sources, rules) stay.
-    const answerable=new Set([...schema.facets,...schema.flags]);
-    for(const key of [...params.keys()])if(key.startsWith('f_')&&!answerable.has(key.slice(2))||['cr_min','cr_max'].includes(key)&&!schema.range)params.delete(key);
-    groups.push(...[
-      {key:'ruleset',label:'规则版本',options:['5e','5r','待核'].map(value=>({value,label:rulesetShort(value),title:rulesetFull(value)}))},
-      {key:'origin',label:'来源性质',mode:'single',options:['官方','合作','待核'].map(value=>({value,label:value}))},
-      {key:'legacy',label:'旧版标记',options:Object.entries(legacy).map(([value,label])=>({value,label}))},
-      {key:'status',label:'分类依据',options:['原文明示','上下文推得','未分类段落'].map(value=>({value,label:value}))},
-      {key:'source',label:'来源',options:metadata.sources.filter(s=>data.source_counts[s.id]||params.getAll('source').includes(s.id)).map(s=>({value:s.id,label:s.short_name,title:s.name,count:data.source_counts[s.id]||0,search:[s.name,...s.aliases].join(' ')}))}
-    ]);
-    const multi=groups.filter(g=>g.key.startsWith('f_')&&g.mode==='multi');
-    const extraGroups=[...multi.slice(2),...groups.filter(g=>g.mode==='flag')];
-    const extra=multi.slice(2).map(multiGroup).join('')+
-      (schema.flags.length?`<div class="flag-grid">${groups.filter(g=>g.mode==='flag').map(flagGroup).join('')}</div>`:'')+
-      (schema.flags.includes('special_material')?'<p class="material-note">特殊材料：注明价值或会消耗的材料；“是 / 否”均限含材料的法术。</p>':'');
-    $('#domain-filters').innerHTML=(schema.range?rangeGroup():'')+multi.slice(0,2).map(multiGroup).join('')+
-      (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key))?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
-    $('#domain-extra')?.addEventListener('toggle',queueUiSave);
-    $('#common-filters').innerHTML=groups.filter(g=>['ruleset','origin'].includes(g.key)).map(multiGroup).join('');
-    $('#source-filters').innerHTML=multiGroup(groups.find(g=>g.key==='source'));
-    $('#audit-filters').innerHTML=groups.filter(g=>['legacy','status'].includes(g.key)).map(multiGroup).join('');
-    $('#source-search').value='';
-    $('#type-total').textContent=`${fmt(data.total)} 个版本候选`;
+    const data=await api(facetsURL());if(gen!==panelGeneration||fgen!==facetGeneration)return;
+    // A link may carry conditions the table cannot answer; they leave with the old types.
+    const answerable=new Set([...data.schema.facets,...data.schema.flags]);
+    const stale=[...params.keys()].filter(key=>key.startsWith('f_')&&!answerable.has(key.slice(2))||['cr_min','cr_max'].includes(key)&&!data.schema.range);
+    if(stale.length){stale.forEach(k=>params.delete(k));return changeTable();}
+    applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
     $('#audit-details').open=AUDIT_PARAMS.some(k=>params.has(k));
@@ -376,7 +406,7 @@ async function load(){
   const limit=Math.min(RESTORE_LIMIT,Math.max(BATCH,Math.ceil(restoreRows/BATCH)*BATCH));restoreRows=0;
   try{
     const data=await api(entriesURL(0,limit),request.signal);if(gen!==generation)return;
-    currentData=data;if(data.type_counts)typeCounts=data.type_counts;renderTypePanel();renderElsewhere();
+    currentData=data;
     $('#result-count').innerHTML=data.versions==='stacked'?ui.stackedCount.replace('{rows}',`<strong>${fmt(data.total)}</strong>`).replace('{versions}',fmt(data.versions_total)):`找到 <strong>${fmt(data.total)}</strong> 条`;
     // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.
     $('#result-count').title=$('#result-count').textContent;
@@ -394,7 +424,9 @@ $('#filter-panel').addEventListener('change',e=>{
   const el=e.target;
   if(el.type==='checkbox'&&el.closest('[data-group]')){
     const g=groups.find(g=>g.key===el.closest('[data-group]').dataset.group);const set=selected(g);
-    set.delete(NONE);el.checked?set.add(el.value):set.delete(el.value);setSelection(g,[...set]);
+    el.checked?set.add(el.value):set.delete(el.value);
+    if(g.key==='type'){chooseTypes([...set]);return;}
+    setSelection(g,[...set]);
     if(g.key==='status'&&set.size===1&&set.has('未分类段落'))params.set('sections','1');changed();
   }else if(['cr_min','cr_max'].includes(el.id)){
     setParam(el.id,el.value);const val=s=>s.includes('/')?s.split('/').map(Number).reduce((a,b)=>a/b):Number(s);
@@ -404,8 +436,9 @@ $('#filter-panel').addEventListener('change',e=>{
 $('#filter-panel').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;const group=b.closest('[data-group]');if(!group)return;const g=groups.find(g=>g.key===group.dataset.group);
   if(b.hasAttribute('data-flag')){setParam(g.key,b.dataset.flag);changed();return;}
-  const all=g.options.map(o=>o.value),current=selected(g);
-  setSelection(g,b.dataset.action==='all'?all:b.dataset.action==='none'?[]:all.filter(v=>!current.has(v)));changed();
+  const current=selected(g),next=b.dataset.action==='clear'?[]:g.options.map(o=>o.value).filter(v=>!current.has(v));
+  if(g.key==='type'){chooseTypes(next);return;}
+  setSelection(g,next);changed();
 });
 $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();});
 let composingSearch=false;
@@ -415,13 +448,17 @@ $('#q').addEventListener('compositionend',()=>{composingSearch=false;queueSearch
 $('#q').addEventListener('input',e=>{if(!e.isComposing)queueSearch();});
 $('#search-form').addEventListener('submit',e=>{e.preventDefault();if(composingSearch)return;setParam('q',$('#q').value.trim());changed();});
 $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#filter-panel').hidden=hidden;$('#toggle-filters').setAttribute('aria-expanded',!hidden);saveUiState();};
-// Reset clears the conditions within the chosen types; the types name the table, and their chip removes them.
-$('#reset').onclick=()=>{const types=chosenTypes();params=new URLSearchParams(types.map(t=>['type',t]));historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();};
-$('#active-filters').addEventListener('click',e=>{
-  const b=e.target.closest('[data-remove]');if(!b)return;const key=b.dataset.remove;
+// Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
+$('#reset').onclick=()=>{
+  for(const key of [...params.keys()])if(!['sort','dir','versions','prefer'].includes(key))params.delete(key);
+  historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
+};
+function dropCondition(key){
   if(key==='type'){chooseTypes([]);return;}
-  params.delete(key);if(['cr_min','cr_max'].includes(key))$('#'+key).value='';changed();
-});
+  if(key==='cr'){params.delete('cr_min');params.delete('cr_max');}else params.delete(key);
+  changed();
+}
+$('#active-filters').addEventListener('click',e=>{const b=e.target.closest('[data-remove]');if(b)dropCondition(b.dataset.remove);});
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
@@ -487,7 +524,7 @@ window.addEventListener('popstate',async e=>{
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
   params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
-  if(oldTypes===chosenTypes().join()&&ready){sync();await load();}else await changeView();
+  if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
   if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:'body');
   if(gen!==navigationGeneration)return;
@@ -498,7 +535,6 @@ window.addEventListener('popstate',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.isComposing)return;
-  if(e.key==='Escape'&&!$('#type-panel').hidden){e.preventDefault();setTypePanel(false,{focus:true});return;}
   if(e.key==='Escape'&&!$('#display-panel').hidden){e.preventDefault();setDisplayMenu(false,{focus:true});return;}
   if(e.key==='Escape'&&$('#detail').open){e.preventDefault();closeEntry();return;}
   // F6 moves to the results, so full-width reading gives them their place back first.
@@ -526,10 +562,9 @@ function setDisplayMenu(open,{focus=false}={}){
 $('#display-toggle').addEventListener('click',()=>setDisplayMenu($('#display-panel').hidden));
 document.addEventListener('pointerdown',e=>{
   if(!$('#display-panel').hidden&&!e.target.closest('#display-panel,#display-toggle'))setDisplayMenu(false);
-  if(!$('#type-panel').hidden&&!e.target.closest('#type-panel,#type-toggle,#elsewhere'))setTypePanel(false);
 });
-// Entry types are the first filter: they scope the results and pick the table's columns, facets and sorts.
-// The heading names them and opens the picker; their chip among the active filters removes them.
+// Entry types are one field among the others. They also pick the table's columns, fields and sorts, and the
+// heading names them.
 const chosenTypes=()=>params.getAll('type');
 const typeName=t=>metadata?.types[t]||t;
 const typeRank=t=>{const i=metadata.type_order.indexOf(t);return i<0?metadata.type_order.length:i;};
@@ -554,60 +589,35 @@ function chooseTypes(types,preset=null){
     if(condition&&(preset||!shared.has(condition)))params.delete(key);
   }
   if(preset)params.set('f_'+preset.field,preset.value);
-  params.delete('entry');historyUpdate();closeEntry({update:false,restoreFocus:false});changeView();
+  params.delete('entry');historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 }
-// Counts follow the search and the shared filters (browse: serve.type_counts), so the picker shows where a search hits.
-function renderTypePanel(){
-  if(!metadata)return;
-  const panel=$('#type-panel'),focused=panel.contains(document.activeElement)?document.activeElement:null;
-  const focusKey=focused&&['type','only','preset','groupTypes'].map(k=>k in focused.dataset?`[data-${k.replace(/[A-Z]/g,c=>'-'+c.toLowerCase())}="${CSS.escape(focused.dataset[k])}"]`:'').find(Boolean);
-  const chosen=new Set(chosenTypes()),preset=activePreset(),count=t=>typeCounts?.[t]||0;
-  const listed=new Set(typeGroups.flatMap(([,types])=>types));
-  const total=metadata.type_order.reduce((sum,t)=>sum+count(t),0);
-  const row=t=>{
-    const name=typeName(t),only=chosen.size===1&&chosen.has(t)&&!preset,presets=metadata.presets.filter(p=>p.type===t);
-    return `<div class="type-row ${chosen.has(t)?'chosen':''} ${count(t)?'':'empty'}"><input type="checkbox" data-type="${esc(t)}" ${chosen.has(t)?'checked':''} aria-label="${esc((chosen.has(t)?ui.removeType:ui.addType).replace('{name}',name))}">`+
-      `<button type="button" class="type-only" data-only="${esc(t)}" aria-pressed="${only}">${esc(name)}<span>${fmt(count(t))}</span></button></div>`+
-      (presets.length?`<div class="type-presets">${presets.map(p=>`<button type="button" data-preset="${esc(p.name)}" class="${preset===p?'chosen':''}" aria-pressed="${preset===p}">${esc(p.name)}</button>`).join('')}</div>`:'');
-  };
-  const all=`<button type="button" class="type-all ${chosen.size?'':'chosen'}" data-only="" aria-pressed="${!chosen.size}">${esc(ui.allEntries)}<span>${fmt(total)}</span></button>`;
-  panel.innerHTML='<div class="type-columns">'+[...typeGroups,['other',metadata.type_order.filter(t=>!listed.has(t))]].map(([key,types])=>{
-    types=types.filter(t=>metadata.type_order.includes(t));if(!types.length&&key)return '';
-    const label=key?`<button type="button" class="type-group-label" data-group-types="${esc(types.join(' '))}" title="${esc(ui.onlyGroup.replace('{name}',ui.typeGroups[key]))}">${esc(ui.typeGroups[key])}</button>`:'';
-    return `<div class="type-group" role="group" aria-label="${esc(key?ui.typeGroups[key]:ui.typePicker)}">${key?label:all}${types.map(row).join('')}</div>`;
-  }).join('')+'</div>';
-  if(focusKey)panel.querySelector(focusKey)?.focus();
-}
-// While searching within some types, matches in the others stay one step away.
+// While searching within some types, matches in the others stay one step away; an empty result names the
+// conditions whose removal would bring results back.
 function renderElsewhere(){
-  const types=chosenTypes(),searching=!!params.get('q');
-  const others=searching&&types.length?Object.entries(typeCounts||{}).filter(([t,n])=>n&&t!=='section'&&!types.includes(t)).sort(([a],[b])=>typeRank(a)-typeRank(b)):[];
-  const total=others.reduce((sum,[,n])=>sum+n,0),list=others.map(([t,n])=>`${typeName(t)} ${fmt(n)}`).join(' · ');
+  const types=chosenTypes(),searching=params.getAll('q').some(Boolean),typeGroup=groups.find(g=>g.key==='type');
+  const others=searching&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
+  const total=others.reduce((sum,o)=>sum+o.count,0);
   $('#elsewhere').hidden=!total;$('#elsewhere').textContent=total?ui.elsewhere.replace('{count}',fmt(total)):'';
-  $('#elsewhere').title=total?ui.elsewhereTitle.replace('{list}',list):'';
-  $('#empty-elsewhere').innerHTML=others.map(([t,n])=>`<button type="button" data-only="${esc(t)}">${esc(typeName(t))} <span class="muted">${fmt(n)}</span></button>`).join('');
+  $('#elsewhere').title=total?ui.elsewhereTitle.replace('{list}',others.map(o=>`${o.label} ${fmt(o.count)}`).join(' · ')):'';
+  const drops=Object.entries(facetData?.without||{}).filter(([,n])=>n).map(([key,n])=>({key,n,text:conditionText(key)})).filter(d=>d.text);
+  $('#empty-elsewhere').innerHTML=drops.map(d=>`<button type="button" data-drop="${esc(d.key)}">${esc(ui.dropCondition.replace('{condition}',d.text))} <span class="muted">→ ${fmt(d.n)}</span></button>`).join('');
 }
-function setTypePanel(open,{focus=false}={}){
-  $('#type-panel').hidden=!open;$('#type-toggle').setAttribute('aria-expanded',String(open));
-  if(open)setDisplayMenu(false);
-  if(open&&focus)($('#type-panel [aria-pressed=true]')||$('#type-panel button'))?.focus();
-  if(!open&&focus)$('#type-toggle').focus();
+function conditionText(key){
+  if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
+  if(key==='conflict')return fieldNames.conflict;
+  if(/^q\d+$/.test(key))return '名称：'+params.getAll('q').filter(Boolean)[Number(key.slice(1))];
+  const g=groups.find(g=>g.key===key),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
+  return labels.length?`${g?.label||fieldNames[key]||key}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }
-$('#type-toggle').addEventListener('click',()=>setTypePanel($('#type-panel').hidden,{focus:true}));
-$('#elsewhere').addEventListener('click',()=>setTypePanel(true,{focus:true}));
-$('#type-panel').addEventListener('change',e=>{
-  const t=e.target.dataset?.type;if(!t)return;
-  const types=new Set(chosenTypes());e.target.checked?types.add(t):types.delete(t);chooseTypes([...types]);
+$('#elsewhere').addEventListener('click',()=>{
+  $('#filter-panel').hidden=false;$('#toggle-filters').setAttribute('aria-expanded','true');
+  const box=$('#type-filters');box.scrollIntoView({block:'nearest'});box.querySelector('input')?.focus();saveUiState();
 });
-$('#type-panel').addEventListener('click',e=>{
-  const b=e.target.closest('button');if(!b)return;
-  if('only' in b.dataset)chooseTypes(b.dataset.only?[b.dataset.only]:[]);
-  else if(b.dataset.groupTypes)chooseTypes(b.dataset.groupTypes.split(' '));
-  else if(b.dataset.preset){const p=metadata.presets.find(p=>p.name===b.dataset.preset);chooseTypes([p.type],p);}
-  else return;
-  setTypePanel(false,{focus:true});
+$('#empty-elsewhere').addEventListener('click',e=>{
+  const b=e.target.closest('[data-drop]');if(!b)return;const key=b.dataset.drop;
+  if(/^q\d+$/.test(key)){const terms=params.getAll('q').filter(Boolean);params.delete('q');terms.filter((_,i)=>i!==Number(key.slice(1))).forEach(t=>params.append('q',t));changed();return;}
+  dropCondition(key);
 });
-$('#empty-elsewhere').addEventListener('click',e=>{const b=e.target.closest('[data-only]');if(b)chooseTypes([b.dataset.only]);});
 // Reading mode folds review apparatus away; filters already in the URL stay visible and editable.
 function applyAuditMode(){
   document.documentElement.dataset.audit=auditMode?'on':'off';
@@ -644,7 +654,7 @@ async function init(){
     // Category views became type filters; an old view link opens on all entries with its other conditions.
     params.delete('view');
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
-    await changeView();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
+    await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
   }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}
   finally{restoringUi=false;saveUiState();}

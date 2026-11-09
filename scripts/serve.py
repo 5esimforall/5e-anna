@@ -2,6 +2,7 @@
 """Loopback-only, read-only browser for the extracted SQLite catalog."""
 from __future__ import annotations
 import argparse
+from collections import Counter
 import csv
 import html
 import io
@@ -46,59 +47,129 @@ def entry_types(params):
     return chosen
 
 
-# Type-specific conditions read one table; the counts by type keep only what every type can answer.
-TYPE_SPECIFIC = ('type','cr_min','cr_max','field','value')
+COMMON_CHOICES = {'ruleset':('ruleset',('5e','5r','待核')), 'legacy':('legacy',('entry_marked','source_archived','unmarked')),
+                  'status':('classification_status',('原文明示','上下文推得','未分类段落'))}
+ORIGINS = ('官方','合作','待核')
+SOURCE_EXISTS = 'EXISTS(SELECT 1 FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id AND '
 
 
-def type_counts(db, params):
-    """Matches per entry type under the search and the shared filters, so a search shows where else it hits."""
-    shared = {k:v for k,v in params.items() if k not in TYPE_SPECIFIC and not k.startswith('f_')}
-    where, values = filters(db, shared)
-    return dict(db.execute('SELECT e.type, count(*) FROM entries e'+where+' GROUP BY e.type', values).fetchall())
-
-
-def filters(db, params):
-    clauses, values = [], []
-    if first(params, 'sections') != '1': clauses.append("e.type!='section'")
+def conditions(params):
+    """Every condition a request sets, as (key, SQL, values). Values within one condition are alternatives;
+    an entry matches when it meets every condition. The keys name the URL parameter (one per name search,
+    `q0`, `q1`, …), so counts can say what each condition removes."""
+    out = []
     types = entry_types(params)
-    if types:
-        clauses.append('e.type IN ('+','.join('?' for _ in types)+')'); values.extend(types)
-    q = first(params, 'q').strip()
-    if len(q) > 200: raise ValueError('关键词过长')
-    if q:
-        # Literal substring search, not SQL LIKE patterns.
-        clauses.append('instr(lower(e.name),lower(?))>0'); values.append(q)
-    for field, column, allowed in [
-        ('ruleset','ruleset',{'5e','5r','待核'}),
-        ('legacy','legacy',{'entry_marked','source_archived','unmarked'}),
-        ('status','classification_status',{'原文明示','上下文推得','未分类段落'}),
-    ]:
-        selected = params.get(field,[])
-        if selected:
-            if selected == [browse.NONE]: clauses.append('0'); continue
-            if any(value not in allowed for value in selected): raise ValueError('无效筛选：'+field)
-            clauses.append('e.'+column+' IN ('+','.join('?' for _ in selected)+')'); values.extend(selected)
+    if types: out.append(('type','e.type IN ('+','.join('?' for _ in types)+')',types))
+    # Literal substring searches, not SQL LIKE patterns; each must match the name.
+    for i, term in enumerate(browse.search_terms(params)): out.append((f'q{i}','instr(lower(e.name),lower(?))>0',[term]))
+    for key,(column,allowed) in COMMON_CHOICES.items():
+        chosen = list(dict.fromkeys(params.get(key,[])))
+        if not chosen: continue
+        if chosen == [browse.NONE]: out.append((key,'0',[])); continue
+        if any(v not in allowed for v in chosen): raise ValueError('无效筛选：'+key)
+        out.append((key,'e.'+column+' IN ('+','.join('?' for _ in chosen)+')',chosen))
     sources = list(dict.fromkeys(params.get('source', [])))
-    origin = params.get('origin',[])
-    if sources or origin:
-        sc = []
-        if sources:
-            if len(sources)>155: raise ValueError('来源过多')
-            sc.append('s.id IN ('+','.join('?' for _ in sources)+')'); values += sources
-        if origin:
-            if origin == [browse.NONE]: sc.append('0')
-            else:
-                if any(o not in {'官方','合作','待核'} for o in origin): raise ValueError('无效来源性质')
-                sc.append('s.origin IN ('+','.join('?' for _ in origin)+')'); values.extend(origin)
-        clauses.append('EXISTS(SELECT 1 FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id AND '+' AND '.join(sc)+')')
-    if first(params,'conflict')=='1': clauses.append("json_array_length(json_extract(e.data,'$.field_conflicts'))>0")
+    if sources:
+        if len(sources)>155: raise ValueError('来源过多')
+        out.append(('source',SOURCE_EXISTS+'s.id IN ('+','.join('?' for _ in sources)+'))',sources))
+    origin = list(dict.fromkeys(params.get('origin',[])))
+    if origin:
+        if origin == [browse.NONE]: out.append(('origin','0',[]))
+        elif any(o not in ORIGINS for o in origin): raise ValueError('无效来源性质')
+        else: out.append(('origin',SOURCE_EXISTS+'s.origin IN ('+','.join('?' for _ in origin)+'))',origin))
+    if first(params,'conflict')=='1': out.append(('conflict',"json_array_length(json_extract(e.data,'$.field_conflicts'))>0",[]))
     field, value = first(params,'field'),first(params,'value')
     if value:
         if field not in FIELDS: raise ValueError('无效属性')
-        clauses.append('EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)')
-        values += ['$.'+field, {'true':'1','false':'0'}.get(value,value)]
-    browse.add_filters(params,clauses,values)
-    return (' WHERE '+' AND '.join(clauses) if clauses else ''),values
+        out.append(('field','EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)',['$.'+field,{'true':'1','false':'0'}.get(value,value)]))
+    out.extend(browse.facet_conditions(params))
+    return out
+
+
+def base_clause(params):
+    """Untyped sections join the results only on request; this scopes every query and count."""
+    return "e.type!='section'" if first(params,'sections')!='1' else '1'
+
+
+def filters(db, params):
+    conds = conditions(params)
+    clauses = [base_clause(params)]+[sql for _,sql,_ in conds]
+    return ' WHERE '+' AND '.join(clauses), [v for _,_,vals in conds for v in vals]
+
+
+def facets(db, params):
+    """Each field's options with counts under every other condition: what picking the option would match.
+    `without` counts the results if one condition were removed; `scope_total` counts the chosen types."""
+    types = entry_types(params)
+    config = browse.schema_for(types)
+    conds = conditions(params)
+    index = {key:i for i,(key,_,_) in enumerate(conds)}
+    type_bound = {i:key[2:] if key.startswith('f_') else key for i,(key,_,_) in enumerate(conds) if key=='cr' or key.startswith('f_')}
+    answers = {t:set(browse.type_conditions(t)) for t in TYPES}
+    columns = ''.join(f', ({sql}) AS c{i}' for i,(_,sql,_) in enumerate(conds))
+    origin_of = dict(db.execute('SELECT id, origin FROM sources'))
+    domain = [*config['facets'],*config['flags']]
+    counted = ['type',*('f_'+f for f in domain),'ruleset','origin','source','legacy','status']
+    counts = {k:Counter() for k in counted}
+    universe = {k:set() for k in counted}
+    unknown_cover = Counter()
+    total = scope_total = 0
+    without = Counter()
+    rows = db.execute('SELECT e.type, e.fields, e.ruleset, e.legacy, e.classification_status, '
+        "(SELECT group_concat(es.source_id, char(31)) FROM entry_sources es WHERE es.entry_id=e.id) AS sources"+columns+
+        ' FROM entries e WHERE '+base_clause(params), [v for _,_,vals in conds for v in vals])
+    for row in rows:
+        failed = [i for i in range(len(conds)) if not row[f'c{i}']]
+        in_scope = index.get('type') not in failed
+        # Choosing a type drops the type-specific conditions it cannot answer, so its count ignores those too.
+        answerable = answers[row['type']]
+        counts_type = all(conds[i][0]=='type' or (i in type_bound and type_bound[i] not in answerable) for i in failed)
+        if not in_scope and not counts_type: continue
+        fields = json.loads(row['fields']) if in_scope and domain else None
+        source_ids = row['sources'].split('\x1f') if row['sources'] else []
+        def values(key):
+            if key=='type': return [row['type']]
+            if key.startswith('f_'): return browse.normalized(fields,key[2:])
+            if key=='source': return source_ids
+            if key=='origin': return list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
+            return [row[{'status':'classification_status'}.get(key,key)]]
+        if in_scope:
+            scope_total += 1
+            for key in counted:
+                if key!='type': universe[key].update(values(key))
+            for f in domain: unknown_cover[f] += browse.normalized(fields,f)!=[browse.UNKNOWN]
+        if not failed: total += 1
+        elif len(failed)==1: without[conds[failed[0]][0]] += 1
+        if counts_type: counts['type'][row['type']] += 1
+        for key in counted[1:]:
+            if not failed or (len(failed)==1 and index.get(key)==failed[0]):
+                counts[key].update(values(key))
+    for key in counted:
+        # A chosen value stays listed even when nothing in scope holds it, so it can be unchosen.
+        universe[key].update(v for v in params.get(key,[]) if v!=browse.NONE)
+    held = [r[0] for r in db.execute("SELECT DISTINCT type FROM entries WHERE type!='section'")]
+    universe['type'] = set(held)
+    sources = {r['id']:json.loads(r['data']) for r in db.execute('SELECT id, data FROM sources')}
+    def group(key):
+        if key=='type':
+            options = [{'value':t,'label':TYPES[t]} for t in browse.TYPE_ORDER if t in universe['type']]
+        elif key.startswith('f_'):
+            field = key[2:]
+            options = [{'value':v,'label':browse.option_label(field,v)} for v in sorted(universe[key],key=lambda v:browse.option_order(field,v))]
+        elif key=='source':
+            options = sorted(({'value':v,'label':sources[v]['label'],'title':sources[v]['name'],
+                               'search':' '.join([sources[v]['name'],*sources[v].get('aliases',[])])} for v in universe[key] if v in sources),key=lambda o:o['label'])
+        elif key=='origin': options = [{'value':v,'label':v} for v in ORIGINS]
+        else: options = [{'value':v,'label':v} for v in COMMON_CHOICES[key][1]]
+        for o in options: o['count'] = counts[key][o['value']]
+        label = {'type':'类型','ruleset':'规则版本','origin':'来源性质','source':'来源','legacy':'旧版标记','status':'分类依据'}.get(key) or browse.LABELS[key[2:]]
+        mode = 'flag' if key.startswith('f_') and key[2:] in config['flags'] else 'multi'
+        return {'key':key,'label':label,'mode':mode,'options':options}
+    domain_groups = [group('f_'+f) for f in domain]
+    # Mixed types lead with the facets most of their entries can answer (rarity before weapon mastery).
+    if len(config['kinds'])>1: domain_groups.sort(key=lambda g:-unknown_cover[g['key'][2:]])
+    return {'schema':config,'groups':[group('type'),*domain_groups,*(group(k) for k in ('ruleset','origin','source','legacy','status'))],
+            'total':total,'scope_total':scope_total,'without':dict(without)}
 
 
 VERSION_FIELDS = ('id','name','name_zh','name_en','ruleset','source_ids','source_names','fields','field_conflicts','quickref','legacy')
@@ -125,8 +196,9 @@ def result_window(params):
 
 def query(db, params, export=False):
     where, values = filters(db,params)
-    q = first(params,'q').strip()
-    db.create_function('browse_query',0,lambda:q)
+    # Match ranking follows the latest search term, the one the reader is typing or just added.
+    terms = browse.search_terms(params); latest = terms[-1] if terms else ''
+    db.create_function('browse_query',0,lambda:latest)
     config = browse.schema_for(entry_types(params))
     order = browse.order_sql(params,config['default_sort'])
     offset, limit = result_window(params)
@@ -140,9 +212,7 @@ def query(db, params, export=False):
         sql = 'SELECT e.data FROM entries e'+where+' ORDER BY '+order
         if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[limit,offset]
         rows = [browse.enrich(json.loads(r[0])) for r in db.execute(sql,values)]
-        result = {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows}
-        if not export and offset==0: result['type_counts'] = type_counts(db,params)
-        return result
+        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows,'schema':config}
     # Stacking happens inside the matched set: filters decide which versions exist, then each
     # candidate group shows its preferred-ruleset version at that version's sorted position.
     first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
@@ -171,10 +241,7 @@ def query(db, params, export=False):
         row['stack'] = {'id':head['stack'],'status':head['status']} if head['status'] else None
         row['version_diffs'] = browse.version_diffs(config,row,stacked[1:])
         rows.append(row)
-    result = {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows}
-    # Later batches continue the same query, so only the first carries the counts by type.
-    if offset==0: result['type_counts'] = type_counts(db,params)
-    return result
+    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows,'schema':config}
 
 
 def meta(db):
@@ -298,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             with closing(connect(self.db_path)) as db:
                 if url.path=='/api/meta': self.send({**meta(db),'book_url':self.book_url})
-                elif url.path=='/api/facets': self.send(browse.facets(db,entry_types(p)))
+                elif url.path=='/api/facets': self.send(facets(db,p))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))
                 elif url.path=='/api/entry-layout': self.send(entry_layout(db,first(p,'id'),Path(self.source_root)))

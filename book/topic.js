@@ -6,18 +6,25 @@
   if (context?.presentation_resources.some(asset => asset.id === 'webhelpTopicStyles'))
     document.documentElement.classList.add('webhelp-topic-document');
   if (parent === window) return;
-  const channel = 'anna-reader', version = 1;
+  const channel = 'anna-reader', version = 2;
   const documentId = crypto.randomUUID();
-  let navigationId, initialized = false, positionTimer;
+  let navigationId, initialized = false, sizeFrame;
   const snapshot = context.snapshot;
-  let initialLocation, interacted = false;
+  // The app owns scrolling. Natural document height is independent of its iframe viewport.
+  const sizing = document.createElement('style');
+  sizing.textContent = 'html,html body{min-height:0!important;height:auto!important}html{overflow-y:hidden!important}';
+  document.head.append(sizing);
   const path = decodeURIComponent(location.pathname.slice('/book/'.length));
   const send = (type, detail = {}) => {
     parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, location.origin);
   };
-  function position() {
-    clearTimeout(positionTimer);
-    if (initialized) send('position', {position: {x: scrollX, y: scrollY}});
+  function height() {
+    const body = document.body, rect = body.getBoundingClientRect(), style = getComputedStyle(body);
+    return Math.max(1,Math.ceil(rect.top+scrollY+Math.max(rect.height,body.scrollHeight)+(parseFloat(style.marginBottom)||0)));
+  }
+  function measure() {
+    if (!initialized || sizeFrame) return;
+    sizeFrame = requestAnimationFrame(() => { sizeFrame = 0; send('size',{height:height()}); });
   }
   function target(href) {
     let url;
@@ -40,7 +47,6 @@
     if (!route) return;
     event.preventDefault();
     event.stopPropagation();
-    position();
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.button === 1 || link.target === '_blank') {
       window.open(readerURL(route), '_blank', 'noopener');
     } else {
@@ -50,11 +56,6 @@
   // Capture reaches anchors in anna's shadow link layer as well as original hyperlinks.
   document.addEventListener('click', follow, true);
   document.addEventListener('auxclick', follow, true);
-  window.addEventListener('scroll', () => {
-    clearTimeout(positionTimer);
-    positionTimer = setTimeout(position, 100);
-  }, {passive:true});
-  window.addEventListener('pagehide', position);
   document.addEventListener('keydown', event => {
     if (event.key === 'F6') {
       event.preventDefault(); send('focus-tools');
@@ -63,42 +64,33 @@
       event.preventDefault(); send('search');
     }
   });
-  async function locate(data) {
-    navigationId = data.navigationId;
-    const requestedNavigation = navigationId;
-    initialLocation = data;
-    applyTheme(data.theme);
-    initialized = false;
+  function locate(data) {
     const anchor = typeof data.anchor === 'string' ? data.anchor : '';
-    // replaceState does not create a second, nested browsing-history entry.
     history.replaceState(null, '', location.pathname + location.search + (anchor ? '#' + encodeURIComponent(anchor) : ''));
-    let found = true;
-    if (data.position && Number.isFinite(data.position.x) && Number.isFinite(data.position.y)) {
-      scrollTo(Math.max(0, data.position.x), Math.max(0, data.position.y));
-    } else if (anchor.startsWith('anna-')) {
-      const bindings = JSON.parse(document.getElementById('anna-bindings')?.textContent || '{}');
-      found = (bindings.definitions || []).some(d => 'anna-' + d.id === anchor && (d.title || d.body));
-      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    let position = {x:0,y:0}, found = true;
+    if (anchor.startsWith('anna-')) {
+      const target = window.annaSourceLinks?.definitionPosition(anchor.slice(5));
+      found = !!target;
+      if (target) position = target;
     } else if (anchor) {
       const node = document.getElementById(anchor) || Array.from(document.getElementsByName(anchor))[0];
       found = !!node;
-      node?.scrollIntoView({block:'start'});
-    } else {
-      scrollTo(0, 0);
+      if (node) position.y = Math.max(0,node.getBoundingClientRect().top+scrollY);
     }
-    await new Promise(requestAnimationFrame);
-    if (requestedNavigation !== navigationId) return;
-    initialized = true;
-    send('located', {found, position: {x:scrollX, y:scrollY}});
+    send('located',{requestId:data.requestId,found,position,height:height()});
   }
   window.addEventListener('message', event => {
     const data = event.data;
     if (event.source !== parent || event.origin !== location.origin || !data || data.channel !== channel ||
         data.version !== version || data.snapshot !== snapshot || data.documentId !== documentId) return;
-    if (data.type === 'locate' && typeof data.navigationId === 'number') locate(data);
-    else if (data.type === 'theme') applyTheme(data.theme);
+    if (data.type === 'initialize' && !initialized && Number.isInteger(data.navigationId)) {
+      navigationId = data.navigationId; initialized = true; applyTheme(data.theme);
+      send('initialized',{height:height()});
+    }
+    if (!initialized || data.navigationId !== navigationId) return;
+    if (data.type === 'locate' && Number.isInteger(data.requestId)) locate(data);
+    else if (data.type === 'theme') { applyTheme(data.theme); measure(); }
     else if (data.type === 'focus') window.focus();
-    else if (data.type === 'position') position();
   });
   function applyTheme(theme) {
     if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-webhelp-theme', theme);
@@ -117,16 +109,14 @@
     }
     await Promise.all(styles);
   }
-  for (const event of ['wheel','touchstart','pointerdown','keydown'])
-    window.addEventListener(event, () => { interacted = true; }, {passive:true});
-  // Show parsed text without waiting for images. Re-align a pending initial location once
-  // late media settles, but never pull a reader back after they have started interacting.
-  window.addEventListener('load', () => { if (initialLocation && !interacted) locate(initialLocation); });
   async function ready() {
     try {
       if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once:true}));
       await preparePresentation(context.presentation_resources);
-      send('ready');
+      new ResizeObserver(measure).observe(document.body);
+      window.addEventListener('load',measure);
+      document.fonts?.ready.then(measure);
+      send('ready',{height:height()});
     } catch { /* The shell reports a bounded load failure and keeps its retry/navigation controls. */ }
   }
   ready();

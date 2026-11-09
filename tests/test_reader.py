@@ -75,3 +75,10 @@ class PublishedContentTests(unittest.TestCase):
         self.assertEqual(cleaned,b'<body><!-- source shell script removed --><h2>Content</h2></body>')
         mixed=raw.replace(b'</script>',b'window.content = true;</script>')
         self.assertEqual(strip_reader_scripts(mixed,'topics/chapter/page.htm'),mixed)
+
+
+class ReaderModelTests(unittest.TestCase):
+    def test_scope_and_position_model(self):
+        import subprocess
+        result = subprocess.run(['node', str(Path(__file__).with_name('reader_model.cjs'))], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

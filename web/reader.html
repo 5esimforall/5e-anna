@@ -5,7 +5,7 @@
   <title>5e anna · 不全书阅读</title>
   <link rel="icon" href="/favicon.ico"><script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/reader.css">
-  <script src="/reader-labels.js" defer></script><script src="/reader.js" defer></script>
+  <script src="/reader-labels.js" defer></script><script src="/reader-model.js" defer></script><script src="/reader-flow.js" defer></script><script src="/reader.js" defer></script>
 </head>
 <body class="book-app">
 <a class="skip-link" href="#content" data-text="skip"></a>
@@ -14,7 +14,6 @@
   <a class="brand" href="/" data-label="title"><img class="brand-logo" src="/anna-logo.png" width="28" height="28" alt=""><span>5e anna</span></a>
   <nav id="book-breadcrumb" data-label="navigation"></nav>
   <div class="topbar-actions">
-    <nav class="book-sequence" data-label="chapters"><a id="book-previous" data-label="previous" aria-disabled="true">←</a><a id="book-next" data-label="next" aria-disabled="true">→</a></nav>
     <a class="book-query" href="/" data-text="query"></a>
     <button class="theme-button" id="theme" type="button" hidden>
     <svg class="theme-icon-system" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 21h8M12 17v4"/></svg>
@@ -49,7 +48,13 @@
   <main id="book-main" data-label="original">
       <div id="book-loading" role="status" data-text="loading"></div>
       <div id="book-error" role="alert" hidden><p id="book-error-text"></p><button id="book-retry" data-text="retry"></button><a href="/read" data-text="home"></a></div>
-      <iframe id="content" name="content" data-label="original" title="原貌正文" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads" referrerpolicy="origin" hidden></iframe>
+      <nav id="book-paging" data-label="scopeNavigation" hidden>
+        <span id="book-scope-title"></span>
+        <div class="book-sequence"><a id="book-previous" data-label="previous" aria-disabled="true">←</a>
+        <select id="book-page-select" data-label="choosePage"></select><span id="book-page-count"></span>
+        <a id="book-next" data-label="next" aria-disabled="true">→</a></div>
+      </nav>
+      <div id="book-scroll" tabindex="-1"><div id="book-pages"></div></div>
       <p id="book-status" role="status" hidden></p>
   </main>
 </div>

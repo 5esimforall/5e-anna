@@ -9,7 +9,7 @@ from pathlib import PurePosixPath
 from html_extract import resolve_link
 from inventory import Toc
 
-SCHEMA = 5
+SCHEMA = 6
 
 # These are the source reader's content assets, not its navigation/application scripts.
 TOPIC_RESOURCES = (

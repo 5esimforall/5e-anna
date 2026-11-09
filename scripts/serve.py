@@ -392,7 +392,7 @@ class Handler(BaseHTTPRequestHandler):
             static['/theme.js']=('theme.js','text/javascript; charset=utf-8')
             static['/read']=('reader.html','text/html; charset=utf-8')
             static.update({f'/reader.{ext}':(f'reader.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
-            static['/reader-labels.js']=('reader-labels.js','text/javascript; charset=utf-8')
+            static.update({f'/reader-{name}.js':(f'reader-{name}.js','text/javascript; charset=utf-8') for name in ('labels','model','flow')})
             static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return

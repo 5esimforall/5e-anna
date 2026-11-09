@@ -1,4 +1,4 @@
-/* One application history, one source frame. The reader consumes the same definitions as anna. */
+/* Directory-scoped reading, one outer scroll surface and one application history. */
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
@@ -10,68 +10,60 @@
     element.setAttribute('aria-label', ui[element.dataset.label]); element.title = ui[element.dataset.label];
   }
   for (const element of document.querySelectorAll('[data-placeholder]')) element.placeholder = ui[element.dataset.placeholder];
-  $('#content').title = ui.original;
-  const frame = $('#content'), sidebar = $('#book-sidebar'), narrow = matchMedia('(max-width:800px)');
-  const channel = 'anna-reader', version = 1;
-  let metadata, page, route, nodeId = '', focusedNode = '', nodes = new Map(), children = new Map(), pageNodes = new Map();
+  const sidebar = $('#book-sidebar'), narrow = matchMedia('(max-width:800px)');
+  let metadata, model, scope, flow, page, route, nodeId = '', focusedNode = '', nodes = new Map(), children = new Map(), pageNodes = new Map();
   let expanded = new Set(), pane = 'contents', sidebarOpen = !narrow.matches;
-  let position = {x:0,y:0}, pendingPosition = null, navigationId = 0, request, loading = true;
-  let framePath = '', documentId = '', frameReady = false, loadTimer, frameNavigationId = 0;
+  let position = {x:0,y:0}, navigationId = 0, request, loading = true;
   let searchRequest, searchSequence = 0, searchPage = 1, searchTotalPages = 0, searchQuery = '', searchTitleOnly = false;
   let restoring = true;
   history.scrollRestoration = 'manual';
 
   function readRoute() {
     const p = new URL(location.href).searchParams;
-    for (const key of ['entry','page','anchor','node']) if (p.getAll(key).length > 1) throw new Error('invalid_location');
+    for (const key of ['root','entry','page','anchor','node']) if (p.getAll(key).length > 1) throw new Error('invalid_location');
     if (p.has('entry') && p.has('page') || p.has('entry') && !p.get('entry') || p.has('page') && !p.get('page')) throw new Error('invalid_location');
-    return p.has('entry') ? {entry:p.get('entry'), node:p.get('node') || ''} :
-      {page:p.get('page') || metadata?.default_page || '', anchor:p.get('anchor') || '', node:p.get('node') || ''};
+    if (p.has('root') && !p.get('root')) throw new Error('invalid_location');
+    return p.has('entry') ? {root:p.get('root') || '',entry:p.get('entry'),node:p.get('node') || ''} :
+      {root:p.get('root') || '',page:p.get('page') || (p.has('root') ? '' : metadata?.default_page) || '',anchor:p.get('anchor') || '',node:p.get('node') || ''};
   }
   function routeURL(target) {
     const params = new URLSearchParams();
-    for (const key of ['entry','page','anchor','node']) if (target[key]) params.set(key, target[key]);
+    for (const key of ['root','entry','page','anchor','node']) if (target[key]) params.set(key, target[key]);
     return '/read' + (params.size ? '?' + params : '');
   }
-  function nodeRoute(node) { return {page:node.path, anchor:node.fragment, node:node.id}; }
+  function nodeRoute(node) { return node.status === 'present' ? {root:node.id,page:node.path,anchor:node.fragment,node:node.id} : {root:node.id}; }
+  function pageRoute(item) { return {root:scope.root,page:item.path,anchor:item.fragment,node:item.node}; }
   function save() {
-    if (!metadata || restoring) return;
-    const state = {snapshot:metadata.snapshot, position, expanded:[...expanded], pane, sidebar:sidebarOpen, node:nodeId,
+    if (!metadata || restoring || loading) return;
+    const state = {version:2,snapshot:metadata.snapshot,root:scope?.root || '',page:page?.path || '',position, expanded:[...expanded], pane, sidebar:sidebarOpen, node:nodeId,
       filter:$('#book-filter').value, treeScroll:$('#book-tree-scroll').scrollTop, outlineScroll:$('#panel-outline').scrollTop,
       search:{query:searchQuery, titleOnly:searchTitleOnly, page:searchPage, draft:$('#book-search').value, scroll:$('#panel-search').scrollTop}};
     try { history.replaceState({...history.state, book:state}, '', location.href); } catch { /* History storage may be unavailable. */ }
   }
   const positionKey = 'anna.bookPosition';
   function rememberedPosition() {
-    try {
-      const value = JSON.parse(localStorage.getItem(positionKey));
-      if (value?.version !== 1 || value.snapshot !== metadata.snapshot ||
-          typeof value.page !== 'string' || !value.page.startsWith('topics/') ||
-          value.page.split('/').some(part => part === '..' || part === '.') ||
-          typeof value.node !== 'string' || !value.position ||
-          !Number.isFinite(value.position.x) || !Number.isFinite(value.position.y) ||
-          value.position.x < 0 || value.position.y < 0) return null;
-      return value;
-    } catch { return null; }
+    try { return annaReaderModel.remembered(JSON.parse(localStorage.getItem(positionKey)),metadata.snapshot,model); }
+    catch { return null; }
   }
   function rememberPosition() {
-    if (!metadata || !page || loading || !frameReady) return;
+    if (!metadata || !page || loading || !flow?.active || flow.active.status !== 'ready') return;
     try {
-      localStorage.setItem(positionKey, JSON.stringify({version:1, snapshot:metadata.snapshot,
-        page:page.path, node:nodeId, position}));
+      localStorage.setItem(positionKey, JSON.stringify({version:2,snapshot:metadata.snapshot,
+        root:scope.root,page:page.path,node:nodeId,position}));
     } catch { /* Reading still works when persistent storage is unavailable. */ }
   }
-  function capturePosition() {
-    if (!loading && frameReady) {
-      // Same-origin content lets pagehide flush the last scroll before the bridge's debounce.
-      try {
-        const next = {x:frame.contentWindow.scrollX, y:frame.contentWindow.scrollY};
-        if (next.x !== position.x || next.y !== position.y) {
-          position = next; rememberPosition();
-        }
-      } catch { /* Keep the last confirmed bridge position if the document is unavailable. */ }
+  function capturePosition() { flow?.capture(); save(); }
+  function activeDocument(data, nextPosition, item) {
+    if (loading || restoring) return;
+    const changed = page?.path !== data.path;
+    page = data; position = nextPosition;
+    if (changed) {
+      nodeId = item.node;
+      route = {root:scope.root,page:page.path,node:nodeId};
+      history.replaceState(history.state,'',routeURL(route));
+      renderPage();
     }
-    save();
+    save(); rememberPosition();
   }
   async function api(path, signal) {
     let response;
@@ -138,7 +130,7 @@
         return `<li role="treeitem" data-node="${esc(node.id)}" tabindex="-1" aria-label="${esc(node.label)}" aria-level="${depth+1}" aria-posinset="${index+1}" aria-setsize="${siblings.length}"${hasChildren?` aria-expanded="${open}"`:''}>
           <div class="toc-row${selected?' current':''}${node.status==='missing'?' missing':''}">
           ${hasChildren?`<button type="button" tabindex="-1" data-expand="${esc(node.id)}" aria-label="${esc(text(open?'collapseNode':'expandNode',{name:node.label}))}">${open?'▾':'▸'}</button>`:'<span class="toc-indent"></span>'}
-          ${node.status==='present'?`<a tabindex="-1" href="${esc(routeURL(nodeRoute(node)))}"${selected?' aria-current="page"':''}>${esc(node.label)}</a>`:`<span class="toc-label"${node.status==='missing'?` title="${esc(ui.missingNode)}"`:''}>${esc(node.label)}</span>`}</div>
+          ${node.status==='present' || hasChildren?`<a tabindex="-1" href="${esc(routeURL(nodeRoute(node)))}"${selected?' aria-current="page"':''}>${esc(node.label)}</a>`:`<span class="toc-label"${node.status==='missing'?` title="${esc(ui.missingNode)}"`:''}>${esc(node.label)}</span>`}</div>
           ${hasChildren && open?`<ul role="group">${branch(node.id,depth+1)}</ul>`:''}</li>`;
       }).join('');
     }
@@ -151,85 +143,96 @@
   function renderPage() {
     document.title = page.title + ' · 5e anna';
     const crumbs = ancestors(nodeId);
-    $('#book-breadcrumb').innerHTML = crumbs.length ? crumbs.map(node => node.status === 'present'
+    $('#book-breadcrumb').innerHTML = crumbs.length ? crumbs.map(node => node.status === 'present' || children.has(node.id)
       ? `<a href="${esc(routeURL(nodeRoute(node)))}">${esc(node.label)}</a>` : esc(node.label)).join(' <span aria-hidden="true">/</span> ') : esc(ui.notInContents);
     $('#book-breadcrumb').title = crumbs.map(n => n.label).join(' / ') || page.path;
     $('#book-outline-title').textContent = page.title;
     const definitions = page.definitions.filter(entry => entry.locatable);
     $('#book-outline-empty').hidden = definitions.length > 0;
-    $('#book-outline').innerHTML = definitions.map(entry => `<li><a href="${esc(routeURL({entry:entry.id,node:nodeId}))}"${route.entry===entry.id || route.anchor===entry.fragment?' aria-current="location"':''}>${esc(entry.name)}</a><a href="/?entry=${encodeURIComponent(entry.id)}" target="_blank" rel="noopener" aria-label="${esc(ui.entry+': '+entry.name)}" title="${esc(ui.entry)}">↗</a></li>`).join('');
-    const ordered = metadata.nodes.filter(node => node.status === 'present');
-    const index = ordered.findIndex(node => node.id === nodeId);
+    $('#book-outline').innerHTML = definitions.map(entry => `<li><a href="${esc(routeURL({root:scope.root,entry:entry.id,node:nodeId}))}"${route.entry===entry.id || route.anchor===entry.fragment?' aria-current="location"':''}>${esc(entry.name)}</a><a href="/?entry=${encodeURIComponent(entry.id)}" target="_blank" rel="noopener" aria-label="${esc(ui.entry+': '+entry.name)}" title="${esc(ui.entry)}">↗</a></li>`).join('');
+    const ordered = scope.pages;
+    const index = ordered.findIndex(item => item.path === page.path);
+    $('#book-paging').hidden = false;
+    $('#book-scope-title').textContent = nodes.get(scope.root)?.label || page.title;
+    $('#book-scope-title').title = text('scopeTitle',{name:$('#book-scope-title').textContent});
+    $('#book-page-select').innerHTML = ordered.map((item,i) => `<option value="${i}">${esc(item.label || page.title)}</option>`).join('');
+    $('#book-page-select').value = String(index);
+    $('#book-page-count').textContent = text('pageCount',{page:index+1,pages:ordered.length});
     for (const [selector,offset] of [['#book-previous',-1],['#book-next',1]]) {
       const link = $(selector), node = index >= 0 ? ordered[index+offset] : null;
       link.setAttribute('aria-disabled', String(!node));
-      if (node) { link.href = routeURL(nodeRoute(node)); link.title = node.label; link.tabIndex = 0; }
+      if (node) { link.href = routeURL(pageRoute(node)); link.title = node.label; link.tabIndex = 0; }
       else { link.removeAttribute('href'); link.removeAttribute('title'); link.tabIndex = -1; }
     }
     renderTree();
   }
-  function send(type, detail = {}) {
-    if (!documentId || !metadata) return;
-    frame.contentWindow.postMessage({channel, version, type, documentId, snapshot:metadata.snapshot, navigationId, ...detail}, location.origin);
-  }
-  function locateFrame() {
-    send('locate', {anchor:route.entry ? page.fragment : route.anchor || '', position:pendingPosition, theme:document.documentElement.dataset.theme});
-  }
   function showError(code) {
-    clearTimeout(loadTimer); loading = false;
+    loading = false;
     $('#book-loading').hidden = true; $('#book-error').hidden = false;
-    document.title = ui.emptyTitle + ' · 5e anna';
+    $('#book-error').classList.toggle('preserve-reading',!!flow?.active);
+    if (!flow?.active) document.title = ui.emptyTitle + ' · 5e anna';
     $('#book-error-text').textContent = ui.errors[code] || ui.errors.network;
-    frame.style.visibility = 'hidden';
     $('#book-main').setAttribute('aria-busy','false'); $('#book-status').textContent = '';
   }
-  async function load(target, saved) {
+  async function load(target, saved, preserveScope = false) {
     request?.abort(); request = new AbortController();
     const id = ++navigationId;
-    clearTimeout(loadTimer);
-    loading = true; pendingPosition = saved?.position || null;
+    loading = true;
     $('#book-loading').hidden = false; $('#book-error').hidden = true;
-    frame.style.visibility = 'hidden';
-    $('#book-main').setAttribute('aria-busy','true');
-    $('#book-status').hidden = true;
+    $('#book-main').setAttribute('aria-busy','true'); $('#book-status').hidden = true;
     try {
+      let root = target.root || saved?.root || '';
+      if (root && !nodes.has(root)) throw new Error('invalid_location');
+      let sourcePath = target.page;
+      if (!target.entry && !sourcePath && root) {
+        sourcePath = model.scope(root).pages[0]?.path;
+        if (!sourcePath) throw new Error('empty_scope');
+      }
       const query = new URLSearchParams({snapshot:metadata.snapshot});
       if (target.entry) query.set('entry',target.entry);
-      else if (target.page) query.set('path',target.page);
+      else if (sourcePath) query.set('path',sourcePath);
       else throw new Error('invalid_location');
       const data = await api('/api/reader-page?' + query, request.signal);
       if (id !== navigationId) return;
-      page = data; route = target; frameNavigationId = id;
-      const choices = pageNodes.get(page.path) || [];
-      nodeId = [target.node,saved?.node,nodeId,choices[0]?.id].find(id => choices.some(n => n.id === id)) || '';
+      const choices = pageNodes.get(data.path) || [];
+      if (target.node && !choices.some(n => n.id === target.node)) throw new Error('invalid_location');
+      if (!root && preserveScope && scope?.byPath.has(data.path)) root = scope.root;
+      if (!root) root = [target.node,saved?.node,choices[0]?.id].find(id => choices.some(n => n.id === id)) || '';
+      const nextScope = model.scope(root,data.path);
+      if (!nextScope.byPath.has(data.path)) throw new Error('outside_scope');
+      const item = nextScope.byPath.get(data.path);
+      if (target.node && !nextScope.memberIds.has(target.node)) throw new Error('outside_scope');
+      const selectedNode = [target.node,saved?.node,nodeId,item.node].find(id => item.nodes.some(n => n.id === id)) || '';
+      if (!scope || scope.root !== root || (!root && !scope.byPath.has(data.path))) {
+        scope = nextScope; flow.reset(scope);
+      }
+      const destination = annaReaderModel.validPosition(saved?.position) ? saved.position : null;
+      $('#book-paging').hidden = false;
+      const result = await flow.open(data,{anchor:target.entry ? data.fragment : target.anchor || '',position:destination});
+      if (id !== navigationId) return;
+      page = data; nodeId = selectedNode; position = flow.location().position;
+      route = target.entry ? {root,entry:target.entry,node:nodeId} : {root,page:data.path,anchor:target.anchor || '',node:nodeId};
       if (!saved?.expanded) reveal(nodeId);
       renderPage();
-      if (saved) {
-        $('#book-tree-scroll').scrollTop = saved.treeScroll || 0;
-        $('#panel-outline').scrollTop = saved.outlineScroll || 0;
-      }
-      frame.hidden = false;
-      // The iframe keeps its layout while loading, so DOM ranges are measured at the final width.
-      if (framePath === page.path && frameReady) locateFrame();
-      else {
-        frameReady = false; documentId = ''; framePath = page.path;
-        const url = metadata.content_base + page.path.split('/').map(encodeURIComponent).join('/');
-        frame.contentWindow.location.replace(url);
-      }
-      loadTimer = setTimeout(() => { if (id === navigationId) showError('frame_timeout'); }, 15000);
+      if (saved) { $('#book-tree-scroll').scrollTop = saved.treeScroll || 0; $('#panel-outline').scrollTop = saved.outlineScroll || 0; }
+      loading = false;
+      $('#book-loading').hidden = true; $('#book-error').hidden = true;
+      $('#book-main').setAttribute('aria-busy','false');
+      $('#book-status').textContent = result.found ? '' : ui.errors.fragment_missing;
+      $('#book-status').hidden = !!result.found;
+      history.replaceState(history.state,'',routeURL(route));
+      save(); rememberPosition();
     } catch (error) {
       if (id === navigationId && error.name !== 'AbortError') showError(error.message);
     }
   }
-  async function navigate(target, push = true) {
-    capturePosition();
-    loading = true;
+  async function navigate(target, push = true, preserveScope = false) {
+    capturePosition(); loading = true;
     const url = routeURL(target);
-    if (push && url !== location.pathname+location.search) history.pushState(null, '', url);
-    else history.replaceState(history.state, '', url);
-    position = {x:0,y:0};
+    if (push && url !== location.pathname+location.search) history.pushState(null,'',url);
+    else history.replaceState(history.state,'',url);
     if (narrow.matches) setSidebar(false);
-    await load(target);
+    await load(target,null,preserveScope);
   }
   function restore(saved) {
     expanded = new Set((saved?.expanded || []).filter(id => nodes.has(id)));
@@ -268,30 +271,6 @@
     }
   }
 
-  window.addEventListener('message', event => {
-    const data = event.data;
-    if (!metadata || event.source !== frame.contentWindow || event.origin !== location.origin || !data ||
-        data.channel !== channel || data.version !== version || data.snapshot !== metadata.snapshot || !page || data.path !== page.path || frameNavigationId !== navigationId) return;
-    if (data.type === 'ready' && typeof data.documentId === 'string' && data.documentId.length < 100) {
-      documentId = data.documentId; frameReady = true; locateFrame(); return;
-    }
-    if (data.documentId !== documentId || data.navigationId !== navigationId) return;
-    if (data.type === 'located') {
-      clearTimeout(loadTimer); loading = false;
-      frame.style.visibility = ''; $('#book-loading').hidden = true; $('#book-error').hidden = true;
-      $('#book-main').setAttribute('aria-busy','false');
-      $('#book-status').textContent = data.found ? '' : ui.errors.fragment_missing;
-      $('#book-status').hidden = !!data.found;
-      $('#book-status').title = $('#book-status').textContent;
-    }
-    if (['located','position'].includes(data.type) && !loading && data.position &&
-        Number.isFinite(data.position.x) && Number.isFinite(data.position.y)) {
-      position = {x:Math.max(0,data.position.x),y:Math.max(0,data.position.y)}; save(); rememberPosition();
-    } else if (data.type === 'navigate' && data.route && (typeof data.route.page === 'string' || typeof data.route.entry === 'string')) {
-      navigate(data.route);
-    } else if (data.type === 'focus-tools') $('#book-menu').focus();
-    else if (data.type === 'search') { selectPane('search'); setSidebar(true,true); }
-  });
   document.addEventListener('click', event => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const link = event.target.closest('a[href]');
@@ -300,8 +279,8 @@
     if (url.origin !== location.origin || url.pathname !== '/read') return;
     event.preventDefault();
     const params = url.searchParams;
-    const target = params.has('entry') ? {entry:params.get('entry'),node:params.get('node') || ''} :
-      {page:params.get('page') || metadata?.default_page,anchor:params.get('anchor') || '',node:params.get('node') || ''};
+    const target = params.has('entry') ? {root:params.get('root') || '',entry:params.get('entry'),node:params.get('node') || ''} :
+      {root:params.get('root') || '',page:params.get('page') || (params.has('root') ? '' : metadata?.default_page),anchor:params.get('anchor') || '',node:params.get('node') || ''};
     if (metadata) navigate(target);
   });
   $('#book-tree').addEventListener('click', event => {
@@ -335,7 +314,7 @@
       if (row.getAttribute('aria-expanded') === 'true' && !$('#book-filter').value.trim()) { expanded.delete(id); renderTree(id); }
       else next = rows.find(el => el.dataset.node === node.parent_id);
     } else if (['Enter',' '].includes(event.key)) {
-      if (node.status === 'present') navigate(nodeRoute(node));
+      if (node.status === 'present' || children.has(node.id)) navigate(nodeRoute(node));
       else { expanded.has(id) ? expanded.delete(id) : expanded.add(id); renderTree(id); }
     } else return;
     event.preventDefault(); next?.focus(); save();
@@ -368,8 +347,9 @@
   $('#book-search-prev').onclick = () => search(searchQuery,Math.max(1,searchPage-1),searchTitleOnly);
   $('#book-search-next').onclick = () => search(searchQuery,Math.min(searchTotalPages,searchPage+1),searchTitleOnly);
   $('#book-search').oninput = save;
+  $('#book-page-select').onchange = () => { const item = scope?.pages[Number($('#book-page-select').value)]; if (item) navigate(pageRoute(item)); };
   // Share the resolved theme through the same protocol as location and focus.
-  new MutationObserver(() => send('theme', {theme:document.documentElement.dataset.theme}))
+  new MutationObserver(() => flow?.theme(document.documentElement.dataset.theme))
     .observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
   narrow.addEventListener('change', () => setSidebar(!narrow.matches));
   document.addEventListener('keydown', event => {
@@ -377,13 +357,13 @@
       event.preventDefault(); $('#book-filter-clear').click();
     } else if (event.key === 'F6') {
       event.preventDefault(); if (sidebar.matches(':modal')) setSidebar(false);
-      frame.focus(); send('focus');
+      flow?.focus();
     } else if (event.key === '/' && !event.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey &&
                !event.target.closest('input,textarea,select,[contenteditable=true]')) {
       event.preventDefault(); selectPane('search'); setSidebar(true,true);
     }
   });
-  $('.skip-link').onclick = event => { event.preventDefault(); frame.focus(); send('focus'); };
+  $('.skip-link').onclick = event => { event.preventDefault(); flow?.focus(); };
   for (const selector of ['#book-tree-scroll','#panel-outline','#panel-search']) $(selector).addEventListener('scroll',save,{passive:true});
   window.addEventListener('pagehide',capturePosition);
   document.addEventListener('visibilitychange', () => { if (document.hidden) capturePosition(); });
@@ -402,25 +382,22 @@
     restoring = true; setSidebar(!narrow.matches);
     try {
       metadata = await api('/api/reader');
-      for (const node of metadata.nodes) {
-        nodes.set(node.id,node);
-        if (!children.has(node.parent_id)) children.set(node.parent_id,[]);
-        children.get(node.parent_id).push(node);
-        if (node.status === 'present') {
-          if (!pageNodes.has(node.path)) pageNodes.set(node.path,[]);
-          pageNodes.get(node.path).push(node);
-        }
-      }
+      model = annaReaderModel.index(metadata.nodes);
+      ({nodes,children,pageNodes} = model);
+      flow = new AnnaReaderFlow({scroll:$('#book-scroll'),container:$('#book-pages'),snapshot:metadata.snapshot,contentBase:metadata.content_base,
+        fetchPage:(path,signal) => api('/api/reader-page?'+new URLSearchParams({path,snapshot:metadata.snapshot}),signal),
+        labels:ui,text,onActive:activeDocument,onNavigate:target => navigate(target,true,true),
+        onTools:() => $('#book-menu').focus(),onSearch:() => { selectPane('search'); setSidebar(true,true); }});
       $('#book-version').hidden = !metadata.source_release;
       $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
       const params = new URL(location.href).searchParams;
-      const remembered = !current && !['entry','page','anchor','node'].some(key => params.has(key))
+      const remembered = !current && !['root','entry','page','anchor','node'].some(key => params.has(key))
         ? rememberedPosition() : null;
-      if (remembered) history.replaceState(history.state, '', routeURL({page:remembered.page,node:remembered.node}));
+      if (remembered) history.replaceState(history.state, '', routeURL({root:remembered.root,page:remembered.page,node:remembered.node}));
       restore(current); renderTree(); restoring = false;
       if (current?.search?.query) search(current.search.query,current.search.page,current.search.titleOnly,current.search.scroll);
-      await load(readRoute(),current || (remembered && {position:remembered.position,node:remembered.node}));
+      await load(readRoute(),current || remembered);
     } catch (error) { showError(error.message); }
     finally { restoring = false; }
   }

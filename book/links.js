@@ -34,7 +34,14 @@
   if (failedReferences.length) console.warn('anna: reference DOM binding mismatch', failedReferences.map(r => r.id));
   let root, queued = false, interacted = false;
   const links = [];
+  function definitionPosition(id) {
+    const definition = definitions.get(id);
+    const r = range(definition?.title || definition?.body);
+    return r ? {x:0,y:Math.max(0,r.getBoundingClientRect().top + scrollY - 20)} : null;
+  }
+  window.annaSourceLinks = Object.freeze({definitionPosition});
   function navigateFragment() {
+    if (window.parent && window.parent !== window) return;
     let id;
     try { id = decodeURIComponent(location.hash.slice(1)); } catch { return; }
     if (!id.startsWith('anna-')) return;

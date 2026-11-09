@@ -132,6 +132,17 @@ class WebTests(unittest.TestCase):
         self.assertIn('text/html',kind)
         self.assertIn(b'href="/favicon.ico"',body)
         self.assertLess(body.index(b'src="/theme.js"'),body.index(b'href="/style.css"'))
+    def test_reader_modules_are_served_with_script_types(self):
+        page=self.request('/read')[2]
+        for name in ('model','flow'):
+            path=f'/reader-{name}.js'
+            status,kind,body=self.request(path)
+            self.assertEqual((status,kind),(200,'text/javascript; charset=utf-8'))
+            self.assertTrue(body)
+            self.assertIn(path.encode(),page)
+            self.assertEqual(self.request(path,{'Host':'attacker.example'})[0],403)
+        self.assertEqual(self.request('/reader-unknown.js')[0],404)
+
     def test_theme_bootstrap(self):
         status,kind,body=self.request('/theme.js')
         self.assertEqual((status,kind),(200,'text/javascript; charset=utf-8'))

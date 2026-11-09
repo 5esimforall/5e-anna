@@ -257,6 +257,13 @@ def search_terms(params):
     return terms
 
 
+def body_terms(params):
+    """Searches in an entry's text after its title; every one must match."""
+    terms=list(dict.fromkeys(t.strip() for t in params.get('body',[]) if t.strip()))
+    if len(terms)>20 or any(len(t)>200 for t in terms):raise ValueError('正文关键词过多或过长')
+    return terms
+
+
 def typing_term(params):
     """The name search still being typed (`typing`): it filters like a kept one until Enter keeps it."""
     term=params.get('typing',[''])[0].strip()

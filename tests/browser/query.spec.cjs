@@ -457,11 +457,19 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await expect(page.locator('#filter-count')).toHaveText('3');
   // A typed field value is offered after the name search; choosing it adds the value, not a name search.
   await q.fill('塑能');await expect(page.getByRole('option',{name:/学派\s*塑能/})).toBeVisible();
-  await q.press('ArrowDown');await expect(q).toHaveAttribute('aria-activedescendant','suggestion-1');
+  await q.press('ArrowDown');await q.press('ArrowDown');await expect(q).toHaveAttribute('aria-activedescendant','suggestion-2');
   await q.press('Enter');await ready(page);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火','球']);
   expect(new URL(page.url()).searchParams.getAll('f_school')).toEqual(['塑能']);
   await expect(chips).toContainText('学派：塑能');
+  // The second suggestion searches the entry text instead of the name.
+  await q.fill('专注');await expect(page.getByRole('option').nth(1)).toContainText('正文');
+  await q.press('ArrowDown');await q.press('Enter');await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('body')).toEqual(['专注']);
+  expect(new URL(page.url()).searchParams.has('typing')).toBeFalsy();
+  await expect(chips.locator('[data-remove="body0"]')).toHaveText('正文：专注 ×');
+  await chips.locator('[data-remove="body0"]').click();await ready(page);
+  expect(new URL(page.url()).searchParams.has('body')).toBeFalsy();
   // Types and presets are found the same way.
   await q.fill('坐骑');await page.getByRole('option',{name:/预设\s*坐骑/}).click();await ready(page);
   expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['creature']);

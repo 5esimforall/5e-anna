@@ -53,6 +53,10 @@ ORIGINS = ('官方','合作','待核')
 SOURCE_EXISTS = 'EXISTS(SELECT 1 FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id AND '
 
 
+ENTRY_BODY = ("(SELECT substr(p.text,s.b+1,e.end-s.b) FROM pages p, (SELECT CASE WHEN json_extract(e.data,'$.title_end')>e.start "
+              "AND json_extract(e.data,'$.title_end')<e.end THEN json_extract(e.data,'$.title_end') ELSE e.start END AS b) s WHERE p.path=e.page_path)")
+
+
 def conditions(params):
     """Every condition a request sets, as (key, SQL, values). Values within one condition are alternatives;
     an entry matches when it meets every condition. The keys name the URL parameter (one per name search,
@@ -65,6 +69,8 @@ def conditions(params):
     for i, term in enumerate(terms): out.append((f'q{i}','instr(lower(e.name),lower(?))>0',[term]))
     typing = browse.typing_term(params)
     if typing and typing not in terms: out.append(('typing','instr(lower(e.name),lower(?))>0',[typing]))
+    # Body searches read the entry's own text after its title line (entry_layout.text_start), literally.
+    for i, term in enumerate(browse.body_terms(params)): out.append((f'body{i}','instr(lower('+ENTRY_BODY+'),lower(?))>0',[term]))
     for key,(column,allowed) in COMMON_CHOICES.items():
         chosen = list(dict.fromkeys(params.get(key,[])))
         if not chosen: continue

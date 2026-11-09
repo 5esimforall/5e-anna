@@ -183,6 +183,22 @@ class WebTests(unittest.TestCase):
         for bad in [{'q':[str(i) for i in range(21)]},{'q':['x'*201]},{'typing':['x'*201]}]:
             with self.assertRaises(ValueError):query(self.db,bad)
 
+    def test_body_searches_read_the_entry_text_after_its_title(self):
+        rows=query(self.db,{'type':['spell'],'body':['专注','火焰'],'versions':['each']},export=True)['rows']
+        self.assertTrue(rows)
+        for r in rows[:20]:
+            text=detail(self.db,r['id'])['body']
+            self.assertIn('专注',text);self.assertIn('火焰',text)
+        # A title is not body text: a word only in a name does not match the body.
+        title_only=self.db.execute("SELECT name_zh FROM entries WHERE type='spell' AND name_zh='亡者丧钟' LIMIT 1").fetchone()[0]
+        named={r['id'] for r in query(self.db,{'type':['spell'],'q':[title_only],'versions':['each']},export=True)['rows']}
+        bodied={r['id'] for r in query(self.db,{'type':['spell'],'body':[title_only],'versions':['each']},export=True)['rows']}
+        self.assertTrue(named);self.assertFalse(named&bodied)
+        data=facets(self.db,{'type':['spell'],'body':['专注','火焰']})
+        self.assertEqual(data['total'],len(rows));self.assertIn('body0',data['without']);self.assertIn('body1',data['without'])
+        for bad in [{'body':[str(i) for i in range(21)]},{'body':['x'*201]}]:
+            with self.assertRaises(ValueError):query(self.db,bad)
+
     def test_counts_say_what_choosing_each_option_would_match(self):
         params={'type':['spell'],'q':['火'],'f_school':['塑能']}
         data=facets(self.db,params)

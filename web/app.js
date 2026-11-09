@@ -11,7 +11,7 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    moreTypes:'{first}等 {count} 类',nameField:'名称',and:'且',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
     auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
@@ -33,7 +33,7 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    moreTypes:'{first} and {count} types',nameField:'Name',and:'and',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
     auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
@@ -203,7 +203,7 @@ function sync(){
   // follows, then the other fields. The text still being typed is not a chip yet.
   const active=[...new Set(params.keys())].filter(k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k)).sort((a,b)=>(b==='type')-(a==='type'));
   const terms=committedTerms();
-  $('#filter-count').textContent=active.length+terms.length||'';
+  $('#filter-count').textContent=active.length+terms.length+bodyTerms().length||'';
   const extraCount=groups.filter(g=>params.has(g.key)&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
   $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(k))?'已筛选':'';
@@ -212,7 +212,8 @@ function sync(){
   const chip=(key,text)=>`<button type="button" data-remove="${esc(key)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">${esc(text)} <span aria-hidden="true">×</span></button>`;
   const fieldChip=k=>chip(k,k==='cr_min'||k==='cr_max'?`${fieldNames[k]}：${params.get(k)}`:conditionText(k));
   const lead=active[0]==='type'?1:0;
-  const chips=[...active.slice(0,lead).map(fieldChip),...terms.map((t,i)=>chip('q'+i,`${ui.nameField}：${t}`)),...active.slice(lead).map(fieldChip)];
+  const chips=[...active.slice(0,lead).map(fieldChip),...terms.map((t,i)=>chip('q'+i,`${ui.nameField}：${t}`)),
+    ...bodyTerms().map((t,i)=>chip('body'+i,`${ui.bodyField}：${t}`)),...active.slice(lead).map(fieldChip)];
   $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
   markStripEdges($('#active-filters'));
 }
@@ -446,6 +447,8 @@ $('#source-search').addEventListener('input',()=>{filterSources();saveUiState();
 // Both are page state, read from the URL only on load and history navigation: the URL trails the field by the
 // debounce, and inferring kept searches from it once took half-typed IME text for a kept search.
 const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boolean))];
+// Body searches look in an entry's text after its title; they are added from the suggestions, never typed live.
+const bodyTerms=()=>[...new Set(params.getAll('body').map(t=>t.trim()).filter(Boolean))];
 let committed=[],draft='';
 const committedTerms=()=>committed;
 const searching=()=>committed.length>0||!!draft;
@@ -483,7 +486,8 @@ function suggestionList(text){
       .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2}));});
   const presets=(metadata?.presets||[]).filter(p=>fold(p.name).includes(q)).map(p=>({kind:'preset',preset:p,field:ui.presetField,label:`${p.name}（${typeName(p.type)}）`,count:null,rank:fold(p.name)===q?0:1}));
   const ranked=[...values,...presets].sort((a,b)=>a.rank-b.rank||(b.count??-1)-(a.count??-1)).slice(0,8);
-  return [{kind:'name',field:ui.nameField,label:ui.nameContains.replace('{text}',text)},...ranked];
+  return [{kind:'name',field:ui.nameField,label:ui.nameContains.replace('{text}',text)},
+    {kind:'body',field:ui.bodyField,label:ui.nameContains.replace('{text}',text)},...ranked];
 }
 function renderSuggestions(){
   const text=$('#q').value.trim();suggestions=suggestionList(text);activeSuggestion=0;
@@ -506,6 +510,10 @@ function applySuggestion(item){
     // Keep the draft as a search chip; the field empties for the next search.
     const text=$('#q').value.trim();clearDraft();if(!text)return;
     committed=[...new Set([...committed,text])];writeTerms();changed();return;
+  }
+  if(item.kind==='body'){
+    const text=$('#q').value.trim();clearDraft();writeTerms();
+    if(!bodyTerms().includes(text)){params.append('body',text);}changed();return;
   }
   // The typed text found the value; it was not meant as a name search.
   clearDraft();writeTerms();
@@ -535,6 +543,7 @@ function dropCondition(key){
   if(key==='type'){chooseTypes([]);return;}
   // A chip's key indexes the kept searches; whatever is being typed stays in the field.
   if(/^q\d+$/.test(key)){committed=committed.filter((_,i)=>i!==Number(key.slice(1)));writeTerms();changed();return;}
+  if(/^body\d+$/.test(key)){const terms=bodyTerms().filter((_,i)=>i!==Number(key.slice(4)));params.delete('body');terms.forEach(t=>params.append('body',t));changed();return;}
   if(key==='cr'){params.delete('cr_min');params.delete('cr_max');}else params.delete(key);
   changed();
 }
@@ -675,7 +684,7 @@ function chooseTypes(types,preset=null){
 // conditions whose removal would bring results back.
 function renderElsewhere(){
   const types=chosenTypes(),typeGroup=groups.find(g=>g.key==='type');
-  const others=searching()&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
+  const others=(searching()||bodyTerms().length)&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
   const total=others.reduce((sum,o)=>sum+o.count,0);
   $('#elsewhere').hidden=!total;$('#elsewhere').textContent=total?ui.elsewhere.replace('{count}',fmt(total)):'';
   $('#elsewhere').title=total?ui.elsewhereTitle.replace('{list}',others.map(o=>`${o.label} ${fmt(o.count)}`).join(' · ')):'';
@@ -687,6 +696,7 @@ function conditionText(key){
   if(key==='conflict')return fieldNames.conflict;
   if(/^q\d+$/.test(key))return `${ui.nameField}：${searchTerms()[Number(key.slice(1))]}`;
   if(key==='typing')return `${ui.nameField}：${draft}`;
+  if(/^body\d+$/.test(key))return `${ui.bodyField}：${bodyTerms()[Number(key.slice(4))]}`;
   const g=groups.find(g=>g.key===key),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
   return labels.length?`${g?.label||fieldNames[key]||key}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }

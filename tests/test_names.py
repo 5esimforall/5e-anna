@@ -139,7 +139,7 @@ class NameTests(unittest.TestCase):
         from paths import WEB
         build=Build(WEB)
         for path in ('topics/荒洲探险家指南/荒洲宝藏/宝藏.html','topics/荒洲探险家指南/荒洲宝藏/荒洲的魔法物品.htm'):
-            build.consume(parse_one((str(WEB),path,[],build.registry.context(path))))
+            build.consume(parse_one(build.parse_job(path)))
         entries=[e for e in build.entries if e['name_zh']=='冥河之剑']
         self.assertEqual(len(entries),2)
         self.assertEqual(len({e['id'] for e in entries}),2)

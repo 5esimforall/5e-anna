@@ -54,7 +54,7 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(normalize_value('casting_time','其他'),'其他')
 
 class CorpusRegressionTests(unittest.TestCase):
-    def parse(self,rel):return parse_one((str(WEB),'topics/'+rel,[],rel))
+    def parse(self,rel):return parse_one((str(WEB),'topics/'+rel,[],rel,False))
 
     def test_2014_feats(self):
         r=self.parse('玩家手册/自定义选项/专长.html')
@@ -209,7 +209,7 @@ class CorpusRegressionTests(unittest.TestCase):
         from build import Build
         build=Build(WEB)
         pages=['topics/模组/湮灭之墓/生物/三花株.htm','topics/模组/湮灭之墓/生物/僵尸.htm','topics/玩家手册2024/法术详述/6环.htm']
-        for path in pages:build.consume(parse_one((str(WEB),path,[],build.registry.context(path))))
+        for path in pages:build.consume(parse_one(build.parse_job(path)))
         tomb=next(s for s in build.sources.values() if s['name'].endswith('湮灭之墓'))
         phb=next(s for s in build.sources.values() if s['name']=='玩家手册2024')
         self.assertEqual(tomb['ruleset_hint'],'待核')

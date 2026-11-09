@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES, RULE_TYPES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
@@ -106,7 +106,7 @@ def observation_fields(ob):
 
 
 def parse_one(args):
-    web,path,observations,context=args
+    web,path,observations,context,core_rule_source=args
     page={'path':path,'role':page_role(path),'parse_status':'ok','error':'','title':'','text':'','encoding':'','sha256':''}
     try:
         raw,encoding,h=read_page(Path(web)/path)
@@ -123,7 +123,7 @@ def parse_one(args):
         if not feature_starts:
             optional=re.search(r'可选职业特性',doc.text[:1000])
             if optional:feature_starts=[optional.start()]
-        output=[]
+        output=[];rule_children=[]
         for i,c in enumerate(cs):
             full=doc.text[c.start:c.end]
             # Classify from a section's own introduction, not a nested stat block.
@@ -178,6 +178,13 @@ def parse_one(args):
                 'type':kind,'classification_rule':rule,'boundary_rule':c.method,'legacy_direct':c.local_legacy,'fields':fields,
                 'observation_ids':[o['id'] for o in c.observations], 'body_hash':sha256(compact(full).encode()).hexdigest(),
                 'level':c.rank,'is_primary':primary,'table_span':c.fields.get('table_span')})
+            if core_rule_source and kind in RULE_TYPES:
+                for a,b,end,name,method in doc.rule_children(c.title_end,min(c.end,next_start),c.name):
+                    rule_children.append({'name':name,'start':a,'title_end':b,'end':end,'anchors':[],'parent_index':i,
+                        'type':'rule','classification_rule':'rule_subdefinition','boundary_rule':method,'legacy_direct':c.local_legacy,
+                        'fields':{},'observation_ids':[],'body_hash':sha256(compact(doc.text[a:end]).encode()).hexdigest(),
+                        'level':c.rank+1,'is_primary':False})
+        output.extend(rule_children)
         # PHB/DMG calls this a table but the HTML encodes it as a simple list.
         for ul in doc.body.find_all('ul'):
             caption=ul.find_previous_sibling()
@@ -256,6 +263,12 @@ class Build:
                     else:self.review(ob['id'],'index_target_missing',ob['href'],{'path':path,'span':ob['span']},'high')
             doc.close()
         print(f'索引行：{len(self.observations)}；正文目标：{len(self.ob_targets)}',flush=True)
+
+    def parse_job(self,path):
+        owners,_=self.registry.owners(path)
+        source=self.sources[owners[0]] if len(owners)==1 else {}
+        core_rule_source=source.get('reference_role')=='core_rules' and source['ruleset_hint'] in {'5e','5r'}
+        return (str(self.web),path,self.ob_targets.get(path,[]),self.registry.context(path),core_rule_source)
 
     def consume(self,result):
         page=result['page'];path=page['path']
@@ -664,7 +677,7 @@ def main():
     b.registry.register_orphans([p for p in paths if page_role(p)=='document'])
     b.index_pass()
     if args.limit:paths=paths[:args.limit]
-    jobs=[(str(args.source.resolve()),p,b.ob_targets.get(p,[]),b.registry.context(p)) for p in paths]
+    jobs=[b.parse_job(p) for p in paths]
     if args.workers==1:
         results=map(parse_one,jobs)
         for i,result in enumerate(results,1):

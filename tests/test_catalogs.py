@@ -18,14 +18,14 @@ from paths import WEB
 
 class CatalogTests(unittest.TestCase):
     def parse(self,path):
-        r=parse_one((str(WEB),'topics/'+path,[],path))
+        r=parse_one((str(WEB),'topics/'+path,[],path,False))
         self.assertEqual(r['page']['parse_status'],'ok',r['page']['error'])
         return r
 
     def synthetic(self,html,path='topics/装备/目录.htm'):
         with tempfile.TemporaryDirectory() as td:
             f=Path(td)/path;f.parent.mkdir(parents=True);f.write_text(html)
-            return parse_one((td,path,[],path))
+            return parse_one((td,path,[],path,False))
 
     def test_mount_rows_both_editions(self):
         for book in ('玩家手册','玩家手册2024'):
@@ -147,7 +147,7 @@ class AnimalLinkTests(unittest.TestCase):
             '怪物图鉴/野兽/CR0.5.html','怪物图鉴2025/附录A/战马.htm','怪物图鉴2025/附录A/驮用马.htm','怪物图鉴2025/附录A/乘用马.htm','怪物图鉴2025/附录A/怪兽/飞蛇.htm','怪物图鉴2025/附录A/狼.htm']
         cls.paths=['topics/'+p for p in ps]
         for p in cls.paths:
-            cls.build.consume(parse_one((str(WEB),p,[],cls.build.registry.context(p))))
+            cls.build.consume(parse_one(cls.build.parse_job(p)))
         cls.build.finish()
 
     def test_version_scoped_mount_roles(self):

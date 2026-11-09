@@ -1,7 +1,7 @@
 """Tolerant HTML parsing, anchored section extraction, and evidence-preserving fields."""
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import PurePosixPath
@@ -15,6 +15,8 @@ from bs4 import BeautifulSoup, NavigableString, Tag, Comment, Doctype
 BLOCKS = {'p','div','h1','h2','h3','h4','h5','h6','tr','li','ul','ol','blockquote','table','section','hr'}
 HEADINGS = {'h1','h2','h3','h4','h5','h6'}
 IGNORED = {'script','style','noscript','head'}
+RULE_TYPES = {'rule','action','condition','hazard','subsystem'}
+EXAMPLE_CLASSES = {'example','ex-right'}
 GENERIC = re.compile(r'^(?:前言|简介|概述|引言|目录|使用本书|专长|法术|魔法物品|装备|种族|背景|职业|角色选项|玩家选项|起源专长|通用专长|传奇恩惠专长|战斗风格专长|怪物|生物|图鉴|数据卡|法术详述|附录[A-Z]?[：:]?.*|第[一二三四五六七八九十\d]+章.*|[0-9一二三四五六七八九]环|戏法)(?:\s*[A-Za-z].*)?$', re.I)
 FIELD_TITLE = re.compile(r'^(?:护甲等级|生命值|速度|力量|敏捷|体质|智力|感知|魅力|技能|感官|语言|挑战等级|挑战|伤害抗性|伤害免疫|状态免疫)(?:\s*[:：].*|\s*)$')
 CREATURE_META = re.compile(r'(?m)^[ \t]*(?:微型|小型|中型|大型|巨型|超巨型)(?:或(?:微型|小型|中型|大型|巨型))?\s*(?:异怪|野兽|天族|天界|构装|龙类|元素|妖精|邪魔|巨人|类人|怪兽|泥怪|植物|亡灵)[^\n]{0,120}$')
@@ -387,6 +389,94 @@ class Document:
             # Nested wrappers of the same title share a range; separate titles remain ambiguous.
             spans={self.span(t) for t in matches}
             if len(spans)==1:yield matches[0],(ta,tb)
+
+    def rule_children(self, start, end, parent_name):
+        """Find independent rule terms, not every emphasized subheading in a rule."""
+        parent_zh,parent_en=split_name(parent_name)
+        def family(name):
+            zh,en=split_name(name)
+            return any(p and key(p)!=key(n) and key(p) in key(n)
+                       for p,n in ((parent_zh,zh),(parent_en,en)))
+        def usable(tag):
+            return not (tag.find_parent(['table','a','blockquote']+list(HEADINGS))
+                        or any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents))
+        # A declared series of marked terms, each with its own parenthesized
+        # rule text, differs from a list of names or an incidental gloss.
+        for block in self.body.find_all('p'):
+            lo,hi=self.span(block)
+            if lo<start or hi>end or not usable(block):continue
+            terms={}
+            for tag in block.find_all('u',recursive=False):
+                a,b=self.span(tag);name=self.text[a:b]
+                if re.fullmatch(r'[\u3400-\u9fff]{2,24}',name):terms[a]=b
+            for intro in re.finditer(r'([^。！？；\n：:]+)[：:]\s*',self.text[lo:hi]):
+                lead=intro[1]
+                if not re.search(r'(?:[两二三四五六七八九十\d]+种|分为|包括|下列|以下|分别)',lead):continue
+                if re.search(r'例如|比如|举例|譬如',lead):continue
+                items=[];a=lo+intro.end()
+                while a in terms:
+                    b=terms[a];tail=self.text[b:hi]
+                    opening=re.match(r'\s*([（(])',tail)
+                    if not opening:break
+                    stack=[opening[1]]
+                    for pos in range(b+opening.end(),min(hi,b+180)):
+                        ch=self.text[pos]
+                        if ch in '（(':stack.append(ch)
+                        elif ch in '）)':
+                            if ch!=('）' if stack[-1]=='（' else ')'):break
+                            stack.pop()
+                            if not stack:break
+                        elif ch=='\n':break
+                    if stack:break
+                    gloss=compact(self.text[b+opening.end():pos])
+                    if len(gloss)<4 or not re.search(r'[\u3400-\u9fff]',gloss):break
+                    items.append((a,b,pos+1,self.text[a:b]))
+                    separator=re.match(r'\s*[、，,]\s*',self.text[pos+1:hi])
+                    if not separator:
+                        after=self.text[pos+1:hi].lstrip()
+                        if len(items)>=2 and len({key(t[3]) for t in items})==len(items) and (not after or after[0] in '。；;.!！？'):
+                            yield from ((*t,'rule_term_gloss_list') for t in items)
+                        break
+                    a=pos+1+separator.end()
+
+        # The other layout is parallel lines inside rule prose: either a
+        # bold bilingual lead-in or a bold name in a repeated rule clause.
+        # Only independently named variants of the enclosing term are
+        # exported; generic labels like "Effects" don't become global terms.
+        lines=defaultdict(list)
+        for tag in self.body.find_all(['b','strong']):
+            a,b=self.span(tag)
+            if not start<=a<b<=end or tag.find_parent(['b','strong']) or not usable(tag):continue
+            line=self.text.rfind('\n',start,a)+1
+            if line<start:line=start
+            stop=self.text.find('\n',a,end)
+            if stop<0:stop=end
+            if b>stop:continue
+            lines[(line,stop)].append((a,b))
+        siblings=defaultdict(list)
+        for (line,stop),parts in lines.items():
+            a,b=parts[0]
+            for x,y in parts[1:]:
+                if compact(self.text[b:x]):break
+                b=y
+            prefix=compact(self.text[line:a])
+            raw=compact(self.text[a:b])
+            name=raw.rstrip('。:：')
+            zh,en=split_name(name)
+            if not (zh and en and len(name)<=80 and not re.search(r'[。！？；：:]',name)):continue
+            tail=compact(self.text[b:stop])
+            if len(tail)<8 or not re.search(r'[。！？]',tail):continue
+            if not prefix and raw!=name:
+                signature='inline_heading'
+            elif re.fullmatch(r'(?:当(?:你|目标|生物)?)?(?:处于|具有|获得|陷入|使用|执行|受到)',prefix):
+                continuation=re.match(r'(?:下的|时[，,]|期间|中的|中[，,])',tail)
+                if not continuation:continue
+                signature=(prefix,continuation[0])
+            else:continue
+            siblings[signature].append((a,b,b+len(self.text[b:stop].rstrip()),name))
+        for group in siblings.values():
+            if len({key(t[3]) for t in group})!=len(group) or len(group)<2:continue
+            yield from ((*t,'rule_parallel_lead') for t in group if family(t[3]))
 
     def candidates(self, observations=()):
         items=[]

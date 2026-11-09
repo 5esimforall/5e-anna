@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sqlite3
 from build import TYPE_LABELS, csv_write
+from html_extract import RULE_TYPES
 
 
 def connect(path):
@@ -20,6 +21,8 @@ def audit_concepts(db,folder):
     errors=[];ids=set();outcomes=Counter()
     pages=dict(db.execute('SELECT path,length(text) FROM pages'))
     entries={r[0] for r in db.execute('SELECT id FROM entries')}
+    rule_targets={r[0]:r[1] for r in db.execute(
+        "SELECT definition_id,json_extract(data,'$.ruleset'),json_extract(data,'$.type') FROM concepts") if r[2] in RULE_TYPES}
     for row in db.execute('SELECT id,page_path,start,end,signal,status,target_id,data FROM concept_observations'):
         mid,path,a,b,signal,status,target,raw=row;o=json.loads(raw);ids.add(mid);outcomes[(signal,status)]+=1
         if not 0<=a<=b<=pages.get(path,-1):errors.append(mid+': invalid range')
@@ -30,6 +33,16 @@ def audit_concepts(db,folder):
         elif target is not None:errors.append(mid+': unresolved target')
         if signal=='format' and status=='resolved' and (o['role']!='mention' or not o['evidence'].get('stylesheet_sha256')):
             errors.append(mid+': missing format provenance')
+        if signal=='plain' and status=='resolved':
+            syntax=o['evidence'].get('syntax',{})
+            scope=o['evidence'].get('scope',{})
+            cue=syntax.get('cue_span',[])
+            if (o['role']!='mention' or not (len(cue)==2 and 0<=cue[0]<cue[1]==a)
+                or scope.get('ruleset') not in {'5e','5r'} or len(scope.get('source_ids',[]))!=1
+                or not scope.get('owner_ids') or any(e not in entries for e in scope['owner_ids'])):
+                errors.append(mid+': missing plain reference provenance')
+            elif rule_targets.get(target)!=scope['ruleset']:
+                errors.append(mid+': plain reference target ruleset mismatch')
     exported=set();p=Path(folder)/'concept_observations.jsonl'
     if p.exists():
         with p.open() as f:

@@ -146,6 +146,46 @@ test('formatted mention navigates in the current page and exposes evidence in an
   await expect(page).toHaveURL(new RegExp('entry='+m.target_id));
 });
 
+test('plain and marked core-rule mentions share the precise subdefinition in anna and the book',async({page})=>{
+  await page.setViewportSize({width:390,height:800});
+  const [plain,marked]=cases.core_rules;
+  expect(plain.references.map(r=>[r.text,r.signal,r.can_link])).toEqual([
+    ['半身掩护','plain',true],['四分之三掩护','plain',true]
+  ]);
+  expect(plain.references[1].evidence.syntax.rule).toBe('coordinated_rule_use');
+  expect(marked.references.map(r=>[r.signal,r.target_id])).toEqual(
+    plain.references.map(r=>['format',r.target_id])
+  );
+  const ref=plain.references[0];
+  const subject=await (await page.request.get(anna+'/api/entry?id='+plain.entry_id)).json();
+  expect(subject.effective_references.find(r=>r.id===ref.id)).toMatchObject({
+    target_id:ref.target_id,can_link:true,review_status:'unreviewed'
+  });
+  const child=await (await page.request.get(anna+'/api/entry?id='+ref.target_id)).json();
+  expect(child).toMatchObject({name_zh:'半身掩护',type:'rule',ruleset:'5r',boundary_rule:'rule_term_gloss_list'});
+  expect(child.body).toContain('+2加值');
+  expect(child.body).not.toContain('四分之三掩护');
+  expect(child.relations).toEqual(expect.arrayContaining([expect.objectContaining({predicate:'section_of',target_label:'掩护 Cover'})]));
+  await page.goto(topic(book,plain.path));await ready(page);
+  const link=page.getByRole('link',{name:'查看定义: '+ref.text,exact:true}).first();
+  await link.focus();await expect(link).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(topic(book,ref.target.path)+'#'+ref.target.fragment);
+  await ready(page);
+  await expect(page.getByRole('link',{name:'查看 anna 条目: 半身掩护',exact:true})).toBeInViewport();
+  const old=cases.classic_cover;
+  expect(old.target_id).not.toBe(ref.target_id);
+  expect(old.target.path).toBe(old.path);
+  const oldChild=await (await page.request.get(anna+'/api/entry?id='+old.target_id)).json();
+  expect(oldChild).toMatchObject({name_zh:'半身掩护',name_en:'half cover',ruleset:'5e',boundary_rule:'rule_parallel_lead'});
+  await page.goto(topic(book,old.path));await ready(page);
+  const oldLink=page.getByRole('link',{name:'查看定义: 半身掩护',exact:true});
+  await oldLink.focus();await expect(oldLink).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(topic(book,old.path)+'#'+old.target.fragment);
+  await expect(page.getByRole('link',{name:'查看 anna 条目: '+oldChild.name,exact:true})).toBeInViewport();
+});
+
 test('fixture table links track moved nodes, focus, scrolling and narrow reflow',async({page},testInfo)=>{
   await page.goto(original+'/__fixture__/linked');await ready(page);
   const cell=page.getByRole('link',{name:'查看 anna 条目: 长剑 Longsword',exact:true});

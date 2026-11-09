@@ -41,13 +41,26 @@ def cases(manifest):
         row=db.execute("SELECT m.data,e.id FROM concept_observations m JOIN entries e ON e.page_path=m.page_path AND m.start>=e.start AND m.end<=e.end WHERE m.status='resolved' AND m.signal='format' AND e.type='spell' AND m.page_path='topics/玩家手册2024/法术详述/1环.htm' ORDER BY m.start LIMIT 1").fetchone()
         mention=json.loads(row[0]);mention['entry_id']=row[1]
         mention['target']=manifest['entries'][mention['target_id']]
+        core=[]
+        for name,signal in [('Sharpshooter','plain'),('Spell Sniper','format')]:
+            feat=db.execute("SELECT id,page_path,start,end FROM entries WHERE name_en=? AND type='feat' AND ruleset='5r' AND page_path='topics/玩家手册2024/专长/通用专长.htm'",(name,)).fetchone()
+            refs=[json.loads(r[0]) for r in db.execute(
+                "SELECT data FROM effective_references WHERE page_path=? AND signal=? AND start>=? AND end<=? AND json_extract(data,'$.text') IN ('半身掩护','四分之三掩护') ORDER BY start",
+                (feat[1],signal,feat[2],feat[3]))]
+            core.append({'entry_id':feat[0],'path':feat[1],'references':[
+                {**ref,'target':manifest['entries'].get(ref['target_id'])} for ref in refs]})
+        old_path='topics/玩家手册/战斗/掩护.htm'
+        old_cover=json.loads(db.execute(
+            "SELECT data FROM effective_references WHERE page_path=? AND signal='plain' AND json_extract(data,'$.text')='半身掩护' ORDER BY start LIMIT 1",
+            (old_path,)).fetchone()[0])
+        old_cover['target']=manifest['entries'].get(old_cover['target_id'])
     path='topics/速查/合作万器大全.htm'
     raw=(BOOK/path).read_text()
     data=json.loads(raw.split('id="anna-bindings">',1)[1].split('</script>',1)[0])
     reference=data['references'][0]
     return {'spell':{'id':spell['id'],'path':spell['page_path'],'anchor':'Shield','name':spell['name']},
             'reference':{'path':path,'id':reference['id'],'text':reference['range']['text'],**manifest['entries'][reference['id']]},
-            'reference_source':path,'mention':mention}
+            'reference_source':path,'mention':mention,'core_rules':core,'classic_cover':old_cover}
 
 
 def main():

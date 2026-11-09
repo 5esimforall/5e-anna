@@ -1,13 +1,12 @@
 """Evidence-backed concept definitions and occurrence accounting; never merge names into identities."""
 from collections import Counter,defaultdict
+from bisect import bisect_left
 from hashlib import sha256
 import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from html_extract import LEVEL_LABEL,Document,compact,digest,key,resolve_link,split_name
-
-RULE_TYPES={'rule','action','condition','hazard','subsystem'}
+from html_extract import EXAMPLE_CLASSES,LEVEL_LABEL,RULE_TYPES,Document,compact,digest,key,resolve_link,split_name
 
 def aliases(entry):
     names=[]
@@ -90,6 +89,72 @@ def reference_spans(text,start,end,kind,resolver):
     # by at least two known names. Never link the whole mark to its final English name.
     return parts if len(parts)>1 and sum(known(a,b) for a,b in parts)>=2 else [(start,end)]
 
+def overlap_check(spans):
+    """Build a query over possibly nested source ranges."""
+    starts=[];ends=[]
+    for a,b in sorted(spans):
+        if a<b:
+            starts.append(a);ends.append(max(b,ends[-1] if ends else b))
+    def overlaps(a,b):
+        i=bisect_left(starts,b)-1
+        return i>=0 and ends[i]>a
+    return overlaps
+
+
+def term_scanner(names):
+    """Keep leftmost-longest matching, testing only names with a compatible first character."""
+    by_initial=defaultdict(list)
+    for name in sorted(set(names),key=lambda n:(-len(n),n)):
+        by_initial[name[0]].append(name)
+    initial_pattern=re.compile('['+re.escape(''.join(by_initial))+']',re.I)
+    branches={}
+    def matches(text):
+        end=0
+        for hit in initial_pattern.finditer(text):
+            start=hit.start()
+            if start<end:continue
+            initial=hit[0]
+            if initial not in branches:
+                same=re.compile(re.escape(initial),re.I)
+                terms=sorted((n for c in by_initial if same.fullmatch(c) for n in by_initial[c]),
+                             key=lambda n:(-len(n),n))
+                branches[initial]=re.compile('|'.join(re.escape(n) for n in terms),re.I)
+            match=branches[initial].match(text,start)
+            if match:
+                end=match.end()
+                yield match
+    return matches
+
+
+PLAIN_LEAD=re.compile(
+    r'(?:视为|处于|处在|陷入|保持|维持|失去|免疫|无视|提供|给予|获得|具有|承受|受到|执行|进行|完成|消耗|发动|使用|采取|作为|(?<!可)以|(?<![作应运])用)'
+    r'(?:了|其|你的?|一个|一种|一次|一项|任何|全部|额外的?){0,3}[ \t]*$')
+PLAIN_TAIL=re.compile(r'^[ \t]*(?:$|[。！？；、，,.;:：!?）)」”\n]|状态|词条|动作|期间|之前|之后|之下|下(?=$|[，。）；]|的|来|时)|时(?!钟|间|期|代)|来(?!源|历|临)|以|所|的|执行|发动|施展|进行|和|或|与|及|以及)')
+PLAIN_EN_LEAD=re.compile(r'\b(?:gain|have|lose|ignore|provide|grant|maintain|use|take|perform|become)[ \t]+(?:(?:a|an|the|your)[ \t]+)?$',re.I)
+PLAIN_EN_TAIL=re.compile(r'^(?:$|[.,;:!?\n)\]”]|[ \t]+(?:action|and|or|to|for|on|until|while|when|during|before|after)\b)',re.I)
+ACTION_LEAD=re.compile(r'^(?:执行|采取|(?:take|perform)\b)',re.I)
+ACTION_TAIL=re.compile(r'^[ \t]*(?:动作|action\b)',re.I)
+PLAIN_JOIN=re.compile(r'[ \t]*(?:、|和|或|与|以及|及|或者|及其|\band\b|\bor\b)[ \t]*',re.I)
+
+
+def plain_syntax(text,a,b,previous):
+    """A name must fill a rules-use slot, not just be a substring of prose."""
+    english=text[a:b].isascii()
+    lead=(PLAIN_EN_LEAD if english else PLAIN_LEAD).search(text[max(0,a-32):a])
+    after=text[b:b+24]
+    tail=(PLAIN_EN_TAIL if english else PLAIN_TAIL).match(after)
+    if not tail:return None
+    action=bool(ACTION_TAIL.match(after))
+    if lead:
+        slot='action' if action or ACTION_LEAD.match(lead[0]) and '一次' not in lead[0] else 'rule'
+        return {'rule':'rule_use_clause','slot':slot,'cue_span':[a-len(lead[0]),a]}
+    if previous is not None:
+        end,slot=previous
+        if 0<a-end<=12 and PLAIN_JOIN.fullmatch(text[end:a]):
+            return {'rule':'coordinated_rule_use','slot':'action' if action else slot,'cue_span':[end,a]}
+    return None
+
+
 class Resolver:
     def __init__(self,entries,sources=()):
         self.sources={s["id"]:s for s in sources};self.local_definitions=defaultdict(list)
@@ -111,7 +176,7 @@ class Resolver:
     def locator(self,path,fragment):
         ids=self.anchors.get((path,fragment),set()) if fragment else set()
         return sorted(ids)
-    def resolve(self,label,kind,path,position=None):
+    def resolve(self,label,kind,path,position=None,*,scope=None):
         excluded_features=[]
         def result(candidates,reason,status=None):
             ids=sorted(e['id'] for e in candidates)
@@ -138,10 +203,12 @@ class Resolver:
         if not candidates and excluded_features:return result([], 'feature_out_of_scope','review')
         if not candidates:
             return result([self.entries[i] for i in ids],'type_mismatch' if ids else 'no_definition','review' if ids else 'unresolved')
-        local=self.pages.get(path,[]);sources={s for e in local for s in e.get('source_ids',[])}
-        rules={e['ruleset'] for e in local if e['ruleset'] not in {'待核','冲突'}}
-        same_page=[e for e in candidates if e['page_path']==path]
-        if same_page:return result(same_page,'same_page')
+        local=self.pages.get(path,[])
+        sources=set(scope['source_ids']) if scope else {s for e in local for s in e.get('source_ids',[])}
+        rules={scope['ruleset']} if scope else {e['ruleset'] for e in local if e['ruleset'] not in {'待核','冲突'}}
+        if not scope:
+            same_page=[e for e in candidates if e['page_path']==path]
+            if same_page:return result(same_page,'same_page')
         if len(rules)==1:candidates=[e for e in candidates if e['ruleset'] in rules]
         else:return result(candidates,'unknown_ruleset','review')
         if not candidates:return result([self.entries[i] for i in ids if matches_kind(self.entries[i]) and i not in excluded_features],'ruleset_mismatch','review')
@@ -160,9 +227,50 @@ class Resolver:
                     'target_sources':[{'id':sid,'role_evidence':self.sources.get(sid,{}).get('reference_role_evidence',[])} for sid in sorted({sid for e in core for sid in e['source_ids']})]})
                 return found
         # Core glossary is an explicitly curated definition registry for that ruleset.
-        core=[e for e in candidates if '/术语汇编/' in e['page_path'] and e['id'] in self.indexed]
+        core=[e for e in candidates if '/术语汇编/' in e['page_path'] and e['id'] in self.indexed] if not scope else []
         if core:return result(core,'core_registry')
         return result(candidates,'cross_source_unconfirmed','review')
+
+    def plain_scope(self,path,a,b):
+        owners=[e for e in self.pages.get(path,[]) if e['title_end']<=a<b<=e['end']]
+        if not owners:return None
+        size=min(e['end']-e['start'] for e in owners)
+        closest=[e for e in owners if e['end']-e['start']==size]
+        facts={(tuple(e['source_ids']),e['ruleset']) for e in closest}
+        if len(facts)!=1:return None
+        source_ids,ruleset=next(iter(facts))
+        if len(source_ids)!=1 or ruleset not in {'5e','5r'}:return None
+        if self.sources.get(source_ids[0],{}).get('ruleset_hint')!=ruleset:return None
+        return {'source_ids':list(source_ids),'ruleset':ruleset,'owner_ids':sorted(e['id'] for e in closest)}
+
+    def resolve_plain(self,label,path,a,b,syntax,non_prose):
+        scope=self.plain_scope(path,a,b) if syntax and not non_prose else None
+        resolution=self.resolve(label,'concept',path,a,scope=scope)
+        evidence={'resolution_reason':resolution['reason']}
+        if syntax:evidence['syntax']=syntax
+        if scope:evidence['scope']=scope
+        def pending(reason,status='review',targets=None):
+            return {'reason':reason,'status':status,'targets':resolution['targets'] if targets is None else targets}
+        if non_prose:return pending('plain_non_prose'),evidence
+        if not syntax:return pending('lexical_candidate'),evidence
+        if not scope:return pending('plain_scope_unconfirmed'),evidence
+        if resolution['status']!='resolved':return resolution,evidence
+        target_id=resolution['targets'][0];target=self.entries[target_id]
+        def core(entry):
+            return any(self.sources.get(s,{}).get('reference_role')=='core_rules' and
+                       self.sources[s]['ruleset_hint']==scope['ruleset'] for s in entry['source_ids'])
+        if target['type'] not in RULE_TYPES or not core(target):
+            return pending('plain_non_core_target'),evidence
+        if target['type']=='action' and syntax['slot']!='action':
+            return pending('plain_action_context'),evidence
+        if target['page_path']==path and target['start']<=a<b<=target['end']:
+            return pending('definition_self_reference'),evidence
+        # Plain text supplies no visual type marker; a relevant non-rule
+        # homonym cannot be discarded just because the rule candidate is unique.
+        competitors=[e['id'] for i in self.names.get(key(label),set()) if (e:=self.entries[i])['type'] not in RULE_TYPES|{'section','class_feature'}
+                     and e['ruleset']==scope['ruleset'] and (set(scope['source_ids']).intersection(e['source_ids']) or core(e))]
+        if competitors:return pending('plain_competing_kind','ambiguous',[target_id,*competitors]),evidence
+        return resolution,evidence
 
 def build_concepts(db,source,out,entries,pages,sources=()):
     resolver=Resolver(entries,sources);observations=[];definition_ids={e['id'] for e in entries if e['type'] in RULE_TYPES or e.get('table_span') and e['type']=='lore'}
@@ -199,12 +307,12 @@ def build_concepts(db,source,out,entries,pages,sources=()):
             row=observe(path,*doc.span(a),compact(a.get_text(' ',strip=True)),'index','entry',ids,'explicit_locator',role='index',evidence={'href':a['href'],'target_path':dest[0],'fragment':dest[1]})
             if row['status']=='resolved':resolver.indexed.add(row['target_id'])
         doc.close()
-    terms=sorted({n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2},key=lambda n:(-len(n),n))
-    pattern=re.compile('|'.join(re.escape(n) for n in terms),re.I) if terms else None
+    terms={n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
+    scan_terms=term_scanner(terms) if terms else None
     profiles={};page_coverage=[];discovery_inputs={'webhelpcontents.htm'}
     for path,page in sorted(pages.items()):
         if page.get('parse_status')!='ok':continue
-        doc=Document(path,read_page(Path(source)/path)[0]);occupied=[]
+        doc=Document(path,read_page(Path(source)/path)[0]);occupied=[doc.span(t) for t in doc.body.find_all('a',href=True)]
         titles=[(e['start'],e['title_end']) for e in resolver.pages[path]]
         def in_title(a,b):return any(x<=a and b<=y for x,y in titles)
         stylesheet_paths=[]
@@ -224,7 +332,7 @@ def build_concepts(db,source,out,entries,pages,sources=()):
             for tag in doc.body.find_all('u'):
                 a,b=doc.span(tag);kind=format_kind(tag)
                 if kind not in {'magic_item','spell','creature'} or tag.find_parent('a',href=True):continue
-                if any({'example','ex-right'}.intersection(p.get('class',[])) for p in tag.parents):continue
+                if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents):continue
                 owners=[e for e in resolver.pages[path] if e.get('boundary_rule')=='feature_inline_heading' and e['title_end']<=a<b<=e['end']]
                 if not owners:continue
                 owner=min(owners,key=lambda e:e['end']-e['start'])
@@ -249,7 +357,7 @@ def build_concepts(db,source,out,entries,pages,sources=()):
             if in_title(a,b):observe(path,a,b,label,'format',kind,reason='definition_title',status='excluded',role='definition',evidence=evidence);continue
             if tag.find_parent('a',href=True) or tag.find('a',href=True):
                 observe(path,a,b,label,'format',kind,reason='explicit_link',status='excluded',role='explicit_reference',evidence=evidence);continue
-            if any({'example','ex-right'}.intersection(p.get('class',[])) for p in tag.parents):
+            if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents):
                 observe(path,a,b,label,'format',kind,reason='example_context',status='review',role='example',evidence=evidence);continue
             spans=reference_spans(doc.text,a,b,kind,resolver) if trusted and kind!='ambiguous' else [(a,b)]
             for start,end in spans:
@@ -266,13 +374,18 @@ def build_concepts(db,source,out,entries,pages,sources=()):
                 observe(path,e['start'],e['title_end'],e['name'],'heading','concept',reason='unclassified_definition',status='review',role='definition_candidate')
         for m in re.finditer(r'(?:称为|称作|定义为)[“「]?([^。；\n”」]{2,24})',doc.text):
             observe(path,m.start(1),m.end(1),m[1],'definition_phrase','concept',reason='semantic_candidate',status='review',role='definition_candidate')
-        if pattern:
-            for m in pattern.finditer(doc.text):
+        if scan_terms:
+            covered=overlap_check(occupied+titles)
+            non_prose=overlap_check(doc.span(t) for t in doc.elements if t.name in {'table','blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class',[])))
+            previous=None
+            for m in scan_terms(doc.text):
                 a,b=m.span()
-                if in_title(a,b) or any(x<b and a<y for x,y in occupied):continue
+                if covered(a,b):continue
                 if m[0].isascii() and ((a and re.match(r'[A-Za-z0-9_]',doc.text[a-1])) or (b<len(doc.text) and re.match(r'[A-Za-z0-9_]',doc.text[b]))):continue
-                resolution=resolver.resolve(m[0],'concept',path,a)
-                observe(path,a,b,m[0],'plain','concept',resolution['targets'],'lexical_candidate',status='review',evidence={'resolution_reason':resolution['reason']})
+                syntax=plain_syntax(doc.text,a,b,previous)
+                resolution,evidence=resolver.resolve_plain(m[0],path,a,b,syntax,non_prose(a,b))
+                if resolution['status']=='resolved':previous=(b,syntax['slot'])
+                observe(path,a,b,m[0],'plain','concept',**resolution,evidence=evidence)
         doc.close()
     db.executescript('''
     CREATE TABLE concepts(id TEXT PRIMARY KEY,definition_id TEXT UNIQUE REFERENCES entries(id),identity_status TEXT NOT NULL,data TEXT NOT NULL);
@@ -312,7 +425,7 @@ def build_concepts(db,source,out,entries,pages,sources=()):
                     'unclassified_definitions':[o['id'] for o in observations if o['signal']=='heading'],
                     'ambiguous_targets':[o['id'] for o in observations if o['status']=='ambiguous']},
             'unindexed_definitions':sorted(definition_ids-resolver.indexed),
-            'policy':'provisional definition identities; plain mentions and semantic candidates require review; no name-based merge'}
+            'policy':'provisional definition identities; plain rule-use clauses require scoped core targets; no name-based merge'}
     (out/'concept_coverage.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
     db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps(report,ensure_ascii=False)))
     return report

@@ -160,10 +160,13 @@ test('disabled storage still permits navigation and shared shell theme; original
   await context.addInitScript(()=>{Storage.prototype.getItem=()=>{throw new Error('blocked')};Storage.prototype.setItem=()=>{throw new Error('blocked')};Storage.prototype.removeItem=()=>{throw new Error('blocked')};});
   await visit(page,{entry:cases.spell.id});
   const before=await content(page).locator('body').innerText();
-  await page.locator('#theme').click();
-  const theme=await page.locator('html').getAttribute('data-theme');
-  await expect(content(page).locator('html')).toHaveAttribute('data-webhelp-theme',theme);
-  expect(await content(page).locator('body').innerText()).toBe(before);
+  await expect(page.locator('#theme')).not.toHaveAttribute('aria-keyshortcuts');
+  for(const preference of ['light','dark','system']){
+    await page.locator('#theme').click();
+    await expect(page.locator('#theme')).toHaveAttribute('data-preference',preference);
+    await expect(content(page).locator('html')).toHaveAttribute('data-webhelp-theme',preference==='system'?'light':preference);
+    expect(await content(page).locator('body').innerText()).toBe(before);
+  }
   await page.reload();await ready(page);
 });
 

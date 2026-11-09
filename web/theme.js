@@ -4,14 +4,15 @@
   const key = 'anna.theme';
   const root = document.documentElement;
   const system = window.matchMedia('(prefers-color-scheme: dark)');
+  const nextPreference = {light: 'dark', dark: 'system', system: 'light'};
   const normalize = value => ['light', 'dark'].includes(value) ? value : 'system';
   const read = () => {
     try { return normalize(localStorage.getItem(key)); }
     catch { return 'system'; }
   };
   const labels = {
-    zh: {system: '跟随系统', light: '浅色', dark: '深色', switchTo: '切换为{next}（当前：{current}）', reset: 'Shift+点击 / Shift+Enter / Shift+空格：跟随系统'},
-    en: {system: 'System', light: 'Light', dark: 'Dark', switchTo: 'Switch to {next} (current: {current})', reset: 'Shift+click / Shift+Enter / Shift+Space: follow system'}
+    zh: {system: '跟随系统', light: '浅色', dark: '深色', switchTo: '切换为{next}（当前：{current}）'},
+    en: {system: 'System', light: 'Light', dark: 'Dark', switchTo: 'Switch to {next} (current: {current})'}
   };
   const ui = labels[root.lang.startsWith('en') ? 'en' : 'zh'];
   let preference = read();
@@ -19,11 +20,11 @@
   function apply() {
     root.dataset.theme = preference === 'system' ? (system.matches ? 'dark' : 'light') : preference;
     if (control) {
-      const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+      const next = nextPreference[preference];
       const label = ui.switchTo.replace('{next}', ui[next]).replace('{current}', ui[preference]);
       control.dataset.preference = preference;
       control.setAttribute('aria-label', label);
-      control.title = label + '\n' + ui.reset;
+      control.title = label;
     }
   }
   function choose(value) {
@@ -46,13 +47,6 @@
     if (!control) return; // Source-text pages share the theme, without the query toolbar.
     apply();
     control.hidden = false;
-    control.addEventListener('click', event => {
-      choose(event.shiftKey ? 'system' : root.dataset.theme === 'dark' ? 'light' : 'dark');
-    });
-    control.addEventListener('keydown', event => {
-      if (!event.shiftKey || !['Enter', ' '].includes(event.key)) return;
-      event.preventDefault();
-      choose('system');
-    });
+    control.addEventListener('click', () => choose(nextPreference[preference]));
   });
 })();

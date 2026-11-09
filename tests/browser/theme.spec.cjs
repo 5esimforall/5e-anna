@@ -4,36 +4,46 @@ const anna=`http://127.0.0.1:${port+1}`;
 const root=page=>page.locator('html');
 const control=page=>page.locator('#theme');
 async function choose(page,value){
-  if(value==='system')await control(page).click({modifiers:['Shift']});
-  else for(let i=0;i<2 && await control(page).getAttribute('data-preference')!==value;i++)await control(page).click();
+  for(let i=0;i<2 && await control(page).getAttribute('data-preference')!==value;i++)await control(page).click();
   await expect(control(page)).toHaveAttribute('data-preference',value);
 }
 async function ready(page){await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');}
 
-test('compact theme button replaces status text and supports pointer and keyboard toggles',async({page})=>{
+for(const colorScheme of ['light','dark'])test(`compact theme button cycles preferences with a ${colorScheme} system`,async({page})=>{
+  await page.emulateMedia({colorScheme});
   await page.goto(anna);await ready(page);
   await expect(page.locator('#snapshot')).toHaveCount(0);
   await expect(page.locator('.topbar')).not.toContainText('本地');
   await expect(page.locator('.topbar select')).toHaveCount(0);
   await expect(control(page).locator('svg:visible')).toHaveCount(1);
   await expect(control(page).locator('.theme-icon-system')).toBeVisible();
-  await expect(control(page)).toHaveAccessibleName('切换为深色（当前：跟随系统）');
-  await control(page).press('Enter');
-  await expect(control(page).locator('.theme-icon-dark')).toBeVisible();
-  await expect(root(page)).toHaveAttribute('data-theme','dark');
-  await control(page).press('Space');
-  await expect(control(page).locator('.theme-icon-light')).toBeVisible();
-  await expect(root(page)).toHaveAttribute('data-theme','light');
-  await control(page).press('Shift+Enter');
-  await expect(control(page)).toHaveAttribute('data-preference','system');
-  expect(await page.evaluate(()=>localStorage.getItem('anna.theme'))).toBeNull();
-  await page.emulateMedia({colorScheme:'dark'});
-  await expect(root(page)).toHaveAttribute('data-theme','dark');
-  await control(page).click();
-  await expect(root(page)).toHaveAttribute('data-theme','light');
-  await control(page).press('Shift+Space');
-  await expect(root(page)).toHaveAttribute('data-theme','dark');
-  await expect(control(page).locator('.theme-icon-system')).toBeVisible();
+  await expect(control(page)).toHaveAccessibleName('切换为浅色（当前：跟随系统）');
+  await expect(control(page)).not.toHaveAttribute('aria-keyshortcuts');
+  for(const [preference,label] of [
+    ['light','切换为深色（当前：浅色）'],
+    ['dark','切换为跟随系统（当前：深色）'],
+    ['system','切换为浅色（当前：跟随系统）'],
+    ['light','切换为深色（当前：浅色）']
+  ]){
+    await control(page).click();
+    await expect(control(page)).toHaveAttribute('data-preference',preference);
+    await expect(control(page).locator('svg:visible')).toHaveCount(1);
+    await expect(control(page).locator('.theme-icon-'+preference)).toBeVisible();
+    await expect(root(page)).toHaveAttribute('data-theme',preference==='system'?colorScheme:preference);
+    await expect(control(page)).toHaveAccessibleName(label);
+    await expect(control(page)).toHaveAttribute('title',label);
+    expect(await page.evaluate(()=>localStorage.getItem('anna.theme'))).toBe(preference==='system'?null:preference);
+  }
+});
+
+for(const key of ['Enter','Space'])test(`theme keyboard ${key} uses the same three-state cycle and retains focus`,async({page})=>{
+  await page.goto(anna);await ready(page);
+  await control(page).focus();
+  for(const preference of ['light','dark','system']){
+    await control(page).press(key);
+    await expect(control(page)).toHaveAttribute('data-preference',preference);
+    await expect(control(page)).toBeFocused();
+  }
 });
 
 test('theme follows the system, explicit choices persist without resetting query or reader',async({page})=>{
@@ -65,6 +75,9 @@ test('theme follows the system, explicit choices persist without resetting query
   await choose(page,'system');
   await expect(root(page)).toHaveAttribute('data-theme','dark');
   expect(await page.evaluate(()=>localStorage.getItem('anna.theme'))).toBeNull();
+  await page.reload();await ready(page);
+  await expect(control(page)).toHaveAttribute('data-preference','system');
+  await expect(root(page)).toHaveAttribute('data-theme','dark');
 });
 
 test('theme syncs to other tabs and source text, including reset to system',async({page,context,request})=>{
@@ -95,6 +108,9 @@ test('invalid stored preferences fall back to the system',async({page})=>{
   await page.goto(anna);await ready(page);
   await expect(control(page)).toHaveAttribute('data-preference','system');
   await expect(root(page)).toHaveAttribute('data-theme','dark');
+  await control(page).click();
+  await expect(control(page)).toHaveAttribute('data-preference','light');
+  await expect(root(page)).toHaveAttribute('data-theme','light');
   expect(errors).toEqual([]);
 });
 
@@ -145,8 +161,10 @@ test('theme labels are localized independently of the query app',async({page})=>
     const response=await route.fetch();await route.fulfill({response,body:(await response.text()).replace('lang="zh-CN"','lang="en"')});
   });
   await page.goto(anna);
-  await expect(page.getByRole('button',{name:'Switch to Dark (current: System)',exact:true})).toBeVisible();
-  await expect(control(page)).toHaveAttribute('title',/Shift\+click/);
-  await control(page).click();
-  await expect(control(page)).toHaveAccessibleName('Switch to Light (current: Dark)');
+  await expect(page.getByRole('button',{name:'Switch to Light (current: System)',exact:true})).toBeVisible();
+  for(const label of ['Switch to Dark (current: Light)','Switch to System (current: Dark)','Switch to Light (current: System)']){
+    await control(page).click();
+    await expect(control(page)).toHaveAccessibleName(label);
+    await expect(control(page)).toHaveAttribute('title',label);
+  }
 });

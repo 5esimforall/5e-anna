@@ -94,9 +94,9 @@ linked:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/linked_book.py
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --anna-port "$(ANNA_PORT)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --port "$(ANNA_PORT)"
 
-# Test services use separate localhost ports and stop automatically.
+# Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:
 	@npm ci --ignore-scripts --cache .cache/npm
 	@PLAYWRIGHT_BROWSERS_PATH="$(CURDIR)/.cache/ms-playwright" npx --no-install playwright install chromium

@@ -11,7 +11,7 @@ const annaReaderLabels = {
     anyMatch:'没有全部词语同时命中的页面；以下为任一词语命中。', searchPage:'第 {page} / {pages} 页',
     previousResults:'上一批结果', nextResults:'下一批结果', noOutline:'本页尚未提取到可定位条目；原文仍完整展示。',
     entry:'在 anna 查看条目', pageEntries:'本页条目', previous:'上一章', next:'下一章',
-    original:'原貌正文', print:'打印正文', loading:'正在打开原文…', ready:'原文已就绪',
+    original:'原貌正文', loading:'正在打开原文…', ready:'原文已就绪',
     notInContents:'未编入目录的页面', sourceVersion:'不全书 v{version}', retry:'重试', home:'回到阅读首页',
     keyboard:'/ 搜索', emptyTitle:'原文阅读',
     errors: {
@@ -37,7 +37,7 @@ const annaReaderLabels = {
     anyMatch:'No page matches every term; showing pages matching any term.', searchPage:'Page {page} / {pages}',
     previousResults:'Previous results', nextResults:'Next results', noOutline:'No locatable entries have been extracted on this page. The complete source is still available.',
     entry:'Open entry in anna', pageEntries:'Entries on this page', previous:'Previous chapter', next:'Next chapter',
-    original:'Original layout', print:'Print text', loading:'Opening the source…', ready:'Source ready',
+    original:'Original layout', loading:'Opening the source…', ready:'Source ready',
     notInContents:'Page outside the contents', sourceVersion:'Collection v{version}', retry:'Retry', home:'Reader home',
     keyboard:'/ Search', emptyTitle:'Source reader',
     errors: {

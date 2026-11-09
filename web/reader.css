@@ -6,7 +6,7 @@
 .book-topbar .brand-logo { width: 28px; height: 28px; }
 .book-topbar .topbar-actions { white-space: nowrap; gap: 12px; flex-shrink: 0; }
 #book-menu { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 7px; }
-#book-menu svg, #book-print svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+#book-menu svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 #book-menu[aria-expanded=true] { background: var(--anna-selected); border-color: var(--anna-selected-line); color: var(--anna-brand); }
 #book-breadcrumb { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--anna-muted); font-size: 13px; }
 #book-breadcrumb a { color: var(--anna-secondary); text-decoration: none; }

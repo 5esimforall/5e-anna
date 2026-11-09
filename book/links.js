@@ -92,7 +92,7 @@
     style.textContent = 'a{position:fixed;display:block;pointer-events:auto;background:transparent;border:0;margin:0;padding:0;cursor:pointer}a:focus-visible{outline:2px solid #7050bf;outline-offset:2px}';
     root.append(style);
     for (const r of references) if (r.binding) links.push({binding:r.binding, href:'/book/definition/'+encodeURIComponent(r.id), label:labels.reference+': '+r.text, kind:'reference', anchors:[]});
-    for (const d of definitions.values()) if (d.title) links.push({binding:d.title, href:'/book/anna/entry/'+encodeURIComponent(d.id), label:labels.definition+': '+d.name, kind:'definition', anchors:[]});
+    for (const d of definitions.values()) if (d.title) links.push({binding:d.title, href:'/?entry='+encodeURIComponent(d.id), label:labels.definition+': '+d.name, kind:'definition', anchors:[]});
     // Keyboard traversal follows reading order; overlapping definitions still win hit testing.
     links.sort((a,b) => {
       const x=a.binding.order, y=b.binding.order;

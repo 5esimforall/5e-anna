@@ -6,7 +6,7 @@ const test=base.extend({context:async({context},use)=>{
   await use(context);expect(errors,'uncaught query-interface errors').toEqual([]);
 }});
 const port=Number(process.env.ANNA_E2E_PORT||18380);
-const anna=`http://127.0.0.1:${port+1}`;
+const anna=`http://127.0.0.1:${port}`;
 const spells='/?type=spell';
 async function ready(page){await expect(page.locator('#result-count')).toContainText('找到');await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');}
 async function visit(page,query=spells){await page.goto(anna+query);await ready(page);}

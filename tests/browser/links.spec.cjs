@@ -2,7 +2,7 @@ const {test:base,expect} = require('@playwright/test');
 const fs = require('node:fs/promises');
 const {PNG} = require('pngjs');
 const port=Number(process.env.ANNA_E2E_PORT || 18380);
-const original=`http://127.0.0.1:${port}`, anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+1}/book`;
+const original=`http://127.0.0.1:${port}/__original`, anna=`http://127.0.0.1:${port}`, book=`http://127.0.0.1:${port}/book`;
 const topic=(origin,path)=>origin+'/'+path.split('/').map(encodeURIComponent).join('/');
 // Uncaught JS errors and failed bindings must fail the test, including popup/frame errors.
 const test=base.extend({context:async({context},use)=>{
@@ -19,7 +19,7 @@ const test=base.extend({context:async({context},use)=>{
   expect(errors,'browser errors / binding mismatches').toEqual([]);
 }});
 let cases;
-test.beforeAll(async({request})=>{cases=await (await request.get(original+'/__cases')).json();});
+test.beforeAll(async({request})=>{cases=await (await request.get(anna+'/__cases')).json();});
 
 async function ready(page,linked=true){
   await page.waitForLoadState('load');
@@ -77,7 +77,7 @@ test('definition → new anna tab → reader → same definition; original pages
   const title=page.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true});
   const originalURL=page.url();
   const entryPromise=context.waitForEvent('page');await title.click();const entry=await entryPromise;
-  await expect(entry).toHaveURL(new RegExp(`:${port+1}/\\?.*entry=${s.id}`));
+  await expect(entry).toHaveURL(new RegExp(`:${port}/\\?.*entry=${s.id}`));
   await expect(page).toHaveURL(originalURL);
   await expect(entry.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
   await attach(testInfo,'anna-definition.png',await entry.screenshot(),'image/png');
@@ -98,7 +98,7 @@ test('definition → new anna tab → reader → same definition; original pages
   const readerURL=reader.url();const returnPromise=context.waitForEvent('page');
   await frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true}).click();
   const returned=await returnPromise;
-  await expect(returned).toHaveURL(new RegExp(`:${port+1}/\\?.*entry=${s.id}`));
+  await expect(returned).toHaveURL(new RegExp(`:${port}/\\?.*entry=${s.id}`));
   await expect(returned.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
   await expect(reader).toHaveURL(readerURL);
 });
@@ -111,7 +111,7 @@ test('existing reference reaches the exact target in the current page',async({pa
   await expect(link).toHaveAttribute('target','_self');
   await link.focus();await link.click();
   await expect(page).toHaveURL(topic(book,ref.path)+'#'+ref.fragment);await ready(page);
-  const anchor=page.locator(`anna-links a[href="/book/anna/entry/${ref.id}"]`).first();
+  const anchor=page.locator(`anna-links a[href="/?entry=${ref.id}"]`).first();
   await expect(anchor).toBeVisible();
   const box=await anchor.boundingBox();expect(box.y).toBeGreaterThanOrEqual(0);expect(box.y).toBeLessThan(80);
   await attach(testInfo,'reference-target.png',await page.screenshot(),'image/png');
@@ -188,12 +188,12 @@ test('plain and marked core-rule mentions share the precise subdefinition in ann
 });
 
 test('fixture table links track moved nodes, focus, scrolling and narrow reflow',async({page},testInfo)=>{
-  await page.goto(original+'/__fixture__/linked');await ready(page);
+  await page.goto(anna+'/__fixture__/linked');await ready(page);
   const cell=page.getByRole('link',{name:'查看 anna 条目: 长剑 Longsword',exact:true});
   await expect(page.locator('#wrapper table')).toHaveCount(1);
   async function aligned(){
     await expect.poll(()=>page.evaluate(()=>{
-      const a=document.querySelector('anna-links').shadowRoot.querySelector('a[href="/book/anna/entry/cell"]').getBoundingClientRect();
+      const a=document.querySelector('anna-links').shadowRoot.querySelector('a[href="/?entry=cell"]').getBoundingClientRect();
       const r=document.createRange();r.selectNodeContents(document.querySelector('#cell'));
       const b=r.getBoundingClientRect();return Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y));
     })).toBeLessThan(1);

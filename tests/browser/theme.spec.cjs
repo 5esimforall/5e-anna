@@ -1,6 +1,6 @@
 const {test,expect}=require('@playwright/test');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
-const anna=`http://127.0.0.1:${port+1}`;
+const anna=`http://127.0.0.1:${port}`;
 const root=page=>page.locator('html');
 const control=page=>page.locator('#theme');
 async function choose(page,value){

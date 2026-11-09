@@ -1,7 +1,7 @@
 const {test, expect} = require('@playwright/test');
 const port = Number(process.env.ANNA_E2E_PORT || 18380);
-const anna = `http://127.0.0.1:${port+1}`;
-const book = `http://127.0.0.1:${port+1}/book`;
+const anna = `http://127.0.0.1:${port}`;
+const book = `http://127.0.0.1:${port}/book`;
 
 test('wrapped translations display cleanly while source names and identities survive', async ({page, request}) => {
   const response = await request.get(`${anna}/api/entries?versions=each&q=${encodeURIComponent('冥河之剑')}`);

@@ -3,7 +3,7 @@
 The reader shows tables, headings and emphasis as the book sets them, instead of flattened text.
 Field evidence and resolved references are marked by the same canonical text offsets the
 extractor recorded, so the marks point at exactly the words a value was read from.
-The linked book stays the byte-preserving original; this is a derived view and never written back.
+The linked book preserves source content and layout; this derived view is never written back.
 """
 from __future__ import annotations
 

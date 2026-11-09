@@ -5,7 +5,9 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from reader import build_navigation, source_release
+from reader import build_navigation, source_release, content_file, strip_reader_scripts, WINCHM_NAVIGATION
+from html_extract import Document
+from linked_book import text_slice
 
 
 class SourceReleaseTests(unittest.TestCase):
@@ -34,3 +36,42 @@ class SourceReleaseTests(unittest.TestCase):
                 with self.subTest(html=html):
                     page.write_text('<meta charset="utf-8">' + html)
                     self.assertIsNone(source_release(source))
+
+
+class PublishedContentTests(unittest.TestCase):
+    def test_only_topics_and_presentation_assets_are_published(self):
+        for path in ('topics/page.htm', 'topics/images/map.png', 'topics/style.css',
+                     'assets/webhelp-topic.css', 'assets/content-enhance.js', 'assets/webhelp-contrast.js'):
+            self.assertTrue(content_file(path), path)
+        for path in ('index.htm', 'webhelp-content-bridge.js', 'assets/webhelp-prepaint.js',
+                     'assets/webhelp-shell.js', 'assets/webhelp-nav.css', 'assets/webhelp-legacy.js',
+                     'style.css', 'icons/1.gif', 'imgs/plus.gif', '.git/config', 'topics/.secret'):
+            self.assertFalse(content_file(path), path)
+
+    def test_removed_shell_scripts_keep_source_text_and_dom_bindings(self):
+        raw = (b'<head><script src="../assets/webhelp-prepaint.js"></script></head><body>'
+               b'<p>before</p><script src="../webhelp-content-bridge.js"></script><h2>after</h2>'
+               b'<script src="./rules.js"></script><script src="../assets/content-enhance.js"></script>'
+               b'<script>window.content = true;</script></body>')
+        cleaned = strip_reader_scripts(raw, 'topics/test.htm')
+        self.assertNotIn(b'webhelp-prepaint', cleaned)
+        self.assertNotIn(b'webhelp-content-bridge', cleaned)
+        self.assertIn(b'<script src="./rules.js"></script>', cleaned)
+        self.assertIn(b'<script src="../assets/content-enhance.js"></script>', cleaned)
+        self.assertIn(b'<script>window.content = true;</script>', cleaned)
+        before, after = Document('topics/test.htm',raw.decode()), Document('topics/test.htm',cleaned.decode())
+        try:
+            self.assertEqual(before.text, after.text)
+            start=before.text.index('after')
+            self.assertEqual(text_slice(before,start,start+5),text_slice(after,start,start+5))
+        finally:
+            before.close();after.close()
+
+
+    def test_only_complete_winchm_navigation_template_is_removed(self):
+        script=WINCHM_NAVIGATION.replace('NODE','3602').replace('HOME','"../../index.htm?page=chapter/page.htm"')
+        raw=('<body><script>'+script+'</script><h2>Content</h2></body>').encode()
+        cleaned=strip_reader_scripts(raw,'topics/chapter/page.htm')
+        self.assertEqual(cleaned,b'<body><!-- source shell script removed --><h2>Content</h2></body>')
+        mixed=raw.replace(b'</script>',b'window.content = true;</script>')
+        self.assertEqual(strip_reader_scripts(mixed,'topics/chapter/page.htm'),mixed)

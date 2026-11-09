@@ -1,15 +1,19 @@
-/* Reader bridge. The source bytes and DOM remain intact; only navigation is mediated.
+/* Reader bridge. Source content keeps its layout; navigation uses the app protocol.
    A versioned protocol coordinates the source document and application. */
 (() => {
   'use strict';
+  const context = JSON.parse(document.getElementById('anna-bindings').textContent).reader;
+  if (context?.presentation_resources.some(asset => asset.id === 'webhelpTopicStyles'))
+    document.documentElement.classList.add('webhelp-topic-document');
   if (parent === window) return;
   const channel = 'anna-reader', version = 1;
   const documentId = crypto.randomUUID();
-  let appOrigin, snapshot, navigationId, initialized = false, positionTimer;
+  let navigationId, initialized = false, positionTimer;
+  const snapshot = context.snapshot;
   let initialLocation, interacted = false;
   const path = decodeURIComponent(location.pathname.slice('/book/'.length));
   const send = (type, detail = {}) => {
-    if (appOrigin) parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, appOrigin);
+    parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, location.origin);
   };
   function position() {
     clearTimeout(positionTimer);
@@ -26,7 +30,7 @@
     } catch { return null; }
   }
   function readerURL(route) {
-    return appOrigin + '/read?' + new URLSearchParams(route);
+    return location.origin + '/read?' + new URLSearchParams(route);
   }
   function follow(event) {
     if (!initialized || event.defaultPrevented || (event.type === 'click' && event.button !== 0) || (event.type === 'auxclick' && event.button !== 1)) return;
@@ -89,11 +93,10 @@
   }
   window.addEventListener('message', event => {
     const data = event.data;
-    if (!appOrigin || event.source !== parent || event.origin !== appOrigin || !data || data.channel !== channel ||
+    if (event.source !== parent || event.origin !== location.origin || !data || data.channel !== channel ||
         data.version !== version || data.snapshot !== snapshot || data.documentId !== documentId) return;
     if (data.type === 'locate' && typeof data.navigationId === 'number') locate(data);
     else if (data.type === 'theme') applyTheme(data.theme);
-    else if (data.type === 'print' && initialized) window.print();
     else if (data.type === 'focus') window.focus();
     else if (data.type === 'position') position();
   });
@@ -112,7 +115,6 @@
       } else { element.src = '/book/' + asset.path; element.async = false; }
       document.head.append(element);
     }
-    if (resources.some(asset => asset.id === 'webhelpTopicStyles')) document.documentElement.classList.add('webhelp-topic-document');
     await Promise.all(styles);
   }
   for (const event of ['wheel','touchstart','pointerdown','keydown'])
@@ -122,12 +124,6 @@
   window.addEventListener('load', () => { if (initialLocation && !interacted) locate(initialLocation); });
   async function ready() {
     try {
-      const response = await fetch('/book/api/reader-context');
-      if (!response.ok) return;
-      const context = await response.json();
-      const referrer = document.referrer ? new URL(document.referrer).origin : '';
-      if (!context.app_origins.includes(referrer)) return;
-      appOrigin = referrer; snapshot = context.snapshot;
       if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, {once:true}));
       await preparePresentation(context.presentation_resources);
       send('ready');

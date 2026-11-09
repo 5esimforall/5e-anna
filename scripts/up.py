@@ -47,7 +47,7 @@ def validate_bundle(source, db, book):
     return m
 
 
-def create_server(db, book, manifest, anna_port):
+def create_server(db, book, manifest, port):
     book = Path(book).resolve()
     reader = json.loads((book / 'anna-reader.json').read_text())
     book_signature, db_signature = signature(book / 'anna-manifest.json'), signature(db)
@@ -123,23 +123,11 @@ def create_server(db, book, manifest, anna_port):
                 self.send_error(409, 'Bundle rebuilt; restart make up')
                 return
             path = unquote(path)
-            if path == '/api/reader-context':
-                body = json.dumps({'app_origins': [f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'],
-                                   'snapshot': reader['snapshot'],
-                                   'presentation_resources': reader['presentation_resources']}).encode()
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.send_header('Content-Length', str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            if path.startswith('/definition/') or path.startswith('/anna/entry/'):
+            if path.startswith('/definition/'):
                 eid = path.rsplit('/', 1)[-1]
                 entry = manifest['entries'].get(eid)
                 if not entry:
                     self.send_error(404, 'Unknown entry')
-                elif path.startswith('/anna/'):
-                    self.redirect('/?entry=' + quote(eid))
                 elif not entry['locatable']:
                     self.send_error(422, 'Entry has no source content range')
                 else:
@@ -182,12 +170,12 @@ def create_server(db, book, manifest, anna_port):
         def do_HEAD(self):
             self.send_error(405)
 
-    return ThreadingHTTPServer(('127.0.0.1', anna_port), AnnaHandler)
+    return ThreadingHTTPServer(('127.0.0.1', port), AnnaHandler)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--anna-port', type=int, default=8000)
+    parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--db', type=Path, default=serve.DB)
     parser.add_argument('--book', type=Path, default=BOOK)
     parser.add_argument('--source', type=Path, default=WEB)
@@ -195,7 +183,7 @@ def main():
     server, thread, stop = None, None, threading.Event()
     try:
         manifest = validate_bundle(args.source, args.db, args.book)
-        server = create_server(args.db, args.book, manifest, args.anna_port)
+        server = create_server(args.db, args.book, manifest, args.port)
         search.WEB = args.source.resolve()
         server.RequestHandlerClass.search_entries = search.build_index(quiet=True)
         # Updating the mirror concurrently with startup must not publish a new index

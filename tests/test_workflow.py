@@ -27,7 +27,7 @@ class WorkflowTests(unittest.TestCase):
     def test_default_single_port_command(self):
         result = self.make(PROJECT, '-n', 'up')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('--anna-port "8000"', result.stdout)
+        self.assertIn('--port "8000"', result.stdout)
         self.assertNotIn('--book-port', result.stdout)
 
     def test_status_with_and_without_search_cache(self):
@@ -51,7 +51,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f'WEB_DIR="{WORKSPACE / "custom mirror"}"', result.stdout)
         self.assertIn('scripts/up.py', result.stdout)
-        self.assertIn('--anna-port "8123"', result.stdout)
+        self.assertIn('--port "8123"', result.stdout)
         self.assertNotIn('git pull', result.stdout)
 
     def test_paths_independent_of_cwd_and_environment_override(self):

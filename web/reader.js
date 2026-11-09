@@ -180,7 +180,7 @@
     $('#book-loading').hidden = true; $('#book-error').hidden = false;
     document.title = ui.emptyTitle + ' · 5e anna';
     $('#book-error-text').textContent = ui.errors[code] || ui.errors.network;
-    frame.style.visibility = 'hidden'; $('#book-print').disabled = true;
+    frame.style.visibility = 'hidden';
     $('#book-main').setAttribute('aria-busy','false'); $('#book-status').textContent = '';
   }
   async function load(target, saved) {
@@ -189,7 +189,7 @@
     clearTimeout(loadTimer);
     loading = true; pendingPosition = saved?.position || null;
     $('#book-loading').hidden = false; $('#book-error').hidden = true;
-    frame.style.visibility = 'hidden'; $('#book-print').disabled = true;
+    frame.style.visibility = 'hidden';
     $('#book-main').setAttribute('aria-busy','true');
     $('#book-status').hidden = true;
     try {
@@ -279,7 +279,7 @@
     if (data.type === 'located') {
       clearTimeout(loadTimer); loading = false;
       frame.style.visibility = ''; $('#book-loading').hidden = true; $('#book-error').hidden = true;
-      $('#book-print').disabled = false; $('#book-main').setAttribute('aria-busy','false');
+      $('#book-main').setAttribute('aria-busy','false');
       $('#book-status').textContent = data.found ? '' : ui.errors.fragment_missing;
       $('#book-status').hidden = !!data.found;
       $('#book-status').title = $('#book-status').textContent;
@@ -368,7 +368,6 @@
   $('#book-search-prev').onclick = () => search(searchQuery,Math.max(1,searchPage-1),searchTitleOnly);
   $('#book-search-next').onclick = () => search(searchQuery,Math.min(searchTotalPages,searchPage+1),searchTitleOnly);
   $('#book-search').oninput = save;
-  $('#book-print').onclick = () => send('print');
   // Share the resolved theme through the same protocol as location and focus.
   new MutationObserver(() => send('theme', {theme:document.documentElement.dataset.theme}))
     .observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});

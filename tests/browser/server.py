@@ -1,6 +1,6 @@
-"""Dedicated, read-only browser-test stack. Never reuses a user's development server."""
+"""Single-port browser tests; upstream comparison pages exist only under /__original/."""
 from contextlib import closing
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler
 import json
 import os
 from pathlib import Path
@@ -8,7 +8,7 @@ import signal
 import sqlite3
 import sys
 import threading
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 PROJECT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(PROJECT/'scripts'))
@@ -67,35 +67,41 @@ def main():
     manifest=up.validate_bundle(WEB,DB,BOOK)
     data=json.dumps(cases(manifest),ensure_ascii=False).encode()
     raw,linked=fixture()
-    class OriginalHandler(SimpleHTTPRequestHandler):
+    server=up.create_server(DB,BOOK,manifest,PORT)
+    app_handler=server.RequestHandlerClass
+    class BrowserTestHandler(app_handler, SimpleHTTPRequestHandler):
         def __init__(self,*args,**kwargs):super().__init__(*args,directory=str(WEB),**kwargs)
-        def log_message(self,*args):pass
         def do_GET(self):
-            if self.headers.get('Host','') not in {f'127.0.0.1:{PORT}',f'localhost:{PORT}'}:self.send_error(403);return
+            if self.headers.get('Host','') not in {f'127.0.0.1:{PORT}',f'localhost:{PORT}'}:
+                self.send_error(403);return
             path=urlsplit(self.path).path
             special={'/__ready':(b'OK','text/plain'),'/__cases':(data,'application/json'),
-                     '/__fixture__/source':(raw,'text/html; charset=utf-8'),'/__fixture__/linked':(linked,'text/html; charset=utf-8'),
-                     '/book/anna-assets/links.js':((PROJECT/'book/links.js').read_bytes(),'text/javascript'),
-                     '/book/anna-assets/link-labels.js':((PROJECT/'web/link-labels.js').read_bytes(),'text/javascript')}
+                     '/__fixture__/source':(raw,'text/html; charset=utf-8'),
+                     '/__fixture__/linked':(linked,'text/html; charset=utf-8')}
             if path in special:
-                body,kind=special[path];self.send_response(200);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
-            if any(x.startswith('.') for x in path.split('/') if x):self.send_error(404);return
+                body,kind=special[path]
+                self.send_response(200);self.send_header('Content-Type',kind)
+                self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
+            if path.startswith('/__original/'):
+                if any(part in {'.','..'} or part.startswith('.') for part in unquote(path).split('/') if part):
+                    self.send_error(404);return
+                # Only the test handler can serve the untouched upstream shell for pixel comparison.
+                self.path=self.path[len('/__original'):]
+                SimpleHTTPRequestHandler.do_GET(self)
+                return
             super().do_GET()
         def list_directory(self,path):self.send_error(404);return None
-    servers=[];threads=[];stop=threading.Event()
+    server.RequestHandlerClass=BrowserTestHandler
+    thread=None;stop=threading.Event()
     try:
-        servers=[up.create_server(DB,BOOK,manifest,PORT+1)]
-        servers.append(ThreadingHTTPServer(('127.0.0.1',PORT),OriginalHandler))
         search.WEB=WEB;search.CACHE=PROJECT/'.cache/browser-search.pkl'
-        servers[0].RequestHandlerClass.search_entries=search.build_index(quiet=True)
+        BrowserTestHandler.search_entries=search.build_index(quiet=True)
         for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
-        for server in servers:
-            t=threading.Thread(target=server.serve_forever,daemon=True);t.start();threads.append(t)
-        print('Browser test stack ready',flush=True);stop.wait()
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        print('Browser test server ready',flush=True);stop.wait()
     finally:
-        for s,t in zip(servers,threads):
-            if t.is_alive():s.shutdown()
-        for s in servers:s.server_close()
-        for t in threads:t.join()
+        if thread and thread.is_alive():server.shutdown()
+        server.server_close()
+        if thread:thread.join()
 
 if __name__=='__main__':main()

@@ -39,7 +39,7 @@ renderPhases.length=0;
 flush();
 assert.ok(renderPhases.lastIndexOf('read') < renderPhases.indexOf('write'),'batch geometry reads before overlay writes');
 const root=html.childNodes[0].shadowRoot,group=root.childNodes[1],anchor=group.childNodes[0];
-assert.equal(anchor.href,'/book/anna/entry/ver_a');assert.equal(anchor.style.top,'100px');
+assert.equal(anchor.href,'/?entry=ver_a');assert.equal(anchor.style.top,'100px');
 const reference=root.childNodes[2].childNodes[0];assert.equal(reference.href,'/book/definition/ver_a');
 assert.equal(anchor.target,'_blank');assert.equal(anchor.rel,'noopener');
 assert.equal(anchor['aria-description'],'在新标签页打开');

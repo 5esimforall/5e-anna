@@ -33,7 +33,7 @@ class LinkedBuildTests(unittest.TestCase):
         source=root/'source';(source/'topics').mkdir(parents=True)
         page=source/'topics/test.htm'
         page.write_text('<h2 id="Spell">甲 Alpha</h2><p>定义</p><p><a href="#Spell">甲 Alpha</a></p><p><a href="#missing">未知</a></p>')
-        (source/'style.css').write_text('h2 {color:red}')
+        (source/'topics/style.css').write_text('h2 {color:red}')
         (source/'index.htm').write_text('<!doctype html><iframe id="content"></iframe>')
         d=Document('topics/test.htm',page.read_text());c=d.candidates()[0]
         e={'id':'ver_test','name':'甲 Alpha','name_zh':'甲','name_en':'Alpha','page_path':'topics/test.htm','anchors':['Spell'],'start':c.start,'title_end':c.title_end,'end':c.end,'type':'spell','is_primary':True}
@@ -61,7 +61,7 @@ class LinkedBuildTests(unittest.TestCase):
             manifest,report=build_book(source,db,out)
             self.assertEqual(report['definitions'],1);self.assertEqual(report['linked_references'],1)
             self.assertEqual(report['unresolved'][0]['href'],'#missing')
-            self.assertEqual((out/'style.css').read_bytes(),(source/'style.css').read_bytes())
+            self.assertEqual((out/'topics/style.css').read_bytes(),(source/'topics/style.css').read_bytes())
             self.assertFalse((out/'index.htm').exists())
             self.assertFalse((out/'anna-assets/reader.js').exists())
             self.assertTrue((out/'anna-assets/topic.js').exists())
@@ -105,12 +105,20 @@ class LinkedBuildTests(unittest.TestCase):
             root=Path(td);source,db=self.fixture(root);out=root/'book'
             for name in ['index.html','indexh.htm','webhelpframe.htm','webhelpleft.htm','webhelpsearch.htm','webhelpindex.htm','webhelpbookmark.htm']:
                 (source/name).write_text('<h1>old reader</h1>')
+            (source/'assets').mkdir()
+            for name in ['webhelp-shell.js','webhelp-prepaint.js','webhelp-topic.css']:
+                (source/'assets'/name).write_text('fixture')
+            (source/'webhelp-content-bridge.js').write_text('old protocol')
             before={str(p):p.read_bytes() for p in source.rglob('*') if p.is_file()}
             manifest,_=build_book(source,db,out)
             self.assertEqual(before,{str(p):p.read_bytes() for p in source.rglob('*') if p.is_file()})
             self.assertFalse(list(out.glob('*.htm*')))
             self.assertIn('index.htm',manifest['inputs'])
             self.assertNotIn('index.htm',manifest['outputs'])
+            for name in ['assets/webhelp-shell.js','assets/webhelp-prepaint.js','webhelp-content-bridge.js']:
+                self.assertNotIn(name,manifest['outputs'])
+                self.assertIn(name,manifest['inputs'])
+            self.assertIn('assets/webhelp-topic.css',manifest['outputs'])
 
     def test_page_without_entries_and_snapshot_change(self):
         with tempfile.TemporaryDirectory() as td:
@@ -126,7 +134,7 @@ class LinkedBuildTests(unittest.TestCase):
             for kw,code in [({},'invalid_location'),({'path':'../style.css'},'page_missing'),({'entry':'unknown'},'entry_missing')]:
                 with self.assertRaises(ReaderError) as raised:page_data(reader,m,**kw)
                 self.assertEqual(raised.exception.code,code)
-            (source/'style.css').write_text('h2 {color:blue}')
+            (source/'topics/style.css').write_text('h2 {color:blue}')
             build_book(source,db,out)
             self.assertNotEqual(reader['snapshot'],json.loads((out/'anna-reader.json').read_text())['snapshot'])
 

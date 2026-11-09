@@ -1,7 +1,7 @@
 /* Real-corpus reader checks. Faults below affect transport, never rule identity. */
 const {test:base,expect} = require('@playwright/test');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
-const anna=`http://127.0.0.1:${port+1}`, book=`http://127.0.0.1:${port+1}/book`, original=`http://127.0.0.1:${port}`;
+const anna=`http://127.0.0.1:${port}`, book=`http://127.0.0.1:${port}/book`, original=`http://127.0.0.1:${port}/__original`;
 const test=base.extend({context:async({context},use)=>{
   const errors=[];context.on('page',page=>page.on('pageerror',error=>errors.push(error.message)));
   await context.route('**/*',route=>['127.0.0.1','localhost'].includes(new URL(route.request().url()).hostname)?route.continue():route.abort());
@@ -9,7 +9,7 @@ const test=base.extend({context:async({context},use)=>{
 }});
 let cases,meta;
 test.beforeAll(async({request})=>{
-  cases=await (await request.get(original+'/__cases')).json();
+  cases=await (await request.get(anna+'/__cases')).json();
   meta=await (await request.get(anna+'/api/reader')).json();
 });
 async function ready(page){
@@ -33,8 +33,24 @@ test('query and reader use the new app; upstream reading entries are gone',async
   await expect(page).toHaveURL(anna+'/read');
   await expect(page).toHaveTitle('写在前面 · 5e anna');
   await expect(page.locator('#book-main > h1, #book-title')).toHaveCount(0);
+  await expect(page.locator('#book-print')).toHaveCount(0);
+  await expect(page.locator('#content')).not.toHaveAttribute('sandbox',/allow-modals/);
+  const source=content(page);
+  await expect(source.locator('script[src*="webhelp-prepaint"],script[src*="webhelp-content-bridge"]')).toHaveCount(0);
+  for(const path of ['/assets/webhelp-shell.js','/webhelp-content-bridge.js','/api/reader-context','/anna/entry/obsolete'])
+    expect((await request.get(book+path)).status(),path).toBe(404);
   for(const path of ['/','/index.htm','/index.html','/indexh.htm','/webhelpframe.htm','/webhelpcontents.htm','/webhelpsearch.htm','/webhelpbookmark.htm'])
     expect((await request.get(book+path)).status(),path).toBe(404);
+});
+
+test('legacy WinCHM page no longer redirects or synchronizes a removed frame',async({page})=>{
+  const path='topics/艾伯伦：从终末战争中崛起/背景-家族代理人.html';
+  await visit(page,{page:path});
+  await expect(content(page).locator('body')).toContainText('你宣誓效忠于其中一个龙纹家族');
+  expect(await content(page).locator('script').allTextContents()).not.toEqual(expect.arrayContaining([expect.stringContaining('parent.nav.tree')]));
+  await page.goto(book+'/'+path.split('/').map(encodeURIComponent).join('/'));
+  await expect(page.locator('body')).toContainText('你宣誓效忠于其中一个龙纹家族');
+  await expect(page).toHaveURL(book+'/'+path.split('/').map(encodeURIComponent).join('/'));
 });
 
 test('reader footer shows the printed source release and only the search shortcut',async({page})=>{

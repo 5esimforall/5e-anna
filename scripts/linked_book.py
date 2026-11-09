@@ -1,4 +1,4 @@
-"""Generate a byte-preserving source copy plus DOM range bindings. Never serialize source HTML."""
+"""Generate source content plus DOM bindings, omitting upstream reader script loaders."""
 import argparse
 from collections import defaultdict
 from contextlib import closing
@@ -15,7 +15,7 @@ from html_extract import Document
 from build import read_page
 from paths import PROJECT, WEB
 from review_store import require_current, load_events
-from reader import SCHEMA, build_navigation, content_file
+from reader import SCHEMA, build_navigation, content_file, strip_reader_scripts
 
 BOOK=PROJECT/'data/5echm-anna'
 MARKER=b'<!-- anna-link-layer -->'
@@ -117,7 +117,9 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                 references.append({'id':mention['target_id'],'reference_id':mention['id'],'range':r});report['linked_references']+=1
             reader['pages'][path]={'title':doc.title,'definitions':page_entries}
             # Even pages without extracted entries participate in reader navigation and history.
-            (stage/path).write_bytes(inject((source/path).read_bytes(),{'definitions':definitions,'references':references},encoding))
+            context={'snapshot':reader['snapshot'],'presentation_resources':reader['presentation_resources']}
+            (stage/path).write_bytes(inject(strip_reader_scripts((source/path).read_bytes(),path),
+                                          {'definitions':definitions,'references':references,'reader':context},encoding))
             doc.close()
         assets=stage/'anna-assets';assets.mkdir(exist_ok=True)
         shutil.copyfile(PROJECT/'book/links.js',assets/'links.js')

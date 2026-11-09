@@ -9,7 +9,7 @@ from pathlib import PurePosixPath
 from html_extract import resolve_link
 from inventory import Toc
 
-SCHEMA = 4
+SCHEMA = 5
 
 # These are the source reader's content assets, not its navigation/application scripts.
 TOPIC_RESOURCES = (
@@ -48,9 +48,55 @@ def content_file(path):
     parts = PurePosixPath(path).parts
     if not parts or any(p.startswith('.') for p in parts):
         return False
-    if len(parts) == 1:
-        return PurePosixPath(path).suffix.lower() in {'.css', '.js', '.ico', '.png', '.jpg', '.gif', '.svg'}
-    return True
+    return parts[0] == 'topics' or path in {asset[1] for asset in TOPIC_RESOURCES}
+
+
+# WinCHM's generated navigation template has no content behavior. Match the entire
+# script after normalizing its two page-specific values; preserve other inline JS.
+WINCHM_NAVIGATION = re.sub(r'\s+', '', """
+function syn(){
+if(parent.nav.tree){
+ if(parent.nav.tree.loaded){
+  parent.nav.tree.selectNode(NODE);
+ }else{
+  setTimeout("syn()",500);
+}
+  }else{
+  setTimeout("syn()",500);
+  }}
+if(parent!=self){
+  setTimeout("syn()",100);
+}else{
+  parent.location.href = HOME;
+}
+originalOnload = window.onload;
+if(originalOnload==null){
+window.onload = function(){parent.contentLoaded = true;};
+}else{
+window.onload = function(){originalOnload();parent.contentLoaded = true;};
+}
+""")
+
+
+def is_winchm_navigation(script):
+    script = re.sub(r'parent\.nav\.tree\.selectNode\(\d+\)', 'parent.nav.tree.selectNode(NODE)', script)
+    script = re.sub(r'parent\.location\.href\s*=\s*"[^"\r\n]*index\.htm\?page=[^"\r\n]*"',
+                    'parent.location.href = HOME', script)
+    return re.sub(r'\s+', '', script) == WINCHM_NAVIGATION
+
+
+def strip_reader_scripts(raw, page):
+    """Retire source-shell script loaders without shifting DOM range node indexes."""
+    def replace(match):
+        tag = BeautifulSoup(match.group(0).decode('ascii', errors='replace'), 'html.parser').script
+        target = resolve_link(page, tag.get('src', '')) if tag else None
+        if tag and ((target and tag.get('src') and not content_file(target[0])) or
+                    (not tag.get('src') and is_winchm_navigation(tag.get_text()))):
+            # One inert node replaces one script node; source text and sibling offsets stay intact.
+            return b'<!-- source shell script removed -->'
+        return match.group(0)
+    return re.sub(rb'<script\b[^>]*>.*?</script\s*>', replace, raw, flags=re.I | re.S)
+
 
 
 def build_navigation(source, pages):

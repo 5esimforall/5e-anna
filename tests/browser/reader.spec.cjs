@@ -83,6 +83,62 @@ test('source reference navigation has one history entry and restores scroll on b
   await expect.poll(()=>content(page).evaluate(()=>scrollY)).toBeCloseTo(position,0);
 });
 
+const positionKey='anna.bookPosition';
+test('closing and reopening the reader resumes its page, directory entry and scroll',async({page,context})=>{
+  const path='topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm';
+  const node=meta.nodes.filter(n=>n.path===path && n.status==='present').at(-1).id;
+  await visit(page,{page:path,node});
+  await content(page).evaluate(()=>scrollTo(0,950));
+  await expect.poll(()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)).position.y,positionKey)).toBe(950);
+  await page.close();
+  const reopened=await context.newPage();await visit(reopened);
+  expect(new URL(reopened.url()).searchParams.get('page')).toBe(path);
+  expect(new URL(reopened.url()).searchParams.get('node')).toBe(node);
+  await expect.poll(()=>content(reopened).evaluate(()=>scrollY)).toBe(950);
+  await expect(reopened.locator(`#book-tree [data-node="${node}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
+  await reopened.goto(anna);await reopened.getByRole('link',{name:'阅读不全书',exact:true}).click();await ready(reopened);
+  await expect.poll(()=>content(reopened).evaluate(()=>scrollY)).toBe(950);
+});
+
+test('explicit page and entry links take priority over the remembered reading position',async({page,context})=>{
+  await visit(page,{page:'topics/玩家手册2024/法术详述/1环.htm'});
+  await content(page).evaluate(()=>scrollTo(0,1100));
+  await expect.poll(()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)).position.y,positionKey)).toBe(1100);
+  const explicit=await context.newPage();await visit(explicit,{entry:cases.spell.id});
+  expect(new URL(explicit.url()).searchParams.get('entry')).toBe(cases.spell.id);
+  expect(content(explicit).url()).toContain('#anna-'+cases.spell.id);
+  await visit(explicit,{page:'topics/玩家手册2024/法术详述/1环.htm'});
+  await expect.poll(()=>content(explicit).evaluate(()=>scrollY)).toBe(0);
+  await page.reload();await ready(page);
+  await expect.poll(()=>content(page).evaluate(()=>scrollY)).toBe(1100);
+});
+
+test('invalid or outdated persistent positions fall back to the default page',async({page})=>{
+  await page.goto(anna);
+  const valid={version:1,snapshot:meta.snapshot,page:'topics/玩家手册2024/法术详述/1环.htm',node:'',position:{x:0,y:900}};
+  for(const value of ['{',JSON.stringify({...valid,snapshot:'old'}),JSON.stringify({...valid,version:2}),
+      JSON.stringify({...valid,position:{x:0,y:-1}}),JSON.stringify({...valid,position:{x:0,y:'900'}}),
+      JSON.stringify({...valid,page:'topics/../index.htm'})]){
+    await page.evaluate(({key,value})=>localStorage.setItem(key,value),{key:positionKey,value});
+    await visit(page);
+    expect(content(page).url()).toContain(encodeURI(meta.default_page));
+    await expect.poll(()=>content(page).evaluate(()=>scrollY)).toBe(0);
+    await page.goto(anna);
+  }
+});
+
+test('failed navigation does not replace the last successfully read position',async({page,context})=>{
+  await visit(page,{page:'topics/玩家手册2024/法术详述/1环.htm'});
+  await content(page).evaluate(()=>scrollTo(0,850));
+  await expect.poll(()=>page.evaluate(key=>JSON.parse(localStorage.getItem(key)).position.y,positionKey)).toBe(850);
+  const before=await page.evaluate(key=>localStorage.getItem(key),positionKey);
+  await page.goto(anna+'/read?entry=missing-entry');
+  await expect(page.locator('#book-error')).toBeVisible();
+  expect(await page.evaluate(key=>localStorage.getItem(key),positionKey)).toBe(before);
+  const reopened=await context.newPage();await visit(reopened);
+  await expect.poll(()=>content(reopened).evaluate(()=>scrollY)).toBe(850);
+});
+
 test('mobile drawer, focus, outline and resize keep the same document',async({page},testInfo)=>{
   await page.setViewportSize({width:390,height:844});await visit(page,{entry:cases.spell.id});
   await expect(page.locator('#book-sidebar')).not.toBeVisible();

@@ -41,6 +41,38 @@
       search:{query:searchQuery, titleOnly:searchTitleOnly, page:searchPage, draft:$('#book-search').value, scroll:$('#panel-search').scrollTop}};
     try { history.replaceState({...history.state, book:state}, '', location.href); } catch { /* History storage may be unavailable. */ }
   }
+  const positionKey = 'anna.bookPosition';
+  function rememberedPosition() {
+    try {
+      const value = JSON.parse(localStorage.getItem(positionKey));
+      if (value?.version !== 1 || value.snapshot !== metadata.snapshot ||
+          typeof value.page !== 'string' || !value.page.startsWith('topics/') ||
+          value.page.split('/').some(part => part === '..' || part === '.') ||
+          typeof value.node !== 'string' || !value.position ||
+          !Number.isFinite(value.position.x) || !Number.isFinite(value.position.y) ||
+          value.position.x < 0 || value.position.y < 0) return null;
+      return value;
+    } catch { return null; }
+  }
+  function rememberPosition() {
+    if (!metadata || !page || loading || !frameReady) return;
+    try {
+      localStorage.setItem(positionKey, JSON.stringify({version:1, snapshot:metadata.snapshot,
+        page:page.path, node:nodeId, position}));
+    } catch { /* Reading still works when persistent storage is unavailable. */ }
+  }
+  function capturePosition() {
+    if (!loading && frameReady) {
+      // Same-origin content lets pagehide flush the last scroll before the bridge's debounce.
+      try {
+        const next = {x:frame.contentWindow.scrollX, y:frame.contentWindow.scrollY};
+        if (next.x !== position.x || next.y !== position.y) {
+          position = next; rememberPosition();
+        }
+      } catch { /* Keep the last confirmed bridge position if the document is unavailable. */ }
+    }
+    save();
+  }
   async function api(path, signal) {
     let response;
     try { response = await fetch(path, {signal}); } catch (error) {
@@ -170,7 +202,7 @@
       page = data; route = target; frameNavigationId = id;
       const choices = pageNodes.get(page.path) || [];
       nodeId = [target.node,saved?.node,nodeId,choices[0]?.id].find(id => choices.some(n => n.id === id)) || '';
-      if (!saved) reveal(nodeId);
+      if (!saved?.expanded) reveal(nodeId);
       renderPage();
       if (saved) {
         $('#book-tree-scroll').scrollTop = saved.treeScroll || 0;
@@ -190,7 +222,8 @@
     }
   }
   async function navigate(target, push = true) {
-    save();
+    capturePosition();
+    loading = true;
     const url = routeURL(target);
     if (push && url !== location.pathname+location.search) history.pushState(null, '', url);
     else history.replaceState(history.state, '', url);
@@ -253,7 +286,7 @@
     }
     if (['located','position'].includes(data.type) && !loading && data.position &&
         Number.isFinite(data.position.x) && Number.isFinite(data.position.y)) {
-      position = {x:Math.max(0,data.position.x),y:Math.max(0,data.position.y)}; save();
+      position = {x:Math.max(0,data.position.x),y:Math.max(0,data.position.y)}; save(); rememberPosition();
     } else if (data.type === 'navigate' && data.route && (typeof data.route.page === 'string' || typeof data.route.entry === 'string')) {
       navigate(data.route);
     } else if (data.type === 'focus-tools') $('#book-menu').focus();
@@ -336,7 +369,7 @@
   $('#book-search-next').onclick = () => search(searchQuery,Math.min(searchTotalPages,searchPage+1),searchTitleOnly);
   $('#book-search').oninput = save;
   $('#book-print').onclick = () => send('print');
-  // The content origin cannot read app storage; share the resolved theme through the bridge.
+  // Share the resolved theme through the same protocol as location and focus.
   new MutationObserver(() => send('theme', {theme:document.documentElement.dataset.theme}))
     .observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
   narrow.addEventListener('change', () => setSidebar(!narrow.matches));
@@ -353,11 +386,12 @@
   });
   $('.skip-link').onclick = event => { event.preventDefault(); frame.focus(); send('focus'); };
   for (const selector of ['#book-tree-scroll','#panel-outline','#panel-search']) $(selector).addEventListener('scroll',save,{passive:true});
-  window.addEventListener('pagehide',save);
+  window.addEventListener('pagehide',capturePosition);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) capturePosition(); });
   window.addEventListener('popstate', async () => {
     if (!metadata) return;
     const saved = history.state?.book?.snapshot === metadata.snapshot ? history.state.book : null;
-    restoring = true; restore(saved); restoring = false;
+    loading = true; restoring = true; restore(saved); restoring = false;
     if (saved?.search?.query) search(saved.search.query,saved.search.page,saved.search.titleOnly,saved.search.scroll);
     try { await load(readRoute(),saved); } catch (error) { showError(error.message); }
   });
@@ -380,9 +414,13 @@
       }
       $('#book-snapshot').textContent = text('snapshot',{id:metadata.snapshot.slice(0,8)});
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
+      const params = new URL(location.href).searchParams;
+      const remembered = !current && !['entry','page','anchor','node'].some(key => params.has(key))
+        ? rememberedPosition() : null;
+      if (remembered) history.replaceState(history.state, '', routeURL({page:remembered.page,node:remembered.node}));
       restore(current); renderTree(); restoring = false;
       if (current?.search?.query) search(current.search.query,current.search.page,current.search.titleOnly,current.search.scroll);
-      await load(readRoute(),current);
+      await load(readRoute(),current || (remembered && {position:remembered.position,node:remembered.node}));
     } catch (error) { showError(error.message); }
     finally { restoring = false; }
   }

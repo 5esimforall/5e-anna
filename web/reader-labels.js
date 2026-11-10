@@ -1,9 +1,10 @@
 /* Reader chrome only; source titles and text always retain their original spelling. */
 const annaReaderLabels = {
   zh: {
-    title:'不全书阅读', chapters:'章节导航', query:'条目查询', skip:'跳到正文', navigation:'阅读导航',
+    title:annaLinkLabels.zh.pages.book, chapters:'章节导航', query:annaLinkLabels.zh.pages.query, skip:'跳到正文', navigation:'阅读导航',
     openNavigation:'打开阅读导航', closeNavigation:'收起阅读导航', contents:'目录', outline:'本页', search:'搜索',
     filter:'筛选目录', filterPlaceholder:'查找书籍或章节…', clearFilter:'清空目录筛选', collapse:'全部收起', locate:'定位当前章节',
+    followingContents:'目录跟随中', pausedContents:'目录跟随已暂停', locateAndFollow:'定位当前章节并恢复目录跟随',
     expandNode:'展开 {name}', collapseNode:'收起 {name}', missingNode:'原文页面缺失', emptyTree:'没有匹配的目录。',
     searchLabel:'全文搜索', searchPlaceholder:'搜索规则正文…', searchSubmit:'搜索', titleOnly:'只搜索页面标题',
     searchHint:'搜索完整原文，包括尚未整理成条目的页面。', searchEntries:'在条目查询中筛选',
@@ -13,7 +14,7 @@ const annaReaderLabels = {
     entry:'在 anna 查看条目', pageEntries:'本页条目', previous:'本章节上一页', next:'本章节下一页',
     original:'原貌正文', loading:'正在打开原文…', ready:'原文已就绪',
     notInContents:'未编入目录的页面', sourceVersion:'不全书 v{version}', retry:'重试', home:'回到阅读首页',
-    keyboard:'/ 搜索', emptyTitle:'原文阅读',
+    keyboard:'/ 搜索',
     scopeNavigation:'章节内分页', choosePage:'跳转到本章节页面', scopeTitle:'阅读范围：{name}',
     pageCount:'{page} / {pages}', documentPage:'{page} / {pages} · {name}',
     unloadedPages:'第 {start}–{end} 页尚未加载', loadNext:'加载下一页：{name}', loadPrevious:'加载前一页：{name}',
@@ -34,9 +35,10 @@ const annaReaderLabels = {
     }
   },
   en: {
-    title:'Book reader', chapters:'Chapter navigation', query:'Entry browser', skip:'Skip to the text', navigation:'Reading navigation',
+    title:annaLinkLabels.en.pages.book, chapters:'Chapter navigation', query:annaLinkLabels.en.pages.query, skip:'Skip to the text', navigation:'Reading navigation',
     openNavigation:'Open reading navigation', closeNavigation:'Close reading navigation', contents:'Contents', outline:'On this page', search:'Search',
     filter:'Filter contents', filterPlaceholder:'Find a book or chapter…', clearFilter:'Clear contents filter', collapse:'Collapse all', locate:'Locate current chapter',
+    followingContents:'Contents follow reading', pausedContents:'Contents following paused', locateAndFollow:'Locate the current chapter and resume following',
     expandNode:'Expand {name}', collapseNode:'Collapse {name}', missingNode:'Source page missing', emptyTree:'No matching chapters.',
     searchLabel:'Full-text search', searchPlaceholder:'Search the source text…', searchSubmit:'Search', titleOnly:'Page titles only',
     searchHint:'Search complete documents, including pages not yet organized into entries.', searchEntries:'Filter in the entry browser',
@@ -46,7 +48,7 @@ const annaReaderLabels = {
     entry:'Open entry in anna', pageEntries:'Entries on this page', previous:'Previous page in chapter', next:'Next page in chapter',
     original:'Original layout', loading:'Opening the source…', ready:'Source ready',
     notInContents:'Page outside the contents', sourceVersion:'Collection v{version}', retry:'Retry', home:'Reader home',
-    keyboard:'/ Search', emptyTitle:'Source reader',
+    keyboard:'/ Search',
     scopeNavigation:'Chapter pagination', choosePage:'Jump to a page in this chapter', scopeTitle:'Reading scope: {name}',
     pageCount:'{page} / {pages}', documentPage:'{page} / {pages} · {name}',
     unloadedPages:'Pages {start}–{end} not loaded', loadNext:'Load next page: {name}', loadPrevious:'Load previous page: {name}',

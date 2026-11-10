@@ -32,6 +32,7 @@
 #book-filter-clear { position: absolute; right: 2px; top: 3px; min-height: 30px; background: transparent; border: 0; padding: 0 9px; }
 .book-tree-tools { display: flex; justify-content: space-between; padding: 8px 12px; }
 .book-tree-tools button { border: 0; background: transparent; padding: 3px 5px; color: var(--anna-secondary); }
+#book-follow-status { margin: 0 16px 6px; color: var(--anna-muted); font-size: 12px; }
 #book-tree-scroll { overflow: auto; flex: 1; padding: 0 8px 20px; scrollbar-gutter: stable; }
 #book-tree, #book-tree ul { list-style: none; padding: 0; margin: 0; }
 #book-tree ul { padding-left: 15px; }

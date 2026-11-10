@@ -2,10 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>5e anna · 不全书阅读</title>
+  <title>不全书阅读 · 5e anna</title>
   <link rel="icon" href="/favicon.ico"><script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/reader.css">
-  <script src="/reader-labels.js" defer></script><script src="/reader-model.js" defer></script><script src="/reader-flow.js" defer></script><script src="/reader.js" defer></script>
+  <script src="/link-labels.js"></script><script src="/reader-labels.js" defer></script><script src="/reader-model.js" defer></script><script src="/reader-flow.js" defer></script><script src="/reader.js" defer></script>
 </head>
 <body class="book-app">
 <a class="skip-link" href="#content" data-text="skip"></a>
@@ -30,7 +30,8 @@
     </div><button id="book-close" class="book-icon" data-label="closeNavigation">×</button></div>
     <section id="panel-contents" role="tabpanel" aria-labelledby="tab-contents">
       <div class="book-filter"><input type="search" id="book-filter" data-label="filter" data-placeholder="filterPlaceholder" autocomplete="off"><button id="book-filter-clear" data-label="clearFilter" hidden>×</button></div>
-      <div class="book-tree-tools"><button id="book-locate" data-text="locate"></button><button id="book-collapse" data-text="collapse"></button></div>
+      <div class="book-tree-tools"><button id="book-locate" data-text="locate" aria-describedby="book-follow-status"></button><button id="book-collapse" data-text="collapse"></button></div>
+      <p id="book-follow-status" role="status"></p>
       <div id="book-tree-scroll"><ul id="book-tree" role="tree" data-label="contents"></ul><p id="book-tree-empty" class="book-note" data-text="emptyTree" hidden></p></div>
     </section>
     <section id="panel-outline" role="tabpanel" aria-labelledby="tab-outline" hidden>

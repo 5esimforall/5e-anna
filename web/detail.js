@@ -156,7 +156,7 @@ function renderDetail(tab='body') {
   const links=`<div class="detail-links">${metadata.reader_url?`<a target="_blank" rel="noopener" href="${esc(metadata.reader_url+'?entry='+encodeURIComponent(e.id))}">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div>`;
   const name=e.name_zh||e.name;
   $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(e.source_ids.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${readingTabs.map(tabButton).join('')}${auditTabs.length?`<span class="tab-group" aria-hidden="true">${esc(ui.auditSummary)}</span>${auditTabs.map(tabButton).join('')}`:''}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div><p class="reader-hint">${esc(readerHint())}</p>`;
-  $('#reader-name').textContent=name;watchReaderTitle();markTableFrames();
+  $('#reader-name').textContent=name;updatePageChrome();watchReaderTitle();markTableFrames();
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
 // The entry and its source layout load together, and the text appears once, already in the book's layout;
@@ -169,7 +169,7 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   if(update){params.set('entry',id);historyUpdate();}
   if(fromResult)lastResultEntry=id;
   const wasOpen=$('#detail').open;
-  currentReaderId=id;currentEntry=null;detailTab=tab;
+  currentReaderId=id;currentEntry=null;detailTab=tab;updatePageChrome();
   if(!wasOpen)placeReader();
   $('#detail').setAttribute('aria-labelledby','reader-title');$('#detail').classList.remove('title-away');readerTitleObserver?.disconnect();
   content.setAttribute('aria-busy','true');
@@ -261,7 +261,7 @@ function closeEntry({update=true,restoreFocus=true}={}) {
     document.body.classList.remove('detail-open','detail-modal');
     if(readerFull)setReaderFull(false,{save:false});
   });
-  currentReaderId=null;currentEntry=null;detailTab='body';readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
+  currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();
   if(update&&params.has('entry')){params.delete('entry');historyUpdate(true);}

@@ -15,7 +15,7 @@
   let expanded = new Set(), pane = 'contents', sidebarOpen = !narrow.matches;
   let position = {x:0,y:0}, navigationId = 0, request, loading = true;
   let searchRequest, searchSequence = 0, searchPage = 1, searchTotalPages = 0, searchQuery = '', searchTitleOnly = false;
-  let restoring = true;
+  let restoring = true, contentsFollowing = true, contentsSyncTimer;
   history.scrollRestoration = 'manual';
 
   function readRoute() {
@@ -36,7 +36,7 @@
   function save() {
     if (!metadata || restoring || loading) return;
     const state = {version:2,snapshot:metadata.snapshot,root:scope?.root || '',page:page?.path || '',position, expanded:[...expanded], pane, sidebar:sidebarOpen, node:nodeId,
-      filter:$('#book-filter').value, treeScroll:$('#book-tree-scroll').scrollTop, outlineScroll:$('#panel-outline').scrollTop,
+      followContents:contentsFollowing, filter:$('#book-filter').value, treeScroll:$('#book-tree-scroll').scrollTop, outlineScroll:$('#panel-outline').scrollTop,
       search:{query:searchQuery, titleOnly:searchTitleOnly, page:searchPage, draft:$('#book-search').value, scroll:$('#panel-search').scrollTop}};
     try { history.replaceState({...history.state, book:state}, '', location.href); } catch { /* History storage may be unavailable. */ }
   }
@@ -89,6 +89,7 @@
       else if (pane === 'search') $('#book-search').focus();
       else $(`#tab-${pane}`).focus();
     }
+    if (open) scheduleContentsSync();
     save();
   }
   function selectPane(value, focus = false) {
@@ -99,6 +100,7 @@
       $('#panel-'+button.dataset.pane).hidden = !active;
     });
     if (focus) $('#tab-'+pane).focus();
+    if (pane === 'contents') scheduleContentsSync();
     save();
   }
   function ancestors(id) {
@@ -109,8 +111,53 @@
   function reveal(id) {
     ancestors(id).slice(0,-1).forEach(node => expanded.add(node.id));
   }
+  function contentsRow(id) {
+    return Array.from($('#book-tree').querySelectorAll('[data-node]')).find(row => row.dataset.node === id);
+  }
+  function updateContentsStatus() {
+    $('#book-follow-status').textContent = contentsFollowing ? ui.followingContents : ui.pausedContents;
+    $('#book-locate').title = ui.locateAndFollow;
+  }
+  function pauseContentsFollow() {
+    if (!contentsFollowing) return;
+    contentsFollowing = false; updateContentsStatus(); save();
+  }
+  function updateContentsCurrent() {
+    for (const row of $('#book-tree').querySelectorAll('[data-node]')) {
+      const selected = row.dataset.node === nodeId, content = row.firstElementChild;
+      content.classList.toggle('current',selected);
+      const link = content.querySelector('a');
+      if (selected) link?.setAttribute('aria-current','page');
+      else link?.removeAttribute('aria-current');
+    }
+  }
+  function scrollContentsToCurrent() {
+    const item = contentsRow(nodeId)?.firstElementChild, scroll = $('#book-tree-scroll');
+    if (!item) return;
+    const rect = item.getBoundingClientRect(), top = scroll.getBoundingClientRect().top + scroll.clientTop;
+    const bottom = top + scroll.clientHeight;
+    if (rect.top <= top && rect.bottom >= bottom) return;
+    const delta = rect.top < top ? rect.top-top : rect.bottom > bottom ? rect.bottom-bottom : 0;
+    // Scroll only the directory, never the page or the reader's document surface.
+    if (delta) scroll.scrollTop += delta;
+  }
+  function syncContents() {
+    if (!metadata || restoring || loading) return;
+    updateContentsCurrent();
+    if (!contentsFollowing || !sidebarOpen || pane !== 'contents' || $('#book-filter').value.trim()) return;
+    const count = expanded.size;
+    reveal(nodeId);
+    if (expanded.size !== count) renderTree();
+    scrollContentsToCurrent(); save();
+  }
+  function scheduleContentsSync() {
+    clearTimeout(contentsSyncTimer);
+    contentsSyncTimer = setTimeout(syncContents,180);
+  }
   function renderTree(focusId = '') {
     if (!metadata) return;
+    const focused = $('#book-tree').contains(document.activeElement) ? document.activeElement : null;
+    const retainedFocusId = focused?.closest('[data-node]')?.dataset.node;
     const query = $('#book-filter').value.trim().toLocaleLowerCase();
     $('#book-filter-clear').hidden = !query;
     const allowed = new Set();
@@ -137,11 +184,17 @@
     $('#book-tree').innerHTML = branch('',0);
     $('#book-tree-empty').hidden = visibleIds.length > 0;
     const id = [focusId,focusedNode,nodeId,visibleIds[0]].find(id => visibleIds.includes(id));
-    const row = id && Array.from($('#book-tree').querySelectorAll('[data-node]')).find(el => el.dataset.node === id);
+    const row = id && contentsRow(id);
     if (row) { row.tabIndex = 0; focusedNode = id; if (focusId) row.focus({preventScroll:true}); }
+    if (!focusId && retainedFocusId) {
+      const retained = contentsRow(retainedFocusId);
+      const target = focused.matches('a,button') ? retained?.firstElementChild.querySelector(focused.tagName.toLowerCase()) : retained;
+      target?.focus({preventScroll:true});
+    }
   }
   function renderPage() {
-    document.title = page.title + ' · 5e anna';
+    document.title = annaPageTitle('book', page.title);
+    $('.book-query').href = route.entry ? '/?entry=' + encodeURIComponent(route.entry) : '/';
     const crumbs = ancestors(nodeId);
     $('#book-breadcrumb').innerHTML = crumbs.length ? crumbs.map(node => node.status === 'present' || children.has(node.id)
       ? `<a href="${esc(routeURL(nodeRoute(node)))}">${esc(node.label)}</a>` : esc(node.label)).join(' <span aria-hidden="true">/</span> ') : esc(ui.notInContents);
@@ -164,13 +217,13 @@
       if (node) { link.href = routeURL(pageRoute(node)); link.title = node.label; link.tabIndex = 0; }
       else { link.removeAttribute('href'); link.removeAttribute('title'); link.tabIndex = -1; }
     }
-    renderTree();
+    scheduleContentsSync();
   }
   function showError(code) {
     loading = false;
     $('#book-loading').hidden = true; $('#book-error').hidden = false;
     $('#book-error').classList.toggle('preserve-reading',!!flow?.active);
-    if (!flow?.active) document.title = ui.emptyTitle + ' · 5e anna';
+    if (!flow?.active) document.title = annaPageTitle('book');
     $('#book-error-text').textContent = ui.errors[code] || ui.errors.network;
     $('#book-main').setAttribute('aria-busy','false'); $('#book-status').textContent = '';
   }
@@ -212,8 +265,8 @@
       if (id !== navigationId) return;
       page = data; nodeId = selectedNode; position = flow.location().position;
       route = target.entry ? {root,entry:target.entry,node:nodeId} : {root,page:data.path,anchor:target.anchor || '',node:nodeId};
-      if (!saved?.expanded) reveal(nodeId);
-      renderPage();
+      if (!saved?.expanded && contentsFollowing) reveal(nodeId);
+      renderTree(); renderPage();
       if (saved) { $('#book-tree-scroll').scrollTop = saved.treeScroll || 0; $('#panel-outline').scrollTop = saved.outlineScroll || 0; }
       loading = false;
       $('#book-loading').hidden = true; $('#book-error').hidden = true;
@@ -221,7 +274,7 @@
       $('#book-status').textContent = result.found ? '' : ui.errors.fragment_missing;
       $('#book-status').hidden = !!result.found;
       history.replaceState(history.state,'',routeURL(route));
-      save(); rememberPosition();
+      scheduleContentsSync(); save(); rememberPosition();
     } catch (error) {
       if (id === navigationId && error.name !== 'AbortError') showError(error.message);
     }
@@ -237,6 +290,8 @@
   function restore(saved) {
     expanded = new Set((saved?.expanded || []).filter(id => nodes.has(id)));
     $('#book-filter').value = saved?.filter || '';
+    contentsFollowing = saved?.followContents !== false && !$('#book-filter').value.trim();
+    updateContentsStatus();
     selectPane(saved?.pane || 'contents');
     setSidebar(saved?.sidebar ?? !narrow.matches);
     $('#book-search').value = saved?.search?.draft || saved?.search?.query || '';
@@ -286,6 +341,7 @@
   $('#book-tree').addEventListener('click', event => {
     const button = event.target.closest('[data-expand]');
     if (button) {
+      pauseContentsFollow();
       const id = button.dataset.expand;
       expanded.has(id) ? expanded.delete(id) : expanded.add(id);
       renderTree(id); save();
@@ -300,6 +356,7 @@
   $('#book-tree').addEventListener('keydown', event => {
     const row = event.target.closest('[data-node]');
     if (!row) return;
+    if (['ArrowDown','ArrowUp','ArrowLeft','ArrowRight','Home','End','PageDown','PageUp',' '].includes(event.key)) pauseContentsFollow();
     const id = row.dataset.node, node = nodes.get(id);
     const rows = Array.from($('#book-tree').querySelectorAll('[data-node]'));
     let index = rows.indexOf(row), next;
@@ -319,14 +376,18 @@
     } else return;
     event.preventDefault(); next?.focus(); save();
   });
-  $('#book-filter').addEventListener('input', () => { renderTree(); save(); });
-  $('#book-filter-clear').onclick = () => { $('#book-filter').value = ''; renderTree(); $('#book-filter').focus(); save(); };
-  $('#book-collapse').onclick = () => { expanded.clear(); $('#book-filter').value = ''; renderTree(); save(); };
+  $('#book-filter').addEventListener('input', () => { pauseContentsFollow(); renderTree(); save(); });
+  $('#book-filter-clear').onclick = () => { pauseContentsFollow(); $('#book-filter').value = ''; renderTree(); $('#book-filter').focus(); save(); };
+  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); $('#book-filter').value = ''; renderTree(); save(); };
   $('#book-locate').onclick = () => {
+    clearTimeout(contentsSyncTimer); contentsFollowing = true; updateContentsStatus();
     $('#book-filter').value = ''; reveal(nodeId); renderTree(nodeId);
-    const row = Array.from($('#book-tree').querySelectorAll('[data-node]')).find(el => el.dataset.node === nodeId);
-    row?.scrollIntoView({block:'nearest'}); save();
+    scrollContentsToCurrent(); save();
   };
+  for (const type of ['wheel','touchmove']) $('#book-tree-scroll').addEventListener(type,pauseContentsFollow,{passive:true});
+  $('#book-tree-scroll').addEventListener('pointerdown',event => {
+    if (event.target === $('#book-tree-scroll')) pauseContentsFollow(); // Native scrollbar dragging.
+  });
   $('#book-menu').onclick = () => setSidebar(!sidebarOpen, true);
   $('#book-close').onclick = () => setSidebar(false, true);
   sidebar.addEventListener('cancel', event => { event.preventDefault(); setSidebar(false, true); });

@@ -57,7 +57,9 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
     const [bar,menu,scope,pager]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging'].map(s=>page.locator(s).boundingBox()));
     expect(menu.x).toBeLessThan(scope.x);expect(scope.x).toBeLessThan(pager.x);
     expect(pager.x+pager.width).toBeLessThanOrEqual(bar.x+bar.width);
-    await expect(page.locator('#book-crumbs')).toHaveCSS('display',viewport.width>800?'block':'none');
+    // Ancestors outside the scope leave the bar first on narrow screens; the current level always stays.
+    if(viewport.width<=800)for(const outside of await page.locator('.book-path-outside').all())await expect(outside).toBeHidden();
+    await expect(page.locator('#book-path > li:not(.folded):not([hidden])').last()).toBeVisible();
     // The sidebar closes from the bar beside it; only the modal drawer, which covers the bar, has its own close.
     if(viewport.width>800)await expect(page.locator('#book-close')).toBeHidden();
   }

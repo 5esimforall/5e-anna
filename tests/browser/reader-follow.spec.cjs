@@ -20,11 +20,24 @@ async function inView(page,id){await expect.poll(async()=>{
 }).toBe(true);}
 async function offset(page,index,y=60){await page.locator(`.book-page[data-path="${paths[index]}"] iframe`).evaluate((frame,y)=>{
   const scroll=document.querySelector('#book-scroll');scroll.scrollTop+=frame.getBoundingClientRect().top-scroll.getBoundingClientRect().top+y;
-},y);await expect(page.locator('#book-page-select')).toHaveValue(String(index));}
+},y);await expect(page.locator('#book-page-count')).toHaveText(`${index+1} / 3`);}
+// Jumps within the scope through the reading bar's path, as a reader would: the scope name, or an item of a level's menu.
+async function jump(page,label){
+  const scope=page.locator('#book-scope-title');
+  if(await scope.isVisible()&&(await scope.textContent())===label){await scope.click();return;}
+  const controls=page.locator('#book-path button[aria-haspopup]:visible');
+  for(let i=0;i<await controls.count();i++){
+    await controls.nth(i).click();
+    const item=page.locator('#book-path-menu a[role=menuitem]').filter({has:page.getByText(label,{exact:true})});
+    if(await item.count()){await item.click();return;}
+    await page.keyboard.press('Escape');
+  }
+  throw new Error('no path entry for '+label);
+}
 async function treeState(page){return page.evaluate(()=>({scroll:document.querySelector('#book-tree-scroll').scrollTop,expanded:[...document.querySelectorAll('#book-tree [aria-expanded=true]')].map(e=>e.dataset.node)}));}
 async function preload(page){
-  await page.locator('#book-page-select').selectOption('2');await ready(page);
-  await page.locator('#book-page-select').selectOption('0');await ready(page);await inView(page,'root');
+  await jump(page,'far');await ready(page);
+  await jump(page,'root');await ready(page);await inView(page,'root');
 }
 
 test('scrolling follows the scope member, expands ancestors, and scrolls only enough to reveal its row',async({page})=>{
@@ -131,7 +144,7 @@ test('paused state, filtering and directory position survive reload and history 
   await page.reload();await ready(page);await expect(page.locator('#book-filter')).toHaveValue('before');
   await expect(page.locator('#book-follow-status')).toHaveText('目录跟随已暂停');
   expect((await treeState(page)).scroll).toBe(120);
-  await page.locator('#book-page-select').selectOption('2');await ready(page);
+  await jump(page,'far');await ready(page);
   await page.locator('#book-locate').click();await inView(page,'last');
   await page.goBack();await ready(page);await expect(page.locator('#book-filter')).toHaveValue('before');
   await expect(page.locator('#book-follow-status')).toHaveText('目录跟随已暂停');
@@ -140,8 +153,8 @@ test('paused state, filtering and directory position survive reload and history 
 
 for(const width of [390,1280])test(`closed navigation stays closed during scrolling at ${width}px and follows when reopened`,async({page})=>{
   await page.setViewportSize({width,height:844});await page.goto(anna+'/read?root=root');await ready(page);
-  await page.locator('#book-page-select').selectOption('2');await ready(page);
-  await page.locator('#book-page-select').selectOption('0');await ready(page);
+  await jump(page,'far');await ready(page);
+  await jump(page,'root');await ready(page);
   if(await page.locator('#book-sidebar').isVisible())await page.locator(width>800?'#book-menu':'#book-close').click();
   await offset(page,2,60);await page.waitForTimeout(300);await expect(page.locator('#book-sidebar')).toBeHidden();
   await page.locator('#book-menu').click();await inView(page,'last');
@@ -170,10 +183,24 @@ test('brief page-boundary crossings do not expand a transient chapter',async({pa
   await page.locator(`.book-page[data-path="${paths[1]}"] iframe`).evaluate(frame=>{
     const scroll=document.querySelector('#book-scroll');scroll.scrollTop+=frame.getBoundingClientRect().top-scroll.getBoundingClientRect().top+30;
   });
-  await expect.poll(()=>page.locator('#book-page-select').inputValue(),{intervals:[10]}).toBe('1');
+  await expect.poll(()=>page.locator('#book-page-count').textContent(),{intervals:[10]}).toBe('2 / 3');
   await offset(page,0,60);await page.waitForTimeout(350);
   expect(await page.evaluate(()=>window.transientExpansion)).toBe(false);
   await expect(row(page,'root').locator('a')).toHaveAttribute('aria-current','page');
+});
+
+test('levels without readable text stay listed but disabled, and the keyboard skips them',async({page})=>{
+  await visit(page);
+  await page.getByRole('button',{name:'下一层：root',exact:true}).click();
+  const items=page.locator('#book-path-menu [role=menuitem]');
+  await expect(items).toHaveCount(26);
+  await expect(page.locator('#book-path-menu [aria-disabled=true]')).toHaveCount(24);
+  await expect(page.locator('#book-path-menu [aria-disabled=true][href]')).toHaveCount(0);
+  await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('near1');
+  await page.keyboard.press('ArrowDown');await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('far1');
+  await page.keyboard.press('Enter');await ready(page);
+  await expect(page.locator('#book-page-count')).toHaveText('3 / 3');
+  expect(new URL(page.url()).searchParams.get('node')).toBe('last');
 });
 
 test('manual expand, touch scrolling and scrollbar intent pause following, but automatic directory scroll does not',async({page})=>{

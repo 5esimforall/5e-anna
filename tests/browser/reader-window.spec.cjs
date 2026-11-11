@@ -35,6 +35,19 @@ async function scrollTo(page,index,y){await section(page,index).evaluate((sectio
   const scroll=document.querySelector('#book-scroll'),surface=section.querySelector('iframe,.book-page-placeholder');
   scroll.scrollTop+=surface.getBoundingClientRect().top-scroll.getBoundingClientRect().top+y;
 },y);}
+// Jumps within the scope through the reading bar's path, as a reader would: the scope name, or an item of a level's menu.
+async function jump(page,label){
+  const scope=page.locator('#book-scope-title');
+  if(await scope.isVisible()&&(await scope.textContent())===label){await scope.click();return;}
+  const controls=page.locator('#book-path button[aria-haspopup]:visible');
+  for(let i=0;i<await controls.count();i++){
+    await controls.nth(i).click();
+    const item=page.locator('#book-path-menu a[role=menuitem]').filter({has:page.getByText(label,{exact:true})});
+    if(await item.count()){await item.click();return;}
+    await page.keyboard.press('Escape');
+  }
+  throw new Error('no path entry for '+label);
+}
 async function saved(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('anna.bookPosition')));}
 async function position(page,index,y){await expect.poll(async()=>{const value=await saved(page);return value.page===path(index)?value.position.y:-1;}).toBeCloseTo(y,0);}
 async function advance(page,last){
@@ -53,7 +66,7 @@ test('near-bottom loading is sequential, scope-bound, and does not alter the cur
   expect(await page.evaluate(()=>window.history.length)).toBe(history);
   expect((await saved(page)).root).toBe('page-0');
   await expect(page.locator('#book-page-count')).toHaveText('1 / 12');
-  await page.locator('#book-page-select').selectOption('11');await ready(page);
+  await jump(page,'Page 12');await ready(page);
   await scrollTo(page,11,1900);await page.waitForTimeout(400);
   await expect(page.locator('.book-scope-end')).toHaveText('已到本章节末尾');
   expect(reads).not.toContain(path('outside'));
@@ -76,7 +89,7 @@ test('long reading releases distant frames, keeps measured space, and rehydrates
 
 test('far pagination and history restore reclaimed pages without fetching skipped documents',async({page,request})=>{
   const {reads}=await fixture(page,request);await visit(page);await scrollTo(page,0,600);await position(page,0,600);
-  await page.locator('#book-page-select').selectOption('9');await ready(page);
+  await jump(page,'Page 10');await ready(page);
   await expect(section(page,0).locator('.book-page-placeholder')).toBeAttached();
   expect(reads).toEqual([path(0),path(9)]);
   await page.goBack();await ready(page);await position(page,0,600);
@@ -120,7 +133,7 @@ test('a pending automatic request is single-flight and cannot return after a sco
 test('rehydrating a taller preceding document preserves the visible page and local offset',async({page,request})=>{
   const {heights}=await fixture(page,request);await visit(page);await advance(page,5);
   heights.set(path(0),3100);
-  await page.locator('#book-page-select').selectOption('1');await ready(page);
+  await jump(page,'Page 2');await ready(page);
   await scrollTo(page,1,150);await mounted(page,0);
   await expect(section(page,0).locator('iframe')).toHaveCSS('height','3100px');
   await position(page,1,150);
@@ -143,7 +156,7 @@ test('a far same-scope jump cancels an automatic load and ignores its eventual r
   });
   try{
     await visit(page);await scrollTo(page,0,1700);await expect.poll(()=>requested).toBe(true);
-    await page.locator('#book-page-select').selectOption('9');await ready(page);release();
+    await jump(page,'Page 10');await ready(page);release();
     await page.waitForTimeout(300);await expect(page.locator('#book-page-count')).toHaveText('10 / 12');
     await expect(section(page,1).locator('iframe')).toHaveCount(0);
     await expect(section(page,1).locator('.book-page-placeholder')).toBeAttached();
@@ -180,7 +193,7 @@ test('manual loading cannot reclaim an unfinished foreground pagination target',
   const held=new Promise(resolve=>release=resolve);
   await page.route('**/book/topics/window-9.htm',async route=>{requested=true;await held;await route.fallback().catch(()=>{});});
   try{
-    await visit(page);await page.locator('#book-page-select').selectOption('9');await expect.poll(()=>requested).toBe(true);
+    await visit(page);await jump(page,'Page 10');await expect.poll(()=>requested).toBe(true);
     await page.getByRole('button',{name:'加载下一页：Page 2',exact:true}).press('Enter');await mounted(page,1);
     release();await ready(page);await expect(page.locator('#book-page-count')).toHaveText('10 / 12');
     await mounted(page,9);expect(await page.evaluate(()=>window.maxMountedDocuments)).toBeLessThanOrEqual(5);

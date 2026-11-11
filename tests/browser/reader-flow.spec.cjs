@@ -14,13 +14,26 @@ const test=base.extend({page:async({page},use)=>{
 async function ready(page){await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');await expect(page.locator('#book-error')).toBeHidden();}
 async function visit(page,params={root:'root'}){await page.goto(anna+'/read?'+new URLSearchParams(params));await ready(page);}
 async function offset(page,y){await page.locator('#book-scroll').evaluate((e,y)=>{const f=document.querySelector('#content');e.scrollTop=f.getBoundingClientRect().top-e.getBoundingClientRect().top+e.scrollTop+y;},y);}
+// Jumps within the scope through the reading bar's path, as a reader would: the scope name, or an item of a level's menu.
+async function jump(page,label){
+  const scope=page.locator('#book-scope-title');
+  if(await scope.isVisible()&&(await scope.textContent())===label){await scope.click();return;}
+  const controls=page.locator('#book-path button[aria-haspopup]:visible');
+  for(let i=0;i<await controls.count();i++){
+    await controls.nth(i).click();
+    const item=page.locator('#book-path-menu a[role=menuitem]').filter({has:page.getByText(label,{exact:true})});
+    if(await item.count()){await item.click();return;}
+    await page.keyboard.press('Escape');
+  }
+  throw new Error('no path entry for '+label);
+}
 const key='anna.bookPosition';
 async function saved(page){return page.evaluate(key=>JSON.parse(localStorage.getItem(key)),key);}
 
 test('only the selected subtree is sequenced; manual append keeps the original frame and uses one scroll surface',async({page})=>{
   const loaded=[];page.on('request',r=>{if(r.isNavigationRequest()&&r.url().includes('/book/topics/'))loaded.push(decodeURI(r.url().split('/book/')[1]));});
   await visit(page);
-  await expect(page.locator('#book-page-select option')).toHaveText(['root','child','grandchild']);
+  await expect(page.locator('#book-page-count')).toHaveText('1 / 3');
   expect(loaded).toEqual([paths[0]]);
   const first=page.frames().find(f=>decodeURI(f.url()).endsWith(paths[0]));
   await first.evaluate(()=>window.frameIdentity='retained');
@@ -30,11 +43,11 @@ test('only the selected subtree is sequenced; manual append keeps the original f
   expect(loaded).toEqual(paths.slice(0,2));
   await expect(page.locator('.book-document')).toHaveCount(2);
   await expect(page.locator('#book-scope-title')).toHaveText('root');
-  await page.locator('#book-page-select').selectOption('1');await ready(page);
+  await jump(page,'child');await ready(page);
   await offset(page,50);await expect.poll(async()=>(await saved(page)).position.y).toBeCloseTo(50,0);
   expect(await first.evaluate(()=>scrollY)).toBe(0);
   expect((await saved(page)).root).toBe('root');
-  await page.locator('#book-page-select').selectOption('2');await ready(page);
+  await jump(page,'group');await ready(page);
   await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(3);
   await expect(page.locator('#book-next')).toHaveAttribute('aria-disabled','true');
   await expect(page.locator('.book-scope-end')).toHaveText('已到本章节末尾');
@@ -72,8 +85,86 @@ test('page boundaries sit on the source paper with a folio, the page name for sc
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
+const labels=page=>page.locator('#book-path-menu [role=menuitem] .book-path-label');
+const visibleLevels=page=>page.locator('#book-path > li').evaluateAll(items=>items.filter(li=>li.getClientRects().length).map(li=>li.textContent));
+
+test('the reading bar path lists siblings and children inside the scope and never changes it',async({page})=>{
+  await visit(page);
+  await expect(page.locator('#book-scope-title')).toHaveAttribute('aria-current','page');
+  const down=page.getByRole('button',{name:'下一层：root',exact:true});
+  await down.click();
+  await expect(down).toHaveAttribute('aria-expanded','true');
+  await expect(labels(page)).toHaveText(['child','group']);
+  await expect(page.locator('#book-path-menu [role=menuitem]').nth(1).locator('.book-path-count')).toHaveText('2');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#book-path-menu')).toBeHidden();await expect(down).toBeFocused();
+  // A grouping level opens its first readable descendant; the scope and its page count stay.
+  await down.click();await page.locator('#book-path-menu').getByRole('menuitem',{name:'group',exact:true}).click();await ready(page);
+  await expect(page.locator('#book-page-count')).toHaveText('3 / 3');
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({root:'root',page:paths[2],node:'grandchild'});
+  expect(await visibleLevels(page)).toEqual(['root','group','grandchild']);
+  await expect(page.locator('#book-breadcrumb')).toHaveAttribute('title','root / group / grandchild');
+  await expect(page.getByRole('button',{name:/^下一层/})).toHaveCount(0);
+  await page.locator('.book-path-segment',{hasText:'group'}).click();
+  await expect(labels(page)).toHaveText(['child','group']);
+  await expect(page.locator('#book-path-menu [aria-current=location]')).toHaveText('group2');
+  await page.keyboard.press('Escape');
+  await page.locator('.book-path-segment',{hasText:'grandchild'}).click();
+  await expect(labels(page)).toHaveText(['grandchild','alias']);
+  await expect(page.locator('#book-path-menu [aria-current=page]')).toHaveText('grandchild');
+  await page.keyboard.press('Escape');
+  await page.goBack();await ready(page);
+  await expect(page.locator('#book-page-count')).toHaveText('1 / 3');
+  expect(new URL(page.url()).searchParams.get('root')).toBe('root');
+});
+
+test('path menus work from the keyboard: arrows, adjacent levels, type-ahead, Enter and Escape',async({page})=>{
+  await visit(page);await jump(page,'group');await ready(page);
+  const group=page.locator('.book-path-segment',{hasText:'group'});
+  await group.focus();await page.keyboard.press('ArrowDown');
+  await expect(page.locator('#book-path-menu')).toBeVisible();
+  await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('group2');
+  await page.keyboard.press('ArrowDown');await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('child');
+  await page.keyboard.press('End');await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('group2');
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('.book-path-segment',{hasText:'grandchild'})).toHaveAttribute('aria-expanded','true');
+  await expect(group).toHaveAttribute('aria-expanded','false');
+  await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('grandchild');
+  await page.keyboard.press('a');await expect(page.locator('#book-path-menu [role=menuitem]:focus')).toHaveText('alias');
+  // The alias shares the document; choosing it moves the directory entry, and focus returns to the path.
+  await page.keyboard.press('Enter');await ready(page);
+  await expect(page.locator('#book-path-menu')).toBeHidden();
+  expect(new URL(page.url()).searchParams.get('node')).toBe('alias');
+  await expect(page.locator('#book-path [aria-current=page]')).toHaveText('alias');
+  await expect(page.locator('#book-path button:focus')).toHaveCount(1);
+  await page.locator('#book-path [aria-current=page]').focus();await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#book-path-menu')).toBeHidden();await expect(page.locator('#book-path [aria-current=page]')).toBeFocused();
+});
+
+test('a narrow bar folds outside ancestors, then inner levels and the scope name, and keeps the current level',async({page})=>{
+  const long=['An ancestor shelf of several books','The scope book with a long title','A chapter about adventuring far',
+    'A section about long journeys','The current page with a long name'];
+  const nested=long.map((label,i)=>({id:'n'+i,parent_id:i?'n'+(i-1):'',path:i?paths[i-1]:'',fragment:'',label,status:i?'present':'placeholder'}));
+  await page.route('**/api/reader',async route=>{const response=await route.fetch();await route.fulfill({response,json:{...await response.json(),nodes:nested,default_page:paths[0]}});});
+  await page.setViewportSize({width:1900,height:900});
+  await visit(page,{root:'n1',page:paths[3],node:'n4'});
+  expect(await visibleLevels(page)).toEqual(long);
+  await expect(page.locator('.book-path-more')).toBeHidden();
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(()=>visibleLevels(page)).toEqual(['…',long[4]]);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.getByRole('button',{name:'更多层级',exact:true}).click();
+  await expect(labels(page)).toHaveText(long.slice(1,4));
+  const depths=await page.locator('#book-path-menu [role=menuitem]').evaluateAll(items=>items.map(item=>item.style.getPropertyValue('--depth')));
+  expect(depths).toEqual(['0','1','2']);
+  await page.locator('#book-path-menu').getByRole('menuitem',{name:long[2],exact:true}).click();await ready(page);
+  await expect(page.locator('#book-page-count')).toHaveText('2 / 4');
+  expect(new URL(page.url()).searchParams.get('root')).toBe('n1');
+});
+
 test('pagination can jump past unloaded pages without fetching them; duplicates do not mount twice',async({page})=>{
-  await visit(page);await page.locator('#book-page-select').selectOption('2');await ready(page);
+  await visit(page);await jump(page,'group');await ready(page);
   await page.waitForTimeout(350); // Background loading must not fill skipped pages behind the destination.
   await expect(page.locator('.book-document')).toHaveCount(2);
   await expect(page.locator('.book-page-gap')).toContainText('第 2–2 页尚未加载');
@@ -107,7 +198,7 @@ test('a failed append keeps successful text and position; retry loads just that 
 });
 
 test('scope, page and local offset survive reload, return navigation and a fresh visit',async({page})=>{
-  await visit(page);await page.locator('#book-page-select').selectOption('2');await ready(page);await offset(page,350);
+  await visit(page);await jump(page,'group');await ready(page);await offset(page,350);
   await expect.poll(async()=>(await saved(page)).position.y).toBeCloseTo(350,0);
   await page.reload();await ready(page);
   await expect(page.locator('#book-page-count')).toHaveText('3 / 3');
@@ -125,15 +216,15 @@ test('scope, page and local offset survive reload, return navigation and a fresh
 
 test('grouping nodes and leaves never expand to siblings; outside or invalid scope is rejected',async({page})=>{
   await visit(page);
-  await expect(page.locator('#book-crumbs')).toHaveText('');
+  await expect(page.locator('.book-path-outside')).toHaveCount(0);
   await expect(page.locator('#book-scope-title')).toHaveText('root');
   await visit(page,{root:'group'});
   await expect(page.locator('#book-page-count')).toHaveText('1 / 1');
-  // The bar names the path to the scope, not to the page: the pager names grandchild.
-  await expect(page.locator('#book-crumbs a')).toHaveText(['root']);
+  // The path leads to the scope through links outside it, then to the page through levels inside it.
+  await expect(page.locator('.book-path-outside a')).toHaveText(['root']);
   await expect(page.locator('#book-scope-title')).toHaveText('group');
-  await expect(page.locator('#book-breadcrumb')).toHaveAttribute('title','root / group');
-  await expect(page.locator('#book-page-select option:checked')).toHaveText('grandchild');
+  await expect(page.locator('#book-breadcrumb')).toHaveAttribute('title','root / group / grandchild');
+  await expect(page.locator('#book-path [aria-current=page]')).toHaveText('grandchild');
   await visit(page,{root:'child'});
   await expect(page.locator('#book-page-count')).toHaveText('1 / 1');
   await expect(page.locator('#book-next')).toHaveAttribute('aria-disabled','true');
@@ -171,7 +262,7 @@ test('wheel and keyboard scroll the outer reading surface; earlier document grow
   const rect=await page.locator('#book-scroll').boundingBox();
   await page.mouse.move(rect.x+rect.width/2,rect.y+100);await page.mouse.wheel(0,200);
   await expect.poll(async()=>(await saved(page)).position.y).toBeGreaterThan(before);
-  await page.locator('#book-page-select').selectOption('1');await ready(page);await offset(page,50);
+  await jump(page,'child');await ready(page);await offset(page,50);
   await expect.poll(async()=>(await saved(page)).position.y).toBeCloseTo(50,0);
   const first=page.frames().find(f=>decodeURI(f.url()).endsWith(paths[0]));
   const height=await page.locator('.book-document').first().evaluate(e=>e.offsetHeight);
@@ -224,7 +315,7 @@ test('late manual loads and forged messages cannot resurrect an abandoned subtre
 for(const width of [390,800,1280])test(`chapter pagination remains keyboard accessible at ${width}px`,async({page},testInfo)=>{
   await page.setViewportSize({width,height:844});await visit(page);
   await page.locator('#book-next').focus();await page.locator('#book-next').press('Enter');
-  await expect(page.locator('#book-page-select')).toHaveValue('1');await ready(page);
+  await ready(page);
   await expect(page.locator('#book-page-count')).toHaveText('2 / 3');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await expect(page.locator('#book-next')).toBeFocused();

@@ -39,13 +39,19 @@
 #book-close { display: none; }
 #book-sidebar [role=tabpanel] { flex: 1; min-height: 0; overflow: auto; padding: 0 16px; }
 #panel-contents { display: flex; flex-direction: column; overflow: hidden !important; padding: 0 !important; }
-.book-filter { display: flex; margin: 12px 16px 0; position: relative; }
-#book-filter { width: 100%; min-height: 38px; padding-right: 32px; }
+/* One row of icon tools; the filter box opens in place of its icon and stays open while it holds text. */
+.book-tree-tools { display: flex; align-items: center; gap: 2px; height: 42px; padding: 0 8px 0 10px; box-sizing: border-box; }
+.book-tree-tools .icon-button { width: 30px; height: 30px; }
+.book-tree-tools .icon-button svg { width: 17px; height: 17px; }
+#book-filter-open { margin-right: auto; }
+#book-locate[data-state=following] { color: var(--anna-brand); }
+.book-filter { display: none; flex: 1; min-width: 0; margin-right: 4px; position: relative; }
+.book-tree-tools.filtering .book-filter { display: flex; }
+.book-tree-tools.filtering #book-filter-open { display: none; }
+.book-filter svg { position: absolute; left: 8px; top: 8px; width: 15px; height: 15px; fill: none; stroke: var(--anna-muted); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
+#book-filter { width: 100%; height: 30px; min-height: 0; padding: 3px 28px 3px 29px; }
 #book-filter::-webkit-search-cancel-button { display: none; }
-#book-filter-clear { position: absolute; right: 2px; top: 3px; min-height: 30px; background: transparent; border: 0; padding: 0 9px; }
-.book-tree-tools { display: flex; justify-content: space-between; padding: 8px 12px; }
-.book-tree-tools button { border: 0; background: transparent; padding: 3px 5px; color: var(--anna-secondary); }
-#book-follow-status { margin: 0 16px 6px; color: var(--anna-muted); font-size: 12px; }
+#book-filter-clear { position: absolute; right: 1px; top: 1px; min-height: 28px; background: transparent; border: 0; padding: 0 9px; }
 #book-tree-scroll { overflow: auto; flex: 1; padding: 0 8px 20px; scrollbar-gutter: stable; }
 #book-tree, #book-tree ul { list-style: none; padding: 0; margin: 0; }
 #book-tree ul { padding-left: 15px; }

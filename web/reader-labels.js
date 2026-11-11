@@ -3,8 +3,8 @@ const annaReaderLabels = {
   zh: {
     title:annaBrands.book, chapters:'章节导航', query:annaBrands.query, skip:'跳到正文', navigation:'阅读导航', location:'当前位置',
     openNavigation:'打开阅读导航', closeNavigation:'收起阅读导航', contents:'目录', outline:'本页', search:'搜索',
-    filter:'筛选目录', filterPlaceholder:'查找书籍或章节…', clearFilter:'清空目录筛选', collapse:'全部收起', locate:'定位当前章节',
-    followingContents:'目录跟随中', pausedContents:'目录跟随已暂停', locateAndFollow:'定位当前章节并恢复目录跟随',
+    filter:'筛选目录', filterPlaceholder:'查找书籍或章节…', clearFilter:'清空目录筛选', collapse:'全部收起', expandChapter:'展开当前章节', locate:'定位当前章节',
+    followingContents:'目录跟随中', pausedContents:'目录跟随已暂停', locateAndFollow:'定位当前章节并恢复目录跟随', locateFollowing:'定位当前章节（目录跟随中）',
     expandNode:'展开 {name}', collapseNode:'收起 {name}', missingNode:'原文页面缺失', emptyTree:'没有匹配的目录。',
     searchLabel:'全文搜索', searchPlaceholder:'搜索规则正文…', searchSubmit:'搜索', titleOnly:'只搜索页面标题',
     searchHint:'搜索完整原文，包括尚未整理成条目的页面。', searchEntries:'在条目查询中筛选',
@@ -37,8 +37,8 @@ const annaReaderLabels = {
   en: {
     title:annaBrands.book, chapters:'Chapter navigation', query:annaBrands.query, skip:'Skip to the text', navigation:'Reading navigation', location:'Current location',
     openNavigation:'Open reading navigation', closeNavigation:'Close reading navigation', contents:'Contents', outline:'On this page', search:'Search',
-    filter:'Filter contents', filterPlaceholder:'Find a book or chapter…', clearFilter:'Clear contents filter', collapse:'Collapse all', locate:'Locate current chapter',
-    followingContents:'Contents follow reading', pausedContents:'Contents following paused', locateAndFollow:'Locate the current chapter and resume following',
+    filter:'Filter contents', filterPlaceholder:'Find a book or chapter…', clearFilter:'Clear contents filter', collapse:'Collapse all', expandChapter:'Expand current chapter', locate:'Locate current chapter',
+    followingContents:'Contents follow reading', pausedContents:'Contents following paused', locateAndFollow:'Locate the current chapter and resume following', locateFollowing:'Locate current chapter (following)',
     expandNode:'Expand {name}', collapseNode:'Collapse {name}', missingNode:'Source page missing', emptyTree:'No matching chapters.',
     searchLabel:'Full-text search', searchPlaceholder:'Search the source text…', searchSubmit:'Search', titleOnly:'Page titles only',
     searchHint:'Search complete documents, including pages not yet organized into entries.', searchEntries:'Filter in the entry browser',

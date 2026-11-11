@@ -116,7 +116,15 @@
   }
   function updateContentsStatus() {
     $('#book-follow-status').textContent = contentsFollowing ? ui.followingContents : ui.pausedContents;
-    $('#book-locate').title = ui.locateAndFollow;
+    // The locate tool carries the follow state: lit while the contents follow the text.
+    $('#book-locate').dataset.state = contentsFollowing ? 'following' : 'paused';
+    $('#book-locate').title = contentsFollowing ? ui.locateFollowing : ui.locateAndFollow;
+  }
+  function setFilterOpen(open, focus = false) {
+    const filtering = open || !!$('#book-filter').value;
+    $('.book-tree-tools').classList.toggle('filtering', filtering);
+    $('#book-filter-open').setAttribute('aria-expanded', String(filtering));
+    if (focus) (filtering ? $('#book-filter') : $('#book-filter-open')).focus();
   }
   function pauseContentsFollow() {
     if (!contentsFollowing) return;
@@ -131,13 +139,14 @@
       else link?.removeAttribute('aria-current');
     }
   }
-  function scrollContentsToCurrent() {
-    const item = contentsRow(nodeId)?.firstElementChild, scroll = $('#book-tree-scroll');
+  // Reveals a row with the least movement, or puts it at the top so the subtree below it fills the view.
+  function scrollContentsTo(id, atTop = false) {
+    const item = contentsRow(id)?.firstElementChild, scroll = $('#book-tree-scroll');
     if (!item) return;
     const rect = item.getBoundingClientRect(), top = scroll.getBoundingClientRect().top + scroll.clientTop;
     const bottom = top + scroll.clientHeight;
-    if (rect.top <= top && rect.bottom >= bottom) return;
-    const delta = rect.top < top ? rect.top-top : rect.bottom > bottom ? rect.bottom-bottom : 0;
+    if (!atTop && rect.top <= top && rect.bottom >= bottom) return;
+    const delta = atTop ? rect.top-top : rect.top < top ? rect.top-top : rect.bottom > bottom ? rect.bottom-bottom : 0;
     // Scroll only the directory, never the page or the reader's document surface.
     if (delta) scroll.scrollTop += delta;
   }
@@ -148,7 +157,7 @@
     const count = expanded.size;
     reveal(nodeId);
     if (expanded.size !== count) renderTree();
-    scrollContentsToCurrent(); save();
+    scrollContentsTo(nodeId); save();
   }
   function scheduleContentsSync() {
     clearTimeout(contentsSyncTimer);
@@ -211,6 +220,7 @@
     const index = ordered.findIndex(item => item.path === page.path);
     $('#book-paging').hidden = false;
     $('#book-scope-title').textContent = scopeName;
+    $('#book-expand').disabled = !scopeNode;
     $('#book-scope-title').title = text('scopeTitle',{name:scopeName});
     $('#book-page-select').innerHTML = ordered.map((item,i) => `<option value="${i}">${esc(item.label || page.title)}</option>`).join('');
     $('#book-page-select').value = String(index);
@@ -293,7 +303,7 @@
   }
   function restore(saved) {
     expanded = new Set((saved?.expanded || []).filter(id => nodes.has(id)));
-    $('#book-filter').value = saved?.filter || '';
+    $('#book-filter').value = saved?.filter || ''; setFilterOpen(false);
     contentsFollowing = saved?.followContents !== false && !$('#book-filter').value.trim();
     updateContentsStatus();
     selectPane(saved?.pane || 'contents');
@@ -382,11 +392,21 @@
   });
   $('#book-filter').addEventListener('input', () => { pauseContentsFollow(); renderTree(); save(); });
   $('#book-filter-clear').onclick = () => { pauseContentsFollow(); $('#book-filter').value = ''; renderTree(); $('#book-filter').focus(); save(); };
-  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); $('#book-filter').value = ''; renderTree(); save(); };
+  $('#book-filter-open').onclick = () => setFilterOpen(true, true);
+  $('.book-filter').addEventListener('focusout', event => { if (!$('.book-filter').contains(event.relatedTarget)) setFilterOpen(false); });
+  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); $('#book-filter').value = ''; setFilterOpen(false); renderTree(); save(); };
+  // Opens the reading scope's whole subtree and its path, then shows it from its first row.
+  $('#book-expand').onclick = () => {
+    if (!nodes.has(scope?.root)) return;
+    $('#book-filter').value = ''; setFilterOpen(false);
+    reveal(scope.root);
+    (function open(id) { if (!children.get(id)?.length) return; expanded.add(id); children.get(id).forEach(child => open(child.id)); })(scope.root);
+    renderTree(); scrollContentsTo(scope.root, true); save();
+  };
   $('#book-locate').onclick = () => {
     clearTimeout(contentsSyncTimer); contentsFollowing = true; updateContentsStatus();
-    $('#book-filter').value = ''; reveal(nodeId); renderTree(nodeId);
-    scrollContentsToCurrent(); save();
+    $('#book-filter').value = ''; setFilterOpen(false); reveal(nodeId); renderTree(nodeId);
+    scrollContentsTo(nodeId); save();
   };
   for (const type of ['wheel','touchmove']) $('#book-tree-scroll').addEventListener(type,pauseContentsFollow,{passive:true});
   $('#book-tree-scroll').addEventListener('pointerdown',event => {
@@ -420,6 +440,8 @@
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && $('#book-filter').value && sidebar.contains(document.activeElement) && pane === 'contents') {
       event.preventDefault(); $('#book-filter-clear').click();
+    } else if (event.key === 'Escape' && document.activeElement === $('#book-filter')) {
+      event.preventDefault(); setFilterOpen(false, true);
     } else if (event.key === 'F6') {
       event.preventDefault(); if (sidebar.matches(':modal')) setSidebar(false);
       flow?.focus();

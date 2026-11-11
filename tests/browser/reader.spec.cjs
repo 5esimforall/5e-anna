@@ -139,7 +139,7 @@ test('duplicate directory entries retain their node; filtering restores expansio
   await expect(page.locator('#book-tree a[aria-current=page]')).toHaveCount(1);
   await expect(page.locator(`#book-tree [data-node="${selected.id}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
   const expanded=await page.locator('#book-tree [aria-expanded=true]').evaluateAll(nodes=>nodes.map(n=>n.dataset.node));
-  await page.locator('#book-filter').fill('没有这个目录xyz');
+  await page.locator('#book-filter-open').click();await page.locator('#book-filter').fill('没有这个目录xyz');
   await expect(page.locator('#book-tree-empty')).toBeVisible();
   await page.locator('#book-filter').press('Escape');
   await expect(page.locator('#book-filter')).toHaveValue('');
@@ -252,9 +252,11 @@ test('mobile drawer, focus, outline and resize keep the same document',async({pa
     expect(await page.locator('#book-sidebar').evaluate(e=>e.matches(':modal'))).toBe(false);
   }
   await shot(page,testInfo,'reader-mobile.png');
-  await sidebar(page,'contents');await page.locator('#book-filter').fill('掩护');
+  await sidebar(page,'contents');await page.locator('#book-filter-open').click();await page.locator('#book-filter').fill('掩护');
   await page.locator('#book-filter').press('Escape');await expect(page.locator('#book-filter')).toHaveValue('');
   await expect(page.locator('#book-sidebar')).toBeVisible();
+  // Escape steps back one layer at a time: the text, the empty filter box, then the drawer.
+  await page.keyboard.press('Escape');await expect(page.locator('#book-filter')).toBeHidden();await expect(page.locator('#book-filter-open')).toBeFocused();
   await page.keyboard.press('Escape');await expect(page.locator('#book-sidebar')).not.toBeVisible();
   await expect(page.locator('#book-menu')).toBeFocused();
   await page.setViewportSize({width:1440,height:900});
@@ -404,7 +406,7 @@ test('parsed text is available before delayed images and late loads do not repla
     const f=content(page);
     expect(await f.locator('img').evaluateAll(images=>images.some(image=>!image.complete))).toBe(true);
     await testInfo.attach('text-ready-before-image.json',{body:Buffer.from(JSON.stringify({textReadyMs:Date.now()-started,imageStillPending:true})),contentType:'application/json'});
-    await sidebar(page,'contents');await page.locator('#book-filter').fill('写在前面');
+    await sidebar(page,'contents');await page.locator('#book-filter-open').click();await page.locator('#book-filter').fill('写在前面');
     const nextLink=page.locator('#book-tree a').filter({hasText:'写在前面'});
     const next=await nextLink.getAttribute('href');
     await nextLink.click();await ready(page);

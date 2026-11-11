@@ -66,7 +66,7 @@ test('manual wheel scrolling pauses following; locate restores it without moving
 });
 
 test('filtering and collapse preserve manual browsing until locate explicitly resumes following',async({page})=>{
-  await visit(page);await preload(page);await page.locator('#book-filter').fill('before');
+  await visit(page);await preload(page);await page.locator('#book-filter-open').click();await page.locator('#book-filter').fill('before');
   await offset(page,2,60);await page.waitForTimeout(300);
   await expect(page.locator('#book-filter')).toHaveValue('before');await expect(row(page,'last')).toHaveCount(0);
   await expect(page.locator('#book-follow-status')).toHaveText('目录跟随已暂停');
@@ -74,6 +74,42 @@ test('filtering and collapse preserve manual browsing until locate explicitly re
   await page.locator('#book-collapse').click();const before=await treeState(page);
   await offset(page,0,60);await offset(page,2,60);await page.waitForTimeout(300);expect(await treeState(page)).toEqual(before);
   await page.locator('#book-locate').click();await inView(page,'last');await expect(page.locator('#book-filter')).toHaveValue('');
+});
+
+test('contents tools stay one icon row: the filter opens on demand and the reading chapter expands whole',async({page})=>{
+  await visit(page);
+  const tools=page.locator('.book-tree-tools'),filter=page.locator('#book-filter'),opener=page.locator('#book-filter-open');
+  await expect(filter).toBeHidden();await expect(opener).toHaveAttribute('aria-expanded','false');
+  await expect(page.locator('#book-follow-status')).toHaveClass(/sr-only/);
+  await expect(page.locator('#book-locate')).toHaveAttribute('data-state','following');
+  await expect(page.locator('#book-locate')).toHaveAttribute('title','定位当前章节（目录跟随中）');
+  const lit=await page.locator('#book-locate').evaluate(e=>getComputedStyle(e).color);
+  await opener.click();await expect(filter).toBeFocused();await expect(opener).toBeHidden();
+  // Leaving an empty box closes it; Escape closes it and returns to its icon.
+  await page.locator('#book-locate').focus();await expect(filter).toBeHidden();
+  await opener.click();await filter.press('Escape');await expect(filter).toBeHidden();await expect(opener).toBeFocused();
+  // Text keeps it open after focus leaves, and the paused follow state is carried by the locate tool.
+  await opener.click();await filter.fill('near');await page.locator('#book-collapse').focus();
+  await expect(filter).toBeVisible();await expect(page.locator('#book-locate')).toHaveAttribute('data-state','paused');
+  await expect(page.locator('#book-locate')).toHaveAttribute('title','定位当前章节并恢复目录跟随');
+  expect(await page.locator('#book-locate').evaluate(e=>getComputedStyle(e).color)).not.toBe(lit);
+  expect(await page.locator('#book-filter-open').evaluate(e=>getComputedStyle(e).color)).toBe(await page.locator('#book-locate').evaluate(e=>getComputedStyle(e).color));
+  const open=()=>page.locator('#book-tree [aria-expanded=true]').evaluateAll(items=>items.map(item=>item.dataset.node));
+  await page.locator('#book-collapse').click();await expect(filter).toBeHidden();await expect(filter).toHaveValue('');
+  expect(await open()).toEqual([]);
+  // The reading scope is root: its whole subtree opens, siblings outside it stay closed, and its row leads the view.
+  await expect(page.locator('#book-expand')).toHaveAttribute('title','展开当前章节');
+  await opener.click();await filter.fill('near');
+  await page.locator('#book-expand').click();await expect(filter).toBeHidden();await expect(filter).toHaveValue('');
+  expect((await open()).sort()).toEqual(['far','near','root']);
+  await expect(row(page,'child')).toBeVisible();await expect(row(page,'last')).toBeVisible();
+  expect(await page.evaluate(()=>{const row=document.querySelector('#book-tree [data-node=root] > .toc-row'),scroll=document.querySelector('#book-tree-scroll');
+    return Math.round(row.getBoundingClientRect().top-scroll.getBoundingClientRect().top);})).toBe(0);
+  await page.reload();await ready(page);expect((await open()).sort()).toEqual(['far','near','root']);
+  await page.locator('#book-collapse').click();expect(await open()).toEqual([]);
+  await page.locator('#book-locate').click();await inView(page,'root');
+  await expect(page.locator('#book-locate')).toHaveAttribute('data-state','following');
+  await expect(tools).toHaveCSS('height','42px');
 });
 
 test('keyboard browsing retains its focused DOM node while current-page highlighting changes',async({page})=>{
@@ -87,7 +123,7 @@ test('keyboard browsing retains its focused DOM node while current-page highligh
 });
 
 test('paused state, filtering and directory position survive reload and history navigation',async({page})=>{
-  await visit(page);await page.locator('#book-filter').fill('before');
+  await visit(page);await page.locator('#book-filter-open').click();await page.locator('#book-filter').fill('before');
   await page.locator('#book-tree-scroll').evaluate(e=>e.scrollTop=120);await page.waitForTimeout(100);
   await page.reload();await ready(page);await expect(page.locator('#book-filter')).toHaveValue('before');
   await expect(page.locator('#book-follow-status')).toHaveText('目录跟随已暂停');

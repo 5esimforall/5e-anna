@@ -1,4 +1,5 @@
 /* One scroll surface, bounded live documents, and measured placeholders for released pages. */
+const PAGE_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 8.6 15.4 11.3 22.5 12 15.4 12.7 12.7 15.4 12 22.5 11.3 15.4 8.6 12.7 1.5 12 8.6 11.3 11.3 8.6 12 1.5Z"/></svg>';
 class AnnaReaderFlow {
   constructor({scroll, container, snapshot, contentBase, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch}) {
     Object.assign(this,{scroll,container,snapshot,contentBase,fetchPage,labels,text,onActive,onNavigate,onTools,onSearch});
@@ -45,7 +46,7 @@ class AnnaReaderFlow {
       gap.append(note,button); desired.push(gap);
     }
     if (['ready','released'].includes(this.records.get(this.scope.pages.at(-1)?.path)?.status)) {
-      const end = document.createElement('p'); end.className = 'book-scope-end'; end.textContent = this.labels.scopeEnd; desired.push(end);
+      const end = document.createElement('p'); end.className = 'book-scope-end'; end.append(this.mark(this.labels.scopeEnd)); desired.push(end);
     }
     for (const element of [...this.container.children]) if (!desired.includes(element)) element.remove();
     let previous = null;
@@ -55,6 +56,17 @@ class AnnaReaderFlow {
       previous = element;
     }
     this.keepLocation(location);
+  }
+  // A star and a short label: the shared mark of page boundaries and the scope end.
+  mark(text) {
+    const mark = document.createElement('span'); mark.className = 'book-page-mark'; mark.innerHTML = PAGE_STAR;
+    const label = document.createElement('span'); label.textContent = text; mark.append(label);
+    return mark;
+  }
+  // The folio is visible; the page name is read aloud, since the page's own title follows the divider.
+  label(heading, index, name) {
+    const title = document.createElement('span'); title.className = 'sr-only'; title.textContent = name;
+    heading.replaceChildren(this.mark(this.text('pageCount',{page:index+1,pages:this.scope.pages.length})),' ',title);
   }
   location() {
     if (!this.active || this.active.status !== 'ready') return null;
@@ -191,7 +203,7 @@ class AnnaReaderFlow {
     const item = this.scope.pages[index], element = existing?.element || document.createElement('section');
     element.className = 'book-page'; element.dataset.path = path; element.setAttribute('aria-busy','true');
     const heading = document.createElement('div'); heading.className = 'book-page-divider'; heading.tabIndex = -1;
-    heading.textContent = this.text('documentPage',{page:index+1,pages:this.scope.pages.length,name:item.label || data?.title || ''});
+    this.label(heading,index,item.label || data?.title || '');
     const status = document.createElement('p'); status.className = 'book-page-state'; status.textContent = this.labels.loading; status.setAttribute('role','status');
     const statusHost = document.createElement('div'); statusHost.className = 'book-page-status'; statusHost.append(status);
     const frame = document.createElement('iframe'); frame.className = 'book-document'; frame.title = item.label || this.labels.original;
@@ -210,7 +222,7 @@ class AnnaReaderFlow {
       if (record.abort.signal.aborted) throw new DOMException('Navigation superseded','AbortError');
       record.data = resolved;
       frame.title = record.data.title;
-      heading.textContent = this.text('documentPage',{page:index+1,pages:this.scope.pages.length,name:record.data.title});
+      this.label(heading,index,record.data.title);
       record.timer = setTimeout(() => this.fail(record,new Error('frame_timeout')),15000);
       frame.contentWindow.location.replace(this.contentBase + path.split('/').map(encodeURIComponent).join('/'));
     } catch (error) { this.fail(record,error); }

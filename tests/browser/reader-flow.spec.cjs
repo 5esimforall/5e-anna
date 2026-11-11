@@ -41,6 +41,37 @@ test('only the selected subtree is sequenced; manual append keeps the original f
   expect(loaded).toEqual(paths.slice(0,3));
 });
 
+test('page boundaries sit on the source paper with a folio, the page name for screen readers, in both themes and widths',async({page})=>{
+  await page.setViewportSize({width:1600,height:900});
+  await visit(page);
+  await page.getByRole('button',{name:'加载下一页：child',exact:true}).click();
+  await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(2);
+  await expect(page.locator('.book-page').first().locator('.book-page-divider')).toBeHidden();
+  const divider=page.locator('.book-page').nth(1).locator('.book-page-divider');
+  await expect(divider.locator('.book-page-mark')).toHaveText('2 / 3');
+  await expect(divider.locator('.book-page-mark svg')).toHaveAttribute('aria-hidden','true');
+  await expect(divider.locator('.sr-only')).toHaveText(/\S/);
+  await expect(divider).toHaveCSS('border-top-width','0px');
+  // The boundary shares the next page's column, paper and side margin, so the leaf continues across it.
+  const paper=()=>divider.evaluate(d=>{
+    const frame=d.closest('.book-page').querySelector('.book-document'),body=frame.contentDocument.body,view=frame.contentWindow;
+    const a=d.getBoundingClientRect(),b=body.getBoundingClientRect(),f=frame.getBoundingClientRect();
+    return {left:Math.abs(a.left-(f.left+b.left)),width:Math.abs(a.width-b.width),height:a.height,
+      background:[getComputedStyle(d).backgroundColor,view.getComputedStyle(body).backgroundColor],
+      padding:[getComputedStyle(d).paddingLeft,view.getComputedStyle(body).paddingLeft]};
+  });
+  for(const scheme of ['light','dark']){
+    await page.emulateMedia({colorScheme:scheme});
+    await expect.poll(async()=>{const p=await paper();return p.background[0]===p.background[1];},scheme).toBe(true);
+    const p=await paper();
+    expect(p.left).toBeLessThan(0.5);expect(p.width).toBeLessThan(0.5);expect(p.height).toBe(28);
+    expect(p.padding[0]).toBe(p.padding[1]);
+  }
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(async()=>(await paper()).padding).toEqual(['16px','16px']);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test('pagination can jump past unloaded pages without fetching them; duplicates do not mount twice',async({page})=>{
   await visit(page);await page.locator('#book-page-select').selectOption('2');await ready(page);
   await page.waitForTimeout(350); // Background loading must not fill skipped pages behind the destination.

@@ -91,21 +91,34 @@
 #book-scroll { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; }
 .book-page { margin: 0; position: relative; }
 .book-document { width: 100%; border: 0; display: block; background: var(--anna-source-bg); }
-.book-page-divider { padding: 10px 16px; border-block: 1px solid var(--anna-line); color: var(--anna-secondary); background: var(--anna-surface); font-size: 13px; }
+/* Page boundaries sit on the source's own paper, in its column and side margins, so consecutive pages read as one leaf.
+   A short ornament, a star and the folio between two fading strokes, marks where the next page begins; its own title follows.
+   The strokes stay short so they never read as a second copy of the rule the source draws above its headings. */
+#book-pages { container-type: inline-size; }
+.book-page-divider, .book-page-gap, .book-scope-end { box-sizing: border-box; max-width: 1160px; margin: 0 auto; padding-inline: clamp(24px, 4cqw, 64px); color: var(--anna-source-muted); background: var(--anna-source-surface); }
+@container (max-width: 767px) { .book-page-divider, .book-page-gap, .book-scope-end { padding-inline: 16px; } }
+.book-page-divider, .book-scope-end { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; }
+:is(.book-page-divider, .book-scope-end)::before, :is(.book-page-divider, .book-scope-end)::after { content: ''; width: 48px; height: 1px; justify-self: end; background: linear-gradient(to left, var(--anna-source-rule), transparent); }
+:is(.book-page-divider, .book-scope-end)::after { justify-self: start; background: linear-gradient(to right, var(--anna-source-rule), transparent); }
+.book-page-divider { height: 28px; font-size: 12px; }
 .book-page:first-child .book-page-divider { display: none; }
-.book-page-gap { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: center; padding: 24px 16px; border-block: 1px solid var(--anna-line); color: var(--anna-muted); background: var(--anna-surface); font-size: 13px; }
-.book-page-gap button { max-width: 100%; white-space: normal; }
+.book-page-mark { display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
+.book-page-mark svg { width: 11px; height: 11px; flex-shrink: 0; fill: var(--anna-source-accent); }
+/* Unloaded pages leave a pause in the leaf: the range and the way to continue, without a frame of their own. */
+.book-page-gap { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: center; padding-block: 28px; font-size: 13px; }
+.book-page-gap button { max-width: 100%; white-space: normal; border-color: var(--anna-source-rule); background: transparent; }
 .book-page-status { position: sticky; top: 0; height: 0; z-index: 1; }
 .book-page-state { position: absolute; top: 0; left: 0; right: 0; padding: 16px; margin: 0; color: var(--anna-secondary); background: var(--anna-surface); }
 .book-page-placeholder { background: var(--anna-source-bg); }
 .book-page-resume { position: sticky; top: 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; padding: 16px; box-sizing: border-box; max-height: 100%; overflow: auto; color: var(--anna-muted); background: var(--anna-surface); font-size: 13px; }
 .book-page-resume button { max-width: 100%; white-space: normal; }
-.book-scope-end { text-align: center; padding: 24px 16px; color: var(--anna-muted); font-size: 13px; }
+.book-scope-end { margin-block: 0; padding-block: 8px 72px; font-size: 13px; }
 #book-error.preserve-reading { inset: auto 12px 12px; padding: 12px 16px; border: 1px solid var(--anna-line); border-radius: 6px; box-shadow: var(--anna-shadow); }
 #book-error.preserve-reading p { margin: 0 0 8px; }
-/* The source stylesheet owns its page width and margins; the shell adds no second paper frame. */
-.book-app { --anna-source-bg: #f4f5f7; }
-html[data-theme=dark] .book-app { --anna-source-bg: #111315; }
+/* The source stylesheet owns its page width and margins; the shell adds no second paper frame.
+   These mirror its theme tokens (--topic-bg, -surface, -border, -text-muted, -accent in webhelp-topic.css) for the boundaries between pages. */
+.book-app { --anna-source-bg: #f4f5f7; --anna-source-surface: #ffffff; --anna-source-rule: #e0e2e5; --anna-source-muted: #666a70; --anna-source-accent: #991b1b; }
+html[data-theme=dark] .book-app { --anna-source-bg: #111315; --anna-source-surface: #17191c; --anna-source-rule: #34383e; --anna-source-muted: #a8adb4; --anna-source-accent: #e16d6d; }
 #book-loading, #book-status { position: absolute; top: calc(var(--book-bar-height) + 10px); right: 14px; z-index: 1; max-width: calc(100% - 28px); margin: 0; color: var(--anna-secondary); background: var(--anna-paper); border: 1px solid var(--anna-line); border-radius: 5px; padding: 7px 11px; font-size: 13px; line-height: 1.6; pointer-events: none; }
 #book-loading { animation: book-loading-appear .18s step-end; }
 @keyframes book-loading-appear { from { opacity: 0; } to { opacity: 1; } }

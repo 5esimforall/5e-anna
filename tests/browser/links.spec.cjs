@@ -82,7 +82,7 @@ test('definition → new anna tab → reader → same definition; original pages
   await expect(entry.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
   await attach(testInfo,'anna-definition.png',await entry.screenshot(),'image/png');
   const popupPromise=context.waitForEvent('page');
-  await entry.getByRole('link',{name:'查看不全书定义 ↗',exact:true}).click();
+  await entry.getByRole('link',{name:'在 Stella 中阅读 ↗',exact:true}).click();
   const reader=await popupPromise;await reader.waitForLoadState('load');
   const frame=reader.frameLocator('#content');
   await expect(frame.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true})).toBeVisible();

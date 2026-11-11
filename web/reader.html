@@ -5,11 +5,11 @@
   <title>5e Stella</title>
   <link rel="icon" href="/stella-favicon.ico" sizes="16x16 32x32 48x48 64x64 128x128 256x256"><script src="/kit.js"></script><script src="/theme.js"></script>
   <link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/reader.css">
-  <script src="/link-labels.js"></script><script src="/reader-labels.js" defer></script><script src="/reader-model.js" defer></script><script src="/reader-flow.js" defer></script><script src="/menu.js" defer></script><script src="/workspace.js" defer></script><script src="/reader.js" defer></script>
+  <script src="/link-labels.js"></script><script src="/reader-labels.js" defer></script><script src="/reader-model.js" defer></script><script src="/reader-flow.js" defer></script><script src="/menu.js" defer></script><script src="/workspace.js" defer></script><script src="/companions.js" defer></script><script src="/reader.js" defer></script>
 </head>
 <body class="book-app">
 <a class="skip-link" href="#content" data-text="skip"></a>
-<header class="topbar book-topbar" data-page="book"><a class="book-query" href="/" data-text="query"></a></header>
+<header class="topbar book-topbar" data-page="book"></header>
 <script src="/topbar.js"></script>
 <div class="book-workspace">
   <dialog id="book-sidebar" data-label="navigation">
@@ -45,7 +45,7 @@
       <div id="book-bar">
         <button class="icon-button" id="book-menu" type="button" aria-controls="book-sidebar" aria-expanded="false" data-label="openNavigation"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></svg></button>
         <nav id="book-breadcrumb" data-label="location"><ol id="book-path"></ol></nav>
-        <div id="book-path-menu" role="menu" tabindex="-1" hidden></div>
+        <div id="book-path-menu" class="popup-menu" role="menu" tabindex="-1" hidden></div>
         <nav id="book-paging" data-label="scopeNavigation" hidden><div class="book-sequence">
           <a id="book-previous" data-label="previous" aria-disabled="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
           <span id="book-page-count"></span>

@@ -30,15 +30,8 @@
 .book-path-segment > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .book-path-segment[aria-current=page] { color: var(--anna-ink); font-weight: 500; }
 #book-path .book-path-children { padding: 0 4px; margin-left: -2px; }
-#book-path-menu { position: absolute; top: calc(100% - 4px); min-width: 12em; max-width: min(24em, calc(100% - 16px)); max-height: min(60vh, 420px); overflow: auto; overscroll-behavior: contain;
-  box-sizing: border-box; padding: 4px; border: 1px solid var(--anna-line); border-radius: 8px; background: var(--anna-paper); box-shadow: var(--anna-shadow); font-size: 13px; }
-#book-path-menu:focus { outline: 0; }
-#book-path-menu [role=menuitem] { display: flex; align-items: baseline; gap: 16px; padding: 6px 10px 6px calc(10px + var(--depth, 0) * 12px); border-radius: 5px; color: var(--anna-ink); text-decoration: none; line-height: 1.45; }
-#book-path-menu a:hover, #book-path-menu a:focus { background: var(--anna-hover); outline: 0; }
-#book-path-menu a:focus-visible { box-shadow: inset 0 0 0 2px var(--anna-focus); }
-#book-path-menu [aria-current] { color: var(--anna-brand); font-weight: 600; }
-#book-path-menu [aria-current=page] { background: var(--anna-selected); }
-#book-path-menu [aria-disabled=true] { color: var(--anna-muted); opacity: .6; cursor: default; }
+#book-path-menu { top: calc(100% - 4px); max-width: min(24em, calc(100% - 16px)); }
+#book-path-menu [role=menuitem] { padding-left: calc(10px + var(--depth, 0) * 12px); }
 .book-path-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .book-path-count { color: var(--anna-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 #book-paging { flex-shrink: 0; min-width: 0; }

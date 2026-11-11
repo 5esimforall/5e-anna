@@ -50,9 +50,10 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
     // The topbar carries exactly anna's parts; the contents toggle leads the reading bar above the text.
     await page.locator('.skip-link').focus();await page.keyboard.press('Tab');
     await expect(brand).toBeFocused();
-    await page.locator('.book-query').focus();await page.keyboard.press('Tab');
+    await page.locator('.companion-go').focus();await page.keyboard.press('Tab');
     await expect(page.locator('#theme')).toBeFocused();
-    await expect(page.locator('.book-topbar button')).toHaveCount(1);
+    // With nothing more remembered, the companion is one link and the theme is the only visible button.
+    await expect(page.locator('.book-topbar button:visible')).toHaveCount(1);
     await expect(page.locator('#book-bar #book-menu')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
     const [bar,menu,scope,pager]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging'].map(s=>page.locator(s).boundingBox()));
     expect(menu.x).toBeLessThan(scope.x);expect(scope.x).toBeLessThan(pager.x);
@@ -75,30 +76,21 @@ test('icon buttons center their icons in the topbar, reading bar and contents to
   for(const o of offsets){expect(o.dx,o.id).toBeLessThan(0.5);expect(o.dy,o.id).toBeLessThan(0.5);}
 });
 
-test('titles name the open content and the topbar links carry the open entry both ways',async({page})=>{
+test('titles name the open content on both pages',async({page})=>{
   await page.goto(anna);
   await expect(page).toHaveTitle('5e Anna');
-  await expect(page.locator('#book-reader')).toHaveAttribute('href','/read');
   await page.locator('#results .entry-name').first().click();
   await expect(page.locator('#entry-title')).toBeVisible();
   const name=(await page.locator('#entry-title').textContent()).trim();
   const entry=new URL(page.url()).searchParams.get('entry');
   await expect(page).toHaveTitle(`${name} · 5e Anna`);
-  await expect(page.locator('#book-reader')).toHaveAttribute('href','/read?entry='+encodeURIComponent(entry));
   await page.locator('#close-detail').click();
   await expect(page).toHaveTitle('5e Anna');
-  await expect(page.locator('#book-reader')).toHaveAttribute('href','/read');
-  await page.locator('#results .entry-name').first().click();
-  await page.locator('#book-reader').click();await ready(page);
+  // The open entry is the topic the switcher turns to; companions.spec.cjs covers where each choice leads.
+  await page.locator('#results .entry-name').first().click();await expect(page.locator('#entry-title')).toHaveText(name);
+  await page.locator('.companion-go').click();await ready(page);
   expect(new URL(page.url()).searchParams.get('entry')).toBe(entry);
   await expect(page).toHaveTitle(/ · 5e Stella$/);
-  await expect(page.locator('.book-query')).toHaveText('5e Anna');
-  await expect(page.locator('.book-query')).toHaveAttribute('href','/?entry='+encodeURIComponent(entry));
-  await page.locator('.book-query').click();
-  await expect(page.locator('#entry-title')).toHaveText(name);
-  expect(new URL(page.url()).searchParams.get('entry')).toBe(entry);
-  await visit(page);
-  await expect(page.locator('.book-query')).toHaveAttribute('href','/');
 });
 
 test('query and reader use the new app; upstream reading entries are gone',async({page,request})=>{
@@ -204,7 +196,8 @@ test('closing and reopening the reader resumes its page, directory entry and scr
   expect(new URL(reopened.url()).searchParams.get('node')).toBe(node);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
   await expect(reopened.locator(`#book-tree [data-node="${node}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
-  await reopened.goto(anna);await reopened.getByRole('link',{name:'5e Stella',exact:true}).click();await ready(reopened);
+  // Turning to Stella from Anna's switcher resumes the same place.
+  await reopened.goto(anna);await reopened.locator('.companion-go').click();await ready(reopened);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
 });
 
@@ -406,7 +399,11 @@ test('reader labels have matching Chinese and English resources',async()=>{
   expect(Object.keys(labels.zh)).toEqual(Object.keys(labels.en));
   expect(Object.keys(labels.zh.errors)).toEqual(Object.keys(labels.en.errors));
   expect([labels.zh.title,labels.en.title]).toEqual(['5e Stella','5e Stella']);
-  expect([labels.zh.query,labels.en.query]).toEqual(['5e Anna','5e Anna']);
+  vm.runInContext(fs.readFileSync('web/companions.js','utf8'),context);
+  const companions=JSON.parse(vm.runInContext('JSON.stringify(annaCompanionLabels)',context));
+  const shape=value=>value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,shape(v)])):typeof value;
+  expect(shape(companions.zh)).toEqual(shape(companions.en));
+  expect([companions.zh.names,companions.en.names]).toEqual([{query:'Anna',book:'Stella'},{query:'Anna',book:'Stella'}]);
   expect([labels.zh.entry,labels.en.entry]).toEqual(['在 Anna 查看条目','Open entry in Anna']);
 });
 

@@ -1,4 +1,5 @@
-/* The topbar both pages share: whose page this is, the page's own controls, then the theme switch.
+/* The topbar both pages share: whose page this is, the page's own controls, the other companion, then the
+   theme switch.
    It runs right after the page's header so the bar is complete before the first paint. The header names its
    page and holds only the controls that belong to that page; this script adds everything the pages share. */
 const annaTopbar = (() => {
@@ -19,10 +20,11 @@ const annaTopbar = (() => {
     brand.append(image, annaBrands[page]);
     const actions = document.createElement('div'); actions.className = 'topbar-actions';
     actions.append(...header.childNodes);
-    // theme.js finds the button and reveals it once it can switch.
+    // companions.js fills the slot once the page knows its build; theme.js reveals the button once it can switch.
+    const companion = document.createElement('div'); companion.className = 'companion'; companion.hidden = true;
     const theme = document.createElement('button'); theme.className = 'icon-button theme-button'; theme.id = 'theme';
     theme.type = 'button'; theme.hidden = true; theme.innerHTML = themeIcons;
-    actions.append(theme);
+    actions.append(companion, theme);
     header.replaceChildren(brand, actions);
   }
   for (const header of document.querySelectorAll('header.topbar[data-page]')) render(header);

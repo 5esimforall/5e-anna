@@ -327,7 +327,6 @@
   }
   function renderPage() {
     document.title = annaPageTitle('book', page.title);
-    $('.book-query').href = route.entry ? '/?entry=' + encodeURIComponent(route.entry) : '/';
     renderPath();
     $('#book-outline-title').textContent = page.title;
     const definitions = page.definitions.filter(entry => entry.locatable);
@@ -593,6 +592,7 @@
       $('#book-version').hidden = !metadata.source_release;
       $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
       importLegacyPosition();
+      annaCompanions.mount({page:'book', snapshot:metadata.snapshot});
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
       const params = new URL(location.href).searchParams;
       // A place chosen from Anna's switcher arrives with its location in the URL and its offset in the workspace.

@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const {esc,stored}=annaKit;
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
-  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',bookReader:annaBrands.book,skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',
+  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
@@ -25,7 +25,7 @@ const annaUiLabels = {
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
-  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',bookReader:annaBrands.book,skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',
+  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
@@ -724,11 +724,10 @@ function activePreset(){
   const types=chosenTypes();if(types.length!==1||!metadata)return null;
   return metadata.presets.find(p=>p.type===types[0]&&params.getAll('f_'+p.field).join()===p.value)||null;
 }
-// The tab title names the open entry, else the chosen slice; the book link carries the open entry along.
+// The tab title names the open entry, else the chosen slice.
 function updatePageChrome(){
   const heading=typeTitle(),subject=currentEntry?(currentEntry.name_zh||currentEntry.name):heading===ui.allEntries?'':heading;
   document.title=annaPageTitle('query',subject);
-  $('#book-reader').href=currentReaderId?(metadata?.reader_url||'/read')+'?entry='+encodeURIComponent(currentReaderId):metadata?.reader_url||'/read';
 }
 function typeTitle(){
   const types=chosenTypes(),left=params.getAll(NOT+'type');
@@ -808,7 +807,7 @@ async function init(){
   let saved=history.state?.anna;restoringUi=true;
   try{
     metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
-    $('#book-reader').hidden=!metadata.reader_url;
+    if(sharing())annaCompanions.mount({page:'query',snapshot:metadata.snapshot});
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');

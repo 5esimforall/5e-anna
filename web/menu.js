@@ -6,7 +6,11 @@ const annaMenu = (() => {
     const choices = () => [...menu.querySelectorAll('[role=menuitem]:not([aria-disabled=true])')];
     function open(button, focus = 'current') {
       close(false);
-      menu.replaceChildren(...items(button).map(item => { item.setAttribute('role','menuitem'); item.tabIndex = -1; return item; }));
+      // Plain elements become items; a group keeps its role and labels the items it holds.
+      menu.replaceChildren(...items(button).map(item => {
+        if (!item.hasAttribute('role')) { item.setAttribute('role','menuitem'); item.tabIndex = -1; }
+        return item;
+      }));
       menu.setAttribute('aria-labelledby', button.id);
       owner = button; button.setAttribute('aria-expanded','true'); menu.hidden = false;
       place?.(menu, button);
@@ -17,8 +21,9 @@ const annaMenu = (() => {
     function close(focusOwner) {
       const closing = owner;
       if (!closing) return;
+      // Items stay until the next opening: a chosen link must still be in the document to navigate.
       owner = null; closing.setAttribute('aria-expanded','false');
-      menu.hidden = true; menu.replaceChildren();
+      menu.hidden = true;
       if (focusOwner) closing.focus();
     }
     // Buttons need an id: the open popup is labelled by the button that opened it.

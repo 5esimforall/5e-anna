@@ -112,7 +112,31 @@ function captureUiState(){
     sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,readerFull,
     readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
-function saveUiState(){if(!restoringUi)history.replaceState({...history.state,anna:captureUiState()},'');}
+function saveUiState(){if(restoringUi)return;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
+// Anna shares her places with Stella only when both run from the same build.
+const sharing=()=>!!(metadata?.reader_url&&metadata.snapshot);
+// A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
+function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');return query.toString();}
+// Names a remembered query by its heading and search words, as a reader would describe it.
+function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.length?title:title===ui.allEntries?terms.join(' '):`${title} · ${terms.join(' ')}`;}
+// This tab's query is Anna's latest place in the shared workspace, so Stella's switcher can lead back to it.
+function rememberQuery(){
+  if(!sharing())return;
+  annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.rememberQuery(state,{query:queryKey(),entry:currentReaderId||'',
+    entryName:currentEntry?(currentEntry.name_zh||currentEntry.name):'',title:queryTitle(),ui:captureUiState(),at:Date.now()}));
+}
+// A remembered query chosen from Stella's switcher returns as this tab last showed it; another entry opens fresh.
+function resumedUi(id){
+  if(id===null||!sharing())return null;
+  const memory=annaWorkspace.read(metadata.snapshot).query.find(m=>m.query===id);
+  if(!memory?.ui||memory.query!==queryKey())return null;
+  return memory.entry===(params.get('entry')||'')?memory.ui:{...memory.ui,readerId:null,readerTab:'body',readerTop:0,readerFull:false};
+}
+// The open entry is the topic Stella can turn to; closing it ends the topic.
+function shareTopic(){
+  if(sharing()&&currentEntry)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.setTopic(state,{entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',at:Date.now()}));
+}
+function endTopic(id){if(sharing()&&id)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.clearTopic(state,id));}
 function historyUpdate(replace=false){
   if(!replace)saveUiState();
   const search=params.toString();history[replace?'replaceState':'pushState'](history.state,'',location.pathname+(search?'?'+search:''));
@@ -781,16 +805,17 @@ applyDensity(storedDensity());
 initReaderLayout();
 stored.watch(AUDIT_KEY,()=>{auditMode=stored.get(AUDIT_KEY)==='on';applyAuditMode();});
 async function init(){
-  const saved=history.state?.anna;restoringUi=true;
+  let saved=history.state?.anna;restoringUi=true;
   try{
     metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
     $('#book-reader').hidden=!metadata.reader_url;
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
-    params.delete('page');params.delete('size');restoreRows=saved?.loadedRows||0;
+    params.delete('page');params.delete('size');
     // Category views became type filters; an old view link opens on all entries with its other conditions.
     params.delete('view');readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
+    const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
   }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}

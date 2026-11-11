@@ -84,7 +84,10 @@ class WebTests(unittest.TestCase):
         self.assertIn("'=1+1",csv_export([row]).decode('utf-8-sig'))
     def test_http_and_host_guard(self):
         self.assertEqual(self.request('/')[0],200)
-        self.assertEqual(self.request('/api/meta')[0],200)
+        status,_,body=self.request('/api/meta')
+        self.assertEqual(status,200)
+        # Running alone, the query page has no reader to share a workspace with.
+        self.assertEqual({k:json.loads(body)[k] for k in ('reader_url','snapshot')},{'reader_url':None,'snapshot':None})
         self.assertEqual(self.request('/api/entries?type=invalid')[0],400)
         self.assertEqual(self.request('/api/facets?type=invalid')[0],400)
         self.assertEqual(self.request('/api/export?type=invalid')[0],400)

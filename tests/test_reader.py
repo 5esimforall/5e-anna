@@ -82,3 +82,8 @@ class ReaderModelTests(unittest.TestCase):
         import subprocess
         result = subprocess.run(['node', str(Path(__file__).with_name('reader_model.cjs'))], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_shared_workspace_record(self):
+        import subprocess
+        result = subprocess.run(['node', str(Path(__file__).with_name('workspace.cjs'))], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

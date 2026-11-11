@@ -180,7 +180,7 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   } catch(e) {
     if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
-    if(gen===detailGeneration){content.setAttribute('aria-busy','false');saveUiState();}
+    if(gen===detailGeneration){content.setAttribute('aria-busy','false');saveUiState();shareTopic();}
   }
 }
 // The body shows the book's own layout; anna's readings of it sit beside the text as notes.
@@ -255,6 +255,7 @@ function closeEntry({update=true,restoreFocus=true}={}) {
     document.body.classList.remove('detail-open','detail-modal');
     if(readerFull)setReaderFull(false,{save:false});
   });
+  endTopic(currentReaderId);
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();

@@ -27,8 +27,8 @@ async function jump(page,label){
   }
   throw new Error('no path entry for '+label);
 }
-const key='anna.bookPosition';
-async function saved(page){return page.evaluate(key=>JSON.parse(localStorage.getItem(key)),key);}
+// Stella's latest remembered place in the shared workspace.
+async function saved(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('anna.workspace'))?.book[0]);}
 
 test('only the selected subtree is sequenced; manual append keeps the original frame and uses one scroll surface',async({page})=>{
   const loaded=[];page.on('request',r=>{if(r.isNavigationRequest()&&r.url().includes('/book/topics/'))loaded.push(decodeURI(r.url().split('/book/')[1]));});

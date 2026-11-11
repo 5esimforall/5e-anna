@@ -62,6 +62,7 @@ def create_server(db, book, manifest, port):
         db_path = Path(db)
         source_root = Path(manifest['source_root'])
         reader_url = '/read'
+        snapshot = reader['snapshot']
         search_entries = []
 
         def handle(self):

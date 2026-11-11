@@ -362,6 +362,8 @@ def csv_export(rows, config=None):
 class Handler(BaseHTTPRequestHandler):
     db_path=DB
     reader_url=None
+    # The build snapshot the query page shares with the reader; None when the query page runs alone.
+    snapshot=None
     db_signature=None
     source_root=paths.WEB
     def log_message(self,*args): pass
@@ -389,7 +391,7 @@ class Handler(BaseHTTPRequestHandler):
             static['/review-ui.js']=('review-ui.js','text/javascript; charset=utf-8')
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
-            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar')})
+            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace')})
             static['/read']=('reader.html','text/html; charset=utf-8')
             static['/stella-logo.png']=('stella-logo.png','image/png')
             static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')
@@ -399,7 +401,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             with closing(connect(self.db_path)) as db:
-                if url.path=='/api/meta': self.send({**meta(db),'reader_url':self.reader_url})
+                if url.path=='/api/meta': self.send({**meta(db),'reader_url':self.reader_url,'snapshot':self.snapshot})
                 elif url.path=='/api/facets': self.send(facets(db,p))
                 elif url.path=='/api/entries': self.send(query(db,p))
                 elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))

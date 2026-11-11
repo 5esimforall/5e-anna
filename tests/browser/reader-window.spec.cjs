@@ -48,7 +48,7 @@ async function jump(page,label){
   }
   throw new Error('no path entry for '+label);
 }
-async function saved(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('anna.bookPosition')));}
+async function saved(page){return page.evaluate(()=>JSON.parse(localStorage.getItem('anna.workspace'))?.book[0]);}
 async function position(page,index,y){await expect.poll(async()=>{const value=await saved(page);return value.page===path(index)?value.position.y:-1;}).toBeCloseTo(y,0);}
 async function advance(page,last){
   for(let i=0;i<last;i++){

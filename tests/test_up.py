@@ -35,6 +35,8 @@ class ServerTests(unittest.TestCase):
                 reader=json.loads(self.request(server,'/api/reader')[2])
                 self.assertEqual(reader['content_base'],'/book/')
                 self.assertIsNone(reader['source_release'])
+                # The query page's metadata carries the reader's build snapshot, which binds their shared workspace.
+                self.assertEqual((server.RequestHandlerClass.reader_url,server.RequestHandlerClass.snapshot),('/read',reader['snapshot']))
                 target=json.loads(self.request(server,'/api/reader-page?entry=ver_test')[2])
                 self.assertEqual((target['path'],target['fragment']),('topics/test.htm','anna-ver_test'))
                 self.assertEqual(self.request(server,'/api/reader-page?entry=ver_test&path=topics/test.htm')[0],400)

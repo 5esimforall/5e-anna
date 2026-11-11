@@ -40,14 +40,35 @@
       search:{query:searchQuery, titleOnly:searchTitleOnly, page:searchPage, draft:$('#book-search').value, scroll:$('#panel-search').scrollTop}};
     try { history.replaceState({...history.state, book:state}, '', location.href); } catch { /* History storage may be unavailable. */ }
   }
-  const positionKey = 'anna.bookPosition';
-  function rememberedPosition() {
-    try { return annaReaderModel.remembered(JSON.parse(stored.get(positionKey)),metadata.snapshot,model); }
-    catch { return null; }
+  /* Stella's places live in the shared workspace, newest first. A bare /read resumes the latest; a place chosen
+     from Anna's switcher resumes in the tab that chose it. */
+  function rememberedPosition(id = null) {
+    const places = annaWorkspace.read(metadata.snapshot).book;
+    const place = id === null ? places[0] : places.find(memory => annaWorkspace.memoryId.book(memory) === id);
+    return annaReaderModel.remembered(place, metadata.snapshot, model);
+  }
+  function rememberPlace(root, path, node, offset) {
+    annaWorkspace.update(metadata.snapshot, state => annaWorkspace.rememberBook(state, {root, page:path, node, position:offset,
+      label:nodes.get(node)?.label || (path === page?.path ? page.title : ''), scopeLabel:nodes.get(root)?.label || '', at:Date.now()}));
   }
   function rememberPosition() {
     if (!metadata || !page || loading || !flow?.active || flow.active.status !== 'ready') return;
-    stored.set(positionKey, JSON.stringify({version:2,snapshot:metadata.snapshot,root:scope.root,page:page.path,node:nodeId,position}));
+    rememberPlace(scope.root, page.path, nodeId, position);
+  }
+  // Earlier versions kept one saved position; the first visit makes it the first remembered place and drops it.
+  const legacyPositionKey = 'anna.bookPosition';
+  function importLegacyPosition() {
+    const raw = stored.get(legacyPositionKey);
+    if (raw === null) return;
+    stored.set(legacyPositionKey, null);
+    let value = null;
+    try { value = annaReaderModel.remembered(JSON.parse(raw), metadata.snapshot, model); } catch { value = null; }
+    if (value && !annaWorkspace.read(metadata.snapshot).book.length) rememberPlace(value.root, value.page, value.node, value.position);
+  }
+  // The definition you arrive at is the topic Anna can look up.
+  function shareTopic(id) {
+    const entry = page?.definitions.find(definition => definition.id === id);
+    if (entry) annaWorkspace.update(metadata.snapshot, state => annaWorkspace.setTopic(state, {entry:id, name:entry.name, from:'book', at:Date.now()}));
   }
   function capturePosition() { flow?.capture(); save(); }
   function activeDocument(data, nextPosition, item) {
@@ -381,6 +402,7 @@
       $('#book-status').hidden = !!result.found;
       history.replaceState(history.state,'',routeURL(route));
       scheduleContentsSync(); save(); rememberPosition();
+      if (target.entry) shareTopic(target.entry);
     } catch (error) {
       if (id === navigationId && error.name !== 'AbortError') showError(error.message);
     }
@@ -570,14 +592,19 @@
         onTools:() => $('#book-menu').focus(),onSearch:() => { selectPane('search'); setSidebar(true,true); }});
       $('#book-version').hidden = !metadata.source_release;
       $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
+      importLegacyPosition();
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
       const params = new URL(location.href).searchParams;
-      const remembered = !current && !['root','entry','page','anchor','node'].some(key => params.has(key))
+      // A place chosen from Anna's switcher arrives with its location in the URL and its offset in the workspace.
+      const resumeId = annaWorkspace.takeResume('book');
+      let resumed = !current && resumeId !== null ? rememberedPosition(resumeId) : null;
+      if (resumed && (params.get('page') !== resumed.page || (params.get('root') || '') !== resumed.root)) resumed = null;
+      const remembered = !current && !resumed && !['root','entry','page','anchor','node'].some(key => params.has(key))
         ? rememberedPosition() : null;
       if (remembered) history.replaceState(history.state, '', routeURL({root:remembered.root,page:remembered.page,node:remembered.node}));
       restore(current); renderTree(); restoring = false;
       if (current?.search?.query) search(current.search.query,current.search.page,current.search.titleOnly,current.search.scroll);
-      await load(readRoute(),current || remembered);
+      await load(readRoute(),current || resumed || remembered);
     } catch (error) { showError(error.message); }
     finally { restoring = false; }
   }

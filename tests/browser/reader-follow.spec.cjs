@@ -103,7 +103,7 @@ for(const width of [390,1280])test(`closed navigation stays closed during scroll
   await page.setViewportSize({width,height:844});await page.goto(anna+'/read?root=root');await ready(page);
   await page.locator('#book-page-select').selectOption('2');await ready(page);
   await page.locator('#book-page-select').selectOption('0');await ready(page);
-  if(await page.locator('#book-sidebar').isVisible())await page.locator('#book-close').click();
+  if(await page.locator('#book-sidebar').isVisible())await page.locator(width>800?'#book-menu':'#book-close').click();
   await offset(page,2,60);await page.waitForTimeout(300);await expect(page.locator('#book-sidebar')).toBeHidden();
   await page.locator('#book-menu').click();await inView(page,'last');
   await expect(page.locator('#tab-contents')).toBeFocused();

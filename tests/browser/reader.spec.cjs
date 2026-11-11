@@ -58,6 +58,8 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
     expect(menu.x).toBeLessThan(scope.x);expect(scope.x).toBeLessThan(pager.x);
     expect(pager.x+pager.width).toBeLessThanOrEqual(bar.x+bar.width);
     await expect(page.locator('#book-crumbs')).toHaveCSS('display',viewport.width>800?'block':'none');
+    // The sidebar closes from the bar beside it; only the modal drawer, which covers the bar, has its own close.
+    if(viewport.width>800)await expect(page.locator('#book-close')).toBeHidden();
   }
 });
 
@@ -236,6 +238,7 @@ test('mobile drawer, focus, outline and resize keep the same document',async({pa
   await expect(page.locator('#book-sidebar')).not.toBeVisible();
   await sidebar(page,'outline');await expect(page.locator('#book-sidebar')).toHaveJSProperty('open',true);
   expect(await page.locator('#book-sidebar').evaluate(e=>e.matches(':modal'))).toBe(true);
+  await expect(page.locator('#book-close')).toBeVisible();
   await page.locator('#book-close').focus();
   for(let i=0;i<12;i++)await page.keyboard.press('Tab');
   expect(await page.evaluate(()=>document.querySelector('#book-sidebar').contains(document.activeElement))).toBe(true);

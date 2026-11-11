@@ -28,14 +28,18 @@
 .book-workspace.sidebar-closed { grid-template-columns: minmax(0, 1fr); }
 #book-sidebar { position: relative; inset: auto; margin: 0; padding: 0; border: 0; border-right: 1px solid var(--anna-line); width: auto; height: 100%; max-width: none; max-height: none; color: var(--anna-ink); background: var(--anna-surface); overflow: hidden; }
 #book-sidebar[open] { display: flex; flex-direction: column; }
-.book-sidebar-head { display: flex; align-items: center; padding: 14px 10px 10px 16px; gap: 8px; }
-.book-sidebar-head [role=tablist] { display: flex; gap: 4px; flex: 1; }
-.book-sidebar-head [role=tab] { border-color: transparent; background: transparent; color: var(--anna-secondary); }
-.book-sidebar-head [aria-selected=true] { background: var(--anna-paper); border-color: var(--anna-line); color: var(--anna-brand); font-weight: 600; }
+/* The sidebar head shares the reading bar's height and rule; equal tabs mark the current one with a quiet tint. */
+.book-sidebar-head { display: flex; align-items: center; flex-shrink: 0; height: var(--book-bar-height); box-sizing: border-box; padding: 0 5px 0 8px; gap: 6px; border-bottom: 1px solid var(--anna-line); }
+.book-sidebar-head [role=tablist] { display: flex; gap: 2px; flex: 1; }
+.book-sidebar-head [role=tab] { flex: 1; min-height: 30px; padding: 3px 8px; border-color: transparent; border-radius: 6px; background: transparent; color: var(--anna-secondary); }
+.book-sidebar-head [role=tab]:hover:not(:disabled) { border-color: transparent; color: var(--anna-ink); }
+.book-sidebar-head [aria-selected=true], .book-sidebar-head [aria-selected=true]:hover:not(:disabled) { background: var(--anna-selected); color: var(--anna-brand); font-weight: 600; }
 .book-icon { border: 0; background: transparent; font-size: 22px; padding: 0 8px; }
+/* Wide screens close from the reading bar beside the sidebar; the modal drawer covers that toggle, so it keeps its own. */
+#book-close { display: none; }
 #book-sidebar [role=tabpanel] { flex: 1; min-height: 0; overflow: auto; padding: 0 16px; }
 #panel-contents { display: flex; flex-direction: column; overflow: hidden !important; padding: 0 !important; }
-.book-filter { display: flex; margin: 0 16px; position: relative; }
+.book-filter { display: flex; margin: 12px 16px 0; position: relative; }
 #book-filter { width: 100%; min-height: 38px; padding-right: 32px; }
 #book-filter::-webkit-search-cancel-button { display: none; }
 #book-filter-clear { position: absolute; right: 2px; top: 3px; min-height: 30px; background: transparent; border: 0; padding: 0 9px; }
@@ -104,6 +108,7 @@ html[data-theme=dark] .book-app { --anna-source-bg: #111315; }
 @media(max-width:800px) {
   #book-bar { padding-right: 6px; }
   #book-crumbs { display: none; }
+  #book-close { display: inline-block; }
   #book-page-select { max-width: 34vw; }
   .book-workspace { grid-template-columns: minmax(0,1fr); }
   #book-sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: min(340px,90vw); height: 100dvh; z-index: 20; box-shadow: var(--anna-shadow); }

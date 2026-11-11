@@ -31,24 +31,54 @@ async function sidebar(page,pane){
 }
 async function shot(page,testInfo,name){await testInfo.attach(name,{body:await page.screenshot(),contentType:'image/png'});}
 
+test('the reader topbar mirrors anna with its own Stella avatar on desktop and mobile',async({page})=>{
+  await visit(page);
+  const brand=page.getByRole('link',{name:'5e Stella',exact:true});
+  const logo=brand.locator('img');
+  await expect(brand).toHaveAttribute('href','/read');
+  await expect(logo).toHaveAttribute('src','/stella-logo.png');
+  await expect.poll(()=>logo.evaluate(img=>img.naturalWidth)).toBe(128);
+  await expect(page.locator('link[rel=icon]')).toHaveAttribute('href','/stella-favicon.ico');
+  for(const viewport of [{width:1280,height:800},{width:390,height:844}]){
+    await page.setViewportSize(viewport);
+    await expect(logo).toBeInViewport();
+    await expect(logo).toHaveCSS('width','36px');
+    await expect(logo).toHaveCSS('height','36px');
+    await expect(brand).toHaveText('5e Stella');
+    await expect(brand).toHaveCSS('font-size','21px');
+    await expect(page.locator('.book-topbar')).toHaveCSS('height',viewport.width>760?'56px':'52px');
+    // The topbar carries exactly anna's parts; the contents toggle leads the reading bar above the text.
+    await page.locator('.skip-link').focus();await page.keyboard.press('Tab');
+    await expect(brand).toBeFocused();
+    await page.locator('.book-query').focus();await page.keyboard.press('Tab');
+    await expect(page.locator('#theme')).toBeFocused();
+    await expect(page.locator('.book-topbar button')).toHaveCount(1);
+    await expect(page.locator('#book-bar #book-menu')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
+    const [bar,menu,scope,pager]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging'].map(s=>page.locator(s).boundingBox()));
+    expect(menu.x).toBeLessThan(scope.x);expect(scope.x).toBeLessThan(pager.x);
+    expect(pager.x+pager.width).toBeLessThanOrEqual(bar.x+bar.width);
+    await expect(page.locator('#book-crumbs')).toHaveCSS('display',viewport.width>800?'block':'none');
+  }
+});
+
 test('titles name the open content and the topbar links carry the open entry both ways',async({page})=>{
   await page.goto(anna);
-  await expect(page).toHaveTitle('5e anna');
+  await expect(page).toHaveTitle('5e Anna');
   await expect(page.locator('#book-reader')).toHaveAttribute('href','/read');
   await page.locator('#results .entry-name').first().click();
   await expect(page.locator('#entry-title')).toBeVisible();
   const name=(await page.locator('#entry-title').textContent()).trim();
   const entry=new URL(page.url()).searchParams.get('entry');
-  await expect(page).toHaveTitle(`${name} · 5e anna`);
+  await expect(page).toHaveTitle(`${name} · 5e Anna`);
   await expect(page.locator('#book-reader')).toHaveAttribute('href','/read?entry='+encodeURIComponent(entry));
   await page.locator('#close-detail').click();
-  await expect(page).toHaveTitle('5e anna');
+  await expect(page).toHaveTitle('5e Anna');
   await expect(page.locator('#book-reader')).toHaveAttribute('href','/read');
   await page.locator('#results .entry-name').first().click();
   await page.locator('#book-reader').click();await ready(page);
   expect(new URL(page.url()).searchParams.get('entry')).toBe(entry);
-  await expect(page).toHaveTitle(/ · 5e stella$/);
-  await expect(page.locator('.book-query')).toHaveText('5e anna');
+  await expect(page).toHaveTitle(/ · 5e Stella$/);
+  await expect(page.locator('.book-query')).toHaveText('5e Anna');
   await expect(page.locator('.book-query')).toHaveAttribute('href','/?entry='+encodeURIComponent(entry));
   await page.locator('.book-query').click();
   await expect(page.locator('#entry-title')).toHaveText(name);
@@ -59,10 +89,10 @@ test('titles name the open content and the topbar links carry the open entry bot
 
 test('query and reader use the new app; upstream reading entries are gone',async({page,request})=>{
   await page.goto(anna);
-  await expect(page.getByRole('link',{name:'5e stella',exact:true})).toBeVisible();
-  await page.getByRole('link',{name:'5e stella',exact:true}).click();await ready(page);
+  await expect(page.getByRole('link',{name:'5e Stella',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'5e Stella',exact:true}).click();await ready(page);
   expect(new URL(page.url()).pathname).toBe('/read');
-  await expect(page).toHaveTitle('写在前面 · 5e stella');
+  await expect(page).toHaveTitle('写在前面 · 5e Stella');
   await expect(page.locator('#book-main > h1, #book-title')).toHaveCount(0);
   await expect(page.locator('#book-print')).toHaveCount(0);
   await expect(page.locator('#content')).not.toHaveAttribute('sandbox',/allow-modals/);
@@ -158,7 +188,7 @@ test('closing and reopening the reader resumes its page, directory entry and scr
   expect(new URL(reopened.url()).searchParams.get('node')).toBe(node);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
   await expect(reopened.locator(`#book-tree [data-node="${node}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
-  await reopened.goto(anna);await reopened.getByRole('link',{name:'5e stella',exact:true}).click();await ready(reopened);
+  await reopened.goto(anna);await reopened.getByRole('link',{name:'5e Stella',exact:true}).click();await ready(reopened);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
 });
 
@@ -240,7 +270,7 @@ test('full-text results, paging and reading state survive reload; search failure
   await expect(page.locator('#book-search-page')).toContainText('第 2 /');
   await expect(page.locator('#book-search-results a').first()).toHaveText(name);
   await page.locator('#book-search-results a').first().click();await ready(page);
-  await expect(page).not.toHaveTitle('写在前面 · 5e stella');
+  await expect(page).not.toHaveTitle('写在前面 · 5e Stella');
   await page.route('**/api/book-search?**',route=>route.fulfill({status:503,json:{code:'network'}}));
   await page.locator('#book-search-form button').click();
   await expect(page.locator('#book-search-status')).toContainText('无法读取');
@@ -334,6 +364,9 @@ test('reader labels have matching Chinese and English resources',async()=>{
   const labels=JSON.parse(vm.runInContext('JSON.stringify(annaReaderLabels)',context));
   expect(Object.keys(labels.zh)).toEqual(Object.keys(labels.en));
   expect(Object.keys(labels.zh.errors)).toEqual(Object.keys(labels.en.errors));
+  expect([labels.zh.title,labels.en.title]).toEqual(['5e Stella','5e Stella']);
+  expect([labels.zh.query,labels.en.query]).toEqual(['5e Anna','5e Anna']);
+  expect([labels.zh.entry,labels.en.entry]).toEqual(['在 Anna 查看条目','Open entry in Anna']);
 });
 
 for(const width of [390,1280,1920]) test(`text fills the reading area without duplicate headings ${width}px`,async({page})=>{

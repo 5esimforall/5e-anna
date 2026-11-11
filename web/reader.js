@@ -195,10 +195,14 @@
   function renderPage() {
     document.title = annaPageTitle('book', page.title);
     $('.book-query').href = route.entry ? '/?entry=' + encodeURIComponent(route.entry) : '/';
-    const crumbs = ancestors(nodeId);
-    $('#book-breadcrumb').innerHTML = crumbs.length ? crumbs.map(node => node.status === 'present' || children.has(node.id)
-      ? `<a href="${esc(routeURL(nodeRoute(node)))}">${esc(node.label)}</a>` : esc(node.label)).join(' <span aria-hidden="true">/</span> ') : esc(ui.notInContents);
-    $('#book-breadcrumb').title = crumbs.map(n => n.label).join(' / ') || page.path;
+    // The bar names the reading scope after the path that leads to it; the pager names the page within it.
+    const scopeNode = nodes.get(scope.root), scopeName = scopeNode?.label || page.title;
+    const crumbs = scopeNode ? ancestors(scope.root).slice(0,-1) : [];
+    const separator = '<span class="book-crumb-separator" aria-hidden="true">/</span>';
+    $('#book-crumbs').innerHTML = (scopeNode ? crumbs.map(node => node.status === 'present' || children.has(node.id)
+      ? `<a href="${esc(routeURL(nodeRoute(node)))}">${esc(node.label)}</a>` : esc(node.label)) : [esc(ui.notInContents)])
+      .map(crumb => crumb + separator).join('');
+    $('#book-breadcrumb').title = [...(scopeNode ? crumbs.map(n => n.label) : [ui.notInContents]), scopeName].join(' / ');
     $('#book-outline-title').textContent = page.title;
     const definitions = page.definitions.filter(entry => entry.locatable);
     $('#book-outline-empty').hidden = definitions.length > 0;
@@ -206,8 +210,8 @@
     const ordered = scope.pages;
     const index = ordered.findIndex(item => item.path === page.path);
     $('#book-paging').hidden = false;
-    $('#book-scope-title').textContent = nodes.get(scope.root)?.label || page.title;
-    $('#book-scope-title').title = text('scopeTitle',{name:$('#book-scope-title').textContent});
+    $('#book-scope-title').textContent = scopeName;
+    $('#book-scope-title').title = text('scopeTitle',{name:scopeName});
     $('#book-page-select').innerHTML = ordered.map((item,i) => `<option value="${i}">${esc(item.label || page.title)}</option>`).join('');
     $('#book-page-select').value = String(index);
     $('#book-page-count').textContent = text('pageCount',{page:index+1,pages:ordered.length});

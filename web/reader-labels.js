@@ -1,7 +1,7 @@
 /* Reader chrome only; source titles and text always retain their original spelling. */
 const annaReaderLabels = {
   zh: {
-    title:annaBrands.book, chapters:'章节导航', query:annaBrands.query, skip:'跳到正文', navigation:'阅读导航',
+    title:annaBrands.book, chapters:'章节导航', query:annaBrands.query, skip:'跳到正文', navigation:'阅读导航', location:'当前位置',
     openNavigation:'打开阅读导航', closeNavigation:'收起阅读导航', contents:'目录', outline:'本页', search:'搜索',
     filter:'筛选目录', filterPlaceholder:'查找书籍或章节…', clearFilter:'清空目录筛选', collapse:'全部收起', locate:'定位当前章节',
     followingContents:'目录跟随中', pausedContents:'目录跟随已暂停', locateAndFollow:'定位当前章节并恢复目录跟随',
@@ -11,7 +11,7 @@ const annaReaderLabels = {
     searching:'正在搜索…', found:'找到 {count} 页', searchEmpty:'没有匹配页面。试试更短的词语。', searchError:'搜索失败，请重试。',
     anyMatch:'没有全部词语同时命中的页面；以下为任一词语命中。', searchPage:'第 {page} / {pages} 页',
     previousResults:'上一批结果', nextResults:'下一批结果', noOutline:'本页尚未提取到可定位条目；原文仍完整展示。',
-    entry:'在 anna 查看条目', pageEntries:'本页条目', previous:'本章节上一页', next:'本章节下一页',
+    entry:'在 Anna 查看条目', pageEntries:'本页条目', previous:'本章节上一页', next:'本章节下一页',
     original:'原貌正文', loading:'正在打开原文…', ready:'原文已就绪',
     notInContents:'未编入目录的页面', sourceVersion:'不全书 v{version}', retry:'重试', home:'回到阅读首页',
     keyboard:'/ 搜索',
@@ -23,11 +23,11 @@ const annaReaderLabels = {
     errors: {
       empty_scope:'这个目录范围没有可阅读的正文页面。请选择其他章节。',
       outside_scope:'目标页面不在指定章节范围内，请重新选择阅读入口。',
-      unavailable:'阅读服务未启动。请运行 make up，启动 anna 与 stella。',
+      unavailable:'阅读服务未启动。请运行 make up，启动 Anna 与 Stella。',
       network:'无法读取阅读数据，请检查服务后重试。', invalid_location:'阅读地址无效，请选择一个页面或条目。',
       page_missing:'当前快照中没有这个页面。原文可能已更新，请从目录重新查找。',
       entry_missing:'当前快照中没有这个条目版本。不会自动跳到同名条目，请重新查询。',
-      entry_unlocatable:'这个条目没有可靠的原文范围，请在 anna 查看提取证据。',
+      entry_unlocatable:'这个条目没有可靠的原文范围，请在 Anna 查看提取证据。',
       bundle_changed:'数据已经重建，请重启 make up，再刷新页面。',
       snapshot_changed:'原文快照已经变化，请刷新页面后重新定位。',
       frame_timeout:'正文未能完成加载，请重试；若已重建数据，请重启 make up。',
@@ -35,7 +35,7 @@ const annaReaderLabels = {
     }
   },
   en: {
-    title:annaBrands.book, chapters:'Chapter navigation', query:annaBrands.query, skip:'Skip to the text', navigation:'Reading navigation',
+    title:annaBrands.book, chapters:'Chapter navigation', query:annaBrands.query, skip:'Skip to the text', navigation:'Reading navigation', location:'Current location',
     openNavigation:'Open reading navigation', closeNavigation:'Close reading navigation', contents:'Contents', outline:'On this page', search:'Search',
     filter:'Filter contents', filterPlaceholder:'Find a book or chapter…', clearFilter:'Clear contents filter', collapse:'Collapse all', locate:'Locate current chapter',
     followingContents:'Contents follow reading', pausedContents:'Contents following paused', locateAndFollow:'Locate the current chapter and resume following',
@@ -45,7 +45,7 @@ const annaReaderLabels = {
     searching:'Searching…', found:'Found {count} pages', searchEmpty:'No matching pages. Try a shorter phrase.', searchError:'Search failed. Please retry.',
     anyMatch:'No page matches every term; showing pages matching any term.', searchPage:'Page {page} / {pages}',
     previousResults:'Previous results', nextResults:'Next results', noOutline:'No locatable entries have been extracted on this page. The complete source is still available.',
-    entry:'Open entry in anna', pageEntries:'Entries on this page', previous:'Previous page in chapter', next:'Next page in chapter',
+    entry:'Open entry in Anna', pageEntries:'Entries on this page', previous:'Previous page in chapter', next:'Next page in chapter',
     original:'Original layout', loading:'Opening the source…', ready:'Source ready',
     notInContents:'Page outside the contents', sourceVersion:'Collection v{version}', retry:'Retry', home:'Reader home',
     keyboard:'/ Search',
@@ -57,11 +57,11 @@ const annaReaderLabels = {
     errors: {
       empty_scope:'This directory scope has no readable documents. Select another chapter.',
       outside_scope:'The target is outside the requested chapter. Choose another reading entry.',
-      unavailable:'The reading service is not running. Run make up to start anna and stella.',
+      unavailable:'The reading service is not running. Run make up to start Anna and Stella.',
       network:'Could not load reading data. Check the service and retry.', invalid_location:'Invalid reading address. Select one page or entry.',
       page_missing:'This page is not in the current snapshot. The source may have changed; find it in the contents.',
       entry_missing:'This entry version is not in the current snapshot. No same-name substitution was made; search again.',
-      entry_unlocatable:'This entry has no reliable source range. Inspect its extraction evidence in anna.',
+      entry_unlocatable:'This entry has no reliable source range. Inspect its extraction evidence in Anna.',
       bundle_changed:'The data was rebuilt. Restart make up, then refresh this page.',
       snapshot_changed:'The source snapshot changed. Refresh before navigating again.',
       frame_timeout:'The source did not finish loading. Retry, or restart make up if the data was rebuilt.',

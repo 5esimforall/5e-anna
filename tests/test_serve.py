@@ -91,18 +91,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request('/api/entries',{'Host':'attacker.example'})[0],403)
         self.assertEqual(self.request('/../scripts/serve.py')[0],404)
         self.assertEqual(self.request('/source?path=/etc/passwd')[0],404)
-    def test_brand_assets(self):
-        page=self.request('/')[2]
-        self.assertIn(b'href="/favicon.ico"',page)
-        for size in (16,32,48):
-            path=f'/favicon-{size}.png'
-            self.assertIn(f'href="{path}"'.encode(),page)
-            status,kind,body=self.request(path)
-            self.assertEqual((status,kind),(200,'image/png'))
-            self.assertEqual(body[:8],b'\x89PNG\r\n\x1a\n')
-            self.assertEqual(struct.unpack('>II',body[16:24]),(size,size))
-            self.assertEqual(body[25],6)  # RGBA; preserve transparent edges.
-        status,kind,body=self.request('/favicon.ico')
+    def check_brand_png(self,path,size):
+        status,kind,body=self.request(path)
+        self.assertEqual((status,kind),(200,'image/png'))
+        self.assertEqual(body[:8],b'\x89PNG\r\n\x1a\n')
+        self.assertEqual(struct.unpack('>II',body[16:24]),(size,size))
+        self.assertEqual(body[25],6)  # RGBA; preserve transparent edges.
+        return body
+    def check_brand_ico(self,path):
+        status,kind,body=self.request(path)
         self.assertEqual((status,kind),(200,'image/x-icon'))
         self.assertEqual(struct.unpack('<HHH',body[:6]),(0,1,6))
         sizes=set()
@@ -113,23 +110,45 @@ class WebTests(unittest.TestCase):
             self.assertGreaterEqual(offset,102)
             self.assertLessEqual(offset+length,len(body))
         self.assertEqual(sizes,{(size,size) for size in (16,32,48,64,128,256)})
+        return body
+    def test_brand_assets(self):
+        page=self.request('/')[2]
+        self.assertIn(b'<title>5e Anna</title>',page)
+        self.assertIn(b'>5e Anna</a>',page)
+        self.assertIn(b'<title>5e Anna</title>',self.request('/review')[2])
+        self.assertIn(b'href="/favicon.ico"',page)
+        for size in (16,32,48):
+            path=f'/favicon-{size}.png'
+            self.assertIn(f'href="{path}"'.encode(),page)
+            self.check_brand_png(path,size)
+        self.check_brand_ico('/favicon.ico')
         self.assertEqual(self.request('/favicon-24.png')[0],404)
         self.assertEqual(self.request('/assets/branding/anna.png')[0],404)
         self.assertEqual(self.request('/favicon.ico',{'Host':'attacker.example'})[0],403)
         self.assertIn(b'class="brand-logo" src="/anna-logo.png" width="36" height="36" alt=""',page)
         self.assertNotIn(b'class="brand-icon"',page)
-        status,kind,body=self.request('/anna-logo.png')
-        self.assertEqual((status,kind),(200,'image/png'))
-        self.assertEqual(body[:8],b'\x89PNG\r\n\x1a\n')
-        self.assertEqual(struct.unpack('>II',body[16:24]),(128,128))
-        self.assertEqual(body[25],6)
+        self.check_brand_png('/anna-logo.png',128)
         self.assertEqual(self.request('/anna-logo.png',{'Host':'attacker.example'})[0],403)
+    def test_reader_brand_assets(self):
+        page=self.request('/read')[2]
+        self.assertIn(b'<title>5e Stella</title>',page)
+        self.assertIn(b'alt="">5e Stella</a>',page)
+        self.assertIn(b'href="/stella-favicon.ico"',page)
+        self.assertIn(b'class="brand-logo" src="/stella-logo.png" width="36" height="36" alt=""',page)
+        self.assertNotIn(b'href="/favicon.ico"',page)
+        self.assertNotIn(b'src="/anna-logo.png"',page)
+        self.assertNotEqual(self.check_brand_png('/stella-logo.png',128),self.request('/anna-logo.png')[2])
+        self.assertNotEqual(self.check_brand_ico('/stella-favicon.ico'),self.request('/favicon.ico')[2])
+        for path in ('/stella-logo.png','/stella-favicon.ico'):
+            self.assertEqual(self.request(path,{'Host':'attacker.example'})[0],403)
+        self.assertEqual(self.request('/assets/branding/stella.png')[0],404)
     def test_source_highlights(self):
         e=query(self.db,{})['rows'][0]
         url='/source?'+urlencode({'path':e['page_path'],'start':e['start'],'end':e['end']})
         status,kind,body=self.request(url)
         self.assertEqual(status,200);self.assertIn(b'<mark id="evidence">',body)
         self.assertIn('text/html',kind)
+        self.assertIn('<title>页面文本 · 5e Anna</title>'.encode(),body)
         self.assertIn(b'href="/favicon.ico"',body)
         self.assertLess(body.index(b'src="/theme.js"'),body.index(b'href="/style.css"'))
     def test_reader_modules_are_served_with_script_types(self):
@@ -151,7 +170,7 @@ class WebTests(unittest.TestCase):
         page=self.request('/')[2]
         self.assertLess(page.index(b'src="/theme.js"'),page.index(b'href="/style.css"'))
         self.assertIn(b'id="theme"',page)
-        self.assertIn(b'<button class="theme-button"',page)
+        self.assertIn(b'<button class="icon-button theme-button"',page)
         self.assertNotIn(b'id="snapshot"',page)
         self.assertNotIn(b'class="theme-control"',page)
     def test_mount_and_animal_catalog_types(self):

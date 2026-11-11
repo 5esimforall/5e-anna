@@ -1,19 +1,29 @@
 /* Reader chrome shares anna's tokens and controls; source CSS stays in its own document. */
 .book-app { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
-.book-topbar { flex: 0 0 48px; height: 48px; min-height: 48px; padding: 0 12px; gap: 14px; background: var(--anna-surface); }
-.book-topbar .brand { font-size: 18px; gap: 8px; flex-shrink: 0; }
-.book-topbar .brand-logo { width: 28px; height: 28px; }
-.book-topbar .topbar-actions { white-space: nowrap; gap: 12px; flex-shrink: 0; }
-#book-menu { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; min-width: 32px; padding: 5px; }
-#book-menu svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
-#book-menu[aria-expanded=true] { background: var(--anna-selected); border-color: var(--anna-selected-line); color: var(--anna-brand); }
-#book-breadcrumb { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--anna-muted); font-size: 13px; }
-#book-breadcrumb a { color: var(--anna-secondary); text-decoration: none; }
-#book-breadcrumb a:hover { color: var(--anna-brand); text-decoration: underline; }
-.book-sequence { display: flex; gap: 2px; }
-.book-sequence a { display: grid; place-items: center; width: 30px; height: 32px; border-radius: 4px; text-decoration: none; font-size: 18px; }
-.book-sequence a:hover { background: var(--anna-hover); }
-.book-sequence [aria-disabled=true] { color: var(--anna-muted); opacity: .4; pointer-events: none; }
+/* The topbar is anna's: same height, avatar and actions. Reading controls live in the bar above the text. */
+.book-app { --book-bar-height: 44px; }
+.book-topbar { flex-shrink: 0; }
+.book-topbar .brand, .book-topbar .topbar-actions { flex-shrink: 0; white-space: nowrap; }
+/* Reading bar: the contents toggle, the path to the reading scope, and one pager for the pages inside it. */
+#book-bar { display: flex; align-items: center; gap: 6px; flex-shrink: 0; height: var(--book-bar-height); padding: 0 10px 0 5px; box-sizing: border-box; border-bottom: 1px solid var(--anna-line); background: var(--anna-surface); font-size: 13px; }
+#book-menu { width: 34px; height: 34px; }
+#book-menu svg { width: 18px; height: 18px; }
+#book-menu[aria-expanded=true] { color: var(--anna-brand); }
+#book-breadcrumb { display: flex; align-items: baseline; flex: 1; min-width: 0; white-space: nowrap; }
+#book-crumbs { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--anna-muted); }
+#book-crumbs a { color: var(--anna-secondary); text-decoration: none; }
+#book-crumbs a:hover { color: var(--anna-brand); text-decoration: underline; }
+.book-crumb-separator { margin: 0 7px; color: var(--anna-line-strong); }
+#book-scope-title { flex: 0 1 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis; color: var(--anna-ink); font-size: 14px; font-weight: 600; }
+#book-paging { flex-shrink: 0; min-width: 0; }
+.book-sequence { display: flex; align-items: stretch; height: 30px; border: 1px solid var(--anna-line); border-radius: 6px; background: var(--anna-paper); overflow: hidden; }
+.book-sequence :focus-visible { outline-offset: -2px; }
+.book-sequence a { display: grid; place-items: center; width: 30px; color: var(--anna-secondary); text-decoration: none; }
+.book-sequence a:first-child { border-right: 1px solid var(--anna-line); }
+.book-sequence a:last-child { border-left: 1px solid var(--anna-line); }
+.book-sequence a:hover { background: var(--anna-hover); color: var(--anna-brand); }
+.book-sequence svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.book-sequence [aria-disabled=true] { color: var(--anna-muted); opacity: .35; pointer-events: none; }
 .book-workspace { display: grid; grid-template-columns: 280px minmax(0, 1fr); flex: 1; min-height: 0; }
 .book-workspace.sidebar-closed { grid-template-columns: minmax(0, 1fr); }
 #book-sidebar { position: relative; inset: auto; margin: 0; padding: 0; border: 0; border-right: 1px solid var(--anna-line); width: auto; height: 100%; max-width: none; max-height: none; color: var(--anna-ink); background: var(--anna-surface); overflow: hidden; }
@@ -65,11 +75,8 @@
 #book-search-results p { margin: 6px 0 0; color: var(--anna-secondary); line-height: 1.7; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 #book-search-paging { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 16px; }
 #book-main { display: flex; flex-direction: column; position: relative; min-width: 0; min-height: 0; padding: 0; background: var(--anna-source-bg); }
-#book-paging { display: flex; align-items: center; gap: 12px; flex-shrink: 0; min-height: 42px; padding: 4px 12px; box-sizing: border-box; border-bottom: 1px solid var(--anna-line); background: var(--anna-surface); font-size: 13px; }
-#book-scope-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-#book-paging .book-sequence { align-items: center; min-width: 0; }
-#book-page-select { min-width: 0; max-width: min(34vw,360px); padding: 5px 8px; font: inherit; }
-#book-page-count { white-space: nowrap; color: var(--anna-muted); padding: 0 6px; font-variant-numeric: tabular-nums; }
+#book-page-select { field-sizing: content; min-width: 4em; max-width: min(30vw,320px); min-height: 0; padding: 0 4px 0 10px; border: 0; border-radius: 0; background: transparent; color: var(--anna-ink); font: inherit; text-overflow: ellipsis; }
+#book-page-count { align-self: center; padding: 0 10px 0 4px; white-space: nowrap; color: var(--anna-muted); font-variant-numeric: tabular-nums; }
 #book-scroll { flex: 1; min-height: 0; overflow: auto; overflow-anchor: none; }
 .book-page { margin: 0; position: relative; }
 .book-document { width: 100%; border: 0; display: block; background: var(--anna-source-bg); }
@@ -88,20 +95,16 @@
 /* The source stylesheet owns its page width and margins; the shell adds no second paper frame. */
 .book-app { --anna-source-bg: #f4f5f7; }
 html[data-theme=dark] .book-app { --anna-source-bg: #111315; }
-#book-loading, #book-status { position: absolute; top: 10px; right: 14px; z-index: 1; max-width: calc(100% - 28px); margin: 0; color: var(--anna-secondary); background: var(--anna-paper); border: 1px solid var(--anna-line); border-radius: 5px; padding: 7px 11px; font-size: 13px; line-height: 1.6; pointer-events: none; }
+#book-loading, #book-status { position: absolute; top: calc(var(--book-bar-height) + 10px); right: 14px; z-index: 1; max-width: calc(100% - 28px); margin: 0; color: var(--anna-secondary); background: var(--anna-paper); border: 1px solid var(--anna-line); border-radius: 5px; padding: 7px 11px; font-size: 13px; line-height: 1.6; pointer-events: none; }
 #book-loading { animation: book-loading-appear .18s step-end; }
 @keyframes book-loading-appear { from { opacity: 0; } to { opacity: 1; } }
-#book-error { position: absolute; inset: 0; z-index: 2; color: var(--anna-secondary); background: var(--anna-paper); padding: 32px; line-height: 1.8; }
+#book-error { position: absolute; inset: var(--book-bar-height) 0 0; z-index: 2; color: var(--anna-secondary); background: var(--anna-paper); padding: 32px; line-height: 1.8; }
 #book-error p { max-width: 42em; }
 #book-error a { margin-left: 16px; }
 @media(max-width:800px) {
-  #book-paging { padding: 4px 6px; gap: 4px; }
-  #book-page-select { max-width: 36vw; }
-  .book-topbar { padding: 0 8px; gap: 10px; }
-  .book-topbar .brand { margin-right: auto; }
-  .book-topbar .topbar-actions { gap: 7px; }
-  #book-breadcrumb { display: none; }
-  #book-menu { min-height: 36px; width: 36px; justify-content: center; }
+  #book-bar { padding-right: 6px; }
+  #book-crumbs { display: none; }
+  #book-page-select { max-width: 34vw; }
   .book-workspace { grid-template-columns: minmax(0,1fr); }
   #book-sidebar { position: fixed; top: 0; left: 0; bottom: 0; width: min(340px,90vw); height: 100dvh; z-index: 20; box-shadow: var(--anna-shadow); }
   #book-sidebar::backdrop { background: var(--anna-backdrop); }
@@ -109,4 +112,3 @@ html[data-theme=dark] .book-app { --anna-source-bg: #111315; }
   .toc-row > button { min-height: 36px; }
   #book-outline a { padding: 13px 0; }
 }
-@media(max-width:420px) { .book-topbar .brand span { display: none; } .book-query { font-size: 13px; } }

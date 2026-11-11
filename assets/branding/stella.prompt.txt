@@ -1,0 +1,32 @@
+Source: blue constellation variant of Stella
+
+=== Original generation ===
+=== B · 星图紫 ===
+Use case: logo-brand.
+Asset type: one transparent square anime avatar for the 5e stella reading app, tested at 28px. Draw ONE standalone portrait, not a contact sheet.
+Input image: Anna is a style, icon sizing and world reference ONLY; do not redraw Anna or reuse her facial expression or swept bangs. Stella is a different adult female dragonfolk librarian, a sister product's mascot.
+Composition: compact large head and a little scholarly standing collar, no shoulders beyond the collar. Subtle three-quarter turn toward image right, both eyes visible, attentive and composed, mouth relaxed without a smirk. Two compact dragon horns with one foreshortened, small fin-like ear, face mostly human. Bold dark indigo outlines, clean anime cel shading, a few well defined hair shapes, same apparent face size as the reference. Fill 90–93% of the square; leave all hair and horns inside frame. Maintain contrast on both light and dark app surfaces.
+Color direction: mainly blue and purple, with a night-sky impression made from color blocks and very few celestial marks on the character, not a background. Genuine transparent alpha outside the silhouette; no floating stars, background, gradient halo, sticker border, lettering, scenery, books, ornate jewelry, weapons, or watermark.
+Variant: B — Constellation violet. Medium-dark violet hair with a clean side part and one tucked side, gathered in a small visible low bun at the nape opposite the cheek; keep the bun compact within the square. Short angular faceted lilac dragon horns swept gently outward from the temples, navy-to-lilac tonal blocks; one tiny violet ear fin. Suggest a constellation with exactly three silver star dots and two simple connecting lines engraved on the visible horn only, enough scale to recognize the motif at medium size. Smoky lavender eyes, composed neutral expression, violet collar with a plain silvery trim. Refined, graphic, distinctive low bun silhouette.
+
+
+=== First edit: remove the dragon fin ===
+Mode: built-in image_gen edit
+Transparent background: true
+Input: b-constellation.png
+
+Use case: precise-object-edit.
+The single attached image is the exact edit target: Stella's approved violet dragonfolk librarian avatar. Make a surgical, highly localized removal, not a redraw or variation.
+Change only this: completely remove the small pale lavender webbed dragon fin behind her visible human ear on the VIEWER'S LEFT, midway between the large constellation horn and the low hair bun (approximately x=15–30%, y=47–64% of the frame). It is the side appendage with two dark curved ribs. Where the fin was, continue the immediately adjacent dark violet swept-back hair smoothly in the same flat cel shading, following the direction of the existing strands; this is over her hair, not a hole. Keep the small existing normal human ear just below and to the right of the fin untouched. Do not replace the fin with another accessory or ear shape.
+Preserve everything else as closely to the exact original as possible: both upper dragon horns and their three-dot silver constellation, angular horn facets, low bun and its outline, face, eyes and pupil shape, expression, head angle, collar, every existing color and highlight outside the edit area, framing, centering, square margins and real transparent alpha background. Return one full square PNG of the complete avatar with a real transparent background, no backdrop or extra marks.
+
+=== Second edit: recolor the horns and irises ===
+Mode: built-in image_gen edit
+Transparent background: true
+Input: b-constellation-v2.png
+
+Use case: precise-object-edit.
+The single supplied image is the exact edit target (Stella, the purple-haired dragonfolk librarian, revised no-fin version). Make a strictly local color-only edit, not a redraw. Recolor ONLY these four existing areas:
+(1) The interior colored facets of BOTH upper dragon horns: replace the existing purples with a rich blue palette (midnight navy shadow, clear sapphire-blue midtone, light icy-blue facet near each tip). Preserve all facets and their exact outline, positions, values and sharp edges, dark outline and the exact three silver constellation dots and two silver lines on the large horn. Blue, not violet, green, or turquoise.
+(2) The colored irises of BOTH eyes: change violet to clear cool sky blue with a deeper sapphire upper shadow, a lighter lower iris and the original white reflections. Keep the black slit pupils, eye shape, expression, lashes and whites identical.
+Do not change anything else: preserve the existing purple hair including the low bun, the human ear, purple collar, white trim, silhouette and face, pose and scale, lighting, cel shading, transparent background and all lines. Absolutely do not add an ear fin, any ornament, particle or new detail. Keep the original transparent alpha and square framing. Deliver the entire avatar PNG.

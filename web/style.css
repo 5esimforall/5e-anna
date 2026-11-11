@@ -121,8 +121,10 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .audit-toggle[aria-pressed=true] { color: var(--anna-brand); }
 .audit-toggle[aria-pressed=true] .audit-switch { background: var(--anna-brand); }
 .audit-toggle[aria-pressed=true] .audit-switch::after { transform: translateX(11px); }
-.theme-button { display: inline-grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; padding: 0; border-color: transparent; border-radius: 6px; background: transparent; color: var(--anna-secondary); }
-.theme-button svg { display: none; width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Borderless icon controls: the theme switch and the reader's navigation toggle. */
+.icon-button { display: inline-grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; min-height: 0; padding: 0; border-color: transparent; border-radius: 6px; background: transparent; color: var(--anna-secondary); }
+.icon-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.theme-button svg { display: none; }
 .theme-button[data-preference=system] .theme-icon-system,
 .theme-button[data-preference=light] .theme-icon-light,
 .theme-button[data-preference=dark] .theme-icon-dark { display: block; }

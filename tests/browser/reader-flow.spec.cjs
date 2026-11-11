@@ -93,9 +93,16 @@ test('scope, page and local offset survive reload, return navigation and a fresh
 });
 
 test('grouping nodes and leaves never expand to siblings; outside or invalid scope is rejected',async({page})=>{
+  await visit(page);
+  await expect(page.locator('#book-crumbs')).toHaveText('');
+  await expect(page.locator('#book-scope-title')).toHaveText('root');
   await visit(page,{root:'group'});
   await expect(page.locator('#book-page-count')).toHaveText('1 / 1');
+  // The bar names the path to the scope, not to the page: the pager names grandchild.
+  await expect(page.locator('#book-crumbs a')).toHaveText(['root']);
   await expect(page.locator('#book-scope-title')).toHaveText('group');
+  await expect(page.locator('#book-breadcrumb')).toHaveAttribute('title','root / group');
+  await expect(page.locator('#book-page-select option:checked')).toHaveText('grandchild');
   await visit(page,{root:'child'});
   await expect(page.locator('#book-page-count')).toHaveText('1 / 1');
   await expect(page.locator('#book-next')).toHaveAttribute('aria-disabled','true');
@@ -103,6 +110,10 @@ test('grouping nodes and leaves never expand to siblings; outside or invalid sco
     await page.goto(anna+'/read?'+new URLSearchParams(params));
     await expect(page.locator('#book-error')).toBeVisible();
     await expect(page.locator('.book-document')).toHaveCount(0);
+    // The error covers the text, not the reading bar: the contents stay one click away.
+    const expanded=await page.locator('#book-menu').getAttribute('aria-expanded');
+    await page.locator('#book-menu').click();
+    await expect(page.locator('#book-menu')).toHaveAttribute('aria-expanded',String(expanded!=='true'));
   }
 });
 

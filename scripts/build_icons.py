@@ -3,7 +3,8 @@
 # requires-python = ">=3.10"
 # dependencies = ["Pillow==12.0.0"]
 # ///
-"""Export Anna's approved portrait: uv run scripts/build_icons.py."""
+"""Export the approved brand portraits: uv run scripts/build_icons.py."""
+import argparse
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -12,15 +13,16 @@ ROOT = Path(__file__).resolve().parents[1]
 SIZES = (16, 32, 48, 64, 128, 256)
 
 
-def main():
-    source = Image.open(ROOT / 'assets/branding/anna.png').convert('RGBA')
+def export_icons(brand, favicon, png_sizes=()):
+    with Image.open(ROOT / f'assets/branding/{brand}.png') as image:
+        source = image.convert('RGBA')
     if source.width != source.height:
         raise ValueError('The approved portrait must be square')
     icons = {size: source.resize((size, size), Image.Resampling.LANCZOS) for size in SIZES}
-    for size in (16, 32, 48):
-        icons[size].save(ROOT / f'web/favicon-{size}.png', optimize=True)
-    icons[128].save(ROOT / 'web/anna-logo.png', optimize=True)
-    icons[256].save(ROOT / 'web/favicon.ico', sizes=[(size, size) for size in SIZES],
+    for size in png_sizes:
+        icons[size].save(ROOT / f'web/{favicon}-{size}.png', optimize=True)
+    icons[128].save(ROOT / f'web/{brand}-logo.png', optimize=True)
+    icons[256].save(ROOT / f'web/{favicon}.ico', sizes=[(size, size) for size in SIZES],
                     append_images=[icons[size] for size in SIZES if size != 256])
 
     # Native-size samples plus nearest-neighbor magnification: no hidden upscale smoothing.
@@ -39,7 +41,17 @@ def main():
             draw.text((x + 120, top + 172), f'{96 // size}x pixels', fill=foreground)
     output = ROOT / 'output/imagegen'
     output.mkdir(parents=True, exist_ok=True)
-    preview.save(output / 'anna-favicon-preview.png')
+    preview.save(output / f'{brand}-favicon-preview.png')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--brand', choices=('anna', 'stella'), help='export just one brand')
+    brand = parser.parse_args().brand
+    if brand in (None, 'anna'):
+        export_icons('anna', 'favicon', png_sizes=(16, 32, 48))
+    if brand in (None, 'stella'):
+        export_icons('stella', 'stella-favicon')
 
 
 if __name__ == '__main__':

@@ -74,7 +74,7 @@ for(const [name,path] of visuals)for(const width of [1280,390]){
 test('definition → new anna tab → reader → same definition; original pages retained',async({page,context},testInfo)=>{
   const s=cases.spell;
   await page.goto(topic(book,s.path)+'#'+s.anchor);await ready(page);
-  const title=page.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true});
+  const title=page.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true});
   const originalURL=page.url();
   const entryPromise=context.waitForEvent('page');await title.click();const entry=await entryPromise;
   await expect(entry).toHaveURL(new RegExp(`:${port}/\\?.*entry=${s.id}`));
@@ -85,18 +85,18 @@ test('definition → new anna tab → reader → same definition; original pages
   await entry.getByRole('link',{name:'查看不全书定义 ↗',exact:true}).click();
   const reader=await popupPromise;await reader.waitForLoadState('load');
   const frame=reader.frameLocator('#content');
-  await expect(frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true})).toBeVisible();
+  await expect(frame.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true})).toBeVisible();
   await expect(reader).toHaveURL(new RegExp('/read\\?.*entry='+s.id));
   await expect(reader.locator('#book-main')).toHaveAttribute('aria-busy','false');
   await expect.poll(async()=>reader.locator('#content').evaluate(f=>f.getBoundingClientRect().top+f.contentDocument.querySelector('#Shield').getBoundingClientRect().top-document.querySelector('#book-scroll').getBoundingClientRect().top)).toBeGreaterThanOrEqual(0);
   expect(await reader.locator('#content').evaluate(f=>f.getBoundingClientRect().top+f.contentDocument.querySelector('#Shield').getBoundingClientRect().top-document.querySelector('#book-scroll').getBoundingClientRect().top)).toBeLessThan(80);
   await expect.poll(async()=>new URL(reader.url()).searchParams.get('entry')).toBe(s.id);
   await reader.reload();
-  await expect(frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true})).toBeVisible();
+  await expect(frame.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true})).toBeVisible();
   expect(await reader.locator('#content').evaluate(f=>f.getBoundingClientRect().top+f.contentDocument.querySelector('#Shield').getBoundingClientRect().top-document.querySelector('#book-scroll').getBoundingClientRect().top)).toBeLessThan(80);
   await attach(testInfo,'reader-definition.png',await reader.screenshot(),'image/png');
   const readerURL=reader.url();const returnPromise=context.waitForEvent('page');
-  await frame.getByRole('link',{name:'查看 anna 条目: '+s.name,exact:true}).click();
+  await frame.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true}).click();
   const returned=await returnPromise;
   await expect(returned).toHaveURL(new RegExp(`:${port}/\\?.*entry=${s.id}`));
   await expect(returned.getByRole('dialog').getByRole('heading',{name:'护盾术',exact:true})).toBeVisible();
@@ -173,7 +173,7 @@ test('plain and marked core-rule mentions share the precise subdefinition in ann
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(topic(book,ref.target.path)+'#'+ref.target.fragment);
   await ready(page);
-  await expect(page.getByRole('link',{name:'查看 anna 条目: 半身掩护',exact:true})).toBeInViewport();
+  await expect(page.getByRole('link',{name:'查看 Anna 条目: 半身掩护',exact:true})).toBeInViewport();
   const old=cases.classic_cover;
   expect(old.target_id).not.toBe(ref.target_id);
   expect(old.target.path).toBe(old.path);
@@ -184,12 +184,12 @@ test('plain and marked core-rule mentions share the precise subdefinition in ann
   await oldLink.focus();await expect(oldLink).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(topic(book,old.path)+'#'+old.target.fragment);
-  await expect(page.getByRole('link',{name:'查看 anna 条目: '+oldChild.name,exact:true})).toBeInViewport();
+  await expect(page.getByRole('link',{name:'查看 Anna 条目: '+oldChild.name,exact:true})).toBeInViewport();
 });
 
 test('fixture table links track moved nodes, focus, scrolling and narrow reflow',async({page},testInfo)=>{
   await page.goto(anna+'/__fixture__/linked');await ready(page);
-  const cell=page.getByRole('link',{name:'查看 anna 条目: 长剑 Longsword',exact:true});
+  const cell=page.getByRole('link',{name:'查看 Anna 条目: 长剑 Longsword',exact:true});
   await expect(page.locator('#wrapper table')).toHaveCount(1);
   async function aligned(){
     await expect.poll(()=>page.evaluate(()=>{
@@ -203,7 +203,7 @@ test('fixture table links track moved nodes, focus, scrolling and narrow reflow'
   await aligned();await expect(cell).toBeFocused();
   await page.getByRole('button',{name:'重排表格'}).click();
   await page.setViewportSize({width:390,height:800});await ready(page);await aligned();
-  const beta=page.getByRole('link',{name:'查看 anna 条目: 乙 Beta',exact:true});
+  const beta=page.getByRole('link',{name:'查看 Anna 条目: 乙 Beta',exact:true});
   await beta.focus();await expect(beta).toBeFocused();
   await expect(beta).toBeInViewport();
   await expect(page.locator('#Beta')).toBeInViewport();

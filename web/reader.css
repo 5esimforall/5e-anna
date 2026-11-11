@@ -47,7 +47,8 @@
 #book-locate[data-state=following] { color: var(--anna-brand); }
 .book-filter { display: none; flex: 1; min-width: 0; margin-right: 4px; position: relative; }
 .book-tree-tools.filtering .book-filter { display: flex; }
-.book-tree-tools.filtering #book-filter-open { display: none; }
+/* While filtering, expanding or collapsing has nothing to act on; only locate remains beside the box. */
+.book-tree-tools.filtering :is(#book-filter-open, #book-expand, #book-collapse) { display: none; }
 .book-filter svg { position: absolute; left: 8px; top: 8px; width: 15px; height: 15px; fill: none; stroke: var(--anna-muted); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
 #book-filter { width: 100%; height: 30px; min-height: 0; padding: 3px 28px 3px 29px; }
 #book-filter::-webkit-search-cancel-button { display: none; }

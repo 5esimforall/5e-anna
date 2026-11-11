@@ -71,7 +71,7 @@ test('filtering and collapse preserve manual browsing until locate explicitly re
   await expect(page.locator('#book-filter')).toHaveValue('before');await expect(row(page,'last')).toHaveCount(0);
   await expect(page.locator('#book-follow-status')).toHaveText('目录跟随已暂停');
   await page.locator('#book-filter-clear').click();await expect(page.locator('#book-follow-status')).toHaveText('目录跟随已暂停');
-  await page.locator('#book-collapse').click();const before=await treeState(page);
+  await page.locator('#book-filter').press('Escape');await page.locator('#book-collapse').click();const before=await treeState(page);
   await offset(page,0,60);await offset(page,2,60);await page.waitForTimeout(300);expect(await treeState(page)).toEqual(before);
   await page.locator('#book-locate').click();await inView(page,'last');await expect(page.locator('#book-filter')).toHaveValue('');
 });
@@ -85,22 +85,25 @@ test('contents tools stay one icon row: the filter opens on demand and the readi
   await expect(page.locator('#book-locate')).toHaveAttribute('title','定位当前章节（目录跟随中）');
   const lit=await page.locator('#book-locate').evaluate(e=>getComputedStyle(e).color);
   await opener.click();await expect(filter).toBeFocused();await expect(opener).toBeHidden();
+  // Filtering leaves only locate beside the box; expanding and collapsing have nothing to act on.
+  await expect(page.locator('#book-expand')).toBeHidden();await expect(page.locator('#book-collapse')).toBeHidden();
+  await expect(page.locator('#book-locate')).toBeVisible();
   // Leaving an empty box closes it; Escape closes it and returns to its icon.
   await page.locator('#book-locate').focus();await expect(filter).toBeHidden();
   await opener.click();await filter.press('Escape');await expect(filter).toBeHidden();await expect(opener).toBeFocused();
   // Text keeps it open after focus leaves, and the paused follow state is carried by the locate tool.
-  await opener.click();await filter.fill('near');await page.locator('#book-collapse').focus();
-  await expect(filter).toBeVisible();await expect(page.locator('#book-locate')).toHaveAttribute('data-state','paused');
+  await opener.click();await filter.fill('near');await page.locator('#book-locate').focus();
+  await expect(filter).toBeVisible();await expect(page.locator('#book-collapse')).toBeHidden();await expect(page.locator('#book-locate')).toHaveAttribute('data-state','paused');
   await expect(page.locator('#book-locate')).toHaveAttribute('title','定位当前章节并恢复目录跟随');
   expect(await page.locator('#book-locate').evaluate(e=>getComputedStyle(e).color)).not.toBe(lit);
   expect(await page.locator('#book-filter-open').evaluate(e=>getComputedStyle(e).color)).toBe(await page.locator('#book-locate').evaluate(e=>getComputedStyle(e).color));
   const open=()=>page.locator('#book-tree [aria-expanded=true]').evaluateAll(items=>items.map(item=>item.dataset.node));
-  await page.locator('#book-collapse').click();await expect(filter).toBeHidden();await expect(filter).toHaveValue('');
-  expect(await open()).toEqual([]);
+  await page.locator('#book-filter-clear').click();await filter.press('Escape');await expect(filter).toBeHidden();
+  await expect(page.locator('#book-expand')).toBeVisible();await expect(page.locator('#book-collapse')).toBeVisible();
+  await page.locator('#book-collapse').click();expect(await open()).toEqual([]);
   // The reading scope is root: its whole subtree opens, siblings outside it stay closed, and its row leads the view.
   await expect(page.locator('#book-expand')).toHaveAttribute('title','展开当前章节');
-  await opener.click();await filter.fill('near');
-  await page.locator('#book-expand').click();await expect(filter).toBeHidden();await expect(filter).toHaveValue('');
+  await page.locator('#book-expand').click();
   expect((await open()).sort()).toEqual(['far','near','root']);
   await expect(row(page,'child')).toBeVisible();await expect(row(page,'last')).toBeVisible();
   expect(await page.evaluate(()=>{const row=document.querySelector('#book-tree [data-node=root] > .toc-row'),scroll=document.querySelector('#book-tree-scroll');

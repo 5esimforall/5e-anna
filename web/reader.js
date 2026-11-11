@@ -394,11 +394,10 @@
   $('#book-filter-clear').onclick = () => { pauseContentsFollow(); $('#book-filter').value = ''; renderTree(); $('#book-filter').focus(); save(); };
   $('#book-filter-open').onclick = () => setFilterOpen(true, true);
   $('.book-filter').addEventListener('focusout', event => { if (!$('.book-filter').contains(event.relatedTarget)) setFilterOpen(false); });
-  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); $('#book-filter').value = ''; setFilterOpen(false); renderTree(); save(); };
+  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); renderTree(); save(); };
   // Opens the reading scope's whole subtree and its path, then shows it from its first row.
   $('#book-expand').onclick = () => {
     if (!nodes.has(scope?.root)) return;
-    $('#book-filter').value = ''; setFilterOpen(false);
     reveal(scope.root);
     (function open(id) { if (!children.get(id)?.length) return; expanded.add(id); children.get(id).forEach(child => open(child.id)); })(scope.root);
     renderTree(); scrollContentsTo(scope.root, true); save();

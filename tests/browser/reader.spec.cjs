@@ -63,6 +63,16 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
   }
 });
 
+test('icon buttons center their icons in the topbar, reading bar and contents tools',async({page})=>{
+  await visit(page);await sidebar(page,'contents');
+  const offsets=await page.locator('.icon-button:visible').evaluateAll(buttons=>buttons.map(b=>{
+    const r=b.getBoundingClientRect(),s=b.querySelector('svg').getBoundingClientRect();
+    return {id:b.id,dx:Math.abs(s.x+s.width/2-r.x-r.width/2),dy:Math.abs(s.y+s.height/2-r.y-r.height/2)};
+  }));
+  expect(offsets.map(o=>o.id)).toEqual(expect.arrayContaining(['theme','book-menu','book-filter-open','book-locate','book-expand','book-collapse']));
+  for(const o of offsets){expect(o.dx,o.id).toBeLessThan(0.5);expect(o.dy,o.id).toBeLessThan(0.5);}
+});
+
 test('titles name the open content and the topbar links carry the open entry both ways',async({page})=>{
   await page.goto(anna);
   await expect(page).toHaveTitle('5e Anna');

@@ -328,9 +328,9 @@ tbody tr:last-child td { border-bottom: 0; }
 #detail.title-away #reader-name { display: block; }
 .detail-tools { display: flex; align-items: center; gap: 5px; margin-left: auto; flex-shrink: 0; }
 .detail-tools button { min-width: 30px; }
-.icon-button { border-color: transparent; background: transparent; font-size: 21px; line-height: 1; padding: 4px 7px; }
-#reader-full { display: inline-grid; place-items: center; width: 32px; padding: 0; color: var(--anna-secondary); }
-#reader-full svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#close-detail { font-size: 21px; line-height: 1; }
+#reader-full { width: 32px; }
+#reader-full svg { width: 17px; height: 17px; }
 #reader-full[aria-pressed=true] { color: var(--anna-brand); }
 #reader-full[aria-pressed=true] .full-enter, #reader-full[aria-pressed=false] .full-exit { display: none; }
 #detail-position { color: var(--anna-muted); font-size: var(--anna-type-ui); font-variant-numeric: tabular-nums; }

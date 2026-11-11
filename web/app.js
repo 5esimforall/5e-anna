@@ -132,9 +132,11 @@ function resumedUi(id){
   if(!memory?.ui||memory.query!==queryKey())return null;
   return memory.entry===(params.get('entry')||'')?memory.ui:{...memory.ui,readerId:null,readerTab:'body',readerTop:0,readerFull:false};
 }
-// The open entry is the topic Stella can turn to; closing it ends the topic.
+// The open entry is the topic Stella can turn to; closing it ends the topic. Restoring a remembered place or a
+// history entry shows its entry again without bringing it up as a new topic.
+let quietTopic=false;
 function shareTopic(){
-  if(sharing()&&currentEntry)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.setTopic(state,{entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',at:Date.now()}));
+  if(sharing()&&currentEntry&&!quietTopic)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.setTopic(state,{entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',at:Date.now()}));
 }
 function endTopic(id){if(sharing()&&id)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.clearTopic(state,id));}
 function historyUpdate(replace=false){
@@ -677,7 +679,9 @@ window.addEventListener('popstate',async e=>{
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
   if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
+  quietTopic=true;
   if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:'body');
+  quietTopic=false;
   if(gen!==navigationGeneration)return;
   restoreUiState(state);
   if(currentReaderId)($('#tab-'+detailTab)||$('#close-detail')).focus({preventScroll:true});
@@ -814,11 +818,11 @@ async function init(){
     // Category views became type filters; an old view link opens on all entries with its other conditions.
     params.delete('view');readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
-    const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;
+    const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
   }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}
-  finally{restoringUi=false;saveUiState();}
+  finally{restoringUi=false;quietTopic=false;saveUiState();}
 }
 applyAuditMode();
 init();

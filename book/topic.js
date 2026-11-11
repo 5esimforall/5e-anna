@@ -22,9 +22,11 @@
     const body = document.body, rect = body.getBoundingClientRect(), style = getComputedStyle(body);
     return Math.max(1,Math.ceil(rect.top+scrollY+Math.max(rect.height,body.scrollHeight)+(parseFloat(style.marginBottom)||0)));
   }
+  // Size reports carry where each definition starts, so the reader knows which one is in view.
+  const definitions = () => window.annaSourceLinks?.definitionPositions() || [];
   function measure() {
     if (!initialized || sizeFrame) return;
-    sizeFrame = requestAnimationFrame(() => { sizeFrame = 0; send('size',{height:height()}); });
+    sizeFrame = requestAnimationFrame(() => { sizeFrame = 0; send('size',{height:height(),definitions:definitions()}); });
   }
   function target(href) {
     let url;
@@ -85,7 +87,7 @@
         data.version !== version || data.snapshot !== snapshot || data.documentId !== documentId) return;
     if (data.type === 'initialize' && !initialized && Number.isInteger(data.navigationId)) {
       navigationId = data.navigationId; initialized = true; applyTheme(data.theme);
-      send('initialized',{height:height()});
+      send('initialized',{height:height(),definitions:definitions()});
     }
     if (!initialized || data.navigationId !== navigationId) return;
     if (data.type === 'locate' && Number.isInteger(data.requestId)) locate(data);

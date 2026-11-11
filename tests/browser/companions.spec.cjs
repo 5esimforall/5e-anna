@@ -55,12 +55,16 @@ test('an entry open in Anna becomes the topic Stella turns to, and Anna resumes 
   await expect(go(page)).toHaveAccessibleName(`5e Anna：回到 ${name}`);
   const back=new URL(await go(page).getAttribute('href'),anna);
   expect([back.searchParams.get('q'),back.searchParams.get('entry')]).toEqual(['护盾术',cases.spell.id]);
+  // Reading on past the entry makes the definition in view the topic; Anna's place stays in the menu.
   await scrollBook(page,600);
   await expect.poll(async()=>(await workspace(page)).book[0]?.position.y).toBe(600);
-  await go(page).click();await entryReady(page);
+  await expect(go(page)).toHaveAccessibleName(/^5e Anna：查 /);
+  expect((await workspace(page)).topic.from).toBe('book');
+  await more(page).click();
+  await page.locator('#companion-menu').getByRole('group',{name:'Anna 记得'}).getByRole('menuitem',{name:name}).click();await entryReady(page);
   await expect(page.locator('#entry-title')).toHaveText(name);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['护盾术']);
-  // Stella's place is newer than the topic, so turning back resumes her reading position.
+  // Stella brought up the latest topic herself, so turning back resumes her reading position.
   await expect(go(page)).toHaveAccessibleName(/^5e Stella：接着读 /);
   await go(page).click();await stellaReady(page);
   await expect.poll(()=>bookOffset(page)).toBe(600);
@@ -137,4 +141,21 @@ test('narrow topbars keep both avatars on one line',async({page})=>{
     expect(bar.height).toBe(52);expect(theme.x+theme.width).toBeLessThanOrEqual(390);
     await page.goto(target);await expect(page.locator('.companion')).toBeVisible();
   }
+});
+
+test('reading on in Stella makes the definition in view the topic Anna looks up',async({page,request})=>{
+  const path=cases.spell.path;
+  const data=await (await request.get(anna+'/api/reader-page?'+new URLSearchParams({path}))).json();
+  const target=data.definitions.filter(d=>d.locatable)[3];
+  await page.goto(anna+'/read?'+new URLSearchParams({page:path}));await stellaReady(page);
+  const frame=page.frames().find(f=>decodeURI(f.url()).includes(path));
+  // definitionPosition leaves 20px above the title; scroll the title itself to the top of the view.
+  const y=await frame.evaluate(id=>window.annaSourceLinks.definitionPosition(id).y+20,target.id);
+  await scrollBook(page,y);
+  await expect.poll(async()=>(await workspace(page)).topic?.entry).toBe(target.id);
+  expect((await workspace(page)).topic).toMatchObject({name:target.name,from:'book'});
+  await expect(go(page)).toHaveAccessibleName(`5e Anna：查 ${target.name}`);
+  expect(new URL(await go(page).getAttribute('href'),anna).searchParams.get('entry')).toBe(target.id);
+  await go(page).click();await entryReady(page);
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(target.id);
 });

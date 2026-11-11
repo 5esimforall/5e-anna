@@ -67,6 +67,21 @@ class AnnaReaderFlow {
   label(heading, index, name) {
     heading.textContent = this.text('pageCount',{page:index+1,pages:this.scope.pages.length}) + ' ' + name;
   }
+  // A document reports where its definitions start; a bridge without the report leaves the list empty.
+  markDefinitions(record, list) {
+    if (!Array.isArray(list) || list.length > 20000) return;
+    record.definitions = list.filter(item => typeof item?.id === 'string' && item.id.length < 200 && Number.isFinite(item.y) && item.y >= 0)
+      .map(({id, y}) => ({id, y})).sort((a, b) => a.y - b.y);
+  }
+  // The definition being read: the last one whose start has reached the top of the view.
+  definitionInView() {
+    const record = this.visibleRecord() || this.active;
+    if (!record?.definitions?.length || record.status !== 'ready') return null;
+    const line = this.scroll.scrollTop - this.top(record) + 48;
+    let current = null;
+    for (const definition of record.definitions) { if (definition.y > line) break; current = definition; }
+    return current && {path:record.item.path, id:current.id};
+  }
   location() {
     if (!this.active || this.active.status !== 'ready') return null;
     return {path:this.active.item.path,position:{x:this.scroll.scrollLeft,y:Math.max(0,this.scroll.scrollTop-this.top(this.active))}};
@@ -290,10 +305,10 @@ class AnnaReaderFlow {
     if (data.documentId !== record.documentId || data.navigationId !== record.navigationId) return;
     if (data.type === 'initialized') {
       if (record.status !== 'loading') return;
-      clearTimeout(record.timer); this.resize(record,data.height); record.status = 'ready';
+      clearTimeout(record.timer); this.markDefinitions(record,data.definitions); this.resize(record,data.height); record.status = 'ready';
       record.frame.style.visibility = ''; record.statusElement.hidden = true; record.element.setAttribute('aria-busy','false');
       this.updateSlots(); record.resolve(record); this.scheduleMaintenance();
-    } else if (data.type === 'size') this.resize(record,data.height);
+    } else if (data.type === 'size') { this.markDefinitions(record,data.definitions); this.resize(record,data.height); }
     else if (data.type === 'located' && data.requestId === record.location?.sequence && annaReaderModel.validPosition(data.position)) {
       this.resize(record,data.height); clearTimeout(record.location.timer); record.location.resolve(data); record.location = null;
     } else if (data.type === 'navigate' && data.route && (typeof data.route.page === 'string' || typeof data.route.entry === 'string')) this.onNavigate(data.route);

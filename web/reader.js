@@ -65,8 +65,15 @@
     try { value = annaReaderModel.remembered(JSON.parse(raw), metadata.snapshot, model); } catch { value = null; }
     if (value && !annaWorkspace.read(metadata.snapshot).book.length) rememberPlace(value.root, value.page, value.node, value.position);
   }
-  // The definition you arrive at is the topic Anna can look up.
+  // The definition you arrive at, and then the one you read, is the topic Anna can look up.
+  let topicId = '';
+  function followTopic() {
+    const current = flow?.definitionInView();
+    if (!current || current.path !== page?.path || current.id === topicId) return;
+    shareTopic(current.id);
+  }
   function shareTopic(id) {
+    topicId = id;
     const entry = page?.definitions.find(definition => definition.id === id);
     if (entry) annaWorkspace.update(metadata.snapshot, state => annaWorkspace.setTopic(state, {entry:id, name:entry.name, from:'book', at:Date.now()}));
   }
@@ -81,7 +88,7 @@
       history.replaceState(history.state,'',routeURL(route));
       renderPage();
     }
-    save(); rememberPosition();
+    save(); rememberPosition(); followTopic();
   }
   async function api(path, signal) {
     let response;

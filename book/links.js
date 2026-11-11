@@ -39,7 +39,16 @@
     const r = range(definition?.title || definition?.body);
     return r ? {x:0,y:Math.max(0,r.getBoundingClientRect().top + scrollY - 20)} : null;
   }
-  window.annaSourceLinks = Object.freeze({definitionPosition});
+  // Where each definition starts in the document, in reading order: the reader follows the one in view.
+  function definitionPositions() {
+    const positions = [];
+    for (const [id, definition] of definitions) {
+      const r = range(definition.title || definition.body);
+      if (r) positions.push({id, y:Math.max(0, r.getBoundingClientRect().top + scrollY)});
+    }
+    return positions.sort((a, b) => a.y - b.y);
+  }
+  window.annaSourceLinks = Object.freeze({definitionPosition, definitionPositions});
   function navigateFragment() {
     if (window.parent && window.parent !== window) return;
     let id;

@@ -389,7 +389,7 @@ class Handler(BaseHTTPRequestHandler):
             static['/review-ui.js']=('review-ui.js','text/javascript; charset=utf-8')
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
-            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu')})
+            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar')})
             static['/read']=('reader.html','text/html; charset=utf-8')
             static['/stella-logo.png']=('stella-logo.png','image/png')
             static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')

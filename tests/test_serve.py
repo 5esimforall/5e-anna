@@ -114,7 +114,12 @@ class WebTests(unittest.TestCase):
     def test_brand_assets(self):
         page=self.request('/')[2]
         self.assertIn(b'<title>5e Anna</title>',page)
-        self.assertIn(b'>5e Anna</a>',page)
+        # Both pages name themselves; the shared topbar script draws the brand from that name.
+        self.assertIn(b'<header class="topbar" data-page="query">',page)
+        self.assertIn(b'<script src="/topbar.js"></script>',page)
+        topbar=self.request('/topbar.js')[2]
+        self.assertIn(b"query:{home:'/', logo:'/anna-logo.png'}",topbar)
+        self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png'}",topbar)
         self.assertIn(b'<title>5e Anna</title>',self.request('/review')[2])
         self.assertIn(b'href="/favicon.ico"',page)
         for size in (16,32,48):
@@ -125,16 +130,15 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request('/favicon-24.png')[0],404)
         self.assertEqual(self.request('/assets/branding/anna.png')[0],404)
         self.assertEqual(self.request('/favicon.ico',{'Host':'attacker.example'})[0],403)
-        self.assertIn(b'class="brand-logo" src="/anna-logo.png" width="36" height="36" alt=""',page)
         self.assertNotIn(b'class="brand-icon"',page)
         self.check_brand_png('/anna-logo.png',128)
         self.assertEqual(self.request('/anna-logo.png',{'Host':'attacker.example'})[0],403)
     def test_reader_brand_assets(self):
         page=self.request('/read')[2]
         self.assertIn(b'<title>5e Stella</title>',page)
-        self.assertIn(b'alt="">5e Stella</a>',page)
+        self.assertIn(b'<header class="topbar book-topbar" data-page="book">',page)
+        self.assertIn(b'<script src="/topbar.js"></script>',page)
         self.assertIn(b'href="/stella-favicon.ico"',page)
-        self.assertIn(b'class="brand-logo" src="/stella-logo.png" width="36" height="36" alt=""',page)
         self.assertNotIn(b'href="/favicon.ico"',page)
         self.assertNotIn(b'src="/anna-logo.png"',page)
         self.assertNotEqual(self.check_brand_png('/stella-logo.png',128),self.request('/anna-logo.png')[2])
@@ -169,8 +173,11 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.request('/theme.js',{'Host':'attacker.example'})[0],403)
         page=self.request('/')[2]
         self.assertLess(page.index(b'src="/theme.js"'),page.index(b'href="/style.css"'))
-        self.assertIn(b'id="theme"',page)
-        self.assertIn(b'<button class="icon-button theme-button"',page)
+        # The shared topbar adds the theme button that theme.js reveals once it can switch.
+        self.assertLess(page.index(b'src="/kit.js"'),page.index(b'src="/theme.js"'))
+        topbar=self.request('/topbar.js')[2]
+        self.assertIn(b"theme.id = 'theme'",topbar)
+        self.assertIn(b"theme.className = 'icon-button theme-button'",topbar)
         self.assertNotIn(b'id="snapshot"',page)
         self.assertNotIn(b'class="theme-control"',page)
     def test_mount_and_animal_catalog_types(self):

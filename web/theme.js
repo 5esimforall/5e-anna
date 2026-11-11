@@ -6,10 +6,7 @@
   const system = window.matchMedia('(prefers-color-scheme: dark)');
   const nextPreference = {light: 'dark', dark: 'system', system: 'light'};
   const normalize = value => ['light', 'dark'].includes(value) ? value : 'system';
-  const read = () => {
-    try { return normalize(localStorage.getItem(key)); }
-    catch { return 'system'; }
-  };
+  const read = () => normalize(annaKit.stored.get(key));
   const labels = {
     zh: {system: '跟随系统', light: '浅色', dark: '深色', switchTo: '切换为{next}（当前：{current}）'},
     en: {system: 'System', light: 'Light', dark: 'Dark', switchTo: 'Switch to {next} (current: {current})'}
@@ -29,19 +26,12 @@
   }
   function choose(value) {
     preference = normalize(value);
-    try {
-      if (preference === 'system') localStorage.removeItem(key);
-      else localStorage.setItem(key, preference);
-    } catch { /* Storage can be disabled; switching still works for this page. */ }
+    annaKit.stored.set(key, preference === 'system' ? null : preference); // Refused storage still switches this page.
     apply();
   }
   apply();
   system.addEventListener('change', apply);
-  window.addEventListener('storage', event => {
-    if (event.key !== key && event.key !== null) return;
-    preference = read();
-    apply();
-  });
+  annaKit.stored.watch(key, () => { preference = read(); apply(); });
   document.addEventListener('DOMContentLoaded', () => {
     control = document.querySelector('#theme');
     if (!control) return; // Source-text pages share the theme, without the query toolbar.

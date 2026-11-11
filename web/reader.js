@@ -3,7 +3,7 @@
   'use strict';
   const $ = selector => document.querySelector(selector);
   const ui = annaReaderLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
-  const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const {esc, stored} = annaKit;
   const text = (key, values = {}) => Object.entries(values).reduce((s, [k,v]) => s.replaceAll('{'+k+'}', v), ui[key]);
   for (const element of document.querySelectorAll('[data-text]')) element.textContent = ui[element.dataset.text];
   for (const element of document.querySelectorAll('[data-label]')) {
@@ -42,15 +42,12 @@
   }
   const positionKey = 'anna.bookPosition';
   function rememberedPosition() {
-    try { return annaReaderModel.remembered(JSON.parse(localStorage.getItem(positionKey)),metadata.snapshot,model); }
+    try { return annaReaderModel.remembered(JSON.parse(stored.get(positionKey)),metadata.snapshot,model); }
     catch { return null; }
   }
   function rememberPosition() {
     if (!metadata || !page || loading || !flow?.active || flow.active.status !== 'ready') return;
-    try {
-      localStorage.setItem(positionKey, JSON.stringify({version:2,snapshot:metadata.snapshot,
-        root:scope.root,page:page.path,node:nodeId,position}));
-    } catch { /* Reading still works when persistent storage is unavailable. */ }
+    stored.set(positionKey, JSON.stringify({version:2,snapshot:metadata.snapshot,root:scope.root,page:page.path,node:nodeId,position}));
   }
   function capturePosition() { flow?.capture(); save(); }
   function activeDocument(data, nextPosition, item) {
@@ -114,7 +111,6 @@
   /* The reading bar's path: ancestors outside the scope change it; the scope name and the levels after it move
      within it. Each level after the scope name lists its siblings, and a trailing control lists the current node's
      children, so the path doubles as a one-level-at-a-time view of the contents tree. */
-  let pathMenuOwner = null;
   const chevron = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
   function firstReadable(node) {
     if (node.status === 'present') return node;
@@ -126,7 +122,7 @@
     return target && {root:scope.root,page:target.path,anchor:target.fragment,node:target.id};
   }
   function renderPath() {
-    closePathMenu(false);
+    pathMenu.close(false);
     const path = $('#book-path'), focused = [...path.querySelectorAll('button')].indexOf(document.activeElement);
     const scopeNode = nodes.get(scope.root), scopeName = scopeNode?.label || page.title;
     const outside = scopeNode ? ancestors(scope.root).slice(0,-1) : [];
@@ -161,8 +157,7 @@
       items.push(item('book-path-down',button));
     }
     for (const [index,button] of items.flatMap(li => [...li.querySelectorAll('button')]).entries()) {
-      button.id = 'book-path-control-' + index; button.setAttribute('aria-haspopup','menu'); button.setAttribute('aria-expanded','false');
-      button.setAttribute('aria-controls','book-path-menu');
+      button.id = 'book-path-control-' + index; pathMenu.bind(button);
     }
     path.replaceChildren(...items);
     $('#book-breadcrumb').title = [...(scopeNode ? outside.map(n => n.label) : [ui.notInContents]), scopeName, ...inside.map(n => n.label)].join(' / ');
@@ -194,13 +189,12 @@
     const node = nodes.get(button.dataset.node);
     return children.get(button.dataset.menu === 'children' ? node.id : node.parent_id) || [];
   }
-  function openPathMenu(button, focus = 'current') {
-    closePathMenu(false);
-    const menu = $('#book-path-menu'), onPath = new Set(ancestors(nodeId).map(node => node.id));
+  // Each item opens the first readable page under its node, within the current scope.
+  function pathMenuItems(button) {
+    const onPath = new Set(ancestors(nodeId).map(node => node.id));
     if (!nodes.has(nodeId) && scope.root) onPath.add(scope.root);
-    menu.replaceChildren(...pathMenuNodes(button).map(node => {
+    return pathMenuNodes(button).map(node => {
       const target = scopeTarget(node), entry = document.createElement(target ? 'a' : 'span');
-      entry.setAttribute('role','menuitem'); entry.tabIndex = -1;
       if (target) entry.href = routeURL(target); else entry.setAttribute('aria-disabled','true');
       if (onPath.has(node.id)) entry.setAttribute('aria-current', node.id === nodeId ? 'page' : 'location');
       if (button.dataset.menu === 'more') entry.style.setProperty('--depth', ancestors(node.id).length - ancestors(scope.root).length);
@@ -208,46 +202,18 @@
       const count = children.get(node.id)?.length;
       if (count) { const badge = document.createElement('span'); badge.className = 'book-path-count'; badge.setAttribute('aria-hidden','true'); badge.textContent = count; entry.append(badge); }
       return entry;
-    }));
-    menu.setAttribute('aria-labelledby',button.id);
-    pathMenuOwner = button; button.setAttribute('aria-expanded','true'); menu.hidden = false;
-    const bar = $('#book-bar').getBoundingClientRect(), anchor = button.getBoundingClientRect();
-    menu.style.left = Math.max(8, Math.min(anchor.left - bar.left, bar.width - menu.offsetWidth - 8)) + 'px';
-    const items = [...menu.querySelectorAll('a[role=menuitem]')];
-    const target = focus === 'last' ? items.at(-1) : items.find(el => el.hasAttribute('aria-current')) || items[0];
-    if (target) { target.focus({preventScroll:true}); target.scrollIntoView({block:'nearest'}); } else menu.focus();
+    });
   }
-  function closePathMenu(focusOwner) {
-    const owner = pathMenuOwner;
-    if (!owner) return;
-    pathMenuOwner = null; owner.setAttribute('aria-expanded','false');
-    $('#book-path-menu').hidden = true; $('#book-path-menu').replaceChildren();
-    if (focusOwner) owner.focus();
-  }
-  function pathMenuKey(event) {
-    const menu = $('#book-path-menu'), items = [...menu.querySelectorAll('a[role=menuitem]')];
-    const index = items.indexOf(document.activeElement);
-    let next;
-    if (event.key === 'ArrowDown') next = items[(index+1) % items.length];
-    else if (event.key === 'ArrowUp') next = items[(index-1+items.length) % items.length];
-    else if (event.key === 'Home') next = items[0];
-    else if (event.key === 'End') next = items.at(-1);
-    else if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePathMenu(true); return; }
-    else if (event.key === 'Tab') { closePathMenu(false); return; }
-    else if (event.key === ' ' && index >= 0) { event.preventDefault(); items[index].click(); return; }
-    else if (['ArrowLeft','ArrowRight'].includes(event.key)) {
+  // The vertical arrows move within a menu; the horizontal arrows move to the next visible level's menu.
+  const pathMenu = annaMenu.create($('#book-path-menu'), {items:pathMenuItems,
+    place(menu, button) {
+      const bar = $('#book-bar').getBoundingClientRect(), anchor = button.getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(anchor.left - bar.left, bar.width - menu.offsetWidth - 8)) + 'px';
+    },
+    adjacent(button, step) {
       const controls = [...$('#book-path').querySelectorAll('button[aria-haspopup]')].filter(el => el.getClientRects().length);
-      const adjacent = controls[controls.indexOf(pathMenuOwner) + (event.key === 'ArrowLeft' ? -1 : 1)];
-      if (adjacent) { event.preventDefault(); openPathMenu(adjacent); }
-      return;
-    } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && event.key.trim()) {
-      // Type-ahead: the next item whose name starts with the typed character.
-      const key = event.key.toLocaleLowerCase(), ordered = [...items.slice(index+1), ...items.slice(0,index+1)];
-      next = ordered.find(el => el.querySelector('.book-path-label').textContent.trim().toLocaleLowerCase().startsWith(key));
-      if (!next) return;
-    } else return;
-    event.preventDefault(); next?.focus(); next?.scrollIntoView({block:'nearest'});
-  }
+      return controls[controls.indexOf(button) + step];
+    }});
   function contentsRow(id) {
     return Array.from($('#book-tree').querySelectorAll('[data-node]')).find(row => row.dataset.node === id);
   }
@@ -557,20 +523,8 @@
   $('#book-search-prev').onclick = () => search(searchQuery,Math.max(1,searchPage-1),searchTitleOnly);
   $('#book-search-next').onclick = () => search(searchQuery,Math.min(searchTotalPages,searchPage+1),searchTitleOnly);
   $('#book-search').oninput = save;
-  $('#book-path').addEventListener('click', event => {
-    const button = event.target.closest('button[aria-haspopup]');
-    if (button) pathMenuOwner === button ? closePathMenu(true) : openPathMenu(button);
-  });
-  $('#book-path').addEventListener('keydown', event => {
-    const button = event.target.closest('button[aria-haspopup]');
-    if (button && ['ArrowDown','ArrowUp'].includes(event.key)) { event.preventDefault(); openPathMenu(button, event.key === 'ArrowUp' ? 'last' : 'current'); }
-  });
-  $('#book-path-menu').addEventListener('keydown', pathMenuKey);
   // Choosing an item closes the menu first; the document click handler then navigates within the scope.
-  $('#book-path-menu').addEventListener('click', event => { if (event.target.closest('a[href]')) closePathMenu(true); });
-  for (const element of [$('#book-path'),$('#book-path-menu')]) element.addEventListener('focusout', event => {
-    if (pathMenuOwner && !$('#book-path-menu').contains(event.relatedTarget) && event.relatedTarget !== pathMenuOwner) closePathMenu(false);
-  });
+  pathMenu.attach($('#book-path'));
   new ResizeObserver(fitPath).observe($('#book-bar'));
   // Share the resolved theme through the same protocol as location and focus.
   new MutationObserver(() => flow?.theme(document.documentElement.dataset.theme))

@@ -43,7 +43,7 @@ wideReader.addEventListener('change',()=>{if(currentReaderId)placeReader();});
 // the reader closes, and this tab's history restores it.
 const READER_SHARE_KEY='anna.readerShare';
 const DEFAULT_READER_SHARE=.6, MIN_READER_WIDTH=400, MIN_LIST_WIDTH=360;
-const storedReaderShare=()=>{try{const v=Number(localStorage.getItem(READER_SHARE_KEY));return v>0&&v<1?v:DEFAULT_READER_SHARE;}catch{return DEFAULT_READER_SHARE;}};
+const storedReaderShare=()=>{const v=Number(annaKit.stored.get(READER_SHARE_KEY));return v>0&&v<1?v:DEFAULT_READER_SHARE;};
 let readerShare=storedReaderShare(), readerFull=false;
 // The reader and the results share the whole workspace.
 function sharedBox(){
@@ -64,12 +64,9 @@ function applyReaderLayout(){
   separator.setAttribute('aria-valuemin',String(Math.round(min*100)));separator.setAttribute('aria-valuemax',String(Math.round(max*100)));
   separator.setAttribute('aria-valuenow',String(percent));separator.setAttribute('aria-valuetext',ui.readerShare.replace('{percent}',percent));
 }
-function saveReaderPreference(key,value){
-  try{value===null?localStorage.removeItem(key):localStorage.setItem(key,value);}catch{/* Blocked storage still applies to this page. */}
-}
 function setReaderShare(share,save=true){
   const [min,max]=readerShareBounds();readerShare=Math.min(max,Math.max(min,share));applyReaderLayout();
-  if(save)saveReaderPreference(READER_SHARE_KEY,Math.abs(readerShare-DEFAULT_READER_SHARE)<.005?null:readerShare.toFixed(3));
+  if(save)annaKit.stored.set(READER_SHARE_KEY,Math.abs(readerShare-DEFAULT_READER_SHARE)<.005?null:readerShare.toFixed(3));
 }
 function setReaderFull(on,{save=true}={}){readerFull=on;applyReaderLayout();markTableFrames();if(save)saveUiState();}
 // Runs from app.js once the shared helpers and labels exist.
@@ -90,10 +87,7 @@ function initReaderLayout(){
   $('#reader-full').addEventListener('click',()=>setReaderFull(!readerFull));
   window.addEventListener('resize',()=>{if(currentReaderId)applyReaderLayout();});
   new ResizeObserver(markTableFrames).observe($('#detail-content'));
-  window.addEventListener('storage',e=>{
-    if(![READER_SHARE_KEY,null].includes(e.key))return;
-    readerShare=storedReaderShare();applyReaderLayout();
-  });
+  annaKit.stored.watch(READER_SHARE_KEY,()=>{readerShare=storedReaderShare();applyReaderLayout();});
   applyReaderLayout();
 }
 // A stacked row contains every listed version; reading any of them places the reader on that row.

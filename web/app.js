@@ -1,6 +1,6 @@
 'use strict';
 const $ = s => document.querySelector(s);
-const esc = s => String(s ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const {esc,stored}=annaKit;
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
   zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',bookReader:annaBrands.book,skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',
@@ -67,7 +67,7 @@ const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','
 // Audit mode is a per-browser viewing preference, never part of a shared query URL.
 const AUDIT_KEY='anna.audit', AUDIT_COLUMNS=new Set(['classification_status','legacy']), AUDIT_PARAMS=['status','legacy','conflict','sections'];
 const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
-let auditMode=(()=>{try{return localStorage.getItem(AUDIT_KEY)==='on';}catch{return false;}})();
+let auditMode=stored.get(AUDIT_KEY)==='on';
 const visibleColumns=()=>schema.columns.filter(k=>auditMode||!AUDIT_COLUMNS.has(k));
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
 let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='';
@@ -763,23 +763,23 @@ function applyAuditMode(){
   if(currentEntry)renderDetail(AUDIT_TABS.has(detailTab)&&!auditMode?'body':detailTab);
 }
 function setAuditMode(on){
-  auditMode=on;try{on?localStorage.setItem(AUDIT_KEY,'on'):localStorage.removeItem(AUDIT_KEY);}catch{/* Storage may be blocked; the mode still applies to this page. */}
+  auditMode=on;stored.set(AUDIT_KEY,on?'on':null); // Blocked storage still applies the mode to this page.
   applyAuditMode();saveUiState();
 }
 $('#audit-mode').onclick=()=>setAuditMode(!auditMode);
 // Row density is a per-browser reading preference like the theme; shared links never carry it.
 const DENSITY_KEY='anna.density';
-const storedDensity=()=>{try{return localStorage.getItem(DENSITY_KEY)==='compact';}catch{return false;}};
+const storedDensity=()=>stored.get(DENSITY_KEY)==='compact';
 function applyDensity(compact){document.documentElement.dataset.density=compact?'compact':'comfortable';$('#compact-rows').checked=compact;}
 $('#compact-rows').onchange=()=>{
   const compact=$('#compact-rows').checked;
-  try{compact?localStorage.setItem(DENSITY_KEY,'compact'):localStorage.removeItem(DENSITY_KEY);}catch{/* Blocked storage still applies to this page. */}
+  stored.set(DENSITY_KEY,compact?'compact':null);
   applyDensity(compact);
 };
-window.addEventListener('storage',e=>{if(e.key===DENSITY_KEY||e.key===null)applyDensity(storedDensity());});
+stored.watch(DENSITY_KEY,()=>applyDensity(storedDensity()));
 applyDensity(storedDensity());
 initReaderLayout();
-window.addEventListener('storage',e=>{if(e.key===AUDIT_KEY||e.key===null){try{auditMode=localStorage.getItem(AUDIT_KEY)==='on';}catch{}applyAuditMode();}});
+stored.watch(AUDIT_KEY,()=>{auditMode=stored.get(AUDIT_KEY)==='on';applyAuditMode();});
 async function init(){
   const saved=history.state?.anna;restoringUi=true;
   try{

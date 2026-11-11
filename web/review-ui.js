@@ -2,7 +2,7 @@
 (() => {
   const lang=document.documentElement.lang.startsWith('en')?'en':'zh';
   const labels=annaLinkLabels[lang], l=labels.reviewSearch;
-  const $=s=>document.querySelector(s), esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const $=s=>document.querySelector(s), esc=annaKit.esc;
   const sourceLink=b=>`/source?${new URLSearchParams({path:b.path,start:b.start,end:b.end})}#evidence`;
   const set=(id,text)=>{$('#'+id).textContent=text;};
   for(const [id,text] of Object.entries({'review-back':l.back,'review-heading':l.title,'review-policy':l.policy,'candidate-heading':l.candidates,'reference-label':l.reference,'candidate-query-label':l.query,'candidate-submit':l.search,'missing-heading':l.missing,'missing-help':l.missingHelp,'missing-status-label':l.status,'missing-submit':l.refresh,'candidate-prev':l.prev,'candidate-next':l.next,'missing-prev':l.prev,'missing-next':l.next}))set(id,text);

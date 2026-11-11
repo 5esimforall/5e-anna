@@ -1,7 +1,7 @@
 /* Reader chrome only; source titles and text always retain their original spelling. */
 const annaReaderLabels = {
   zh: {
-    title:annaLinkLabels.zh.pages.book, chapters:'章节导航', query:annaLinkLabels.zh.pages.query, skip:'跳到正文', navigation:'阅读导航',
+    title:annaBrands.book, chapters:'章节导航', query:annaBrands.query, skip:'跳到正文', navigation:'阅读导航',
     openNavigation:'打开阅读导航', closeNavigation:'收起阅读导航', contents:'目录', outline:'本页', search:'搜索',
     filter:'筛选目录', filterPlaceholder:'查找书籍或章节…', clearFilter:'清空目录筛选', collapse:'全部收起', locate:'定位当前章节',
     followingContents:'目录跟随中', pausedContents:'目录跟随已暂停', locateAndFollow:'定位当前章节并恢复目录跟随',
@@ -23,7 +23,7 @@ const annaReaderLabels = {
     errors: {
       empty_scope:'这个目录范围没有可阅读的正文页面。请选择其他章节。',
       outside_scope:'目标页面不在指定章节范围内，请重新选择阅读入口。',
-      unavailable:'阅读服务未启动。请运行 make up，启动 anna 查询与阅读。',
+      unavailable:'阅读服务未启动。请运行 make up，启动 anna 与 stella。',
       network:'无法读取阅读数据，请检查服务后重试。', invalid_location:'阅读地址无效，请选择一个页面或条目。',
       page_missing:'当前快照中没有这个页面。原文可能已更新，请从目录重新查找。',
       entry_missing:'当前快照中没有这个条目版本。不会自动跳到同名条目，请重新查询。',
@@ -35,7 +35,7 @@ const annaReaderLabels = {
     }
   },
   en: {
-    title:annaLinkLabels.en.pages.book, chapters:'Chapter navigation', query:annaLinkLabels.en.pages.query, skip:'Skip to the text', navigation:'Reading navigation',
+    title:annaBrands.book, chapters:'Chapter navigation', query:annaBrands.query, skip:'Skip to the text', navigation:'Reading navigation',
     openNavigation:'Open reading navigation', closeNavigation:'Close reading navigation', contents:'Contents', outline:'On this page', search:'Search',
     filter:'Filter contents', filterPlaceholder:'Find a book or chapter…', clearFilter:'Clear contents filter', collapse:'Collapse all', locate:'Locate current chapter',
     followingContents:'Contents follow reading', pausedContents:'Contents following paused', locateAndFollow:'Locate the current chapter and resume following',
@@ -57,7 +57,7 @@ const annaReaderLabels = {
     errors: {
       empty_scope:'This directory scope has no readable documents. Select another chapter.',
       outside_scope:'The target is outside the requested chapter. Choose another reading entry.',
-      unavailable:'The reading service is not running. Run make up to start anna with its reader.',
+      unavailable:'The reading service is not running. Run make up to start anna and stella.',
       network:'Could not load reading data. Check the service and retry.', invalid_location:'Invalid reading address. Select one page or entry.',
       page_missing:'This page is not in the current snapshot. The source may have changed; find it in the contents.',
       entry_missing:'This entry version is not in the current snapshot. No same-name substitution was made; search again.',

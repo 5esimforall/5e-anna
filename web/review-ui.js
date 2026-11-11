@@ -6,7 +6,7 @@
   const sourceLink=b=>`/source?${new URLSearchParams({path:b.path,start:b.start,end:b.end})}#evidence`;
   const set=(id,text)=>{$('#'+id).textContent=text;};
   for(const [id,text] of Object.entries({'review-back':l.back,'review-heading':l.title,'review-policy':l.policy,'candidate-heading':l.candidates,'reference-label':l.reference,'candidate-query-label':l.query,'candidate-submit':l.search,'missing-heading':l.missing,'missing-help':l.missingHelp,'missing-status-label':l.status,'missing-submit':l.refresh,'candidate-prev':l.prev,'candidate-next':l.next,'missing-prev':l.prev,'missing-next':l.next}))set(id,text);
-  document.title=l.title+' · 5e anna';
+  document.title=annaPageTitle('query',l.title);
   const select=$('#missing-form select');select.innerHTML=`<option value="">${esc(l.all)}</option>`+Object.entries(l.states).map(([v,t])=>`<option value="${v}">${esc(t)}</option>`).join('');select.value='open';
   let candidateOffset=0,missingOffset=0,candidateGeneration=0,missingGeneration=0;
   let candidateInput={reference:new URLSearchParams(location.search).get('reference')||'',query:''};

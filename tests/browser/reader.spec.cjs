@@ -33,22 +33,22 @@ async function shot(page,testInfo,name){await testInfo.attach(name,{body:await p
 
 test('titles name the open content and the topbar links carry the open entry both ways',async({page})=>{
   await page.goto(anna);
-  await expect(page).toHaveTitle('条目速查 · 5e anna');
+  await expect(page).toHaveTitle('5e anna');
   await expect(page.locator('#book-reader')).toHaveAttribute('href','/read');
   await page.locator('#results .entry-name').first().click();
   await expect(page.locator('#entry-title')).toBeVisible();
   const name=(await page.locator('#entry-title').textContent()).trim();
   const entry=new URL(page.url()).searchParams.get('entry');
-  await expect(page).toHaveTitle(`${name} · 条目速查 · 5e anna`);
+  await expect(page).toHaveTitle(`${name} · 5e anna`);
   await expect(page.locator('#book-reader')).toHaveAttribute('href','/read?entry='+encodeURIComponent(entry));
   await page.locator('#close-detail').click();
-  await expect(page).toHaveTitle('条目速查 · 5e anna');
+  await expect(page).toHaveTitle('5e anna');
   await expect(page.locator('#book-reader')).toHaveAttribute('href','/read');
   await page.locator('#results .entry-name').first().click();
   await page.locator('#book-reader').click();await ready(page);
   expect(new URL(page.url()).searchParams.get('entry')).toBe(entry);
-  await expect(page).toHaveTitle(/ · 不全书阅读 · 5e anna$/);
-  await expect(page.locator('.book-query')).toHaveText('条目速查');
+  await expect(page).toHaveTitle(/ · 5e stella$/);
+  await expect(page.locator('.book-query')).toHaveText('5e anna');
   await expect(page.locator('.book-query')).toHaveAttribute('href','/?entry='+encodeURIComponent(entry));
   await page.locator('.book-query').click();
   await expect(page.locator('#entry-title')).toHaveText(name);
@@ -59,10 +59,10 @@ test('titles name the open content and the topbar links carry the open entry bot
 
 test('query and reader use the new app; upstream reading entries are gone',async({page,request})=>{
   await page.goto(anna);
-  await expect(page.getByRole('link',{name:'不全书阅读',exact:true})).toBeVisible();
-  await page.getByRole('link',{name:'不全书阅读',exact:true}).click();await ready(page);
+  await expect(page.getByRole('link',{name:'5e stella',exact:true})).toBeVisible();
+  await page.getByRole('link',{name:'5e stella',exact:true}).click();await ready(page);
   expect(new URL(page.url()).pathname).toBe('/read');
-  await expect(page).toHaveTitle('写在前面 · 不全书阅读 · 5e anna');
+  await expect(page).toHaveTitle('写在前面 · 5e stella');
   await expect(page.locator('#book-main > h1, #book-title')).toHaveCount(0);
   await expect(page.locator('#book-print')).toHaveCount(0);
   await expect(page.locator('#content')).not.toHaveAttribute('sandbox',/allow-modals/);
@@ -158,7 +158,7 @@ test('closing and reopening the reader resumes its page, directory entry and scr
   expect(new URL(reopened.url()).searchParams.get('node')).toBe(node);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
   await expect(reopened.locator(`#book-tree [data-node="${node}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
-  await reopened.goto(anna);await reopened.getByRole('link',{name:'不全书阅读',exact:true}).click();await ready(reopened);
+  await reopened.goto(anna);await reopened.getByRole('link',{name:'5e stella',exact:true}).click();await ready(reopened);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
 });
 
@@ -240,7 +240,7 @@ test('full-text results, paging and reading state survive reload; search failure
   await expect(page.locator('#book-search-page')).toContainText('第 2 /');
   await expect(page.locator('#book-search-results a').first()).toHaveText(name);
   await page.locator('#book-search-results a').first().click();await ready(page);
-  await expect(page).not.toHaveTitle('写在前面 · 不全书阅读 · 5e anna');
+  await expect(page).not.toHaveTitle('写在前面 · 5e stella');
   await page.route('**/api/book-search?**',route=>route.fulfill({status:503,json:{code:'network'}}));
   await page.locator('#book-search-form button').click();
   await expect(page.locator('#book-search-status')).toContainText('无法读取');

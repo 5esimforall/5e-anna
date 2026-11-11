@@ -2,7 +2,6 @@
 .book-app { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
 .book-topbar { flex: 0 0 48px; height: 48px; min-height: 48px; padding: 0 12px; gap: 14px; background: var(--anna-surface); }
 .book-topbar .brand { font-size: 18px; gap: 8px; flex-shrink: 0; }
-.book-topbar .brand>span { display: inline; font: inherit; color: inherit; margin: 0; }
 .book-topbar .brand-logo { width: 28px; height: 28px; }
 .book-topbar .topbar-actions { white-space: nowrap; gap: 12px; flex-shrink: 0; }
 #book-menu { display: inline-flex; align-items: center; justify-content: center; min-height: 32px; min-width: 32px; padding: 5px; }

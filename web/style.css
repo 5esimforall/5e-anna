@@ -112,7 +112,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .topbar { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 22px; border-bottom: 1px solid var(--anna-line); }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--anna-ink); font-family: var(--anna-serif); font-size: 21px; font-weight: 600; }
 .brand-logo { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
-.brand>span:last-child { font-family: var(--anna-sans); font-size: var(--anna-type-ui); font-weight: 400; color: var(--anna-secondary); margin-left: 8px; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 .topbar-actions>a { font-size: var(--anna-type-ui); }
 :root:not([data-audit=on]) .audit-only { display: none !important; }
@@ -523,9 +522,6 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .detail-top { padding: 8px 8px 8px 14px; }
   #detail-content { padding: 14px 18px max(20px,env(safe-area-inset-bottom)); }
   .detail-tabs { margin-inline: -18px; padding-inline: 16px; top: -14px; }
-}
-@media(max-width:480px) {
-  .brand>span:last-child { display: none; }
 }
 /* Keyboard hints mean nothing on a touch-only device. */
 @media(hover:none) and (pointer:coarse) {

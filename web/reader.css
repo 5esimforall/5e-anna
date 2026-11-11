@@ -117,16 +117,20 @@
 .book-page { margin: 0; position: relative; }
 .book-document { width: 100%; border: 0; display: block; background: var(--anna-source-bg); }
 /* Page boundaries sit on the source's own paper, in its column and side margins, so consecutive pages read as one leaf.
-   A short ornament, a star and the folio between two fading strokes, marks where the next page begins; its own title follows.
+   Each page ends with a short ornament, a star and its folio between two fading strokes, like a printed page foot;
+   the last page ends with the scope end instead, so every page is numbered exactly once and the first needs no head.
    The strokes stay short so they never read as a second copy of the rule the source draws above its headings. */
 #book-pages { container-type: inline-size; }
-.book-page-divider, .book-page-gap, .book-scope-end { box-sizing: border-box; max-width: 1160px; margin: 0 auto; padding-inline: clamp(24px, 4cqw, 64px); color: var(--anna-source-muted); background: var(--anna-source-surface); }
-@container (max-width: 767px) { .book-page-divider, .book-page-gap, .book-scope-end { padding-inline: 16px; } }
-.book-page-divider, .book-scope-end { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; }
-:is(.book-page-divider, .book-scope-end)::before, :is(.book-page-divider, .book-scope-end)::after { content: ''; width: 48px; height: 1px; justify-self: end; background: linear-gradient(to left, var(--anna-source-rule), transparent); }
-:is(.book-page-divider, .book-scope-end)::after { justify-self: start; background: linear-gradient(to right, var(--anna-source-rule), transparent); }
-.book-page-divider { height: 28px; font-size: 12px; }
-.book-page:first-child .book-page-divider { display: none; }
+.book-page-foot, .book-page-gap, .book-scope-end { box-sizing: border-box; max-width: 1160px; margin: 0 auto; padding-inline: clamp(24px, 4cqw, 64px); color: var(--anna-source-muted); background: var(--anna-source-surface); }
+.book-page-foot, .book-scope-end { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 16px; }
+:is(.book-page-foot, .book-scope-end)::before, :is(.book-page-foot, .book-scope-end)::after { content: ''; width: 48px; height: 1px; justify-self: end; background: linear-gradient(to left, var(--anna-source-rule), transparent); }
+:is(.book-page-foot, .book-scope-end)::after { justify-self: start; background: linear-gradient(to right, var(--anna-source-rule), transparent); }
+/* A 28px ornament row; the space below is a little larger than the page's own bottom margin above, so the folio stays with its page. */
+.book-page-foot { height: 68px; padding-bottom: 40px; font-size: 12px; }
+@container (max-width: 767px) {
+  .book-page-foot, .book-page-gap, .book-scope-end { padding-inline: 16px; }
+  .book-page-foot { height: 60px; padding-bottom: 32px; }
+}
 .book-page-mark { display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; letter-spacing: .03em; }
 .book-page-mark svg { width: 11px; height: 11px; flex-shrink: 0; fill: var(--anna-source-accent); }
 /* Unloaded pages leave a pause in the leaf: the range and the way to continue, without a frame of their own. */

@@ -39,6 +39,8 @@ test('only the selected subtree is sequenced; manual append keeps the original f
   await first.evaluate(()=>window.frameIdentity='retained');
   await page.getByRole('button',{name:'加载下一页：child',exact:true}).press('Enter');
   await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(2);
+  // A manual load moves focus to where the new page starts, which screen readers announce with its folio and name.
+  await expect(page.locator('.book-page').nth(1).locator('.book-page-start')).toBeFocused();
   expect(await first.evaluate(()=>window.frameIdentity)).toBe('retained');
   expect(loaded).toEqual(paths.slice(0,2));
   await expect(page.locator('.book-document')).toHaveCount(2);
@@ -54,22 +56,24 @@ test('only the selected subtree is sequenced; manual append keeps the original f
   expect(loaded).toEqual(paths.slice(0,3));
 });
 
-test('page boundaries sit on the source paper with a folio, the page name for screen readers, in both themes and widths',async({page})=>{
+test('each page ends with its folio on the source paper; the scope end closes the last page instead',async({page})=>{
   await page.setViewportSize({width:1600,height:900});
   await visit(page);
-  await page.getByRole('button',{name:'加载下一页：child',exact:true}).click();
+  // Dispatched without scrolling, so the near-end preload cannot replace the button before the manual load starts.
+  await page.getByRole('button',{name:'加载下一页：child',exact:true}).dispatchEvent('click');
   await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(2);
-  await expect(page.locator('.book-page').first().locator('.book-page-divider')).toBeHidden();
-  const divider=page.locator('.book-page').nth(1).locator('.book-page-divider');
-  await expect(divider.locator('.book-page-mark')).toHaveText('2 / 3');
-  await expect(divider.locator('.book-page-mark svg')).toHaveAttribute('aria-hidden','true');
-  await expect(divider.locator('.sr-only')).toHaveText(/\S/);
-  await expect(divider).toHaveCSS('border-top-width','0px');
-  // The boundary shares the next page's column, paper and side margin, so the leaf continues across it.
-  const paper=()=>divider.evaluate(d=>{
+  const foot=page.locator('.book-page').first().locator('.book-page-foot');
+  await expect(foot).toHaveText('1 / 3');
+  await expect(foot).toHaveAttribute('aria-hidden','true');
+  await expect(page.locator('.book-page').nth(1).locator('.book-page-foot')).toHaveText('2 / 3');
+  // Screen readers hear where each page starts.
+  await expect(page.locator('.book-page').nth(1).locator('.book-page-start')).toHaveText(/^2 \/ 3 \S/);
+  await expect(foot).toHaveCSS('border-top-width','0px');
+  // The foot continues its own page's column, paper and side margin, so the leaf runs on across it.
+  const paper=()=>foot.evaluate(d=>{
     const frame=d.closest('.book-page').querySelector('.book-document'),body=frame.contentDocument.body,view=frame.contentWindow;
     const a=d.getBoundingClientRect(),b=body.getBoundingClientRect(),f=frame.getBoundingClientRect();
-    return {left:Math.abs(a.left-(f.left+b.left)),width:Math.abs(a.width-b.width),height:a.height,
+    return {left:Math.abs(a.left-(f.left+b.left)),width:Math.abs(a.width-b.width),height:a.height,top:a.top-f.bottom,
       background:[getComputedStyle(d).backgroundColor,view.getComputedStyle(body).backgroundColor],
       padding:[getComputedStyle(d).paddingLeft,view.getComputedStyle(body).paddingLeft]};
   });
@@ -77,12 +81,23 @@ test('page boundaries sit on the source paper with a folio, the page name for sc
     await page.emulateMedia({colorScheme:scheme});
     await expect.poll(async()=>{const p=await paper();return p.background[0]===p.background[1];},scheme).toBe(true);
     const p=await paper();
-    expect(p.left).toBeLessThan(0.5);expect(p.width).toBeLessThan(0.5);expect(p.height).toBe(28);
+    expect(p.left).toBeLessThan(0.5);expect(p.width).toBeLessThan(0.5);expect(p.height).toBe(68);expect(p.top).toBe(0);
     expect(p.padding[0]).toBe(p.padding[1]);
+  }
+  // The foot belongs to its page visually, but a reader whose view starts inside it is at the start of the next page.
+  for(const [y,count] of [[-20,'1 / 3'],[20,'2 / 3']]){
+    await foot.evaluate((d,y)=>{const scroll=document.querySelector('#book-scroll');
+      scroll.scrollTop+=d.getBoundingClientRect().top-scroll.getBoundingClientRect().top+y;},y);
+    await expect(page.locator('#book-page-count')).toHaveText(count);
   }
   await page.setViewportSize({width:390,height:844});
   await expect.poll(async()=>(await paper()).padding).toEqual(['16px','16px']);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.setViewportSize({width:1600,height:900});
+  await jump(page,'group');await ready(page);
+  await expect(page.locator('.book-page[aria-busy=false]')).toHaveCount(3);
+  await expect(page.locator('.book-page').nth(2).locator('.book-page-foot')).toHaveCount(0);
+  await expect(page.locator('.book-scope-end')).toHaveText('已到本章节末尾');
 });
 
 const labels=page=>page.locator('#book-path-menu [role=menuitem] .book-path-label');

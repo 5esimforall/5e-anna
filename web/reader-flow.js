@@ -57,27 +57,29 @@ class AnnaReaderFlow {
     }
     this.keepLocation(location);
   }
-  // A star and a short label: the shared mark of page boundaries and the scope end.
+  // A star and a short label: the shared mark of page ends and the scope end.
   mark(text) {
     const mark = document.createElement('span'); mark.className = 'book-page-mark'; mark.innerHTML = PAGE_STAR;
     const label = document.createElement('span'); label.textContent = text; mark.append(label);
     return mark;
   }
-  // The folio is visible; the page name is read aloud, since the page's own title follows the divider.
+  // Each page opens with a heading read aloud and focused after manual loads; its folio is drawn where the page ends.
   label(heading, index, name) {
-    const title = document.createElement('span'); title.className = 'sr-only'; title.textContent = name;
-    heading.replaceChildren(this.mark(this.text('pageCount',{page:index+1,pages:this.scope.pages.length})),' ',title);
+    heading.textContent = this.text('pageCount',{page:index+1,pages:this.scope.pages.length}) + ' ' + name;
   }
   location() {
     if (!this.active || this.active.status !== 'ready') return null;
     return {path:this.active.item.path,position:{x:this.scroll.scrollLeft,y:Math.max(0,this.scroll.scrollTop-this.top(this.active))}};
   }
   visibleRecord() {
-    const top = this.scroll.getBoundingClientRect().top + 2;
-    return [...this.records.values()].find(record => {
+    const top = this.scroll.getBoundingClientRect().top + 2, records = [...this.records.values()];
+    const record = records.find(record => {
       const rect = record.element.getBoundingClientRect();
       return rect.top <= top && rect.bottom > top;
     });
+    // A page's foot closes it: with the viewport top there, the reader stands at the start of the next loaded page.
+    if (record && record.surface.getBoundingClientRect().bottom <= top) return records.find(next => next.index === record.index+1) || record;
+    return record;
   }
   viewport() {
     const record = this.visibleRecord() || this.active;
@@ -202,14 +204,17 @@ class AnnaReaderFlow {
     this.trim(center,true);
     const item = this.scope.pages[index], element = existing?.element || document.createElement('section');
     element.className = 'book-page'; element.dataset.path = path; element.setAttribute('aria-busy','true');
-    const heading = document.createElement('div'); heading.className = 'book-page-divider'; heading.tabIndex = -1;
+    const heading = document.createElement('div'); heading.className = 'book-page-start sr-only'; heading.tabIndex = -1;
     this.label(heading,index,item.label || data?.title || '');
     const status = document.createElement('p'); status.className = 'book-page-state'; status.textContent = this.labels.loading; status.setAttribute('role','status');
     const statusHost = document.createElement('div'); statusHost.className = 'book-page-status'; statusHost.append(status);
     const frame = document.createElement('iframe'); frame.className = 'book-document'; frame.title = item.label || this.labels.original;
     frame.setAttribute('sandbox','allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads');
     frame.referrerPolicy = 'origin'; frame.style.height = (existing?.height || 120)+'px'; frame.style.visibility = 'hidden';
-    element.replaceChildren(heading,statusHost,frame);
+    // The last page has no folio of its own: the scope end closes it.
+    const foot = document.createElement('div'); foot.className = 'book-page-foot'; foot.setAttribute('aria-hidden','true');
+    foot.append(this.mark(this.text('pageCount',{page:index+1,pages:this.scope.pages.length})));
+    element.replaceChildren(heading,statusHost,frame,...(index < this.scope.pages.length-1 ? [foot] : []));
     const record = {item,index,element,heading,statusElement:status,frame,surface:frame,status:'loading',height:existing?.height || 120,
       navigationId:++this.documentSequence,documentId:'',abort:new AbortController(),data};
     record.promise = new Promise((resolve,reject) => { record.resolve=resolve; record.reject=reject; });

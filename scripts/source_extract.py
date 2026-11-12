@@ -312,3 +312,15 @@ class SourceRegistry:
     def context(self,path):
         nodes=[n for n in self.page_toc.get(path,[]) if not n['toc_path'].startswith('本书速查')]
         return ' | '.join(n['toc_path'] for n in nodes) or path
+
+    def toc_place(self,path):
+        """Where a page sits in the table of contents: the labels above it, and whether its node lists other pages."""
+        above=[];lists_pages=False
+        for n in self.page_toc.get(path,[]):
+            if n['toc_path'].startswith('本书速查'):continue
+            chain=[];parent=n['parent_id']
+            while parent:chain.append(self.nodes[parent]['label']);parent=self.nodes[parent]['parent_id']
+            above.extend(reversed(chain))
+            listed={unquote(urlsplit(self.nodes[c]['href']).path) for c in self.children.get(n['node_id'],[])}
+            lists_pages=lists_pages or any(p.startswith('topics/') and p!=path for p in listed)
+        return {'above':above,'lists_pages':lists_pages}

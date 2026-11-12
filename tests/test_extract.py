@@ -3,7 +3,7 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from html_extract import Document,resolve_link,split_name,key
+from html_extract import Document,resolve_link,split_name,key,printed_type,hazard_member,NO_TOC_PLACE
 from build import parse_one,normalize_value,observation_fields
 from source_extract import SourceRegistry
 
@@ -53,8 +53,26 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(normalize_value('ritual','×'),False)
         self.assertEqual(normalize_value('casting_time','其他'),'其他')
 
+    def test_printed_type_label(self):
+        self.assertEqual(printed_type('目盲 Blinded【状态】'),'condition')
+        self.assertEqual(printed_type('燃烧 Burning【危害】'),'hazard')
+        self.assertEqual(printed_type('【状态】Condition'),'')
+        self.assertEqual(printed_type('护甲等级 17（天生护甲）'),'')
+
+    def test_hazard_member_needs_a_defined_rule(self):
+        for body in ['必须成功通过一次DC 10的体质豁免','承重为3d10×10磅','D6 钥匙','在所有感知（察觉）检定中处于劣势','视为轻度遮蔽','将提升一级力竭状态']:
+            self.assertTrue(hazard_member('甲 Alpha',body),body)
+        for body in ['世界也是一个危险的所在','其效果和反魔法场法术一样','D&D 的世界充满灾害','每1个小时都被算作2个小时']:
+            self.assertFalse(hazard_member('甲 Alpha',body),body)
+        self.assertFalse(hazard_member('如果你掷出 DC 10。',"DC 10"))
+
 class CorpusRegressionTests(unittest.TestCase):
-    def parse(self,rel):return parse_one((str(WEB),'topics/'+rel,[],rel,False))
+    @classmethod
+    def setUpClass(cls):cls.registry=SourceRegistry(WEB)
+
+    def parse(self,rel,toc=True):
+        path='topics/'+rel
+        return parse_one((str(WEB),path,[],rel,self.registry.toc_place(path) if toc else NO_TOC_PLACE,False))
 
     def test_2014_feats(self):
         r=self.parse('玩家手册/自定义选项/专长.html')
@@ -125,20 +143,59 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertFalse(any(c['type']=='condition' for c in r['candidates']))
         self.assertEqual(sum(c['type']=='section' for c in r['candidates']),2)
 
-    def test_environmental_hazards_use_body_structure(self):
-        for path in ['塔莎的万事坩埚/城主工具/环境灾害/雪崩.htm','塔莎的万事坩埚/城主工具/环境灾害/魔法泉.htm']:
-            r=self.parse(path)
-            self.assertEqual(r['candidates'][0]['type'],'hazard',path)
-            self.assertEqual(r['candidates'][0]['classification_rule'],'hazard_structure',path)
-        r=self.parse('塔莎的万事坩埚/城主工具/环境灾害/奥法风暴.htm')
-        self.assertEqual(sum(c['type']=='hazard' for c in r['candidates']),5)
-        # A stat block owns its page identity; the colony's framing prose is not a hazard entry.
-        r=self.parse('塔莎的万事坩埚/城主工具/环境灾害/拟身怪群落.htm')
-        self.assertNotEqual(r['candidates'][0]['type'],'hazard')
-        self.assertEqual(sum(c['type']=='creature' for c in r['candidates']),1)
-        # The hazard section supplies the category; a trap page outside it stays a trap.
-        r=self.parse('城主指南/冒险之主/环境/陷阱.html')
+    def hazards(self,rel,rule=None,toc=True):
+        return [c['name'] for c in self.parse(rel,toc)['candidates'] if c['type']=='hazard' and rule in {None,c['classification_rule']}]
+
+    def test_printed_type_labels(self):
+        self.assertEqual(self.hazards('玩家手册2024/术语汇编/危害.htm','name_label'),
+                         ['燃烧 Burning【危害】','脱水 Dehydration【危害】','坠落 Falling【危害】','饥饿 Malnutrition【危害】','窒息 Suffocation【危害】'])
+        self.assertEqual([c['name'] for c in self.parse('第三方/德城怪物/附录C/污染.htm')['candidates'] if c['type']=='condition'],['污染 Contamination 【状态】'])
+        # A heading that is only the label defines the label itself, whichever label it is.
+        labels={c['name']:c['type'] for c in self.parse('玩家手册2024/术语汇编/术语速查.htm')['candidates']}
+        self.assertEqual({labels['【动作】Action'],labels['【状态】Condition'],labels['【危害】 Hazard']},{'rule'})
+
+    def test_hazard_descriptor_is_a_signature(self):
+        names=self.hazards('城主指南2024/3.地下城主工具箱/危害.htm','hazard_signature')
+        self.assertEqual(len(names),12);self.assertIn('蛛网Webs',names)
+        # The section's own rule headings print no severity band.
+        self.assertEqual(self.hazards('城主指南2024/3.地下城主工具箱/危害.htm'),names)
+
+    def test_hazard_catalog_heading_types_the_run_that_follows(self):
+        # Weather before the heading and foraging after the run are not hazards.
+        self.assertEqual(self.hazards('城主指南/冒险之主/环境/野外求生.htm','topic_context'),
+                         ['亵渎之地Desecrated Ground','冰水Frigid Water','流沙Quicksand','刃藤Razorvine','光滑冰面Slippery Ice','薄冰Thin Ice'])
+        self.assertEqual(self.hazards('城主指南/冒险之主/环境/地下城.html'),['棕霉菌Brown Mold','绿软泥Green Slime','黄霉菌Yellow Mold'])
+
+    def test_environment_page_types_effects_that_apply_rules(self):
+        r=self.parse('城主指南2024/3.地下城主工具箱/环境影响.htm')
+        self.assertEqual((r['candidates'][0]['type'],r['candidates'][0]['classification_rule']),('rule','topic_context'))
+        names=self.hazards('城主指南2024/3.地下城主工具箱/环境影响.htm','topic_context')
+        self.assertEqual(len(names),10);self.assertIn('薄冰Thin Ice',names);self.assertIn('重度雨雪Heavy Precipitation',names)
+        # An effect that applies no defined rule stays untyped rather than borrowing the page's category.
+        self.assertNotIn('死魔法区域Dead Magic Zone',names);self.assertNotIn('高海拔High Altitude',names)
+
+    def test_toc_section_types_one_hazard_per_page(self):
+        tce='塔莎的万事坩埚/城主工具/环境灾害/'
+        for rel in ['雪崩.htm','魔法泉.htm','奇异道路.htm']:
+            self.assertEqual(len(self.hazards(tce+rel,'topic_context')),1,rel)
+            # The page body alone carries no category; the TOC section supplies it.
+            self.assertEqual(self.hazards(tce+rel,toc=False),[],rel)
+        self.assertEqual(len(self.hazards(tce+'奥法风暴.htm')),5)
+        # Subsection pages list further pages; a lookup table of spells applies no rule.
+        self.assertTrue(self.registry.toc_place('topics/'+tce+'超自然区域.htm')['lists_pages'])
+        self.assertFalse(self.registry.toc_place('topics/'+tce+'雪崩.htm')['lists_pages'])
+        for rel in ['自然灾害.htm','魔法现象.htm','超自然区域.htm','自然灾害的法术替代品.htm']:
+            self.assertEqual(self.hazards(tce+rel),[],rel)
+        self.assertEqual(self.parse('塔莎的万事坩埚/环境灾害.htm')['candidates'][0]['type'],'rule')
+        # A stat block owns its page identity, and its 动作 heading belongs to the stat block.
+        r=self.parse(tce+'拟身怪群落.htm')
         self.assertFalse(any(c['type']=='hazard' for c in r['candidates']))
+        self.assertEqual(sum(c['type']=='creature' for c in r['candidates']),1)
+
+    def test_hazard_rules_sections_are_not_catalogs(self):
+        # Bare 危害 heads a rules section; its 团体检定 applies a rule but defines no hazard.
+        self.assertEqual(self.hazards('模组/盐沼幽魂/船舶与海洋/在海上旅行.htm'),[])
+        self.assertEqual(self.hazards('城主指南/冒险之主/环境/陷阱.html'),[])
 
     def test_background_grants(self):
         r=self.parse('玩家手册2024/角色起源/背景/侍僧.htm')

@@ -263,22 +263,67 @@ def split_name(text):
 CLASS_STRUCTURE=re.compile(r'生命[值]?骰[\s\S]{0,40}?每\s*([^\s，。；：:]{1,12}?)\s*等级')
 CLASS_TRAITS=re.compile(r'核心特质|熟练加值|熟练项')
 LEVEL_HEADING=re.compile(r'^\s*(\d{1,2})\s*级\s*[:：]')
-CONDITION_TOPIC_NAMES={'状态'}
-CONDITION_STRUCTURE=re.compile(r'^(?:状态|持续时间|状态不叠加|豁免|概述|简介|来源|结束)(?:\s|[A-Za-z]|$)')
-# Environmental hazards share a section but not a title scheme. Inside such a section, a page or heading
-# is a hazard when its body states a danger or an effect: a save, damage, an effect table, a trigger.
-HAZARD_CONTEXT=re.compile(r'/(?:环境灾害|环境危害)/')
-HAZARD_EVIDENCE=re.compile(r'DC\s*\d+|豁免|伤害|效应|效果|危险|致命|灾害|表|触发|检定|陷入|力竭')
+# Some definitions print their own type beside their name (目盲 Blinded【状态】, 燃烧 Burning【危害】). A
+# heading that is only the label, such as 【状态】Condition, defines the label itself and keeps its context type.
+PRINTED_TYPE_LABELS={'状态':'condition','动作':'action','危害':'hazard'}
+PRINTED_TYPE_LABEL=re.compile(r'[（(【]('+'|'.join(PRINTED_TYPE_LABELS)+r')[）)】]')
+# DMG 2024 hazards open with their severity and level band, as traps open with their kind.
+HAZARD_DESCRIPTOR=re.compile(r'(?:致命|妨碍)危害\s*[（(]\s*等级')
+# A body that applies a defined rule: a DC, a die roll or die table, advantage or disadvantage on a d20 test,
+# a condition, exhaustion, difficult terrain or obscurement. Words such as 危险 or 效果 name no rule.
+RULES_MECHANICS=re.compile(r'DC\s*\d+|(?<![A-Za-z\d])\d*[dD]\d+(?![A-Za-z])|(?:攻击|豁免|检定)[^。]{0,12}(?:优势|劣势)|(?:优势|劣势)[^。]{0,12}(?:攻击|豁免|检定)'
+                           r'|力竭|陷入[^。]{1,8}状态|困难地形|(?:轻度|重度)遮蔽')
+CONDITION_RULE_HEADING=re.compile(r'^(?:持续时间|豁免|概述|简介|来源|结束)(?:\s|[A-Za-z]|$)')
 
 
-def hazard_context(path):
-    """The environmental-hazard section provides the category; the body supplies the evidence."""
-    return bool(HAZARD_CONTEXT.search(path))
+def printed_type(name):
+    """The type a definition prints beside its own name, or '' when the heading is the label itself."""
+    m=PRINTED_TYPE_LABEL.search(name)
+    if not m:return ''
+    zh,_=split_name(compact(name[:m.start()]+' '+name[m.end():]))
+    return PRINTED_TYPE_LABELS[m[1]] if zh and not zh.startswith(m[1]) else ''
 
 
-def hazard_structure(text):
-    """A hazard body states a danger, a saving throw, damage, an effect, or an effect table."""
-    return bool(HAZARD_EVIDENCE.search(text[:6000]))
+def condition_member(name,body):
+    """A bilingual condition title; the topic's own rule headings (持续时间, 豁免) are not conditions."""
+    zh,en=split_name(name)
+    return bool(zh and en and len(name)<80 and not CONDITION_RULE_HEADING.match(zh))
+
+
+def hazard_member(name,body):
+    """A short title whose body applies a rule; introductions and lookup tables describe hazards without one."""
+    return len(name)<80 and not re.search(r'[。！？；]',name) and bool(RULES_MECHANICS.search(body[:6000]))
+
+
+@dataclass(frozen=True)
+class Topic:
+    """A catalog that types the definitions it holds.
+
+    `heading` matches the catalog's printed name. `word` marks headings that speak about the topic
+    (状态不叠加, 危害度及等级, 自然灾害) rather than define one of its members. `member` states what a
+    definition inside the catalog shows.
+    """
+    type: str
+    heading: re.Pattern
+    word: re.Pattern
+    member: object
+
+
+# Bare 危害 names a rules section (DMG 2024 危害, 盐沼幽魂 at-sea hazards) whose headings include procedures
+# such as 团体检定; catalogs of hazard definitions are printed as 危害物, 危害物实例 or an environment chapter.
+TOPICS=(
+    Topic('condition',re.compile(r'状态'),re.compile(r'状态'),condition_member),
+    Topic('hazard',re.compile(r'(?:野外|地城|地下城)?危害物(?:实例)?|环境(?:灾害|危害|影响)'),re.compile(r'危害|灾害'),hazard_member),
+)
+# A page with no place in the table of contents.
+NO_TOC_PLACE={'above':[],'lists_pages':False}
+
+
+def topic_named(name):
+    """The catalog a page, heading or TOC label names, or None."""
+    zh,_=split_name(name)
+    zh=key(re.sub(r'^附录[A-Za-z]?[：:]\s*','',zh))
+    return next((t for t in TOPICS if t.heading.fullmatch(zh)),None)
 
 
 def class_structure(text,title=''):
@@ -307,34 +352,77 @@ def document_structure_name(name):
     return bool(GENERIC.fullmatch(name)) or bool(re.fullmatch(r'(?:专长|法术|魔法物品|装备|背景|种族|物种)(?:描述|详述|列表|总览)(?:\s*[A-Za-z].*)?',name))
 
 
-def page_topic(name):
-    """A page title that gives its child definitions a shared type."""
-    zh,en=split_name(name)
-    zh=re.sub(r'^附录[A-Za-z]?[：:]\s*','',zh)
-    return 'condition' if key(zh) in CONDITION_TOPIC_NAMES else ''
+def type_topic_members(entries,primary,text,toc_place):
+    """A catalog types the untyped definitions it holds (see TOPICS), at three scopes.
+
+    - A TOC section such as 环境灾害 holds one definition per page beneath it. A page whose own TOC node
+      lists further pages introduces a subsection, and a stat block owns its page's identity.
+    - A page named for a catalog is the rule that introduces it; its headings are the candidates.
+    - A heading named for a catalog inside another page holds its child headings, or else the run of
+      sibling headings that follows it, until a heading no longer qualifies.
+    """
+    starts=sorted({e['start'] for e in entries})
+
+    def body(e,whole=False):
+        end=e['end'] if whole else min(e['end'],next((s for s in starts if s>e['start']),e['end']))
+        return text[e['title_end']:end]
+
+    def ancestors(e):
+        p=e['parent_index']
+        while p is not None:
+            yield entries[p];p=entries[p]['parent_index']
+
+    def qualifies(e,topic,whole=False):
+        zh,_=split_name(e['name'])
+        return e['type']=='section' and not topic.word.search(zh) and not topic_named(e['name']) and topic.member(e['name'],body(e,whole))
+
+    def admit(e,topic):
+        e['type']=topic.type;e['classification_rule']='topic_context'
+
+    def within(topic,root):
+        """Candidates on the whole page when the root is the primary entry, else the root's descendants."""
+        for e in entries:
+            if e is root or e is primary or e['boundary_rule']=='page_intro':continue
+            lineage=list(ancestors(e))
+            if root is not primary and not any(a is root for a in lineage):continue
+            # Definitions nested in another typed entity, such as a stat block's 动作 heading, belong to that entity.
+            if any(a['type'] not in {'section','rule','lore',topic.type} for a in lineage if a is not root):continue
+            if qualifies(e,topic):admit(e,topic)
+
+    toc_topic=next((t for t in map(topic_named,reversed(toc_place['above'])) if t),None)
+    if toc_topic:
+        holds_statblock=any(e is not primary and e['type']=='creature' for e in entries)
+        if not toc_place['lists_pages'] and not holds_statblock and qualifies(primary,toc_topic,whole=True):admit(primary,toc_topic)
+        within(toc_topic,primary)
+    page_topic=topic_named(primary['name'])
+    if page_topic:
+        if primary['type']=='section':
+            primary['type']='rule';primary['classification_rule']='topic_context'
+        within(page_topic,primary)
+    for i,heading in enumerate(entries):
+        topic=topic_named(heading['name'])
+        if heading is primary or not topic:continue
+        nested=[e for e in entries if e['parent_index']==i]
+        if nested:
+            within(topic,heading);continue
+        for e in sorted((e for e in entries if e['parent_index']==heading['parent_index'] and e['start']>heading['start']),key=lambda e:e['start']):
+            if e['type']!='section':continue
+            if not qualifies(e,topic):break
+            admit(e,topic)
 
 
-def condition_heading(name):
-    """A bilingual child title on a condition page, excluding the page's own rule headings."""
-    zh,en=split_name(name)
-    return bool(zh and en and len(name)<80 and not CONDITION_STRUCTURE.match(zh))
-
-
-def refine_page_types(entries,text):
-    """Second pass: the page's primary entry types the headings beneath it.
+def refine_page_types(entries,text,toc_place=NO_TOC_PLACE):
+    """Second pass: the page's primary entry and its catalogs type the headings beneath them.
 
     Classification of a heading cannot know what its page is until the page's own primary entry
     has been classified. This pass applies that context: a class or subclass owns its level
-    features, and a condition topic owns its condition definitions.
+    features, and a catalog owns its definitions (type_topic_members).
     """
     if not entries:return
     primary_index=1 if len(entries)>1 and entries[0]['boundary_rule']=='page_intro' else 0
     primary=entries[primary_index]
     full=text[primary['start']:primary['end']]
     structured=not document_structure_name(primary['name'])
-    # A stat block owns its page's identity; the framing prose around it is not a second page-level type.
-    if primary['type']=='hazard' and any(e is not primary and e['type']=='creature' for e in entries):
-        primary['type']='section';primary['classification_rule']='document_structure'
     if primary['type']=='section' and structured and class_structure(full,primary['name']):
         primary['type']='class';primary['classification_rule']='class_structure'
     levels=[(e,level_heading(e['name'])) for e in entries if e is not primary and e['type'] in {'section','class_feature'}]
@@ -346,12 +434,7 @@ def refine_page_types(entries,text):
         for e,n in levels:
             e['type']='class_feature'
             e['classification_rule']='level_heading' if primary['type']=='class' else 'parent_class_context'
-    if page_topic(primary['name'])=='condition':
-        if primary['type']=='section':
-            primary['type']='rule';primary['classification_rule']='topic_context'
-        for e in entries:
-            if e is primary or e['type']!='section':continue
-            if condition_heading(e['name']):e['type']='condition';e['classification_rule']='topic_context'
+    type_topic_members(entries,primary,text,toc_place)
 
 
 @dataclass
@@ -834,7 +917,6 @@ def classify(c:Candidate, text, context, primary=False):
     if re.search(r'^(?:子职|子职业|特色设施详述|疾病范例|毒药范例|毒药的(?:制作|提取)|毒药|疾病|专长与背景)(?:\s*[A-Za-z].*)?$',name):return 'rule','context_heading'
     if re.fullmatch(r'(?:动作|附赠动作|反应|特质|传奇动作|巢穴动作)\s*(?:Actions?|Bonus Actions?|Reactions?|Traits?|Legendary Actions?|Lair Actions?)?',name,re.I):
         return ('rule','context_heading') if re.search(r'术语|进行游戏|/战斗/',path) else ('section','document_structure')
-    if hazard_context(path) and hazard_structure(text):return 'hazard','hazard_structure'
     # Catalog headings and field descriptions are not entities. Require a descriptor,
     # not merely a keyword inherited from the page/TOC.
     if re.match(r'^\s*\d+\s*级据点设施',text[max(0,c.title_end-c.start):]):
@@ -845,8 +927,9 @@ def classify(c:Candidate, text, context, primary=False):
     vehicle_capacity=re.search(r'(?:生物容量|生物载量|乘员数量|乘员容量)\s*(?:[A-Za-z ]+)?[:：]',intro[:900])
     if (ship_summary or vehicle_context and (vehicle_meta or vehicle_capacity)) and not re.match(r'^(?:操纵|移动|动作|武器|船壳|容量|乘员数量|载货量)',name):
         return 'vehicle','vehicle_signature'
-    trap_descriptor=text[max(0,c.title_end-c.start):].lstrip()
-    if re.search(r'\s(?:机械|魔法)陷阱$',name) or re.match(r'(?:机械|魔法|简易|复合|致命|妨碍)陷阱(?:\s|[（(]|$)',trap_descriptor):return 'trap','trap_signature'
+    after_title=text[max(0,c.title_end-c.start):].lstrip()
+    if HAZARD_DESCRIPTOR.match(after_title):return 'hazard','hazard_signature'
+    if re.search(r'\s(?:机械|魔法)陷阱$',name) or re.match(r'(?:机械|魔法|简易|复合|致命|妨碍)陷阱(?:\s|[（(]|$)',after_title):return 'trap','trap_signature'
     if SPELL.search(intro):return 'spell','spell_fields'
     if STATS.search(intro) and re.search(r'挑战|\bCR\b|力量.*敏捷',intro,re.S):return 'creature','stat_fields'
     descriptor=compact(text[max(0,c.title_end-c.start):])[:220]
@@ -858,8 +941,8 @@ def classify(c:Candidate, text, context, primary=False):
     if re.search(r'技能熟练',intro) and re.search(r'工具熟练|语言',intro) and re.search(r'装备',intro) and (primary or re.search(r'背景',ctx)):return 'background','background_fields'
     if re.search(r'生物类型|属性值加成',intro) and re.search(r'体型',intro) and re.search(r'速度',intro) and (primary or '种族' in ctx or '物种' in ctx):return 'species','species_fields'
     if re.match(r'^(?:吸入|服用|损伤|接触)型毒药',descriptor):return 'poison','poison_descriptor'
-    if re.search(r'[（(【]状态[）)】]',name) and not name.startswith(('状态','【状态】')):return 'condition','name_label'
-    if re.search(r'[（(【]动作[）)】]',name):return 'action','name_label'
+    labeled=printed_type(name)
+    if labeled:return labeled,'name_label'
     if c.method in {'heading','colored_heading','word_heading'} and not primary and re.search(r'/装备/(?:词条|精通词条)\.htm',path):return 'rule','property_definition'
     if re.search(r'术语汇编',path) and c.method=='heading':return 'rule','context_heading'
     if primary and class_context and zh not in CLASSES and re.search(r'\d+\s*级|第[三六十]级',text):return 'subclass','context_heading'

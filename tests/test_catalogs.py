@@ -11,21 +11,21 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from build import Build,parse_one
-from html_extract import split_name
+from html_extract import NO_TOC_PLACE,split_name
 from browse import schema_for
 from audit import audit
 from paths import WEB
 
 class CatalogTests(unittest.TestCase):
     def parse(self,path):
-        r=parse_one((str(WEB),'topics/'+path,[],path,False))
+        r=parse_one((str(WEB),'topics/'+path,[],path,NO_TOC_PLACE,False))
         self.assertEqual(r['page']['parse_status'],'ok',r['page']['error'])
         return r
 
     def synthetic(self,html,path='topics/装备/目录.htm'):
         with tempfile.TemporaryDirectory() as td:
             f=Path(td)/path;f.parent.mkdir(parents=True);f.write_text(html)
-            return parse_one((td,path,[],path,False))
+            return parse_one((td,path,[],path,NO_TOC_PLACE,False))
 
     def test_mount_rows_both_editions(self):
         for book in ('玩家手册','玩家手册2024'):

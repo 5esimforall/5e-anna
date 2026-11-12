@@ -7,7 +7,7 @@ import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from concepts import Resolver,format_kind,build_concepts,plain_syntax,style_profile,term_scanner
-from html_extract import Document
+from html_extract import Document,NO_TOC_PLACE
 from build import Build,parse_one
 
 def entry(eid,name,path='topics/book/rules.htm',ruleset='5r',kind='rule',source='book'):
@@ -196,5 +196,5 @@ class ConceptTests(unittest.TestCase):
     def test_mastery_is_rule_not_unclassified(self):
         from paths import WEB
         path='topics/玩家手册2024/装备/精通词条.htm'
-        result=parse_one((str(WEB),path,[],path,False))
+        result=parse_one((str(WEB),path,[],path,NO_TOC_PLACE,False))
         self.assertEqual(next(c for c in result['candidates'] if c['name'].startswith('横扫'))['type'],'rule')

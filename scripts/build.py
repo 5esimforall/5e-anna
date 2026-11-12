@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, refine_page_types, class_structure, hazard_context, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES, RULE_TYPES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, refine_page_types, class_structure, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES, RULE_TYPES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
@@ -106,7 +106,7 @@ def observation_fields(ob):
 
 
 def parse_one(args):
-    web,path,observations,context,core_rule_source=args
+    web,path,observations,context,toc_place,core_rule_source=args
     page={'path':path,'role':page_role(path),'parse_status':'ok','error':'','title':'','text':'','encoding':'','sha256':''}
     try:
         raw,encoding,h=read_page(Path(web)/path)
@@ -136,7 +136,7 @@ def parse_one(args):
                 ancestors.append(cs[pi].name);pi=cs[pi].parent
             c.fields['choice_pool']=next((n for n in ancestors if re.search(r'战斗风格|祈唤|战技|超魔法|灌注',n)),None)
             class_path=re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/角色职业/|/职业/|/子职/',path)
-            classify_text=full if primary and (class_path or class_structure(full,c.name) or hazard_context(path)) else own
+            classify_text=full if primary and (class_path or class_structure(full,c.name)) else own
             kind,rule=classify(c,classify_text,context+' | '+path,primary)
             if kind=='section' and c.fields.get('table_span'):kind,rule='lore','named_table_structure'
             if kind=='class':full_for_fields=full
@@ -185,7 +185,7 @@ def parse_one(args):
                         'fields':{},'observation_ids':[],'body_hash':sha256(compact(doc.text[a:end]).encode()).hexdigest(),
                         'level':c.rank+1,'is_primary':False})
         output.extend(rule_children)
-        refine_page_types(output,doc.text)
+        refine_page_types(output,doc.text,toc_place)
         # PHB/DMG calls this a table but the HTML encodes it as a simple list.
         for ul in doc.body.find_all('ul'):
             caption=ul.find_previous_sibling()
@@ -269,7 +269,7 @@ class Build:
         owners,_=self.registry.owners(path)
         source=self.sources[owners[0]] if len(owners)==1 else {}
         core_rule_source=source.get('reference_role')=='core_rules' and source['ruleset_hint'] in {'5e','5r'}
-        return (str(self.web),path,self.ob_targets.get(path,[]),self.registry.context(path),core_rule_source)
+        return (str(self.web),path,self.ob_targets.get(path,[]),self.registry.context(path),self.registry.toc_place(path),core_rule_source)
 
     def consume(self,result):
         page=result['page'];path=page['path']

@@ -317,11 +317,13 @@ test('environmental hazards read as their own query type and view',async({page})
   await page.setViewportSize({width:1440,height:900});
   await visit(page,'/?type=hazard');
   const data=await queryMatchesAPI(page);
-  expect(data.total).toBe(25);
+  expect(data.total).toBe(49);
   await expect(page.locator('#title')).toHaveText('环境危害');
   await page.locator('#toggle-filters').click();
   await expect(page.getByRole('checkbox',{name:'类型：环境危害',exact:true})).toBeChecked();
   await expect(page.locator('#results .entry-name').filter({hasText:'雪崩'})).toHaveCount(1);
+  // The 2014 and 2024 guides both define thin ice; the two versions read as one stacked row.
+  await expect(page.locator('#results .entry-name').filter({hasText:'薄冰'})).toHaveCount(1);
 });
 
 test('spell components read as glyph strips while filters and export keep every component',async({page})=>{

@@ -319,12 +319,16 @@ class WebTests(unittest.TestCase):
 
     def test_environmental_hazards_are_queryable(self):
         data=query(self.db,{'type':['hazard'],'versions':['each']})
-        self.assertEqual(data['total'],25)
+        self.assertEqual(data['total'],56)
         self.assertTrue(all(r['type']=='hazard' for r in data['rows']))
         names={r['name_zh'] for r in data['rows']}
-        self.assertIn('雪崩',names);self.assertIn('奥法风暴',names)
+        # Printed labels, DMG 2024 severity bands and catalogs in both editions all reach the same type.
+        for name in ['雪崩','奥法风暴','燃烧','流沙陷坑','薄冰','亵渎之地']:self.assertIn(name,names)
+        self.assertNotIn('自然灾害',names);self.assertNotIn('魔法现象',names)
+        # Same-name hazards from the 2014 and 2024 guides stack into one row by default.
+        self.assertEqual(query(self.db,{'type':['hazard']})['total'],49)
         self.assertIn('hazard',meta(self.db)['type_order'])
-        self.assertEqual(self.db.execute('SELECT count(*) FROM "危害" WHERE type=\'hazard\'').fetchone()[0],25)
+        self.assertEqual(self.db.execute('SELECT count(*) FROM "危害" WHERE type=\'hazard\'').fetchone()[0],56)
         self.assertEqual(self.request('/api/entries?type=hazard')[0],200)
 
     def test_metadata(self):

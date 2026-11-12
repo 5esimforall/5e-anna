@@ -73,6 +73,24 @@ class ClassifyTests(unittest.TestCase):
         t=classify(Candidate(0,len(own),own,1,'heading'),own,own,'topics/测试书/第三方/新职业.htm',True)
         self.assertEqual(t.type,'section')
 
+    def test_stat_and_background_fields_open_their_lines(self):
+        stats=['\n护甲等级：类人形态下11\n生命值：58（9d8 +18）\n力量15（+2） 敏捷13（+1）\n',
+               '\nAC18 (天生护甲) HP 65 (10d8 + 20)\n力量 16 (+3) 敏捷 16 (+3)\n']
+        prose=['\n你对抗此次攻击的护甲等级会获得+2加值。将你盟友的生命值降为0。你的力量或敏捷提升1。\n',
+               '\n1. 力量值\n2. 敏捷值\n4. 护甲等级\n5. 当前生命值\n',
+               '\n每颗石头拥有AC 24，生命值为10。它失去力量与敏捷。\n']
+        for body in stats:self.assertEqual(typed('怪 Monster',body).type,'creature',body)
+        for body in prose:self.assertEqual(typed('怪 Monster',body).type,'section',body)
+        fields='\n技能熟练项：欺瞒、隐匿\n工具熟练项：制毒工具\n语言：任选一门语言\n初始装备：普通服装\n'
+        self.assertEqual(typed('甲 Alpha',fields,primary=True).rule,'background_fields')
+        self.assertEqual(typed('甲 Alpha','\n技能熟练。运动\n工具熟练。一种游戏装置\n装备。一个拼图盒\n',primary=True).type,'background')
+        self.assertEqual(typed('甲 Alpha','\n你的技能熟练项和工具熟练项由总部提供，熟练和起始装备见下表。\n',primary=True).type,'section')
+
+    def test_a_page_introduction_with_a_field_layout_is_the_page_definition(self):
+        fields='\n技能熟练：欺瞒，威吓\n工具熟练：易容工具\n装备：一套易容工具\n'
+        self.assertEqual(typed('背景-假面人',fields,primary=True,method='page_intro').type,'background')
+        self.assertEqual(typed('假面人','\n本章介绍假面人。\n',primary=True,method='page_intro').rule,'document_structure')
+
     def test_structure_and_named_tables(self):
         self.assertEqual(typed('目录').rule,'document_structure')
         self.assertEqual(typed('动作Actions',path='topics/测试书/生物/怪.htm').type,'section')

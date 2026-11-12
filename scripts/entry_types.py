@@ -17,7 +17,7 @@ from functools import cached_property
 import re
 from typing import Callable
 
-from html_extract import CLASSES, GENERIC, SPELL, STATS, CLASS_PATH, Candidate, class_structure, compact, key, split_name
+from html_extract import CLASSES, GENERIC, SPELL, CLASS_PATH, Candidate, class_structure, compact, key, split_name
 
 # Types that define a rule of play rather than a game object; core-rule pages split these into subdefinitions.
 RULE_TYPES = {'rule','action','condition','hazard','subsystem'}
@@ -101,6 +101,18 @@ HAZARD_DESCRIPTOR=re.compile(r'(?:致命|妨碍)危害\s*[（(]\s*等级')
 RULES_MECHANICS=re.compile(r'DC\s*\d+|(?<![A-Za-z\d])\d*[dD]\d+(?![A-Za-z])|(?:攻击|豁免|检定)[^。]{0,12}(?:优势|劣势)|(?:优势|劣势)[^。]{0,12}(?:攻击|豁免|检定)'
                            r'|力竭|陷入[^。]{1,8}状态|困难地形|(?:轻度|重度)遮蔽')
 CONDITION_RULE_HEADING=re.compile(r'^(?:持续时间|豁免|概述|简介|来源|结束)(?:\s|[A-Za-z]|$)')
+# A field layout opens a line with its label and gives the value: 护甲等级：类人形态下11, AC18 (天生护甲) HP 65,
+# 技能熟练项：欺瞒、隐匿, 技能熟练。运动、恐吓. The same words inside prose name no field: 对抗此次攻击的护甲等级会
+# 获得+2加值, 4. 护甲等级, 每颗石头拥有AC 24，生命值为10.
+STAT_BLOCK=re.compile(r'(?m)^[ \t]*(?:护甲等级|AC)[ \t]*(?:[:：]|\d).{0,120}?(?:生命值|(?<![A-Za-z])HP)[ \t]*(?:[:：]|\d)',re.S|re.I)
+
+
+def field_label(*labels):
+    """A label that opens a line as a field: the label, an optional 项 and English gloss, then a colon or 。"""
+    return re.compile(r'(?m)^[ \t]*(?:'+'|'.join(labels)+r')项?(?:[ \t]*[A-Za-z][A-Za-z \t]*)?[ \t]*[:：.。]')
+
+
+BACKGROUND_FIELDS=(field_label('技能熟练'),field_label('工具熟练','语言'),field_label('(?:初始|起始)?装备'))
 
 
 def level_heading(name):
@@ -156,6 +168,11 @@ class Probe:
     @cached_property
     def short_name(self):return not re.search(r'[。！？；]',self.name) and len(self.name)<110
 
+    @cached_property
+    def prints_layout(self):
+        """Whether any printed-evidence recognizer answers for this candidate."""
+        return any(r.test(self) for r in RECOGNIZERS if r.printed)
+
     @property
     def titled(self):
         """A short name that is the page's own or carries an English name: a definition, not a sentence."""
@@ -195,7 +212,9 @@ def indexed_or_signed(p):
 
 @recognizer('document_structure')
 def page_introduction(p):
-    if p.c.method=='page_intro':return 'section'
+    """Text before a page's first heading is preamble, unless it prints a type's field layout: then the page
+    printed its own title as body text, and the introduction is the page's definition."""
+    if p.c.method=='page_intro' and not p.prints_layout:return 'section'
 
 
 @recognizer('named_table_structure')
@@ -284,7 +303,7 @@ def spell_layout(p):
 
 @recognizer('stat_fields')
 def stat_layout(p):
-    if STATS.search(p.intro) and re.search(r'挑战|\bCR\b|力量.*敏捷',p.intro,re.S):return 'creature'
+    if STAT_BLOCK.search(p.intro) and re.search(r'挑战|\bCR\b|力量.*敏捷',p.intro,re.S):return 'creature'
 
 
 @recognizer('item_descriptor')
@@ -304,7 +323,7 @@ def class_level_heading(p):
 
 @recognizer('background_fields')
 def background_layout(p):
-    if re.search(r'技能熟练',p.intro) and re.search(r'工具熟练|语言',p.intro) and re.search(r'装备',p.intro) and (p.primary or re.search(r'背景',p.context)):return 'background'
+    if all(f.search(p.intro) for f in BACKGROUND_FIELDS) and (p.primary or re.search(r'背景',p.context)):return 'background'
 
 
 @recognizer('species_fields')

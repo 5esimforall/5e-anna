@@ -165,7 +165,8 @@ class CorpusRegressionTests(unittest.TestCase):
         # Weather before the heading and foraging after the run are not hazards.
         self.assertEqual(self.hazards('城主指南/冒险之主/环境/野外求生.htm','topic_context'),
                          ['亵渎之地Desecrated Ground','冰水Frigid Water','流沙Quicksand','刃藤Razorvine','光滑冰面Slippery Ice','薄冰Thin Ice'])
-        self.assertEqual(self.hazards('城主指南/冒险之主/环境/地下城.html'),['棕霉菌Brown Mold','绿软泥Green Slime','黄霉菌Yellow Mold'])
+        # 蛛网 prints AC and hit points in prose, which is no stat block.
+        self.assertEqual(self.hazards('城主指南/冒险之主/环境/地下城.html'),['棕霉菌Brown Mold','绿软泥Green Slime','蛛网Webs','黄霉菌Yellow Mold'])
 
     def test_environment_page_types_effects_that_apply_rules(self):
         r=self.parse('城主指南2024/3.地下城主工具箱/环境影响.htm')
@@ -197,6 +198,37 @@ class CorpusRegressionTests(unittest.TestCase):
         # Bare 危害 heads a rules section; its 团体检定 applies a rule but defines no hazard.
         self.assertEqual(self.hazards('模组/盐沼幽魂/船舶与海洋/在海上旅行.htm'),[])
         self.assertEqual(self.hazards('城主指南/冒险之主/环境/陷阱.html'),[])
+
+    def kinds(self,rel,names):
+        found={c['name']:(c['type'],c['classification_rule']) for c in self.parse(rel)['candidates']}
+        return [found[n] for n in names]
+
+    def test_prose_that_mentions_armor_class_is_no_stat_block(self):
+        # A feat, a class feature and an item name AC and hit points in prose; their own descriptors decide.
+        self.assertEqual(self.kinds('第三方/瓦尔达的秘密尖塔/专长.htm',['铁血英雄 Iron Hero']),[('feat','feat_descriptor')])
+        self.assertEqual(self.kinds('玩家手册/职业/战士/战斗大师.html',['知己知彼Know Your Enemy']),[('class_feature','level_statement')])
+        self.assertEqual(self.kinds('城主指南/宝藏/魔法物品/奇物/多种稀有度.htm',['艾恩石 Ioun Stone']),[('magic_item','item_descriptor')])
+        self.assertEqual(self.parse('第三方/歪曲之月/第三章/法师-贤者.htm')['candidates'][0]['type'],'subclass')
+        self.assertFalse(any(c['type']=='creature' for c in self.parse('城主指南2024/3.地下城主工具箱/门.htm')['candidates']))
+
+    def test_stat_block_fields_open_their_lines(self):
+        # 护甲等级：类人形态下11 gives its value after a colon; a compact block puts AC and HP on one line.
+        self.assertEqual(self.kinds('怪物图鉴/类人生物/狼人.htm',['狼人Werewolf']),[('creature','stat_fields')])
+        self.assertEqual(self.kinds('拉尼卡公会长指南/生物/刻洛.htm',['刻洛Kraul']),[('creature','stat_fields')])
+
+    def test_background_page_printed_as_its_introduction(self):
+        # These pages print their title as body text, so the whole background sits before the first heading.
+        for rel in ['模组/坠入阿弗纳斯/背景-假面人.htm','第三方/德拉肯海姆/背景/虔诚传教士.htm','斯翠海文：混沌研习/玩家选项/背景/粹丽学生.html']:
+            c=self.parse(rel)['candidates'][0]
+            self.assertEqual((c['boundary_rule'],c['type'],c['classification_rule']),('page_intro','background','background_fields'),rel)
+        # A company position names proficiencies and equipment in prose; it prints no background fields.
+        c=self.parse('艾奎兹玄有限责任公司/发展公司/公司职位/知识贩子.htm')['candidates'][0]
+        self.assertEqual((c['boundary_rule'],c['type']),('page_intro','section'))
+
+    def test_background_field_labels(self):
+        # Labels end with a colon or 。, and equipment may be 初始装备.
+        self.assertEqual(self.kinds('其他/异界传送Plane Shift/阿芒凯/玩家选项/背景/祀徒.html',['祀徒'])[0][1],'background_fields')
+        self.assertEqual(self.kinds('荒洲探险家指南/角色选项/背景/沃什塔克特工.htm',['沃什塔克特工 Volstrucker Agent']),[('background','background_fields')])
 
     def test_background_grants(self):
         r=self.parse('玩家手册2024/角色起源/背景/侍僧.htm')

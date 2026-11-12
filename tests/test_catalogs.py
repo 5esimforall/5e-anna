@@ -11,7 +11,8 @@ from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from build import Build,parse_one
-from html_extract import NO_TOC_PLACE,split_name
+from html_extract import split_name
+from entry_types import NO_TOC_PLACE
 from browse import schema_for
 from audit import audit
 from paths import WEB

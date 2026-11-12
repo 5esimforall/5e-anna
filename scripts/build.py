@@ -17,7 +17,8 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, refine_page_types, class_structure, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES, RULE_TYPES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
+from entry_types import classify, refine_page_types, mark_class_regions, evidence_status, type_conflicts, RULE_TYPES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
@@ -119,26 +120,15 @@ def parse_one(args):
             out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'issues':[]}
             doc.close();return out
         cs=doc.candidates(observations)
-        feature_starts=[c.start for c in cs if re.search(r'职业特性|Class Features|可选职业|祈唤|战技|超魔法|灌注',c.name,re.I)]
-        if not feature_starts:
-            optional=re.search(r'可选职业特性',doc.text[:1000])
-            if optional:feature_starts=[optional.start()]
+        mark_class_regions(cs,doc.text)
         output=[];rule_children=[]
         for i,c in enumerate(cs):
             full=doc.text[c.start:c.end]
-            # Classify from a section's own introduction, not a nested stat block.
             next_start=cs[i+1].start if i+1<len(cs) else c.end
             own=doc.text[c.start:min(c.end,next_start)]
             primary=i==0 or (i==1 and cs[0].method=='page_intro')
-            c.fields['class_feature_region']=bool(feature_starts and c.start>min(feature_starts))
-            ancestors=[];pi=c.parent
-            while pi is not None:
-                ancestors.append(cs[pi].name);pi=cs[pi].parent
-            c.fields['choice_pool']=next((n for n in ancestors if re.search(r'战斗风格|祈唤|战技|超魔法|灌注',n)),None)
-            class_path=re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/角色职业/|/职业/|/子职/',path)
-            classify_text=full if primary and (class_path or class_structure(full,c.name)) else own
-            kind,rule=classify(c,classify_text,context+' | '+path,primary)
-            if kind=='section' and c.fields.get('table_span'):kind,rule='lore','named_table_structure'
+            typing=classify(c,own,full,context+' | '+path,primary)
+            kind,rule=typing.type,typing.rule
             if kind=='class':full_for_fields=full
             elif c.explicit_end:full_for_fields=full
             else:full_for_fields=own
@@ -175,7 +165,8 @@ def parse_one(args):
                     fields['size']=[(m[1],m.start(),m.end())]
                     fields['creature_type']=[(m[2],m.start(),m.end())]
             output.append({'name':re.sub(r'\s+(?:机械|魔法)陷阱$','',c.name) if kind=='trap' else c.name,'start':c.start,'title_end':c.title_end,'end':c.end,'anchors':c.anchors,'parent_index':c.parent,
-                'type':kind,'classification_rule':rule,'boundary_rule':c.method,'legacy_direct':c.local_legacy,'fields':fields,
+                'type':kind,'classification_rule':rule,'printed_types':[list(t) for t in typing.printed_types],
+                'boundary_rule':c.method,'legacy_direct':c.local_legacy,'fields':fields,
                 'observation_ids':[o['id'] for o in c.observations], 'body_hash':sha256(compact(full).encode()).hexdigest(),
                 'level':c.rank,'is_primary':primary,'table_span':c.fields.get('table_span')})
             if core_rule_source and kind in RULE_TYPES:
@@ -299,12 +290,13 @@ class Build:
             archived=[s for s in owners if self.sources[s]['archived']]
             index_legacy=[self.ob_by_id[o] for o in c['observation_ids'] if self.ob_by_id[o]['legacy']]
             legacy='entry_marked' if c['legacy_direct'] or index_legacy else 'source_archived' if archived else 'unmarked'
-            status='原文明示' if c['classification_rule'].endswith('_signature') or c['classification_rule'].endswith('_table') or c['classification_rule'] in {'index_or_statblock','spell_fields','stat_fields','item_descriptor','feat_descriptor','poison_descriptor','level_heading','level_statement','background_fields','species_fields','class_structure','name_label','equipment_table'} else '上下文推得' if c['type']!='section' else '未分类段落'
+            status=evidence_status(c['classification_rule'],c['type'])
             e={'id':eid,'entity_id':entity,'identity_status':'provisional','name':compact(c['name']),'name_zh':zh,'name_en':en,'name_parse':name_parse,'type':c['type'],
                 'type_label':TYPE_LABELS[c['type']],'page_path':path,'start':c['start'],'title_end':c['title_end'],'end':c['end'],'locator':locator,'anchors':c['anchors'],
                 'body_hash':c['body_hash'],'source_ids':owners,'source_names':[self.sources[s]['name'] for s in owners],
                 'legacy':legacy,
             'classification_status':status,'classification_rule':c['classification_rule'],'boundary_rule':c['boundary_rule'],
+                'type_conflicts':type_conflicts(c['type'],c.get('printed_types',[])),
                 'fields':{},'field_conflicts':[],'observation_ids':c['observation_ids'],'parent_id':'','is_primary':c['is_primary'], 'snapshot':self.commit}
             local_entries.append(e);self.entries.append(e);self.entry_by_id[eid]=e;self.page_entries[path].append(e)
             if c.get('table_span'):e['table_span']=c['table_span']

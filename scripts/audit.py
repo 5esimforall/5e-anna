@@ -9,7 +9,7 @@ import posixpath
 import re
 import sqlite3
 from build import TYPE_LABELS, csv_write
-from html_extract import RULE_TYPES
+from entry_types import RULE_TYPES
 
 # Leads for the classifier, not classifications. An untyped section whose own text prints a mechanic
 # (a save DC, dice damage, a dice-rolled table) probably defines something no recognizer reads yet.
@@ -134,6 +134,24 @@ def classification_gaps(db):
     return summary,page_rows,section_rows
 
 
+def type_conflict_report(db):
+    """Entries whose source prints evidence for a type other than the one they received.
+
+    Recognizers decide in their declared order; printed evidence that later recognizers still find is
+    kept on the entry as `type_conflicts`. Returns (summary, rows), or (None, []) for a catalog built
+    before entries carried the field.
+    """
+    if not db.execute("SELECT 1 FROM entries WHERE json_type(data,'$.type_conflicts')='array' LIMIT 1").fetchone():return None,[]
+    rows=[];pairs=Counter()
+    for eid,name,typ,path,rule,raw in db.execute("SELECT id,name,type,page_path,json_extract(data,'$.classification_rule'),json_extract(data,'$.type_conflicts') "
+                                                 "FROM entries WHERE json_array_length(json_extract(data,'$.type_conflicts'))>0 ORDER BY page_path,start"):
+        printed=json.loads(raw)
+        for c in printed:pairs[(typ,rule,c['type'],c['rule'])]+=1
+        rows.append({'id':eid,'name':name,'page_path':path,'type':typ,'rule':rule,'printed':';'.join(f"{c['type']}/{c['rule']}" for c in printed)})
+    summary={'entries':len(rows),'pairs':[{'type':t,'rule':r,'printed_type':pt,'printed_rule':pr,'count':n} for (t,r,pt,pr),n in pairs.most_common()]}
+    return summary,rows
+
+
 def audit(db_path,baseline=None):
     db=connect(db_path)
     summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
@@ -153,13 +171,16 @@ def audit(db_path,baseline=None):
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
     concepts=audit_concepts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone() else None
     gaps,gap_pages,gap_sections=classification_gaps(db)
-    old_counts={};changes=[];same_manifest=None;gaps_before=None
+    conflicts,conflict_rows=type_conflict_report(db)
+    old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None
     if baseline:
         old=connect(baseline)
         prior=json.loads(old.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
         old_counts=prior['types'];same_manifest=prior['input_manifest_sha256']==summary['input_manifest_sha256']
         prior_gaps=classification_gaps(old)[0]
         gaps_before={k:prior_gaps[k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
+        prior_conflicts=type_conflict_report(old)[0]
+        conflicts_before=prior_conflicts['entries'] if prior_conflicts else None
         old_entries={r['id']:dict(r) for r in old.execute('SELECT id,name,type,page_path,fields FROM entries')}
         for eid in sorted(entries.keys()|old_entries.keys()):
             a=old_entries.get(eid);b=entries.get(eid)
@@ -177,8 +198,9 @@ def audit(db_path,baseline=None):
         'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),'csv_sql_mismatches':mismatches,
         'views':view_counts,'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
         'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,'change_counts':dict(Counter(c['change'] for c in changes)),
-        'classification_gaps':gaps,'classification_gaps_before':gaps_before}
-    db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections}
+        'classification_gaps':gaps,'classification_gaps_before':gaps_before,
+        'type_conflicts':conflicts,'type_conflicts_before':conflicts_before}
+    db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows}
 
 
 def gap_report(result,gaps):
@@ -207,12 +229,30 @@ def gap_report(result,gaps):
     return lines
 
 
+def conflict_report(result):
+    """Markdown for the type conflicts: how many entries carry one, grouped by decision and printed evidence."""
+    now=result['type_conflicts']
+    if now is None:return []
+    before=result['type_conflicts_before']
+    count=f"{now['entries']}（修改前 {before}）" if before is not None else str(now['entries'])
+    lines=['','## 分类冲突','',
+        '识别规则按声明顺序判定类型，先命中的规则决定；之后仍命中的原文明示证据记在条目的 `type_conflicts` 中。冲突是线索：其中有误分类，也有在别处合理出现的版式，例如职业核心特质同样列出技能与工具熟练，物品正文也会写护甲等级与生命值。','',
+        f"- 带冲突的条目：{count}。"]
+    if now['pairs']:
+        lines+=['','| 所得分类（规则） | 另有原文证据（规则） | 条目 |','|---|---|---:|']
+        for p in now['pairs']:
+            lines.append(f"| {TYPE_LABELS.get(p['type'],p['type'])}（`{p['rule']}`） | {TYPE_LABELS.get(p['printed_type'],p['printed_type'])}（`{p['printed_rule']}`） | {p['count']} |")
+    lines+=['','逐条见 `type_conflicts.csv`。']
+    return lines
+
+
 def export_report(out,result,changes,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     csv_write(out/'audit_changes.csv',changes,['id','name','page_path','change','before_type','after_type','before_fields','after_fields'])
     csv_write(out/'untyped_pages.csv',gaps['pages'],['path','title','source','directory','sections','flagged_sections'])
     csv_write(out/'classification_gaps.csv',gaps['sections'],['id','name','page_path','source','directory','page_untyped','signals','evidence'])
+    csv_write(out/'type_conflicts.csv',gaps['conflicts'],['id','name','page_path','type','rule','printed'])
     lines=['# 提取规则审计','',
         '检查范围：全库分类计数和证据状态、所有导出视图；逐表检查商品表列结构，检查原载具／设施／奖励／陷阱的上下文分类结果；原文回归覆盖两版PHB、两版DMG、MM、TCE、XGE及合作内容。',
         '这不是全库人工核验。未分类段落、待核关联和既有索引问题仍保留，不将空视图解释为原文不存在。','',
@@ -238,6 +278,7 @@ def export_report(out,result,changes,gaps):
     lines+=['','未支持的混合饮食／住宿价格表保留原表并进入审核队列，不伪装成装备条目。驴／骡的并列表述逐个关联；未找到独立驴数据卡时保留待核，不擅用骡替代。',
         '', '全库待核原因与数量见 `audit.json`；逐条增删、类型和字段变化见 `audit_changes.csv`。计数下降可能是纠正误分类，并不表示删去原文。','']
     lines+=gap_report(result,gaps)
+    lines+=conflict_report(result)
     (out/'提取审计.md').write_text('\n'.join(lines)+'\n')
 
 
@@ -248,6 +289,7 @@ def main():
     a=p.parse_args();result,changes,gaps=audit(a.db,a.baseline);export_report(a.output or a.db.parent,result,changes,gaps)
     report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','csv_sql_mismatches','concepts','change_counts']}
     report['classification_gaps']={k:result['classification_gaps'][k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
+    report['type_conflicts']=result['type_conflicts']['entries'] if result['type_conflicts'] else None
     print(json.dumps(report,ensure_ascii=False,indent=2))
     if result['parse_errors'] or result['foreign_key_errors'] or result['csv_sql_mismatches'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']):raise SystemExit(1)
 

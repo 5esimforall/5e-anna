@@ -3,7 +3,8 @@ from pathlib import Path
 import unittest
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from html_extract import Document,resolve_link,split_name,key,printed_type,hazard_member,NO_TOC_PLACE
+from html_extract import Document,resolve_link,split_name,key
+from entry_types import printed_type,hazard_member,NO_TOC_PLACE
 from build import parse_one,normalize_value,observation_fields
 from source_extract import SourceRegistry
 

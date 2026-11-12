@@ -1,4 +1,4 @@
-"""Classification gap audit: untyped pages, mechanic signals in untyped sections, and title labels."""
+"""Classification audit: untyped pages, mechanic signals in untyped sections, title labels and type conflicts."""
 import json
 import sqlite3
 import sys
@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from audit import classification_gaps, gap_report
+from audit import classification_gaps, gap_report, type_conflict_report, conflict_report
 
 REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 
@@ -115,6 +115,35 @@ class ClassificationGapTests(unittest.TestCase):
         self.assertIn('| 【状态】 | 状态 1，规则 1 |',lines)
         without=gap_report({'classification_gaps':self.summary,'classification_gaps_before':None},{'pages':[],'sections':[]})
         self.assertIn('- 无类型正文页：1。',without)
+
+
+class TypeConflictTests(unittest.TestCase):
+    def setUp(self):
+        self.db=sqlite3.connect(':memory:')
+        self.db.execute('CREATE TABLE entries(id TEXT,name TEXT,type TEXT,page_path TEXT,start INTEGER,data TEXT)')
+
+    def entry(self,eid,typ,rule,conflicts,start=0):
+        data={'classification_rule':rule}
+        if conflicts is not None:data['type_conflicts']=conflicts
+        self.db.execute('INSERT INTO entries VALUES(?,?,?,?,?,?)',(eid,eid,typ,'topics/测试书/专长.htm',start,json.dumps(data)))
+
+    def test_conflicts_are_grouped_by_decision_and_printed_evidence(self):
+        feat=[{'type':'feat','rule':'feat_descriptor'}]
+        self.entry('铁血英雄','creature','stat_fields',feat);self.entry('钢铁意志','creature','stat_fields',feat,start=9)
+        self.entry('火球术','spell','spell_fields',[])
+        summary,rows=type_conflict_report(self.db)
+        self.assertEqual(summary,{'entries':2,'pairs':[{'type':'creature','rule':'stat_fields','printed_type':'feat','printed_rule':'feat_descriptor','count':2}]})
+        self.assertEqual([(r['id'],r['printed']) for r in rows],[('铁血英雄','feat/feat_descriptor'),('钢铁意志','feat/feat_descriptor')])
+        lines='\n'.join(conflict_report({'type_conflicts':summary,'type_conflicts_before':5}))
+        self.assertIn('带冲突的条目：2（修改前 5）',lines)
+        self.assertIn('| 生物数据卡（`stat_fields`） | 专长（`feat_descriptor`） | 2 |',lines)
+
+    def test_a_catalog_built_before_the_field_reports_nothing(self):
+        self.entry('火球术','spell','spell_fields',None)
+        self.assertEqual(type_conflict_report(self.db),(None,[]))
+        self.assertEqual(conflict_report({'type_conflicts':None,'type_conflicts_before':None}),[])
+        # A newer catalog compared with such a baseline states its own count only.
+        self.assertIn('- 带冲突的条目：0。',conflict_report({'type_conflicts':{'entries':0,'pairs':[]},'type_conflicts_before':None}))
 
 
 @unittest.skipUnless(REAL_DB.exists(),'Build the dataset first')

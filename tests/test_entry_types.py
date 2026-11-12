@@ -1,0 +1,95 @@
+"""Entry typing: declared evidence, recognizer precedence, and the printed evidence a decision overrules."""
+import json
+import sqlite3
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from html_extract import Candidate
+from entry_types import RECOGNIZERS, RULE_EVIDENCE, PRINTED, INFERRED, UNTYPED, classify, evidence_status, type_conflicts
+
+SPELL_FIELDS='\n施法时间：1 动作\n施法距离：60 尺\n法术成分：V、S\n持续时间：立即\n'
+CLASS_LAYOUT='\n核心特质\n生命骰：每战士等级 1d10\n'
+REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
+
+
+def typed(name,body='',path='topics/测试书/规则.htm',primary=False,full=None,method='heading',kinds=(),**fields):
+    c=Candidate(0,len(name),name,4,method,kinds=list(kinds),fields=dict(fields))
+    own=name+body
+    return classify(c,own,full if full is not None else own,path,primary)
+
+
+class EvidenceTests(unittest.TestCase):
+    def test_every_recognizer_declares_its_evidence(self):
+        self.assertTrue(RECOGNIZERS)
+        self.assertTrue(all(r.rule in RULE_EVIDENCE for r in RECOGNIZERS))
+        self.assertEqual(set(RULE_EVIDENCE.values()),{PRINTED,INFERRED,UNTYPED})
+
+    def test_status_follows_the_declared_evidence(self):
+        self.assertEqual(evidence_status('name_label','condition'),PRINTED)
+        self.assertEqual(evidence_status('equipment_table','equipment'),PRINTED)
+        self.assertEqual(evidence_status('topic_context','hazard'),INFERRED)
+        self.assertEqual(evidence_status('document_structure','section'),UNTYPED)
+
+    def test_undeclared_or_inconsistent_rules_are_rejected(self):
+        with self.assertRaises(ValueError):evidence_status('guessed_from_title','spell')
+        # Only the structure decision leaves an entry untyped, and it never types one.
+        with self.assertRaises(ValueError):evidence_status('document_structure','spell')
+        with self.assertRaises(ValueError):evidence_status('name_label','section')
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_first_recognizer_decides_and_later_printed_evidence_is_kept(self):
+        t=typed('甲 Alpha【状态】',SPELL_FIELDS)
+        self.assertEqual((t.type,t.rule),('spell','spell_fields'))
+        self.assertEqual(t.printed_types,(('spell','spell_fields'),('condition','name_label')))
+        self.assertEqual(type_conflicts(t.type,t.printed_types),[{'type':'condition','rule':'name_label'}])
+
+    def test_agreeing_or_inferred_evidence_is_no_conflict(self):
+        t=typed('甲 Alpha【状态】')
+        self.assertEqual((t.type,t.rule,t.printed_types),('condition','name_label',(('condition','name_label'),)))
+        self.assertEqual(type_conflicts(t.type,t.printed_types),[])
+        # A glossary heading would be a rule by context; after a printed decision, context is not evidence.
+        t=typed('乙 Beta',SPELL_FIELDS,path='topics/测试书/术语汇编/乙.htm')
+        self.assertEqual((t.type,t.printed_types),('spell',(('spell','spell_fields'),)))
+
+    def test_every_index_kind_is_printed_evidence(self):
+        t=typed('丙 Gamma',method='index_anchor',kinds=['magic_item','spell'])
+        self.assertEqual((t.type,t.rule),('magic_item','index_or_statblock'))
+        self.assertEqual(type_conflicts(t.type,t.printed_types),[{'type':'spell','rule':'index_or_statblock'}])
+        t=typed('丙 Gamma',method='spell_signature',kinds=['spell'])
+        self.assertEqual((t.type,t.rule),('spell','spell_signature'))
+
+    def test_a_class_page_primary_reads_the_whole_page(self):
+        own,full='战士 Fighter','战士 Fighter'+CLASS_LAYOUT
+        # Under a class folder, or wherever the page prints a class's hit die and core traits.
+        for path in ['topics/测试书/职业/战士/战士.htm','topics/测试书/第三方/新职业.htm']:
+            t=classify(Candidate(0,len(own),own,1,'heading'),own,full,path,True)
+            self.assertEqual((t.type,t.rule),('class','class_structure'),path)
+        # Any other entry reads its own text, and a page without the layout is no class page.
+        t=classify(Candidate(0,len(own),own,1,'heading'),own,full,'topics/测试书/第三方/新职业.htm',False)
+        self.assertEqual(t.type,'section')
+        t=classify(Candidate(0,len(own),own,1,'heading'),own,own,'topics/测试书/第三方/新职业.htm',True)
+        self.assertEqual(t.type,'section')
+
+    def test_structure_and_named_tables(self):
+        self.assertEqual(typed('目录').rule,'document_structure')
+        self.assertEqual(typed('动作Actions',path='topics/测试书/生物/怪.htm').type,'section')
+        self.assertEqual(typed('动作Actions',path='topics/测试书/进行游戏/战斗.htm').type,'rule')
+        t=typed('随机遭遇',table_span=[0,10])
+        self.assertEqual((t.type,t.rule),('lore','named_table_structure'))
+
+
+@unittest.skipUnless(REAL_DB.exists(),'Build the dataset first')
+class CorpusEvidenceTests(unittest.TestCase):
+    def test_built_entries_carry_declared_evidence_and_real_conflicts(self):
+        db=sqlite3.connect(REAL_DB.resolve().as_uri()+'?mode=ro',uri=True)
+        for typ,status,raw in db.execute("SELECT type,classification_status,data FROM entries"):
+            e=json.loads(raw)
+            self.assertEqual(evidence_status(e['classification_rule'],typ),status,e['id'])
+            self.assertTrue(all(c['type']!=typ and RULE_EVIDENCE[c['rule']]==PRINTED for c in e['type_conflicts']),e['id'])
+        db.close()
+
+
+if __name__=='__main__':unittest.main()

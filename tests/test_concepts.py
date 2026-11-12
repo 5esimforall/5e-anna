@@ -7,7 +7,8 @@ import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from concepts import Resolver,format_kind,build_concepts,plain_syntax,style_profile,term_scanner
-from html_extract import Document,NO_TOC_PLACE
+from html_extract import Document
+from entry_types import NO_TOC_PLACE
 from build import Build,parse_one
 
 def entry(eid,name,path='topics/book/rules.htm',ruleset='5r',kind='rule',source='book'):

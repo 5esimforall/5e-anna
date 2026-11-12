@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from html_extract import EXAMPLE_CLASSES,LEVEL_LABEL,RULE_TYPES,Document,compact,digest,key,resolve_link,split_name
+from html_extract import EXAMPLE_CLASSES,LEVEL_LABEL,Document,compact,digest,key,resolve_link,split_name
+from entry_types import RULE_TYPES
 
 def aliases(entry):
     names=[]

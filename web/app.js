@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const {esc,stored}=annaKit;
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
-  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',
+  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',sectionMatches:'原文中还有 {count} 条未分类段落匹配，点击查看',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
@@ -25,7 +25,7 @@ const annaUiLabels = {
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
-  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',
+  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',sectionMatches:'{count} unclassified passages in the source also match; show them',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
@@ -70,7 +70,7 @@ const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
 let auditMode=stored.get(AUDIT_KEY)==='on';
 const visibleColumns=()=>schema.columns.filter(k=>auditMode||!AUDIT_COLUMNS.has(k));
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
-let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='';
+let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='', focusSections=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const sourceURL=(path,start=0,end=0)=>'/source?'+new URLSearchParams({path,start,end})+'#evidence';
 const sourceOf=id=>metadata.sources.find(s=>s.id===id);
@@ -269,11 +269,11 @@ function sync(){
 const awaitingResults=()=>$('#results').getAttribute('aria-busy')==='true';
 function awaitResults(status){
   $('#error').hidden=true;$('#result-count').textContent=status;$('#result-count').title='';$('#export').disabled=true;$('#load-more').disabled=true;
-  $('#results').setAttribute('aria-busy','true');
+  $('#empty-sections').hidden=true;$('#results').setAttribute('aria-busy','true');
 }
 function failResults(message,status){
   currentData=null;$('#error').hidden=false;$('#error').textContent=message;$('#result-count').textContent=status;
-  $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';renderLoadState();
+  $('#results').replaceChildren();$('#empty').hidden=true;$('#empty-sections').hidden=true;$('#range').textContent='';renderLoadState();
 }
 const RULESET_ORDER=['5e','5r','待核'];
 // Server groups carry counts; the interface supplies its own words for rules versions and legacy marks.
@@ -459,7 +459,8 @@ async function load(){
     // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.
     $('#result-count').title=$('#result-count').textContent;
     renderResults();
-    $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
+    $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;renderSectionMatches(data);
+    if(focusSections){focusSections=false;($('#results .entry-name')||$('.table-wrap')).focus();}
   }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
   finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');renderLoadState();updateReaderNavigation();saveUiState();}}
 }
@@ -752,6 +753,13 @@ function chooseTypes(types,preset=null){
   if(preset)params.set('f_'+preset.field,preset.value);
   params.delete('entry');historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 }
+// An empty name search can still have matches among the untyped sections. The server counts them
+// under the same conditions, so the offer never leads to a result the filter cannot return.
+function renderSectionMatches(data=currentData){
+  const count=data?.total===0&&params.get('sections')!=='1'?data.section_matches||0:0;
+  $('#empty-sections').hidden=!count;
+  if(count)$('#show-sections').textContent=ui.sectionMatches.replace('{count}',fmt(count));
+}
 // While searching within some types, matches in the others stay one step away; an empty result names the
 // conditions whose removal would bring results back.
 function renderElsewhere(){
@@ -781,6 +789,7 @@ $('#empty-elsewhere').addEventListener('click',e=>{
   if(key==='typing'){clearDraft();writeTerms();changed();return;}
   dropCondition(key);
 });
+$('#show-sections').onclick=()=>{params.set('sections','1');focusSections=true;changed();};
 // Reading mode folds review apparatus away; filters already in the URL stay visible and editable.
 function applyAuditMode(){
   document.documentElement.dataset.audit=auditMode?'on':'off';

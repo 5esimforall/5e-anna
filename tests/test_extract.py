@@ -92,6 +92,39 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual(r['candidates'][0]['type'],'subclass')
         self.assertEqual(sum(c['type']=='class_feature' for c in r['candidates']),4)
 
+    def test_class_structure_names_the_class_outside_a_class_path(self):
+        for path,features in [('第三方/吸血鬼：避世潜藏/血族职业/血族.htm',13),('其他/新UA/灵能/灵能使.htm',11)]:
+            r=self.parse(path)
+            self.assertEqual(r['candidates'][0]['type'],'class',path)
+            self.assertEqual(sum(c['type']=='class_feature' for c in r['candidates']),features,path)
+
+    def test_general_hit_die_rules_are_not_classes(self):
+        r=self.parse('玩家手册2024/创建角色/等级提升.htm')
+        self.assertNotEqual(r['candidates'][0]['type'],'class')
+        self.assertFalse(any(c['type']=='class_feature' for c in r['candidates']))
+
+    def test_subclass_features_begin_at_third_level(self):
+        for path,features in [('第三方/吸血鬼：避世潜藏/血族职业/冈格罗.htm',7),
+                              ('其他/新UA/灵能/传心师.htm',7),
+                              ('其他/新UA/xge子职业更新/晓骑士.htm',7),
+                              ('第三方/鬼魅幽谷/玩家指南/第二章/捕猎会.htm',6)]:
+            r=self.parse(path)
+            self.assertEqual(r['candidates'][0]['type'],'subclass',path)
+            self.assertEqual(sum(c['type']=='class_feature' for c in r['candidates']),features,path)
+
+    def test_condition_topic_types_its_children(self):
+        r=self.parse('玩家手册/状态.html')
+        self.assertEqual(r['candidates'][0]['type'],'rule')
+        self.assertEqual([c['name'] for c in r['candidates'] if c['type']=='condition'],
+                         ['目盲Blinded','魅惑Charmed','耳聋Deafened','恐慌Frightened','受擒Grappled','失能Incapacitated','隐形Invisible','麻痹Paralyzed','石化Petrified','力竭Exhaustion','中毒Poisoned','倒地Prone','束缚Restrained','震慑Stunned','昏迷Unconscious'])
+        r=self.parse('第三方/胧忆岛/状态.htm')
+        self.assertEqual([c['name'] for c in r['candidates'] if c['type']=='condition'],['镇定 Pacify'])
+
+    def test_condition_topic_keeps_rules_as_sections(self):
+        r=self.parse('玩家手册2024/进行游戏/状态.htm')
+        self.assertFalse(any(c['type']=='condition' for c in r['candidates']))
+        self.assertEqual(sum(c['type']=='section' for c in r['candidates']),2)
+
     def test_background_grants(self):
         r=self.parse('玩家手册2024/角色起源/背景/侍僧.htm')
         c=r['candidates'][0];self.assertEqual(c['type'],'background')

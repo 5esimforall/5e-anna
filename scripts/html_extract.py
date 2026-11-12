@@ -257,6 +257,86 @@ def split_name(text):
     return parsed['name_zh'],parsed['name_en']
 
 
+# Page structure names an entry's role where a title or a folder name does not. A class prints a hit
+# die and a core-traits table; its features begin at 1st level. A subclass prints only the features
+# it adds, which begin at 3rd level and carry no core traits. These are layouts, not name whitelists.
+CLASS_STRUCTURE=re.compile(r'生命[值]?骰[\s\S]{0,40}?每\s*([^\s，。；：:]{1,12}?)\s*等级')
+CLASS_TRAITS=re.compile(r'核心特质|熟练加值|熟练项')
+LEVEL_HEADING=re.compile(r'^\s*(\d{1,2})\s*级\s*[:：]')
+CONDITION_TOPIC_NAMES={'状态'}
+CONDITION_STRUCTURE=re.compile(r'^(?:状态|持续时间|状态不叠加|豁免|概述|简介|来源|结束)(?:\s|[A-Za-z]|$)')
+
+
+def class_structure(text,title=''):
+    """A hit die plus core traits describes a class page, whatever its name or directory.
+
+    The hit die must name the class it belongs to (每战士等级), so a rule that mentions hit dice
+    in general (每当你获得新的等级) is not a class page.
+    """
+    head=text[:8000]
+    if not CLASS_TRAITS.search(head):return False
+    m=CLASS_STRUCTURE.search(head)
+    if not m:return False
+    label=compact(m[1])
+    if not title:return True
+    return label in CLASSES or label in title
+
+
+def level_heading(name):
+    """The level a class or subclass feature heading states, or None for prose and range headings."""
+    m=LEVEL_HEADING.match(name)
+    return int(m[1]) if m else None
+
+
+def document_structure_name(name):
+    """Names that label a page or a catalog rather than the entry the page is about."""
+    return bool(GENERIC.fullmatch(name)) or bool(re.fullmatch(r'(?:专长|法术|魔法物品|装备|背景|种族|物种)(?:描述|详述|列表|总览)(?:\s*[A-Za-z].*)?',name))
+
+
+def page_topic(name):
+    """A page title that gives its child definitions a shared type."""
+    zh,en=split_name(name)
+    zh=re.sub(r'^附录[A-Za-z]?[：:]\s*','',zh)
+    return 'condition' if key(zh) in CONDITION_TOPIC_NAMES else ''
+
+
+def condition_heading(name):
+    """A bilingual child title on a condition page, excluding the page's own rule headings."""
+    zh,en=split_name(name)
+    return bool(zh and en and len(name)<80 and not CONDITION_STRUCTURE.match(zh))
+
+
+def refine_page_types(entries,text):
+    """Second pass: the page's primary entry types the headings beneath it.
+
+    Classification of a heading cannot know what its page is until the page's own primary entry
+    has been classified. This pass applies that context: a class or subclass owns its level
+    features, and a condition topic owns its condition definitions.
+    """
+    if not entries:return
+    primary_index=1 if len(entries)>1 and entries[0]['boundary_rule']=='page_intro' else 0
+    primary=entries[primary_index]
+    full=text[primary['start']:primary['end']]
+    structured=not document_structure_name(primary['name'])
+    if primary['type']=='section' and structured and class_structure(full,primary['name']):
+        primary['type']='class';primary['classification_rule']='class_structure'
+    levels=[(e,level_heading(e['name'])) for e in entries if e is not primary and e['type'] in {'section','class_feature'}]
+    levels=[(e,n) for e,n in levels if n is not None]
+    # A subclass adds only features above the class's own levels; a class always prints 1st level.
+    if primary['type']=='section' and structured and len(levels)>=2 and min(n for _,n in levels)>=3:
+        primary['type']='subclass';primary['classification_rule']='subclass_structure'
+    if primary['type'] in {'class','subclass'}:
+        for e,n in levels:
+            e['type']='class_feature'
+            e['classification_rule']='level_heading' if primary['type']=='class' else 'parent_class_context'
+    if page_topic(primary['name'])=='condition':
+        if primary['type']=='section':
+            primary['type']='rule';primary['classification_rule']='topic_context'
+        for e in entries:
+            if e is primary or e['type']!='section':continue
+            if condition_heading(e['name']):e['type']='condition';e['classification_rule']='topic_context'
+
+
 @dataclass
 class Candidate:
     start: int
@@ -519,7 +599,7 @@ class Document:
                 if not (tag.find(['b','strong']) or tag.find_parent(['b','strong']) or re.search('[A-Za-z]{3}',txt)):continue
                 add(tag,rank=4,method='colored_heading')
         # Level-prefixed inline headings in class/subclass prose, regardless of color.
-        class_context=bool(re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/(?:角色职业|职业|子职|子职业)/',self.path))
+        class_context=bool(re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/(?:角色职业|职业|子职|子职业)/',self.path)) or class_structure(self.text,self.title)
         if class_context:
             for block in self.body.find_all('p'):
                 if block.find_parent(['table','li']):continue
@@ -731,7 +811,8 @@ def classify(c:Candidate, text, context, primary=False):
     if c.method=='table_caption':return 'lore','named_table_structure'
     if class_context and c.method in {'level_inline_heading','feature_inline_heading'}:return 'class_feature',c.method
     if (primary or '选项' in name) and re.match(r'^(?:魔能祈唤(?:选项)?|禁令恩惠|子职(?:业)?选项|反派选项|超魔(?:法)?选项|灌注选项)(?:\s*[A-Za-z].*)?$',name):return 'section','document_structure'
-    if GENERIC.fullmatch(name) or re.fullmatch(r'(?:专长|法术|魔法物品|装备|背景|种族|物种)(?:描述|详述|列表|总览)(?:\s*[A-Za-z].*)?',name):return 'section','document_structure'
+    if document_structure_name(name):return 'section','document_structure'
+    if primary and class_structure(text,name):return 'class','class_structure'
     if re.match(r'^(?:毒药的(?:制作|提取)|采购毒药|制作毒药|提取毒药)',name):return 'rule','context_heading'
     if re.search(r'^(?:子职|子职业|特色设施详述|疾病范例|毒药范例|毒药的(?:制作|提取)|毒药|疾病|专长与背景)(?:\s*[A-Za-z].*)?$',name):return 'rule','context_heading'
     if re.fullmatch(r'(?:动作|附赠动作|反应|特质|传奇动作|巢穴动作)\s*(?:Actions?|Bonus Actions?|Reactions?|Traits?|Legendary Actions?|Lair Actions?)?',name,re.I):
@@ -756,7 +837,6 @@ def classify(c:Candidate, text, context, primary=False):
     if re.match(r'^\s*\d+\s*级\s*[:：]',name) and class_context:return 'class_feature','level_heading'
     zh,en=split_name(name)
     short_name=not re.search(r'[。！？；]',name) and len(name)<110
-    if primary and any(zh==x for x in CLASSES) and re.search(r'生命[值]?骰|生命值骰|核心特质|等级.{0,15}熟练加值',text):return 'class','class_structure'
     if re.search(r'技能熟练',intro) and re.search(r'工具熟练|语言',intro) and re.search(r'装备',intro) and (primary or re.search(r'背景',ctx)):return 'background','background_fields'
     if re.search(r'生物类型|属性值加成',intro) and re.search(r'体型',intro) and re.search(r'速度',intro) and (primary or '种族' in ctx or '物种' in ctx):return 'species','species_fields'
     if re.match(r'^(?:吸入|服用|损伤|接触)型毒药',descriptor):return 'poison','poison_descriptor'

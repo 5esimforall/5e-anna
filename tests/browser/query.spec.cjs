@@ -290,6 +290,29 @@ test('counts say what choosing each option would match, and an empty result offe
   await visit(page);await expect(page.locator('#elsewhere')).toBeHidden();
 });
 
+test('an empty name search offers unclassified passages under the same conditions',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,'/?q='+encodeURIComponent('盾矮人'));
+  const data=await (await page.request.get(anna+'/api/entries'+new URL(page.url()).search)).json();
+  expect(data.total).toBe(0);expect(data.section_matches).toBeGreaterThan(0);
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(page.locator('#empty-sections')).toBeVisible();
+  await expect(page.locator('#show-sections')).toContainText(`原文中还有 ${fmt(data.section_matches)} 条未分类段落匹配`);
+  await page.locator('#show-sections').click();await ready(page);
+  expect(new URL(page.url()).searchParams.get('sections')).toBe('1');
+  await expect(page.locator('#empty')).toBeHidden();
+  await expect(page.locator('#results .entry-name')).toHaveCount(data.section_matches);
+  // A typed result, a chosen type a section cannot answer, or a body-only search suppresses the offer.
+  await visit(page,'/?q='+encodeURIComponent('幸运符'));
+  await expect(page.locator('#empty-sections')).toBeHidden();
+  await visit(page,'/?type=spell&q='+encodeURIComponent('盾矮人'));
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(page.locator('#empty-sections')).toBeHidden();
+  await visit(page,'/?body='+encodeURIComponent('卓尔蘑菇扒'));
+  await expect(page.locator('#empty')).toBeVisible();
+  await expect(page.locator('#empty-sections')).toBeHidden();
+});
+
 test('spell components read as glyph strips while filters and export keep every component',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await visit(page,spells+'&f_verbal=false&f_material=true');

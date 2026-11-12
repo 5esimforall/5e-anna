@@ -120,6 +120,17 @@ def base_clause(params):
     return "e.type!='section'" if first(params,'sections')!='1' else '1'
 
 
+def unclassified_matches(db, params):
+    """Untyped sections that match every current condition, for an empty name search's follow-up.
+
+    The same conditions apply, including any type filter: a section cannot stand in for a chosen
+    type, so the offer appears only when adding sections would actually return rows.
+    """
+    conds = conditions(params)
+    clause = "e.type='section'"+(' AND '+' AND '.join(sql for _,sql,_ in conds) if conds else '')
+    return db.execute('SELECT count(*) FROM entries e WHERE '+clause,[v for _,_,vals in conds for v in vals]).fetchone()[0]
+
+
 def filters(db, params):
     conds = conditions(params)
     clauses = [base_clause(params)]+[sql for _,sql,_ in conds]
@@ -226,6 +237,10 @@ def result_window(params):
 
 def query(db, params, export=False):
     where, values = filters(db,params)
+    names = bool(browse.search_terms(params) or browse.typing_term(params))
+    def section_hint(total):
+        if export or first(params,'sections')=='1' or total or not names:return 0
+        return unclassified_matches(db,params)
     latest = browse.latest_term(params)
     db.create_function('browse_query',0,lambda:latest)
     config = browse.schema_for(entry_types(params))
@@ -241,7 +256,8 @@ def query(db, params, export=False):
         sql = 'SELECT e.data FROM entries e'+where+' ORDER BY '+order
         if not export: sql+=' LIMIT ? OFFSET ?'; values=values+[limit,offset]
         rows = [browse.enrich(json.loads(r[0])) for r in db.execute(sql,values)]
-        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows,'schema':config}
+        return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0 if export else offset,'rows':rows,'schema':config,
+                'section_matches':section_hint(total)}
     # Stacking happens inside the matched set: filters decide which versions exist, then each
     # candidate group shows its preferred-ruleset version at that version's sorted position.
     first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
@@ -270,7 +286,8 @@ def query(db, params, export=False):
         row['stack'] = {'id':head['stack'],'status':head['status']} if head['status'] else None
         row['version_diffs'] = browse.version_diffs(config,row,stacked[1:])
         rows.append(row)
-    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows,'schema':config}
+    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows,'schema':config,
+            'section_matches':section_hint(total)}
 
 
 def meta(db):

@@ -223,6 +223,23 @@ class WebTests(unittest.TestCase):
         for bad in [{'q':[str(i) for i in range(21)]},{'q':['x'*201]},{'typing':['x'*201]}]:
             with self.assertRaises(ValueError):query(self.db,bad)
 
+    def test_empty_name_search_offers_unclassified_matches(self):
+        typed=query(self.db,{'q':['盾矮人'],'versions':['each']})
+        self.assertEqual(typed['total'],0)
+        sections=query(self.db,{'q':['盾矮人'],'sections':['1'],'versions':['each']})
+        self.assertGreater(sections['total'],0)
+        self.assertEqual(typed['section_matches'],sections['total'])
+        self.assertTrue(all(r['type']=='section' for r in sections['rows']))
+        # The offer disappears once sections are included, a typed result exists, or no name is searched.
+        self.assertEqual(sections['section_matches'],0)
+        self.assertEqual(query(self.db,{'q':['幸运符']})['section_matches'],0)
+        self.assertEqual(query(self.db,{'body':['卓尔蘑菇扒']})['section_matches'],0)
+        # It follows every condition, including a chosen type that a section cannot stand in for.
+        self.assertEqual(query(self.db,{'type':['spell'],'q':['盾矮人']})['section_matches'],0)
+        constrained=query(self.db,{'q':['盾矮人'],'ruleset':['5e'],'versions':['each']})
+        self.assertEqual(constrained['section_matches'],1)
+        self.assertEqual(self.request('/api/entries?'+urlencode({'q':'盾矮人'}))[0],200)
+
     def test_body_searches_read_the_entry_text_after_its_title(self):
         rows=query(self.db,{'type':['spell'],'body':['专注','火焰'],'versions':['each']},export=True)['rows']
         self.assertTrue(rows)

@@ -162,6 +162,8 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px; font-weight: 600; line-height: 1.25; }
 #elsewhere { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #empty-elsewhere { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 10px; }
+#empty-sections { margin-top: 12px; }
+#show-sections { border-color: transparent; background: transparent; color: var(--anna-brand); white-space: normal; text-decoration: underline; text-underline-offset: 2px; }
 .heading-row>.muted, .heading-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--anna-type-ui); }
 .heading-note { color: var(--anna-muted); margin-left: auto; }
 .toolbar { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; }

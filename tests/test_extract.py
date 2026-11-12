@@ -125,6 +125,21 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertFalse(any(c['type']=='condition' for c in r['candidates']))
         self.assertEqual(sum(c['type']=='section' for c in r['candidates']),2)
 
+    def test_environmental_hazards_use_body_structure(self):
+        for path in ['塔莎的万事坩埚/城主工具/环境灾害/雪崩.htm','塔莎的万事坩埚/城主工具/环境灾害/魔法泉.htm']:
+            r=self.parse(path)
+            self.assertEqual(r['candidates'][0]['type'],'hazard',path)
+            self.assertEqual(r['candidates'][0]['classification_rule'],'hazard_structure',path)
+        r=self.parse('塔莎的万事坩埚/城主工具/环境灾害/奥法风暴.htm')
+        self.assertEqual(sum(c['type']=='hazard' for c in r['candidates']),5)
+        # A stat block owns its page identity; the colony's framing prose is not a hazard entry.
+        r=self.parse('塔莎的万事坩埚/城主工具/环境灾害/拟身怪群落.htm')
+        self.assertNotEqual(r['candidates'][0]['type'],'hazard')
+        self.assertEqual(sum(c['type']=='creature' for c in r['candidates']),1)
+        # The hazard section supplies the category; a trap page outside it stays a trap.
+        r=self.parse('城主指南/冒险之主/环境/陷阱.html')
+        self.assertFalse(any(c['type']=='hazard' for c in r['candidates']))
+
     def test_background_grants(self):
         r=self.parse('玩家手册2024/角色起源/背景/侍僧.htm')
         c=r['candidates'][0];self.assertEqual(c['type'],'background')

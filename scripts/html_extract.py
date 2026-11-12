@@ -265,6 +265,20 @@ CLASS_TRAITS=re.compile(r'核心特质|熟练加值|熟练项')
 LEVEL_HEADING=re.compile(r'^\s*(\d{1,2})\s*级\s*[:：]')
 CONDITION_TOPIC_NAMES={'状态'}
 CONDITION_STRUCTURE=re.compile(r'^(?:状态|持续时间|状态不叠加|豁免|概述|简介|来源|结束)(?:\s|[A-Za-z]|$)')
+# Environmental hazards share a section but not a title scheme. Inside such a section, a page or heading
+# is a hazard when its body states a danger or an effect: a save, damage, an effect table, a trigger.
+HAZARD_CONTEXT=re.compile(r'/(?:环境灾害|环境危害)/')
+HAZARD_EVIDENCE=re.compile(r'DC\s*\d+|豁免|伤害|效应|效果|危险|致命|灾害|表|触发|检定|陷入|力竭')
+
+
+def hazard_context(path):
+    """The environmental-hazard section provides the category; the body supplies the evidence."""
+    return bool(HAZARD_CONTEXT.search(path))
+
+
+def hazard_structure(text):
+    """A hazard body states a danger, a saving throw, damage, an effect, or an effect table."""
+    return bool(HAZARD_EVIDENCE.search(text[:6000]))
 
 
 def class_structure(text,title=''):
@@ -318,6 +332,9 @@ def refine_page_types(entries,text):
     primary=entries[primary_index]
     full=text[primary['start']:primary['end']]
     structured=not document_structure_name(primary['name'])
+    # A stat block owns its page's identity; the framing prose around it is not a second page-level type.
+    if primary['type']=='hazard' and any(e is not primary and e['type']=='creature' for e in entries):
+        primary['type']='section';primary['classification_rule']='document_structure'
     if primary['type']=='section' and structured and class_structure(full,primary['name']):
         primary['type']='class';primary['classification_rule']='class_structure'
     levels=[(e,level_heading(e['name'])) for e in entries if e is not primary and e['type'] in {'section','class_feature'}]
@@ -817,6 +834,7 @@ def classify(c:Candidate, text, context, primary=False):
     if re.search(r'^(?:子职|子职业|特色设施详述|疾病范例|毒药范例|毒药的(?:制作|提取)|毒药|疾病|专长与背景)(?:\s*[A-Za-z].*)?$',name):return 'rule','context_heading'
     if re.fullmatch(r'(?:动作|附赠动作|反应|特质|传奇动作|巢穴动作)\s*(?:Actions?|Bonus Actions?|Reactions?|Traits?|Legendary Actions?|Lair Actions?)?',name,re.I):
         return ('rule','context_heading') if re.search(r'术语|进行游戏|/战斗/',path) else ('section','document_structure')
+    if hazard_context(path) and hazard_structure(text):return 'hazard','hazard_structure'
     # Catalog headings and field descriptions are not entities. Require a descriptor,
     # not merely a keyword inherited from the page/TOC.
     if re.match(r'^\s*\d+\s*级据点设施',text[max(0,c.title_end-c.start):]):

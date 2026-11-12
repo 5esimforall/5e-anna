@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, refine_page_types, class_structure, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES, RULE_TYPES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, classify, text_fields, printed_generation, refine_page_types, class_structure, hazard_context, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES, RULE_TYPES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
@@ -136,7 +136,7 @@ def parse_one(args):
                 ancestors.append(cs[pi].name);pi=cs[pi].parent
             c.fields['choice_pool']=next((n for n in ancestors if re.search(r'战斗风格|祈唤|战技|超魔法|灌注',n)),None)
             class_path=re.search(r'/(?:'+ '|'.join(re.escape(x) for x in CLASSES) +r')(?:/|[-（(.])|/角色职业/|/职业/|/子职/',path)
-            classify_text=full if primary and (class_path or class_structure(full,c.name)) else own
+            classify_text=full if primary and (class_path or class_structure(full,c.name) or hazard_context(path)) else own
             kind,rule=classify(c,classify_text,context+' | '+path,primary)
             if kind=='section' and c.fields.get('table_span'):kind,rule='lore','named_table_structure'
             if kind=='class':full_for_fields=full

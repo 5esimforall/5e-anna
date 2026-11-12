@@ -317,11 +317,21 @@ class WebTests(unittest.TestCase):
         # Reader notes read normalized values from the entry itself.
         self.assertEqual(detail(self.db,eid)['quickref']['spell_level'],['7'])
 
+    def test_environmental_hazards_are_queryable(self):
+        data=query(self.db,{'type':['hazard'],'versions':['each']})
+        self.assertEqual(data['total'],25)
+        self.assertTrue(all(r['type']=='hazard' for r in data['rows']))
+        names={r['name_zh'] for r in data['rows']}
+        self.assertIn('雪崩',names);self.assertIn('奥法风暴',names)
+        self.assertIn('hazard',meta(self.db)['type_order'])
+        self.assertEqual(self.db.execute('SELECT count(*) FROM "危害" WHERE type=\'hazard\'').fetchone()[0],25)
+        self.assertEqual(self.request('/api/entries?type=hazard')[0],200)
+
     def test_metadata(self):
         m=meta(self.db)
         # The picker offers the types the data holds, in reading order; untyped sections stay behind their own filter.
         held={r[0] for r in self.db.execute("SELECT DISTINCT type FROM entries WHERE type!='section'")}
-        self.assertEqual(set(m['type_order']),held);self.assertNotIn('hazard',m['type_order'])
+        self.assertEqual(set(m['type_order']),held);self.assertIn('hazard',m['type_order'])
         self.assertEqual(m['type_order'],sorted(m['type_order'],key=browse.TYPE_ORDER.index))
         self.assertEqual(m['type_conditions']['creature'],['size','creature_type','role','legendary_actions','cr'])
         self.assertEqual(m['type_conditions']['class'],[])

@@ -313,6 +313,17 @@ test('an empty name search offers unclassified passages under the same condition
   await expect(page.locator('#empty-sections')).toBeHidden();
 });
 
+test('environmental hazards read as their own query type and view',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,'/?type=hazard');
+  const data=await queryMatchesAPI(page);
+  expect(data.total).toBe(25);
+  await expect(page.locator('#title')).toHaveText('环境危害');
+  await page.locator('#toggle-filters').click();
+  await expect(page.getByRole('checkbox',{name:'类型：环境危害',exact:true})).toBeChecked();
+  await expect(page.locator('#results .entry-name').filter({hasText:'雪崩'})).toHaveCount(1);
+});
+
 test('spell components read as glyph strips while filters and export keep every component',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await visit(page,spells+'&f_verbal=false&f_material=true');

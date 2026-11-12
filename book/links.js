@@ -48,7 +48,32 @@
     }
     return positions.sort((a, b) => a.y - b.y);
   }
-  window.annaSourceLinks = Object.freeze({definitionPosition, definitionPositions});
+  /* Marks show where anna's links are before the pointer finds them. They paint as text highlights, so the
+     source DOM, typography and layout stay exactly as they were; the color tells whose page a link opens:
+     Stella's blue jumps to a definition in the reader, Anna's wine opens her entry. */
+  const marks = {reference:'anna-reference', definition:'anna-definition'};
+  let marked = false, markStyles;
+  function paintMarks() {
+    if (!root || !window.CSS?.highlights) return;
+    if (marked && !markStyles) {
+      markStyles = new CSSStyleSheet();
+      markStyles.replaceSync(`::highlight(${marks.reference}){background-color:rgb(29 95 167 / .16)}
+        ::highlight(${marks.definition}){background-color:rgb(150 44 63 / .12)}
+        :root[data-webhelp-theme=dark] ::highlight(${marks.reference}){background-color:rgb(114 167 228 / .26)}
+        :root[data-webhelp-theme=dark] ::highlight(${marks.definition}){background-color:rgb(240 157 171 / .22)}`);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, markStyles];
+    }
+    for (const [kind, name] of Object.entries(marks)) {
+      if (!marked) { CSS.highlights.delete(name); continue; }
+      // Static ranges keep the bound text nodes, which source table enhancements may move.
+      const highlight = new Highlight(...links.filter(link => link.kind === kind).map(({binding:{a, b}}) =>
+        new StaticRange({startContainer:a[0], startOffset:a[1], endContainer:b[0], endOffset:b[1]})));
+      highlight.priority = kind === 'definition' ? 1 : 0; // Definitions also win hit testing where they overlap.
+      CSS.highlights.set(name, highlight);
+    }
+  }
+  function markLinks(on) { marked = on === true; paintMarks(); }
+  window.annaSourceLinks = Object.freeze({definitionPosition, definitionPositions, markLinks});
   function navigateFragment() {
     if (window.parent && window.parent !== window) return;
     let id;
@@ -124,7 +149,7 @@
       window.addEventListener(event, () => { interacted = true; }, {passive:true});
     document.fonts?.ready.then(() => { if (!interacted) navigateFragment(); schedule(); });
     window.addEventListener('load', () => { if (!interacted) navigateFragment(); schedule(); });
-    navigateFragment(); schedule();
+    navigateFragment(); schedule(); paintMarks();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true}); else init();
 })();

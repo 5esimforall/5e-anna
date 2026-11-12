@@ -86,17 +86,20 @@
     if (event.source !== parent || event.origin !== location.origin || !data || data.channel !== channel ||
         data.version !== version || data.snapshot !== snapshot || data.documentId !== documentId) return;
     if (data.type === 'initialize' && !initialized && Number.isInteger(data.navigationId)) {
-      navigationId = data.navigationId; initialized = true; applyTheme(data.theme);
+      navigationId = data.navigationId; initialized = true; applyTheme(data.theme); markLinks(data.linkMarks);
       send('initialized',{height:height(),definitions:definitions()});
     }
     if (!initialized || data.navigationId !== navigationId) return;
     if (data.type === 'locate' && Number.isInteger(data.requestId)) locate(data);
     else if (data.type === 'theme') { applyTheme(data.theme); measure(); }
+    else if (data.type === 'link-marks') markLinks(data.linkMarks);
     else if (data.type === 'focus') window.focus();
   });
   function applyTheme(theme) {
     if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-webhelp-theme', theme);
   }
+  // The reader's switch for marking anna's links; the link layer owns the marks themselves.
+  function markLinks(on) { window.annaSourceLinks?.markLinks(on === true); }
   async function preparePresentation(resources) {
     const styles = [];
     for (const asset of resources) {

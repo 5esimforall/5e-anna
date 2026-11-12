@@ -557,6 +557,20 @@
   // Share the resolved theme through the same protocol as location and focus.
   new MutationObserver(() => flow?.theme(document.documentElement.dataset.theme))
     .observe(document.documentElement, {attributes:true, attributeFilter:['data-theme']});
+  /* Marking anna's links is this browser's reading preference, like the theme, and never part of a shared address.
+     The marks paint as text highlights; a browser without them gets no switch that would do nothing. */
+  const linkMarksKey = 'anna.linkMarks', linkMarksButton = $('#book-link-marks');
+  let linkMarks = stored.get(linkMarksKey) === 'on';
+  linkMarksButton.hidden = !window.CSS?.highlights;
+  linkMarksButton.title = ui.linkMarks + '\n' + ui.linkMarksLegend;
+  linkMarksButton.setAttribute('aria-description', ui.linkMarksLegend);
+  function applyLinkMarks() { linkMarksButton.setAttribute('aria-pressed', String(linkMarks)); flow?.markLinks(linkMarks); }
+  linkMarksButton.onclick = () => {
+    linkMarks = !linkMarks; stored.set(linkMarksKey, linkMarks ? 'on' : null); // Blocked storage still switches this page.
+    applyLinkMarks();
+  };
+  stored.watch(linkMarksKey, () => { linkMarks = stored.get(linkMarksKey) === 'on'; applyLinkMarks(); });
+  applyLinkMarks();
   narrow.addEventListener('change', () => setSidebar(!narrow.matches));
   document.addEventListener('keydown', event => {
     if (event.key === 'Escape' && $('#book-filter').value && sidebar.contains(document.activeElement) && pane === 'contents') {
@@ -596,6 +610,7 @@
         fetchPage:(path,signal) => api('/api/reader-page?'+new URLSearchParams({path,snapshot:metadata.snapshot}),signal),
         labels:ui,text,onActive:activeDocument,onNavigate:target => navigate(target,true,true),
         onTools:() => $('#book-menu').focus(),onSearch:() => { selectPane('search'); setSidebar(true,true); }});
+      flow.markLinks(linkMarks);
       $('#book-version').hidden = !metadata.source_release;
       $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
       importLegacyPosition();

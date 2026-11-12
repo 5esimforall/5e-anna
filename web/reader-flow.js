@@ -4,7 +4,7 @@ class AnnaReaderFlow {
   constructor({scroll, container, snapshot, contentBase, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch}) {
     Object.assign(this,{scroll,container,snapshot,contentBase,fetchPage,labels,text,onActive,onNavigate,onTools,onSearch});
     this.records = new Map(); this.documentSequence = 0; this.locationSequence = 0; this.scope = null; this.active = null;
-    this.windowRadius = 2; this.maxDocuments = 5;
+    this.windowRadius = 2; this.maxDocuments = 5; this.linkMarks = false;
     new ResizeObserver(() => this.scheduleMaintenance()).observe(this.scroll);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.scheduleMaintenance(); });
     this.scroll.addEventListener('scroll', () => this.schedulePosition(), {passive:true});
@@ -291,6 +291,8 @@ class AnnaReaderFlow {
       snapshot:this.snapshot,navigationId:record.navigationId,...detail},location.origin);
   }
   theme(value) { for (const record of this.records.values()) this.send(record,'theme',{theme:value}); }
+  // Whether source pages mark anna's links; pages that start later receive it with their theme.
+  markLinks(on) { this.linkMarks = on; for (const record of this.records.values()) this.send(record,'link-marks',{linkMarks:on}); }
   focus() { this.active?.frame.focus(); this.send(this.active,'focus'); }
   message(event) {
     const data = event.data;
@@ -300,7 +302,7 @@ class AnnaReaderFlow {
     if (data.type === 'ready' && record.status === 'loading' && typeof data.documentId === 'string' && data.documentId.length < 100) {
       record.documentId = data.documentId;
       this.resize(record,data.height);
-      this.send(record,'initialize',{theme:document.documentElement.dataset.theme}); return;
+      this.send(record,'initialize',{theme:document.documentElement.dataset.theme,linkMarks:this.linkMarks}); return;
     }
     if (data.documentId !== record.documentId || data.navigationId !== record.navigationId) return;
     if (data.type === 'initialized') {

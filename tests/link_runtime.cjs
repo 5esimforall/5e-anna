@@ -27,8 +27,14 @@ const document={body,documentElement:html,readyState:'complete',
     getClientRects(){renderPhases.push('read');return [{left:10,top:textTop-scrollY,width:50,height:20}]}
   }}
 };
-const window={addEventListener:(event,callback)=>{callbacks[event]=callback},scrollBy:(x,y)=>{scrollY+=y;callbacks.scroll?.()}};
-const context=vm.createContext({document,window,location:{hash:''},Node:{TEXT_NODE:3},Range:{START_TO_START:0},innerHeight:600,
+// Link marks paint as named text highlights; this registry stands in for CSS.highlights.
+const highlights=new Map(), CSS={highlights};
+class Highlight extends Set { constructor(...ranges){super(ranges);this.priority=0;} }
+class StaticRange { constructor(init){Object.assign(this,init);} }
+class CSSStyleSheet { replaceSync(text){this.text=text;} }
+document.adoptedStyleSheets=[];
+const window={CSS,addEventListener:(event,callback)=>{callbacks[event]=callback},scrollBy:(x,y)=>{scrollY+=y;callbacks.scroll?.()}};
+const context=vm.createContext({document,window,CSS,Highlight,StaticRange,CSSStyleSheet,location:{hash:''},Node:{TEXT_NODE:3},Range:{START_TO_START:0},innerHeight:600,
   requestAnimationFrame:f=>raf.push(f),getComputedStyle:()=>({visibility:'visible'}),
   MutationObserver:class {constructor(cb){callbacks.mutation=cb}observe(){}},console:{warn:(...v)=>warnings.push(v)}});
 vm.runInContext(fs.readFileSync(__dirname+'/../web/link-labels.js','utf8'),context);
@@ -53,5 +59,21 @@ assert.ok(rangeCount>before);assert.equal(anchor.style.top,'90px');
 textTop=1000;anchor.events.focus();flush();assert.equal(anchor.style.top,'20px');
 context.location.hash='#anna-ver_a';callbacks.hashchange();flush();assert.equal(anchor.style.top,'20px');
 context.location.hash='#%not-valid';callbacks.hashchange();flush();
+// Marks are off until the reader asks; turning them on adds highlights and one style sheet, never DOM nodes.
+const links=context.window.annaSourceLinks, bodyNodes=[...body.childNodes];
+assert.equal(highlights.size,0);assert.equal(document.adoptedStyleSheets.length,0);
+links.markLinks(true);
+const marked=name=>[...highlights.get(name)].map(r=>[r.startContainer,r.startOffset,r.endContainer,r.endOffset]);
+assert.deepEqual(marked('anna-definition'),[[node,0,node,5]]);
+assert.deepEqual(marked('anna-reference'),[[refNode,0,refNode,5]]);
+assert.ok(highlights.get('anna-definition').priority>highlights.get('anna-reference').priority,'definitions win where they overlap references');
+assert.equal(document.adoptedStyleSheets.length,1);
+assert.match(document.adoptedStyleSheets[0].text,/:root\[data-webhelp-theme=dark\] ::highlight\(anna-reference\)/);
+assert.deepEqual(body.childNodes,bodyNodes);
+links.markLinks('on');assert.equal(highlights.size,0,'only an explicit true marks links');
+links.markLinks(true);links.markLinks(true);assert.equal(document.adoptedStyleSheets.length,1,'the style sheet is adopted once');
+links.markLinks(false);assert.equal(highlights.size,0);
 node.isConnected=false;callbacks.mutation();flush();assert.equal(group.childNodes.length,0);
+// A browser without text highlights keeps reading and following links; the marks simply stay away.
+delete CSS.highlights;links.markLinks(true);assert.equal(highlights.size,0);
 assert.deepEqual(warnings,[]);

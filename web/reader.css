@@ -4,11 +4,17 @@
 .book-app { --book-bar-height: 44px; }
 .book-topbar { flex-shrink: 0; }
 .book-topbar .brand, .book-topbar .topbar-actions { flex-shrink: 0; white-space: nowrap; }
-/* Reading bar: the contents toggle, the path to the reading scope, and one pager for the pages inside it. */
+/* Reading bar: the contents toggle, the path to the reading scope, one pager for the pages inside it, and the switch
+   that marks anna's links. */
 #book-bar { display: flex; align-items: center; gap: 6px; flex-shrink: 0; height: var(--book-bar-height); padding: 0 10px 0 5px; box-sizing: border-box; border-bottom: 1px solid var(--anna-line); background: var(--anna-surface); font-size: 13px; }
-#book-menu { width: 34px; height: 34px; }
-#book-menu svg { width: 18px; height: 18px; }
+#book-menu, #book-link-marks { width: 34px; height: 34px; }
+#book-menu svg, #book-link-marks svg { width: 18px; height: 18px; }
 #book-menu[aria-expanded=true] { color: var(--anna-brand); }
+/* Marking links ends the bar: a view of the text like the theme at the end of the topbar. Its icon is a line of
+   text with one highlighted phrase, filled more strongly while the marks are shown. */
+#book-link-marks .link-marks-band { fill: currentColor; stroke: none; opacity: .2; }
+#book-link-marks[aria-pressed=true] { color: var(--anna-brand); background: var(--anna-selected); }
+#book-link-marks[aria-pressed=true] .link-marks-band { opacity: .4; }
 /* The path runs from the scope's ancestors through the scope name to the current page. Levels after the scope name
    open their siblings; the trailing chevron opens the current node's children. */
 #book-bar { position: relative; z-index: 3; }

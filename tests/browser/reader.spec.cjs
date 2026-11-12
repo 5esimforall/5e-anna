@@ -55,9 +55,11 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
     // With nothing more remembered, the companion is one link and the theme is the only visible button.
     await expect(page.locator('.book-topbar button:visible')).toHaveCount(1);
     await expect(page.locator('#book-bar #book-menu')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
-    const [bar,menu,scope,pager]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging'].map(s=>page.locator(s).boundingBox()));
+    const [bar,menu,scope,pager,marks]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging','#book-link-marks'].map(s=>page.locator(s).boundingBox()));
     expect(menu.x).toBeLessThan(scope.x);expect(scope.x).toBeLessThan(pager.x);
-    expect(pager.x+pager.width).toBeLessThanOrEqual(bar.x+bar.width);
+    // Marking links is a view of the text, so it ends the bar as the theme ends the topbar.
+    expect(pager.x+pager.width).toBeLessThanOrEqual(marks.x);
+    expect(marks.x+marks.width).toBeLessThanOrEqual(bar.x+bar.width);
     // Ancestors outside the scope leave the bar first on narrow screens; the current level always stays.
     if(viewport.width<=800)for(const outside of await page.locator('.book-path-outside').all())await expect(outside).toBeHidden();
     await expect(page.locator('#book-path > li:not(.folded):not([hidden])').last()).toBeVisible();
@@ -72,8 +74,104 @@ test('icon buttons center their icons in the topbar, reading bar and contents to
     const r=b.getBoundingClientRect(),s=b.querySelector('svg').getBoundingClientRect();
     return {id:b.id,dx:Math.abs(s.x+s.width/2-r.x-r.width/2),dy:Math.abs(s.y+s.height/2-r.y-r.height/2)};
   }));
-  expect(offsets.map(o=>o.id)).toEqual(expect.arrayContaining(['theme','book-menu','book-filter-open','book-locate','book-expand','book-collapse']));
+  expect(offsets.map(o=>o.id)).toEqual(expect.arrayContaining(['theme','book-menu','book-link-marks','book-filter-open','book-locate','book-expand','book-collapse']));
   for(const o of offsets){expect(o.dx,o.id).toBeLessThan(0.5);expect(o.dy,o.id).toBeLessThan(0.5);}
+});
+
+// What each named text highlight covers in the source page; the page's bindings list the same ranges.
+function linkMarks(frame){
+  return frame.evaluate(()=>{
+    const covered=name=>[...(CSS.highlights.get(name)||[])].map(r=>{
+      const range=document.createRange();range.setStart(r.startContainer,r.startOffset);range.setEnd(r.endContainer,r.endOffset);return range.toString();
+    }).sort();
+    return {references:covered('anna-reference'),definitions:covered('anna-definition')};
+  });
+}
+function boundLinks(frame){
+  return frame.evaluate(()=>{
+    const data=JSON.parse(document.getElementById('anna-bindings').textContent);
+    return {references:data.references.map(r=>r.range.text).sort(),definitions:data.definitions.filter(d=>d.title).map(d=>d.title.text).sort()};
+  });
+}
+function markColors(frame){
+  return frame.evaluate(()=>['anna-reference','anna-definition'].map(name=>{
+    const range=[...CSS.highlights.get(name)][0];
+    return getComputedStyle(range.startContainer.parentElement,`::highlight(${name})`).backgroundColor;
+  }));
+}
+
+test('marking links tints every link anna recognized, by destination and theme, without changing the source',async({page},testInfo)=>{
+  const {PNG}=require('pngjs'),pixelmatch=(await import('pixelmatch')).default;
+  await visit(page,{page:cases.spell.path});
+  const toggle=page.locator('#book-link-marks'),f=content(page);
+  await expect(toggle).toBeVisible();
+  await expect(toggle).toHaveAccessibleName('标出 Anna 识别的链接');
+  await expect(toggle).toHaveAccessibleDescription('蓝底跳到 Stella 中的定义，红底在 Anna 打开条目');
+  // Off by default: the source keeps its original look until the reader asks.
+  await expect(toggle).toHaveAttribute('aria-pressed','false');
+  expect(await linkMarks(f)).toEqual({references:[],definitions:[]});
+  const bound=await boundLinks(f);
+  expect(bound.references.length).toBeGreaterThan(0);expect(bound.definitions.length).toBeGreaterThan(0);
+  const source=await f.evaluate(()=>document.body.innerHTML);
+  const reference=f.locator('anna-links a[data-kind=reference]').first();
+  await reference.scrollIntoViewIfNeeded();
+  const clip=await reference.boundingBox(),url=page.url();
+  const pixels=async()=>PNG.sync.read(await page.screenshot({clip}));
+  const changed=(a,b)=>pixelmatch(a.data,b.data,null,a.width,a.height,{threshold:0});
+  const unmarked=await pixels();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed','true');
+  await expect.poll(()=>linkMarks(f)).toEqual(bound);
+  await expect.poll(async()=>changed(await pixels(),unmarked),'the reference is painted').toBeGreaterThan(0);
+  expect(await f.evaluate(()=>document.body.innerHTML),'marks add no source DOM').toBe(source);
+  expect(page.url(),'marks are not part of the shared address').toBe(url);
+  // Stella's blue jumps within the reader; Anna's wine opens her entry.
+  expect(await markColors(f)).toEqual(['rgba(29, 95, 167, 0.16)','rgba(150, 44, 63, 0.12)']);
+  await testInfo.attach('link-marks-light.png',{body:await page.screenshot(),contentType:'image/png'});
+
+  await toggle.focus();await page.keyboard.press('Space');
+  await expect(toggle).toHaveAttribute('aria-pressed','false');await expect(toggle).toBeFocused();
+  await expect.poll(()=>linkMarks(f)).toEqual({references:[],definitions:[]});
+  await expect.poll(async()=>changed(await pixels(),unmarked),'turning marks off restores the original pixels').toBe(0);
+  expect(await f.evaluate(()=>document.body.innerHTML)).toBe(source);
+
+  // Dark pages get their own tints. (The source's contrast repair restyles elements on a theme change, so the
+  // DOM comparisons above stay in one theme.)
+  await page.keyboard.press('Enter');await expect(toggle).toHaveAttribute('aria-pressed','true');
+  await page.emulateMedia({colorScheme:'dark'});
+  await expect(f.locator('html')).toHaveAttribute('data-webhelp-theme','dark');
+  await expect.poll(()=>linkMarks(f)).toEqual(bound);
+  expect(await markColors(f)).toEqual(['rgba(114, 167, 228, 0.26)','rgba(240, 157, 171, 0.22)']);
+  await testInfo.attach('link-marks-dark.png',{body:await page.screenshot(),contentType:'image/png'});
+});
+
+test('link marks persist in this browser, reach later documents and other tabs; without text highlights there is no switch',async({page,context,browser})=>{
+  const ref=cases.reference;
+  await visit(page,{page:cases.reference_source});
+  await page.locator('#book-link-marks').click();
+  expect(await page.evaluate(()=>localStorage.getItem('anna.linkMarks'))).toBe('on');
+  // A document mounted afterwards starts marked: follow a marked reference to its definition on another page.
+  await page.frameLocator('#content').getByRole('link',{name:'查看定义: '+ref.text,exact:true}).first().click();
+  await expect.poll(()=>new URL(page.url()).searchParams.get('entry')).toBe(ref.id);await ready(page);
+  const target=()=>page.frames().find(f=>decodeURIComponent(f.url()).includes(ref.path));
+  await expect.poll(async()=>target() && linkMarks(target())).toEqual(await boundLinks(target()));
+  const other=await context.newPage();await visit(other,{page:cases.spell.path});
+  await expect(other.locator('#book-link-marks')).toHaveAttribute('aria-pressed','true');
+  await expect.poll(async()=>(await linkMarks(content(other))).references.length).toBeGreaterThan(0);
+  await page.reload();await ready(page);
+  await expect(page.locator('#book-link-marks')).toHaveAttribute('aria-pressed','true');
+  await expect.poll(async()=>(await linkMarks(content(page))).references.length).toBeGreaterThan(0);
+  // Turning them off in one tab clears the others; the default stores nothing.
+  await page.locator('#book-link-marks').click();
+  expect(await page.evaluate(()=>localStorage.getItem('anna.linkMarks'))).toBeNull();
+  await expect(other.locator('#book-link-marks')).toHaveAttribute('aria-pressed','false');
+  await expect.poll(()=>linkMarks(content(other))).toEqual({references:[],definitions:[]});
+  const plain=await browser.newContext();
+  await plain.addInitScript(()=>{if(window===top)Object.defineProperty(CSS,'highlights',{value:undefined,configurable:true});});
+  const unsupported=await plain.newPage();await visit(unsupported,{page:cases.spell.path});
+  await expect(unsupported.locator('#book-link-marks')).toBeHidden();
+  await plain.close();
 });
 
 test('titles name the open content on both pages',async({page})=>{
@@ -338,7 +436,7 @@ test('late responses and unrelated messages cannot replace the current page',asy
   await page.waitForTimeout(650);await expect(page).toHaveURL(anna+fast);
 });
 
-test('disabled storage still permits navigation and shared shell theme; original text stays unchanged',async({page,context})=>{
+test('disabled storage still permits navigation, shared shell theme and link marks; original text stays unchanged',async({page,context})=>{
   await context.addInitScript(()=>{Storage.prototype.getItem=()=>{throw new Error('blocked')};Storage.prototype.setItem=()=>{throw new Error('blocked')};Storage.prototype.removeItem=()=>{throw new Error('blocked')};});
   await visit(page,{entry:cases.spell.id});
   const before=await content(page).locator('body').innerText();
@@ -349,7 +447,12 @@ test('disabled storage still permits navigation and shared shell theme; original
     await expect(content(page).locator('html')).toHaveAttribute('data-webhelp-theme',preference==='system'?'light':preference);
     expect(await content(page).locator('body').innerText()).toBe(before);
   }
+  await page.locator('#book-link-marks').click();
+  await expect(page.locator('#book-link-marks')).toHaveAttribute('aria-pressed','true');
+  await expect.poll(async()=>(await linkMarks(content(page))).references.length).toBeGreaterThan(0);
+  expect(await content(page).locator('body').innerText()).toBe(before);
   await page.reload();await ready(page);
+  await expect(page.locator('#book-link-marks')).toHaveAttribute('aria-pressed','false');
 });
 
 for(const [label,path] of [

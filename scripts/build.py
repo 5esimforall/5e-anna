@@ -22,7 +22,7 @@ from entry_types import classify, refine_page_types, mark_class_regions, evidenc
 from source_extract import SourceRegistry
 from table_extract import extract_tables
 
-from paths import PROJECT, WEB as DEFAULT_WEB, ETOOLS as DEFAULT_ETOOLS
+from paths import PROJECT, WEB as DEFAULT_WEB, FIVETOOLS as DEFAULT_FIVETOOLS
 from review_store import DEFAULT_DECISIONS, require_current, pipeline_hash, extraction_hash
 INDEX_FIELDS={
     '物品名':'name','怪物名':'name','法术名':'name','稀有度':'rarity','类别':'item_type','子类别':'item_subtypes',
@@ -554,7 +554,7 @@ class Build:
             assert sha256((self.web/path).read_bytes()).hexdigest()==page['sha256'],('Source changed during build',path)
         return {'input_accounting':'pass','unique_ids':'pass','evidence_ranges':'pass','raw_evidence':'pass','foreign_keys':'pass','source_unchanged':'pass'}
 
-    def export(self,out,validation,total_inputs,elapsed,decision_path=DEFAULT_DECISIONS,etools=None):
+    def export(self,out,validation,total_inputs,elapsed,decision_path=DEFAULT_DECISIONS,fivetools=None):
         out.mkdir(parents=True,exist_ok=True)
         db=sqlite3.connect(out/'catalog.sqlite')
         db.execute('PRAGMA foreign_keys=ON')
@@ -602,9 +602,9 @@ class Build:
         from references import build_references
         reference_coverage=build_references(db,self.web,out,decision_path)
         counterpart_coverage=None
-        if etools:
+        if fivetools:
             from counterparts import build_counterparts
-            counterpart_coverage=build_counterparts(db,etools,out)
+            counterpart_coverage=build_counterparts(db,fivetools,out)
         reviews=[json.loads(row[0]) for row in db.execute('SELECT data FROM review_queue ORDER BY reason,target,id')]
         summary={'snapshot_commit':self.commit,'input_html_files':total_inputs,'processed_html_files':len(self.pages),'full_scan':len(self.pages)==total_inputs,
             'page_roles':dict(Counter(p['role'] for p in self.pages.values())),'parse_status':dict(Counter(p['parse_status'] for p in self.pages.values())),
@@ -667,13 +667,13 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',type=Path,default=DEFAULT_WEB);ap.add_argument('--output',type=Path,default=PROJECT/'data/extracted')
     ap.add_argument('--decisions',type=Path,default=DEFAULT_DECISIONS)
-    ap.add_argument('--etools',type=Path,default=DEFAULT_ETOOLS,help='5etools-cn mirror compared with the extracted entries')
+    ap.add_argument('--5etools',dest='fivetools',type=Path,default=DEFAULT_FIVETOOLS,help='5etools-cn mirror compared with the extracted entries')
     ap.add_argument('--no-counterparts',action='store_true',help='skip the 5etools-cn comparison; the summary records it as skipped')
     ap.add_argument('--workers',type=int,default=min(4,os.cpu_count() or 1));ap.add_argument('--limit',type=int,help='development only; summary explicitly marks partial scans')
     args=ap.parse_args()
-    etools=None if args.no_counterparts else args.etools
-    if etools and not (etools/'data').is_dir():
-        raise SystemExit(f'5etools-cn 对照镜像缺失：{etools}；运行 make clone 下载，或用 --no-counterparts 跳过对照')
+    fivetools=None if args.no_counterparts else args.fivetools
+    if fivetools and not (fivetools/'data').is_dir():
+        raise SystemExit(f'5etools-cn 对照镜像缺失：{fivetools}；运行 make clone 下载，或用 --no-counterparts 跳过对照')
     started=time.monotonic();extraction_at_start=extraction_hash();b=Build(args.source)
     paths=sorted(p.relative_to(args.source).as_posix() for p in (args.source/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
     total=len(paths)
@@ -693,7 +693,7 @@ def main():
                 if i%500==0:print(f'正文：{i}/{len(paths)}；候选：{len(b.entries)}',flush=True)
     b.finish();validation=b.validate(paths)
     with tempfile.TemporaryDirectory(prefix='.build-',dir=PROJECT) as tmp:
-        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,args.decisions,etools)
+        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,args.decisions,fivetools)
         b.validate(paths)
         with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
             require_current(staged_db,args.decisions)

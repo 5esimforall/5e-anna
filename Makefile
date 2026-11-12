@@ -4,10 +4,10 @@ WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1
 REPO ?= https://github.com/DND5eChm/5echm_web.git
 BRANCH ?= pages
 # 5etools-cn is compared with anna's entries; only its data/ directory is checked out.
-ETOOLS_DIR ?= ../5etools-cn
-ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(ETOOLS_DIR)")
-ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
-ETOOLS_BRANCH ?= main
+5ETOOLS_DIR ?= ../5etools-cn
+5ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DIR)")
+5ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
+5ETOOLS_BRANCH ?= main
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
@@ -31,8 +31,8 @@ help:
 	@echo "  make update    显式拉取原文与 5etools-cn 更新并刷新搜索索引；分析数据需 make build"
 	@echo "  make status    查看原文、5etools-cn 版本和搜索索引状态"
 	@echo "  make clean     删除共享原文镜像及搜索缓存（影响其他引用方）"
-	@echo "  变量: WEB_DIR=原文路径 ETOOLS_DIR=5etools-cn路径 ANNA_PORT=8000 PYTHON=解释器"
-	@echo "  WEB_DIR、ETOOLS_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web、5etools-cn"
+	@echo "  变量: WEB_DIR=原文路径 5ETOOLS_DIR=5etools-cn路径 ANNA_PORT=8000 PYTHON=解释器"
+	@echo "  WEB_DIR、5ETOOLS_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web、5etools-cn"
 
 clone:
 	@if [ ! -e "$(WEB_PATH)" ]; then \
@@ -40,18 +40,18 @@ clone:
 	elif [ ! -d "$(WEB_PATH)/topics" ]; then \
 		echo "原文目录无 topics，拒绝覆盖：$(WEB_PATH)" >&2; exit 1; \
 	fi
-	@if [ ! -e "$(ETOOLS_PATH)" ]; then \
-		git clone --depth 1 --filter=blob:none --sparse --branch "$(ETOOLS_BRANCH)" "$(ETOOLS_REPO)" "$(ETOOLS_PATH)" && \
-		git -C "$(ETOOLS_PATH)" sparse-checkout set data; \
-	elif [ ! -d "$(ETOOLS_PATH)/data" ]; then \
-		echo "5etools-cn 目录无 data，拒绝覆盖：$(ETOOLS_PATH)" >&2; exit 1; \
+	@if [ ! -e "$(5ETOOLS_PATH)" ]; then \
+		git clone --depth 1 --filter=blob:none --sparse --branch "$(5ETOOLS_BRANCH)" "$(5ETOOLS_REPO)" "$(5ETOOLS_PATH)" && \
+		git -C "$(5ETOOLS_PATH)" sparse-checkout set data; \
+	elif [ ! -d "$(5ETOOLS_PATH)/data" ]; then \
+		echo "5etools-cn 目录无 data，拒绝覆盖：$(5ETOOLS_PATH)" >&2; exit 1; \
 	fi
 
 update: clone
 	@git -C "$(WEB_PATH)" pull --ff-only
 	@git -C "$(WEB_PATH)" log -1 --format='已更新到 %h  %ad  %s' --date=iso
-	@git -C "$(ETOOLS_PATH)" pull --ff-only
-	@git -C "$(ETOOLS_PATH)" log -1 --format='5etools-cn 已更新到 %h  %ad  %s' --date=iso
+	@git -C "$(5ETOOLS_PATH)" pull --ff-only
+	@git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn 已更新到 %h  %ad  %s' --date=iso
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
 
 status:
@@ -64,10 +64,10 @@ status:
 	else \
 		echo "尚未下载，运行 make clone"; \
 	fi
-	@if [ -d "$(ETOOLS_PATH)/.git" ] || [ -f "$(ETOOLS_PATH)/.git" ]; then \
-		git -C "$(ETOOLS_PATH)" log -1 --format='5etools-cn: %h  %ad  %s' --date=iso; \
-	elif [ -d "$(ETOOLS_PATH)/data" ]; then \
-		echo "5etools-cn（无 Git 版本）：$(ETOOLS_PATH)"; \
+	@if [ -d "$(5ETOOLS_PATH)/.git" ] || [ -f "$(5ETOOLS_PATH)/.git" ]; then \
+		git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn: %h  %ad  %s' --date=iso; \
+	elif [ -d "$(5ETOOLS_PATH)/data" ]; then \
+		echo "5etools-cn（无 Git 版本）：$(5ETOOLS_PATH)"; \
 	else \
 		echo "5etools-cn: 尚未下载，运行 make clone"; \
 	fi
@@ -94,7 +94,7 @@ anna:
 	@"$(PYTHON)" scripts/serve.py --port "$(ANNA_PORT)"
 
 build: clone
-	@WEB_DIR="$(WEB_PATH)" ETOOLS_DIR="$(ETOOLS_PATH)" "$(PYTHON)" scripts/build.py
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/build.py --5etools "$(5ETOOLS_PATH)"
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
 
 inventory: clone

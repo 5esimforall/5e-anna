@@ -105,10 +105,10 @@ class CounterpartTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.etools = self.root / '5etools-cn'
-        write_catalog(self.etools)
+        self.fivetools = self.root / '5etools-cn'
+        write_catalog(self.fivetools)
         self.db = make_db(self.root / 'catalog.sqlite')
-        records, self.snapshot, self.alignment, outcomes, self.findings, _ = compare(self.db, self.etools)
+        records, self.snapshot, self.alignment, outcomes, self.findings, _ = compare(self.db, self.fivetools)
         self.records = {r['id']: r for r in records}
         self.outcomes = {o['entry_id']: o for o in outcomes}
 
@@ -203,7 +203,7 @@ class CounterpartTests(unittest.TestCase):
     def test_export_and_audit(self):
         out = self.root / 'out'
         out.mkdir()
-        report = build_counterparts(self.db, self.etools, out)
+        report = build_counterparts(self.db, self.fivetools, out)
         self.assertEqual(report['entries'], len(ENTRIES))
         self.assertEqual(report['outcomes'], {'resolved': 12, 'ambiguous': 2, 'other_source': 1, 'unaligned': 1, 'unmatched': 2})
         result = audit_counterparts(self.db, out)

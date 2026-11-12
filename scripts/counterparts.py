@@ -140,7 +140,7 @@ def load_records(root):
                 locator = f'{rel}#/{kind}/{i}'
                 reprints = [x if isinstance(x, str) else x.get('uid', '') for x in item.get('reprintedAs') or [] if isinstance(x, (str, dict))]
                 records.append({
-                    'id': 'etools_' + digest(locator), 'kind': kind, 'locator': locator,
+                    'id': '5etools_' + digest(locator), 'kind': kind, 'locator': locator,
                     'name_zh': compact(item.get('name') or ''), 'name_en': compact(item.get('ENG_name') or ''),
                     'source': str(item.get('source') or ''), 'page': item.get('page'),
                     'translator': str(item.get('translator') or ''), 'edition': str(item.get('edition') or ''),

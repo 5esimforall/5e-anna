@@ -74,6 +74,42 @@ def audit_concepts(db,folder):
             'gap_counts':{k:len(v) for k,v in coverage['gaps'].items()}}
 
 
+def audit_counterparts(db,folder):
+    """Counterpart outcomes must be internally consistent and match their exports; agreement with
+    5etools-cn is reported, not required."""
+    errors=[]
+    records=set(r[0] for r in db.execute('SELECT id FROM counterpart_records'))
+    entries=set(r[0] for r in db.execute('SELECT id FROM entries'))
+    outcomes=Counter();rows=set()
+    for eid,outcome,rule,record,raw in db.execute('SELECT entry_id,outcome,rule,record_id,data FROM counterparts'):
+        o=json.loads(raw);rows.add(eid);outcomes[outcome]+=1
+        if [eid,outcome,rule,record]!=[o[k] for k in ('entry_id','outcome','rule','record_id')]:errors.append(eid+': data mismatch')
+        if any(c not in records for c in o['candidates']):errors.append(eid+': missing candidate')
+        if outcome=='resolved':
+            if not record or o['candidates']!=[record]:errors.append(eid+': invalid resolved record')
+        elif record is not None:errors.append(eid+': unresolved record')
+        if (outcome=='unmatched')!=(not o['candidates']):errors.append(eid+': candidates disagree with outcome')
+    findings=Counter();finding_ids=set()
+    for fid,kind,eid,record,raw in db.execute('SELECT id,kind,entry_id,record_id,data FROM counterpart_findings'):
+        f=json.loads(raw);finding_ids.add(fid);findings[kind]+=1
+        detail=f['detail']
+        if record not in records or (eid is not None and eid not in entries):errors.append(fid+': missing target')
+        if kind=='reprinted_as' and (detail['other_entry_id'] not in entries or detail['other_record_id'] not in records):errors.append(fid+': missing reprint target')
+        if (kind=='unclaimed_record')!=(eid is None):errors.append(fid+': entry presence disagrees with kind')
+    for name,column,ids in (('counterparts.csv','entry_id',rows),('counterpart_findings.csv','id',finding_ids)):
+        p=Path(folder)/name
+        if not p.exists():errors.append(name+': missing');continue
+        with p.open(encoding='utf-8-sig',newline='') as f:exported=[r[column] for r in csv.DictReader(f)]
+        if len(exported)!=len(ids) or set(exported)!=ids:errors.append(name+': IDs mismatch')
+    coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='counterpart_coverage'").fetchone()[0])
+    if coverage['outcomes']!=dict(outcomes) or coverage['entries']!=len(rows):errors.append('coverage: outcome mismatch')
+    if coverage['findings']!=dict(findings):errors.append('coverage: finding mismatch')
+    if coverage['records']!=len(records):errors.append('coverage: record mismatch')
+    return {'catalog':coverage['catalog'],'commit':coverage['commit'],'records':len(records),'entries':len(rows),
+            'outcomes':dict(outcomes),'outcomes_by_type':coverage['outcomes_by_type'],'findings':dict(findings),
+            'alignment_status':coverage['alignment_status'],'errors':errors}
+
+
 def classification_gaps(db):
     """Where typed coverage stops: untyped pages, and untyped sections that still print a mechanic.
 
@@ -170,6 +206,7 @@ def audit(db_path,baseline=None):
     catalog_reviews=[json.loads(r[0]) for r in db.execute("SELECT data FROM review_queue WHERE reason IN ('animal_statblock_unresolved','mount_example_unresolved','catalog_table_unhandled','catalog_row_layout_unresolved') ORDER BY reason,target")]
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
     concepts=audit_concepts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone() else None
+    counterparts=audit_counterparts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
     gaps,gap_pages,gap_sections=classification_gaps(db)
     conflicts,conflict_rows=type_conflict_report(db)
     old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None
@@ -197,7 +234,7 @@ def audit(db_path,baseline=None):
         'integrity_check':db.execute('PRAGMA integrity_check').fetchone()[0],
         'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),'csv_sql_mismatches':mismatches,
         'views':view_counts,'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
-        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,'change_counts':dict(Counter(c['change'] for c in changes)),
+        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
         'classification_gaps':gaps,'classification_gaps_before':gaps_before,
         'type_conflicts':conflicts,'type_conflicts_before':conflicts_before}
     db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows}
@@ -246,6 +283,28 @@ def conflict_report(result):
     return lines
 
 
+COUNTERPART_OUTCOMES={'resolved':'唯一对应','ambiguous':'多个候选','other_source':'仅见于其他来源','unaligned':'来源未对齐','unmatched':'无同名记录'}
+COUNTERPART_FINDINGS={'field_differs':'字段取值不同','name_en_differs':'英文名不同','name_en_missing':'anna 缺英文名',
+    'name_zh_differs':'不全书译名不同','reprinted_as':'重印关系候选','unclaimed_record':'不全书译文无对应条目'}
+
+
+def counterpart_report(result):
+    """Markdown for the 5etools-cn comparison: outcomes by type and the disagreements to read."""
+    c=result['counterparts']
+    if not c:return ['## 来源对照','','本次构建未运行 5etools-cn 对照。']
+    lines=['## 来源对照','',
+        f"对照 {c['catalog']} `{c['commit'][:12]}` 的 {c['records']} 条记录。对应关系是候选：依据名称、已对齐来源与所属职业得出，不改写不全书原文和已提取的值。"
+        '“无同名记录”多为 5etools 不收录的第三方、UA 与玩家包内容，也可能是名称解析差异。','',
+        '| 分类 | '+' | '.join(COUNTERPART_OUTCOMES.values())+' |','|---|'+'---:|'*len(COUNTERPART_OUTCOMES)]
+    for typ,counts in sorted(c['outcomes_by_type'].items(),key=lambda x:-sum(x[1].values())):
+        lines.append(f"| {TYPE_LABELS.get(typ,typ)} | "+' | '.join(str(counts.get(k,0)) for k in COUNTERPART_OUTCOMES)+' |')
+    lines+=['','核对线索：','']
+    for kind,label in COUNTERPART_FINDINGS.items():
+        lines.append(f"- {label}：{c['findings'].get(kind,0)}")
+    lines+=['',f"来源对齐：{'，'.join(f'{k} {n}' for k,n in c['alignment_status'].items())}；逐对见 `counterpart_sources.csv`。逐条对应见 `counterparts.csv`，线索与 5etools-cn 记录位置见 `counterpart_findings.csv`。"]
+    return lines
+
+
 def export_report(out,result,changes,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
@@ -279,6 +338,7 @@ def export_report(out,result,changes,gaps):
         '', '全库待核原因与数量见 `audit.json`；逐条增删、类型和字段变化见 `audit_changes.csv`。计数下降可能是纠正误分类，并不表示删去原文。','']
     lines+=gap_report(result,gaps)
     lines+=conflict_report(result)
+    lines+=['',*counterpart_report(result)]
     (out/'提取审计.md').write_text('\n'.join(lines)+'\n')
 
 
@@ -290,7 +350,8 @@ def main():
     report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','csv_sql_mismatches','concepts','change_counts']}
     report['classification_gaps']={k:result['classification_gaps'][k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
     report['type_conflicts']=result['type_conflicts']['entries'] if result['type_conflicts'] else None
+    report['counterparts']={k:result['counterparts'][k] for k in ('commit','outcomes','findings','errors')} if result['counterparts'] else None
     print(json.dumps(report,ensure_ascii=False,indent=2))
-    if result['parse_errors'] or result['foreign_key_errors'] or result['csv_sql_mismatches'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']):raise SystemExit(1)
+    if result['parse_errors'] or result['foreign_key_errors'] or result['csv_sql_mismatches'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']) or (result['counterparts'] and result['counterparts']['errors']):raise SystemExit(1)
 
 if __name__=='__main__':main()

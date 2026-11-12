@@ -3,6 +3,11 @@ WEB_DIR ?= ../5echm-web
 WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(WEB_DIR)")
 REPO ?= https://github.com/DND5eChm/5echm_web.git
 BRANCH ?= pages
+# 5etools-cn is compared with anna's entries; only its data/ directory is checked out.
+ETOOLS_DIR ?= ../5etools-cn
+ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(ETOOLS_DIR)")
+ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
+ETOOLS_BRANCH ?= main
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
@@ -11,7 +16,7 @@ PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 help:
 	@echo "anna 与共享不全书镜像（DnD 上层可使用相同命令）"
-	@echo "  make clone     镜像缺失时下载；已有镜像不更新"
+	@echo "  make clone     原文或 5etools-cn 对照镜像缺失时下载；已有镜像不更新"
 	@echo "  make index     重建原文全文搜索索引"
 	@echo "  make anna      分析查询页 http://127.0.0.1:$(ANNA_PORT)"
 	@echo "  make build     从同一原文生成数据库与 5echm-anna"
@@ -23,11 +28,11 @@ help:
 	@echo "  make browser-setup  安装锁定的浏览器测试依赖（首次运行）"
 	@echo "  make audit     审计数据库和导出文件"
 	@echo "  make check     运行测试与审计"
-	@echo "  make update    显式拉取原文更新并刷新搜索索引；分析数据需 make build"
-	@echo "  make status    查看原文版本和搜索索引状态"
+	@echo "  make update    显式拉取原文与 5etools-cn 更新并刷新搜索索引；分析数据需 make build"
+	@echo "  make status    查看原文、5etools-cn 版本和搜索索引状态"
 	@echo "  make clean     删除共享原文镜像及搜索缓存（影响其他引用方）"
-	@echo "  变量: WEB_DIR=原文路径 ANNA_PORT=8000 PYTHON=解释器"
-	@echo "  WEB_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web"
+	@echo "  变量: WEB_DIR=原文路径 ETOOLS_DIR=5etools-cn路径 ANNA_PORT=8000 PYTHON=解释器"
+	@echo "  WEB_DIR、ETOOLS_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web、5etools-cn"
 
 clone:
 	@if [ ! -e "$(WEB_PATH)" ]; then \
@@ -35,10 +40,18 @@ clone:
 	elif [ ! -d "$(WEB_PATH)/topics" ]; then \
 		echo "原文目录无 topics，拒绝覆盖：$(WEB_PATH)" >&2; exit 1; \
 	fi
+	@if [ ! -e "$(ETOOLS_PATH)" ]; then \
+		git clone --depth 1 --filter=blob:none --sparse --branch "$(ETOOLS_BRANCH)" "$(ETOOLS_REPO)" "$(ETOOLS_PATH)" && \
+		git -C "$(ETOOLS_PATH)" sparse-checkout set data; \
+	elif [ ! -d "$(ETOOLS_PATH)/data" ]; then \
+		echo "5etools-cn 目录无 data，拒绝覆盖：$(ETOOLS_PATH)" >&2; exit 1; \
+	fi
 
 update: clone
 	@git -C "$(WEB_PATH)" pull --ff-only
 	@git -C "$(WEB_PATH)" log -1 --format='已更新到 %h  %ad  %s' --date=iso
+	@git -C "$(ETOOLS_PATH)" pull --ff-only
+	@git -C "$(ETOOLS_PATH)" log -1 --format='5etools-cn 已更新到 %h  %ad  %s' --date=iso
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
 
 status:
@@ -50,6 +63,13 @@ status:
 		echo "原文目录（无 Git 版本）：$(WEB_PATH)"; \
 	else \
 		echo "尚未下载，运行 make clone"; \
+	fi
+	@if [ -d "$(ETOOLS_PATH)/.git" ] || [ -f "$(ETOOLS_PATH)/.git" ]; then \
+		git -C "$(ETOOLS_PATH)" log -1 --format='5etools-cn: %h  %ad  %s' --date=iso; \
+	elif [ -d "$(ETOOLS_PATH)/data" ]; then \
+		echo "5etools-cn（无 Git 版本）：$(ETOOLS_PATH)"; \
+	else \
+		echo "5etools-cn: 尚未下载，运行 make clone"; \
 	fi
 	@if [ -f .cache/5echm-search.pkl ]; then \
 		printf '搜索索引: %s（启动时校验来源与内容指纹）\n' "$$(du -h .cache/5echm-search.pkl | cut -f1 | tr -d ' ')"; \
@@ -74,7 +94,7 @@ anna:
 	@"$(PYTHON)" scripts/serve.py --port "$(ANNA_PORT)"
 
 build: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/build.py
+	@WEB_DIR="$(WEB_PATH)" ETOOLS_DIR="$(ETOOLS_PATH)" "$(PYTHON)" scripts/build.py
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
 
 inventory: clone

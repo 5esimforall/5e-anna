@@ -73,25 +73,43 @@ class WorkflowTests(unittest.TestCase):
             (web / 'topics').mkdir(parents=True)
             sentinel = web / 'topics' / 'source.htm'
             sentinel.write_text('unchanged')
-            result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', 'REPO=/does/not/exist')
+            etools = Path(td) / '5etools cn'
+            (etools / 'data').mkdir(parents=True)
+            catalog = etools / 'data' / 'spells.json'
+            catalog.write_text('{}')
+            result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', 'REPO=/does/not/exist',
+                               f'ETOOLS_DIR={etools}', 'ETOOLS_REPO=/does/not/exist')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(sentinel.read_text(), 'unchanged')
+            self.assertEqual(catalog.read_text(), '{}')
             self.assertFalse((web / '.git').exists())
+            self.assertFalse((etools / '.git').exists())
+
+    @staticmethod
+    def repository(path, branch, files):
+        path.mkdir()
+        subprocess.run(['git', 'init', '-q', '-b', branch, str(path)], check=True)
+        for name, text in files.items():
+            (path / name).parent.mkdir(parents=True, exist_ok=True)
+            (path / name).write_text(text)
+        subprocess.run(['git', '-C', str(path), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(path), '-c', 'user.name=Fixture', '-c',
+                        'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false',
+                        'commit', '-qm', 'fixture'], check=True)
 
     def test_clone_missing_source_from_local_repository(self):
         with tempfile.TemporaryDirectory() as td:
             source, dest = Path(td) / 'origin', Path(td) / 'mirror'
-            source.mkdir()
-            subprocess.run(['git', 'init', '-q', '-b', 'pages', str(source)], check=True)
-            (source / 'topics').mkdir()
-            (source / 'topics/test.htm').write_text('source')
-            subprocess.run(['git', '-C', str(source), 'add', '.'], check=True)
-            subprocess.run(['git', '-C', str(source), '-c', 'user.name=Fixture', '-c',
-                            'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false',
-                            'commit', '-qm', 'fixture'], check=True)
-            result = self.make(PROJECT, 'clone', f'WEB_DIR={dest}', f'REPO={source}')
+            etools_source, etools = Path(td) / 'etools-origin', Path(td) / '5etools-cn'
+            self.repository(source, 'pages', {'topics/test.htm': 'source'})
+            # Only data/ is checked out; the site's pages and docs stay in the repository.
+            self.repository(etools_source, 'main', {'data/spells.json': '{"spell":[]}', 'docs/guide.md': 'guide'})
+            result = self.make(PROJECT, 'clone', f'WEB_DIR={dest}', f'REPO={source}',
+                               f'ETOOLS_DIR={etools}', f'ETOOLS_REPO=file://{etools_source}')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((dest / 'topics/test.htm').read_text(), 'source')
+            self.assertEqual((etools / 'data/spells.json').read_text(), '{"spell":[]}')
+            self.assertFalse((etools / 'docs').exists())
 
     def test_invalid_directory_rejected_without_deletion(self):
         with tempfile.TemporaryDirectory() as td:
@@ -101,6 +119,13 @@ class WorkflowTests(unittest.TestCase):
                 result = self.make(PROJECT, command, f'WEB_DIR={td}')
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(sentinel.read_text(), 'keep')
+            # An existing 5etools-cn location without data/ is not replaced either.
+            web = Path(td) / 'mirror'
+            (web / 'topics').mkdir(parents=True)
+            result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', f'ETOOLS_DIR={td}', 'ETOOLS_REPO=/does/not/exist')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('5etools-cn 目录无 data', result.stderr)
+            self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
         for command in ('up', 'build', 'index', 'inventory'):

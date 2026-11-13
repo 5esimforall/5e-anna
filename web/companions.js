@@ -1,19 +1,19 @@
 /* The other companion, beside the theme switch on both pages. Turning to her offers what she would bring up
-   first, and its label says where it leads; the menu beside it lists the topic and the places she remembers.
-   Both read the shared workspace, so every tab shows the same memories. */
+   first, and its label says where it leads; the menu beside it lists the topic and recent places.
+   Both read the shared workspace, so every tab shows the same record. */
 // Companion names are not translated; the verbs say what turning to her does.
 const annaCompanionLabels = {
   zh:{names:{query:'Anna',book:'Stella'}, topic:{book:'翻到 {name}',query:'查 {name}'}, resume:{book:'接着读 {name}',query:'回到 {name}'},
-    go:'{brand}：{action}', more:'{name} 记得的地方', remembers:'{name} 记得', showing:'正在看', allEntries:'全部条目'},
+    go:'{brand}：{action}', more:'最近打开的位置', recent:'最近', showing:'当前', allEntries:'全部条目'},
   en:{names:{query:'Anna',book:'Stella'}, topic:{book:'Turn to {name}',query:'Look up {name}'}, resume:{book:'Keep reading {name}',query:'Back to {name}'},
-    go:'{brand}: {action}', more:'Places {name} remembers', remembers:'{name} remembers', showing:'Now discussing', allEntries:'All entries'}
+    go:'{brand}: {action}', more:'Recent places', recent:'Recent', showing:'Current', allEntries:'All entries'}
 };
 const annaCompanions = (() => {
   let labels;
   const other = {query:'book', book:'query'};
   const fill = (template, values) => Object.entries(values).reduce((s,[k,v]) => s.replaceAll('{'+k+'}', v), template);
   let page, snapshot, slot, go, more, menu;
-  // Where each choice leads. A remembered place also asks the page it opens to restore that place.
+  // Where each choice leads. A recent place also asks the page it opens to restore that place.
   function bookHref(choice) {
     if (choice.kind === 'topic') return '/read?' + new URLSearchParams({entry:choice.topic.entry});
     const {root, page, node} = choice.memory;
@@ -77,7 +77,7 @@ const annaCompanions = (() => {
     return anchor;
   }
   function items() {
-    const state = annaWorkspace.read(snapshot), companion = other[page], name = labels.names[companion], groups = [];
+    const state = annaWorkspace.read(snapshot), companion = other[page], groups = [];
     if (state.topic && state.topic.from !== companion) {
       const choice = {kind:'topic', topic:state.topic};
       groups.push(group(labels.showing, [entry(choice, state, action(choice))]));
@@ -87,10 +87,10 @@ const annaCompanions = (() => {
       return companion === 'book' ? entry(choice, state, memoryName(companion, memory), memory.scopeLabel) :
         entry(choice, state, memoryName(companion, memory), memory.entryName ? memory.title || labels.allEntries : '');
     });
-    if (places.length) groups.push(group(fill(labels.remembers, {name}), places));
+    if (places.length) groups.push(group(labels.recent, places));
     return groups;
   }
-  // Following a remembered place in this tab restores it; a new tab or window opens the place afresh.
+  // Following a recent place in this tab restores it; a new tab or window opens the place afresh.
   function follow(event) {
     const anchor = event.target.closest('a[data-resume]');
     if (!anchor || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -101,14 +101,14 @@ const annaCompanions = (() => {
     ({page, snapshot} = options);
     labels = annaCompanionLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
     slot = document.querySelector('.topbar .companion');
-    const companion = other[page], name = labels.names[companion];
+    const companion = other[page];
     go = document.createElement('a'); go.className = 'companion-go';
     const avatar = document.createElement('img'); avatar.className = 'companion-avatar'; avatar.src = annaTopbar.pages[companion].logo;
     avatar.width = avatar.height = 26; avatar.alt = '';
     const label = document.createElement('span'); label.className = 'companion-label';
     go.append(avatar, label);
     more = document.createElement('button'); more.type = 'button'; more.className = 'companion-more'; more.id = 'companion-more';
-    more.setAttribute('aria-label', fill(labels.more, {name})); more.title = more.getAttribute('aria-label');
+    more.setAttribute('aria-label', labels.more); more.title = labels.more;
     more.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
     menu = document.createElement('div'); menu.className = 'popup-menu companion-menu'; menu.id = 'companion-menu';
     menu.setAttribute('role','menu'); menu.tabIndex = -1; menu.hidden = true;

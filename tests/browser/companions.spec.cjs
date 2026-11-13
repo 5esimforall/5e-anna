@@ -32,7 +32,7 @@ test('with nothing remembered, each companion leads to the other home',async({pa
   await expect(more(page)).toBeHidden();
   await page.goto(anna+'/read');await stellaReady(page);
   await expect(go(page).locator('img')).toHaveAttribute('src','/anna-logo.png');
-  // Anna remembers the empty query she just showed.
+  // Anna saves the empty query she just showed.
   await expect(go(page)).toHaveAccessibleName('5e Anna：回到 全部条目');
   await expect(go(page)).toHaveAttribute('href','/');
 });
@@ -61,7 +61,7 @@ test('an entry open in Anna becomes the topic Stella turns to, and Anna resumes 
   await expect(go(page)).toHaveAccessibleName(/^5e Anna：查 /);
   expect((await workspace(page)).topic.from).toBe('book');
   await more(page).click();
-  await page.locator('#companion-menu').getByRole('group',{name:'Anna 记得'}).getByRole('menuitem',{name:name}).click();await entryReady(page);
+  await page.locator('#companion-menu').getByRole('group',{name:'最近'}).getByRole('menuitem',{name:name}).click();await entryReady(page);
   await expect(page.locator('#entry-title')).toHaveText(name);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['护盾术']);
   // Stella brought up the latest topic herself, so turning back resumes her reading position.
@@ -70,7 +70,7 @@ test('an entry open in Anna becomes the topic Stella turns to, and Anna resumes 
   await expect.poll(()=>bookOffset(page)).toBe(600);
 });
 
-test('the memory menu lists the topic and remembered places, and works from the keyboard',async({page})=>{
+test('the menu lists the current topic and recent places, and works from the keyboard',async({page})=>{
   const first='topics/玩家手册2024/法术详述/1环.htm';
   const node=meta.nodes.find(n=>n.path===first && n.status==='present').id;
   await page.goto(anna+'/read?'+new URLSearchParams({page:first,node}));await stellaReady(page);
@@ -83,8 +83,8 @@ test('the memory menu lists the topic and remembered places, and works from the 
   await more(page).focus();await page.keyboard.press('ArrowDown');
   const menu=page.locator('#companion-menu');
   await expect(menu).toBeVisible();
-  await expect(menu.getByRole('group',{name:'正在看'}).getByRole('menuitem')).toHaveCount(1);
-  const places=menu.getByRole('group',{name:'Stella 记得'}).getByRole('menuitem');
+  await expect(menu.getByRole('group',{name:'当前'}).getByRole('menuitem')).toHaveCount(1);
+  const places=menu.getByRole('group',{name:'最近'}).getByRole('menuitem');
   await expect(places).toHaveCount(2);
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('End');await expect(places.last()).toBeFocused();

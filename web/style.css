@@ -121,7 +121,7 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .audit-toggle[aria-pressed=true] { color: var(--anna-brand); }
 .audit-toggle[aria-pressed=true] .audit-switch { background: var(--anna-brand); }
 .audit-toggle[aria-pressed=true] .audit-switch::after { transform: translateX(11px); }
-/* The other companion: her avatar and where turning to her leads, then the places she remembers. */
+/* The other companion: her avatar and where turning to her leads, then recent places. */
 .companion { position: relative; display: inline-flex; align-items: stretch; height: 34px; box-sizing: border-box; border: 1px solid var(--anna-line); border-radius: 17px; }
 .companion-go { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 15em; padding: 0 12px 0 3px; border-radius: 16px 0 0 16px; color: var(--anna-secondary); font-size: var(--anna-type-ui); text-decoration: none; }
 .companion.single .companion-go { border-radius: 16px; }

@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from concepts import Resolver,check_notation,format_kind,build_concepts,plain_syntax,style_profile,term_scanner
+from concepts import Resolver,check_notation,format_kind,build_concepts,plain_syntax,style_profile,table_cell_names,term_scanner
 from html_extract import Document
 from entry_types import NO_TOC_PLACE
 from build import Build,parse_one
@@ -158,6 +158,69 @@ class ConceptTests(unittest.TestCase):
         result=Resolver([rule,feature,context]).resolve('专精','concept',context['page_path'],10)
         self.assertEqual((result['status'],result['targets'],result['reason']),('resolved',['rule'],'same_source'))
         self.assertEqual(result['resolution_evidence'],{'out_of_scope_feature_ids':['feature']})
+
+    def test_table_cells_accept_complete_name_lists_only(self):
+        scan=term_scanner(['专精','偷袭','盗贼黑话','诗人激励','休憩曲','动作如潮','力量','敏捷','Concentration'])
+        for text,expected in [
+            ('专精，偷袭，盗贼黑话',['专精','偷袭','盗贼黑话']),
+            ('诗人激励 (d6)',['诗人激励']),
+            ('动作如潮（一次）',['动作如潮']),
+            ('诗人激励 (d8) ，休憩曲',['诗人激励','休憩曲']),
+            ('力量与敏捷',['力量','敏捷']),
+            ('选择诗人学院，专精',[]),
+            ('你没有专精',[]),
+            ('影响，取悦或误导',[]),
+            ('XConcentration',[]),
+        ]:
+            self.assertEqual([label for _,_,label in table_cell_names(text,scan)],expected,text)
+
+    def test_table_name_lists_become_scoped_class_feature_references(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);(root/'topics/book').mkdir(parents=True)
+            raw=('<h3 id="class">示例职业 Example Class</h3><p>导言</p>'
+                 '<table><tr><td>等级</td><td>职业特性</td></tr>'
+                 '<tr><td>1</td><td>专精，偷袭</td></tr>'
+                 '<tr><td>2</td><td>灵巧动作（一次）</td></tr>'
+                 '<tr><td>2</td><td>灵巧动作Cunning Action</td></tr>'
+                 '<tr><td>3</td><td>子职特性，隐藏招式</td></tr>'
+                 '<tr><td>0</td><td>力量</td></tr></table>'
+                 '<h4 id="f1">1级：专精 Expertise</h4><p>专精正文</p>'
+                 '<h4 id="f2">1级：偷袭 Sneak Attack</h4><p>偷袭正文</p>'
+                 '<h4 id="f3">2级：灵巧动作 Cunning Action</h4><p>灵巧正文</p>'
+                 '<h4 id="f4">3级：隐藏招式 Hidden Maneuver</h4><p>隐藏正文</p>')
+            path='topics/book/class.htm';(root/path).write_text(raw)
+            doc=Document(path,raw);text=doc.text
+            spans={tag.get('id'):doc.span(tag) for tag in doc.soup.find_all(['h3','h4'])}
+            def feature(eid,name,zh,en,anchor):
+                a,b=spans[anchor]
+                return {**entry(eid,name,path,kind='class_feature'),'name_zh':zh,'name_en':en,
+                        'start':a,'title_end':b,'end':len(text),'parent_id':'class','is_primary':False}
+            class_start,class_title_end=spans['class']
+            entries=[{**entry('class','示例职业 Example Class',path,kind='class'),'name_zh':'示例职业',
+                      'name_en':'Example Class','start':class_start,'title_end':class_title_end,'end':len(text)},
+                     feature('f1','1级：专精 Expertise','专精','Expertise','f1'),
+                     feature('f2','1级：偷袭 Sneak Attack','偷袭','Sneak Attack','f2'),
+                     feature('f3','2级：灵巧动作 Cunning Action','灵巧动作','Cunning Action','f3'),
+                     feature('f4','3级：隐藏招式 Hidden Maneuver','隐藏招式','Hidden Maneuver','f4'),
+                     {**entry('ability','力量',path,kind='ability'),'name_zh':'力量','name_en':'Strength'}]
+            pages={path:{'text':text,'parse_status':'ok'}}
+            db=sqlite3.connect(':memory:')
+            db.executescript('CREATE TABLE entries(id PRIMARY KEY);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
+            db.executemany('INSERT INTO entries VALUES(?)',[(e['id'],) for e in entries])
+            db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
+            report=build_concepts(db,root,root,entries,pages)
+            self.assertEqual(report['outcomes']['table'],{'resolved':4})
+            rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM concept_observations WHERE signal='table' ORDER BY start")]
+            self.assertEqual([r['text'] for r in rows],['专精','偷袭','灵巧动作','灵巧动作Cunning Action'])
+            self.assertEqual([r['target_id'] for r in rows],['f1','f2','f3','f3'])
+            for row in rows:
+                cell=row['evidence']['table']['cell_span']
+                self.assertTrue(cell[0]<=row['start']<row['end']<=cell[1])
+                self.assertEqual(row['evidence']['table']['headers'],['等级','职业特性'])
+            self.assertFalse(any(r['text'] in {'子职特性','隐藏招式'} for r in rows))
+            from audit import audit_concepts
+            self.assertEqual(audit_concepts(db,root)['errors'],[])
+            doc.close();db.close()
 
     def test_no_arbitrary_registry_or_cross_source_preference(self):
         a=entry('a','专注');b=entry('b','专注');context=entry('c','正文','topics/book/text.htm')

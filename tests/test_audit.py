@@ -193,3 +193,28 @@ class CorpusGapTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+
+class TableProvenanceTests(unittest.TestCase):
+    """A table reference keeps the cell that listed it and the enclosing table range."""
+    def errors(self,table,role='mention'):
+        from audit import audit_concepts
+        db=sqlite3.connect(':memory:')
+        db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT);
+            CREATE TABLE concepts(definition_id TEXT,data TEXT);CREATE TABLE metadata(key TEXT,value TEXT);
+            CREATE TABLE concept_observations(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,data TEXT);''')
+        db.execute("INSERT INTO pages VALUES('p',?)",('x'*40,));db.execute("INSERT INTO entries VALUES('feature')")
+        o={'id':'o','path':'p','start':10,'end':12,'signal':'table','status':'resolved','target_id':'feature',
+           'candidates':['feature'],'role':role,'evidence':{'table':table}}
+        db.execute('INSERT INTO concept_observations VALUES(?,?,?,?,?,?,?,?)',('o','p',10,12,'table','resolved','feature',json.dumps(o)))
+        db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'observations':1,'outcomes':{'table':{'resolved':1}},'gaps':{}})))
+        return [e for e in audit_concepts(db,'/nonexistent')['errors'] if 'provenance' in e]
+
+    def test_cell_and_enclosing_table_bounds_are_required(self):
+        table={'id':'tbl_x','span':[0,20],'cell_span':[8,16],'row':1,'column':0,'headers':['等级','职业特性'],'cell_text':'专精'}
+        self.assertEqual(self.errors(table),[])
+        self.assertTrue(self.errors({**table,'cell_span':[11,16]}))
+        self.assertTrue(self.errors({**table,'span':[10,20]}))
+        self.assertTrue(self.errors({**table,'headers':'职业特性'}))
+        self.assertTrue(self.errors({**table,'id':None}))
+        self.assertTrue(self.errors(table,role='definition'))

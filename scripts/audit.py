@@ -61,6 +61,14 @@ def audit_concepts(db,folder):
                 errors.append(mid+': missing plain reference provenance')
             elif rule_targets.get(target)!=scope['ruleset']:
                 errors.append(mid+': plain reference target ruleset mismatch')
+        if signal=='table' and status=='resolved':
+            table=o['evidence'].get('table',{})
+            cell=table.get('cell_span',[]);outer=table.get('span',[])
+            located=(len(cell)==2 and 0<=cell[0]<=a<b<=cell[1]
+                     and len(outer)==2 and outer[0]<=cell[0]<=cell[1]<=outer[1])
+            if (o['role']!='mention' or not located or not isinstance(table.get('id'),str)
+                or not isinstance(table.get('headers'),list)):
+                errors.append(mid+': missing table reference provenance')
     exported=set();p=Path(folder)/'concept_observations.jsonl'
     if p.exists():
         with p.open() as f:

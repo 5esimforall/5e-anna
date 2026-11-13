@@ -284,7 +284,7 @@ def build_references(db, source, out, decision_path=DEFAULT_DECISIONS):
         grouped = defaultdict(list)
         for ref in refs: grouped[(ref['start'], ref['end'])].append(ref)
         exact = {span: group[0] for span, group in grouped.items() if len(group) == 1}
-        for raw, in db.execute("SELECT data FROM concept_observations WHERE page_path=? AND signal IN ('index','format','plain') ORDER BY start,end,id", (path,)):
+        for raw, in db.execute("SELECT data FROM concept_observations WHERE page_path=? AND signal IN ('index','format','plain','table') ORDER BY start,end,id", (path,)):
             o = json.loads(raw)
             original = exact.get((o['start'], o['end']))
             if original:

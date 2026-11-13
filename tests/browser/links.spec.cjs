@@ -230,3 +230,13 @@ test('reference links survive source-table pagination and filtering',async({page
   expect(Math.abs(overlay.x-source.x)).toBeLessThan(1);
   expect(Math.abs(overlay.y-source.y)).toBeLessThan(1);
 });
+test('class table name lists link their class feature in the reader',async({page})=>{
+  const t=cases.class_table;
+  expect(t.cell).toContain(t.text);
+  await page.goto(topic(book,t.path));await ready(page);
+  const link=page.getByRole('link',{name:'查看定义: '+t.text,exact:true}).first();
+  await expect(link).toHaveAttribute('target','_self');
+  await link.focus();await expect(link).toBeFocused();await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(topic(book,t.target.path)+'#'+t.target.fragment);await ready(page);
+  await expect(page.getByRole('link',{name:'查看 Anna 条目: '+t.target.name,exact:true})).toBeInViewport();
+});

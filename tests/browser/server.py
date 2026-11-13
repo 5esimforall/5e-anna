@@ -54,13 +54,18 @@ def cases(manifest):
             "SELECT data FROM effective_references WHERE page_path=? AND signal='plain' AND json_extract(data,'$.text')='半身掩护' ORDER BY start LIMIT 1",
             (old_path,)).fetchone()[0])
         old_cover['target']=manifest['entries'].get(old_cover['target_id'])
+        table_path='topics/玩家手册2024/角色职业/游荡者/游荡者.htm'
+        table_ref=json.loads(db.execute("SELECT data FROM effective_references WHERE page_path=? AND signal='table' AND json_extract(data,'$.text')='专精' ORDER BY start LIMIT 1",(table_path,)).fetchone()[0])
+        table_name=db.execute('SELECT name FROM entries WHERE id=?',(table_ref['target_id'],)).fetchone()[0]
     path='topics/速查/合作万器大全.htm'
     raw=(BOOK/path).read_text()
     data=json.loads(raw.split('id="anna-bindings">',1)[1].split('</script>',1)[0])
     reference=data['references'][0]
     return {'spell':{'id':spell['id'],'path':spell['page_path'],'anchor':'Shield','name':spell['name']},
             'reference':{'path':path,'id':reference['id'],'text':reference['range']['text'],**manifest['entries'][reference['id']]},
-            'reference_source':path,'mention':mention,'core_rules':core,'classic_cover':old_cover}
+            'reference_source':path,'mention':mention,'core_rules':core,'classic_cover':old_cover,
+            'class_table':{'path':table_path,'text':table_ref['text'],'cell':table_ref['evidence']['table']['cell_text'],
+                           'target':{**manifest['entries'][table_ref['target_id']],'name':table_name}}}
 
 
 def main():

@@ -365,6 +365,7 @@ class Document:
                              'cell_spans':[self.span(c) for c in cells],
                              'rowspan':[c.get('rowspan','1') for c in cells],
                              'colspan':[c.get('colspan','1') for c in cells],
+                             'cell_tags':[c.name for c in cells],
                              'span':self.span(tr),'tag':tr})
             if rows:
                 out.append({'span':self.span(table),'rows':rows,'tag':table})

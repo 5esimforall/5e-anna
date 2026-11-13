@@ -127,6 +127,31 @@ def term_scanner(names):
     return matches
 
 
+# A class table lists the features the class grants; the cell's structure supplies the context that
+# ordinary prose must supply with a rules-use clause. Other definition kinds need their table column's
+# semantic role before a bare name cell can be treated as a reference.
+TABLE_REFERENCE_TYPES={'class_feature'}
+TABLE_QUALIFIER=re.compile(r'\([^()\n]{0,40}\)|（[^（）\n]{0,40}）|\[[^\[\]\n]{0,30}\]|【[^【】\n]{0,30}】')
+TABLE_FILLER=re.compile(r'^(?:[\s,，、;；/／·。*†‡+＋\-—\d.()（）\[\]【】:：]|与|和|或|及|以及|或者|and|or)*$',re.I)
+
+
+def table_cell_names(text,scan):
+    """The name spans that fill a table cell, or [] when prose, an unknown item or structure intervenes.
+
+    Parenthesized qualifiers (a die size, 一次, 花费：1d6) are layout, not part of the name. Every
+    remaining character must be a separator or layout marker, so mixed cells keep their original text.
+    """
+    masked=TABLE_QUALIFIER.sub(lambda m:' '*len(m[0]),text)
+    found=[];pos=0
+    for match in scan(masked):
+        a,b=match.span()
+        if match[0].isascii() and ((a and re.match(r'[A-Za-z0-9_]',masked[a-1])) or
+                                   (b<len(masked) and re.match(r'[A-Za-z0-9_]',masked[b]))):continue
+        if not TABLE_FILLER.fullmatch(masked[pos:a]):return []
+        found.append((a,b,text[a:b]));pos=b
+    return found if found and TABLE_FILLER.fullmatch(masked[pos:]) else []
+
+
 PLAIN_LEAD=re.compile(
     r'(?:视为|处于|处在|陷入|保持|维持|失去|免疫|无视|提供|给予|获得|具有|承受|受到|执行|进行|完成|消耗|发动|使用|采取|作为|(?<!可)以|(?<![作应运])用)'
     r'(?:了|其|你的?|一个|一种|一次|一项|任何|全部|额外的?){0,3}[ \t]*$')
@@ -348,6 +373,8 @@ def build_concepts(db,source,out,entries,pages,sources=()):
         doc.close()
     terms={n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
     scan_terms=term_scanner(terms) if terms else None
+    table_terms={n for e in entries if e['type'] in TABLE_REFERENCE_TYPES for n in aliases(e) if len(n)>=2}
+    table_scan=term_scanner(table_terms) if table_terms else None
     by_initial=defaultdict(list)
     for n in sorted(terms,key=lambda n:(-len(n),n)):by_initial[n[0].casefold()].append(n)
     def shorter_names(text,a,b):
@@ -415,6 +442,42 @@ def build_concepts(db,source,out,entries,pages,sources=()):
                 elif kind=='ambiguous':resolution={'reason':'mixed_format','status':'review'}
                 else:resolution=resolver.resolve(compact(doc.text[start:end]),kind,path,start)
                 observe(path,start,end,compact(doc.text[start:end]),'format',kind,**resolution,evidence=part_evidence)
+        # A class table cell that is only a list of class-feature names is a reference-bearing
+        # structure of its own, like a rules-use clause in prose. Existing links, format marks and
+        # definition titles win, and a cell containing prose or an unknown item stays out.
+        if table_scan:
+            for ti,table in enumerate(doc.tables()):
+                if table['tag'].find_parent('table'):continue
+                if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in table['tag'].parents):continue
+                rows=table['rows'];header=next((r for r in rows[:4] if r['cell_tags'] and
+                    all(tag=='th' for tag in r['cell_tags'])),rows[0])
+                headers=[compact(h) for h in header['cells']]
+                for ri,row in enumerate(rows[1:],1):
+                    if row['cell_tags'] and all(tag=='th' for tag in row['cell_tags']):continue
+                    for ci,cell_span in enumerate(row['cell_spans']):
+                        ca,cb=cell_span;text=doc.text[ca:cb]
+                        if not text.strip():continue
+                        if any(ca < te and ts < cb for ts,te in titles):continue
+                        if any(ca < ob and oa < cb for oa,ob in occupied):continue
+                        names=table_cell_names(text,table_scan)
+                        if not names:continue
+                        linked=[]
+                        for a,b,label in names:
+                            resolution=resolver.resolve(label,'concept',path,ca+a,types=TABLE_REFERENCE_TYPES)
+                            if resolution['status']=='resolved':linked.append((a,b,label,resolution))
+                        if not linked:continue
+                        merged=[]
+                        for a,b,label,resolution in linked:
+                            if merged and merged[-1][3]['targets']==resolution['targets'] and not text[merged[-1][1]:a].strip():
+                                merged[-1]=(merged[-1][0],b,text[merged[-1][0]:b],merged[-1][3])
+                            else:merged.append((a,b,label,resolution))
+                        for a,b,label,resolution in merged:
+                            evidence={'table':{'id':'tbl_'+digest(path,ti),'span':list(table['span']),
+                                'cell_span':[ca,cb],'row':ri,'column':ci,'headers':headers,
+                                'cell_text':compact(text)},'resolution_reason':resolution['reason']}
+                            if resolution.get('resolution_evidence'):evidence['resolution']=resolution['resolution_evidence']
+                            observe(path,ca+a,ca+b,label,'table','concept',role='mention',evidence=evidence,**resolution)
+                        occupied.append((ca,cb))
         page_coverage.append({'path':path,'book':path.split('/')[1],'profile_applies':trusted,'format_count':marked})
         # Unclassified boundaries and definitional prose remain visible as candidates, not invented definitions.
         for e in resolver.pages[path]:
@@ -446,7 +509,7 @@ def build_concepts(db,source,out,entries,pages,sources=()):
         doc.close()
     db.executescript('''
     CREATE TABLE concepts(id TEXT PRIMARY KEY,definition_id TEXT UNIQUE REFERENCES entries(id),identity_status TEXT NOT NULL,data TEXT NOT NULL);
-    CREATE TABLE concept_observations(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain')),status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),target_id TEXT REFERENCES entries(id),data TEXT NOT NULL);
+    CREATE TABLE concept_observations(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table')),status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),target_id TEXT REFERENCES entries(id),data TEXT NOT NULL);
     CREATE INDEX concept_observations_page ON concept_observations(page_path,start);
     CREATE INDEX concept_observations_target ON concept_observations(target_id);
     ''')
@@ -482,7 +545,7 @@ def build_concepts(db,source,out,entries,pages,sources=()):
                     'unclassified_definitions':[o['id'] for o in observations if o['signal']=='heading'],
                     'ambiguous_targets':[o['id'] for o in observations if o['status']=='ambiguous']},
             'unindexed_definitions':sorted(definition_ids-resolver.indexed),
-            'policy':'provisional definition identities; plain rule-use clauses require scoped core targets; no name-based merge'}
+            'policy':'provisional definition identities; plain rule-use clauses require scoped core targets; table name cells require class-feature names in the owning class or subclass; no name-based merge'}
     (out/'concept_coverage.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
     db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps(report,ensure_ascii=False)))
     return report

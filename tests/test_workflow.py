@@ -18,11 +18,12 @@ class WorkflowTests(unittest.TestCase):
         return subprocess.run(['make', '--no-print-directory', *args], cwd=cwd,
                               text=True, capture_output=True, **kwargs)
 
-    def test_standalone_help(self):
-        result = self.make(PROJECT, 'help')
+    def test_default_goal_points_to_usage_doc(self):
+        result = self.make(PROJECT)
         self.assertEqual(result.returncode, 0, result.stderr)
-        for command in ('make build', 'make test', 'make update', 'make anna'):
-            self.assertIn(command, result.stdout)
+        self.assertIn('USAGE.md', result.stdout)
+        # The command list lives in the doc; no separate help target duplicates it.
+        self.assertNotEqual(self.make(PROJECT, '-n', 'help').returncode, 0)
 
     def test_default_single_port_command(self):
         result = self.make(PROJECT, '-n', 'up')
@@ -39,8 +40,8 @@ class WorkflowTests(unittest.TestCase):
                     (root / '.cache/5echm-search.pkl').write_bytes(b'fixture')
                 result = self.make(root, '-f', str(PROJECT / 'Makefile'), 'status', f'WEB_DIR={root / "missing"}')
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn('尚未下载', result.stdout)
-                self.assertIn('内容指纹' if cached else 'make up 时自动构建', result.stdout)
+                self.assertIn('not downloaded yet', result.stdout)
+                self.assertIn('fingerprint checked at start' if cached else 'make up builds it', result.stdout)
 
     def test_workspace_delegates_and_preserves_relative_path(self):
         # The outer Makefile is an optional consumer, not an anna dependency.
@@ -118,13 +119,14 @@ class WorkflowTests(unittest.TestCase):
             for command in ('clone', 'clean'):
                 result = self.make(PROJECT, command, f'WEB_DIR={td}')
                 self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Refusing to delete' if command == 'clean' else 'Source has no topics directory', result.stderr)
                 self.assertEqual(sentinel.read_text(), 'keep')
             # An existing 5etools-cn location without data/ is not replaced either.
             web = Path(td) / 'mirror'
             (web / 'topics').mkdir(parents=True)
             result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', f'5ETOOLS_DIR={td}', '5ETOOLS_REPO=/does/not/exist')
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('5etools-cn 目录无 data', result.stderr)
+            self.assertIn('5etools-cn has no data directory', result.stderr)
             self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
@@ -137,8 +139,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('pull --ff-only', result.stdout)
         self.assertIn('--rebuild', result.stdout)
 
-    def test_old_reader_commands_are_removed(self):
-        for command in ('serve','open'):
+    def test_removed_commands_are_gone(self):
+        # The query-only server is scripts/serve.py; make up is the single run entry.
+        for command in ('serve','open','anna'):
             result=self.make(PROJECT,'-n',command)
             self.assertNotEqual(result.returncode,0)
         self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())

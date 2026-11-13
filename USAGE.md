@@ -8,16 +8,20 @@
 | --- | --- |
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
 | `make index` | 重建原文全文搜索索引 |
-| `make anna` | 单独启动分析查询页 |
-| `make up` | 启动单端口查询、阅读与正文资源服务 |
 | `make build` | 从同一原文快照重建数据库与链接版不全书 |
-| `make linked` / `make inventory` | 由现有数据库重建链接版 / 盘点原文目录 |
-| `make test` / `make audit` / `make check` | 单元与浏览器测试 / 结构审计 / 两者 |
-| `make test-unit` / `make test-browser` | 单独运行 Python／链接层夹具测试 / 浏览器回归 |
+| `make up` | 启动单端口查询、阅读与正文资源服务 |
+| `make linked` | 由现有数据库生成链接版，并校验原文快照 |
+| `make inventory` | 盘点原文页面与目录 |
+| `make test` | 运行单元测试和浏览器回归（需先构建数据） |
+| `make test-unit` / `make test-browser` | 分别运行单元测试 / 浏览器回归 |
 | `make browser-setup` | 安装锁定的 Node 依赖与 Chromium，首次运行浏览器测试前执行 |
-| `make update` | 显式拉取原文与 5etools-cn 更新，并重建搜索索引 |
-| `make status` | 查看原文、5etools-cn 版本与搜索缓存状态 |
-| `make clean` | 删除共享镜像及原文搜索缓存；不删除分析数据 |
+| `make audit` | 审计数据库与导出文件 |
+| `make check` | 运行测试与审计 |
+| `make update` | 显式拉取原文与 5etools-cn 更新并重建搜索索引；之后运行 `make build` 更新数据 |
+| `make status` | 查看原文、5etools-cn 版本与搜索索引状态 |
+| `make clean` | 删除共享原文镜像及搜索缓存（影响其他引用方）；不删除分析数据 |
+
+命令清单集中在本页；不带目标运行 `make` 只输出本页位置。
 
 默认原文位于 anna 同级的 `5echm-web/`。`WEB_DIR=/绝对路径/镜像` 可指定其他位置，也支持相对路径（相对于执行 make 的目录）。两层 Makefile 之间传递绝对路径，避免切换工作目录后指向另一处。直接运行脚本也可通过环境变量 `WEB_DIR` 配置原文；`build.py --source` 可进一步覆盖该默认值。
 
@@ -88,7 +92,7 @@ make up ANNA_PORT=8101
 
 生成结果中的 `anna-manifest.json` 记录输入、输出哈希与条目定位，`anna-reader.json` 保存目录、页面及其条目列表；`anna-report.json` 记录定义数量、可点击定义、引用解析及待核清单。原文空页或缺失内容范围的记录无法生成可靠的可点击定位，定义路由会明确报错，不跳到同名的其他记录。正文范围为空但标题仍可定位的记录也单独列入报告，供提取侧核对。
 
-格式标记依据页面实际引用的样式表解析，不按显示颜色推断类型。普通正文须有规则用语和来源依据才自动关联核心规则；其他词面匹配、未知格式、混合标记、示例语境和未确认的跨来源关系保留待核。逐处审核也可以确认普通正文的目标。适用范围见[概念发现与覆盖核对](#概念发现与覆盖核对)，验证结果见[链接版验证记录](tests/链接版验证.md)。
+格式标记依据页面实际引用的样式表解析，不按显示颜色推断类型。普通正文须有规则用语和来源依据才自动关联核心规则；其他词面匹配、未知格式、混合标记、示例语境和未确认的跨来源关系保留待核。逐处审核也可以确认普通正文的目标。适用范围见[概念发现与覆盖核对](#概念发现与覆盖核对)，验证结果见[链接版验证记录](tests/linked-book-validation.md)。
 
 ## 中英文名称与括号结构
 
@@ -263,7 +267,7 @@ make build
 
 `concept_coverage.json` 的 `format_marks` 统计原始格式标记，`outcomes.format` 统计逐个引用片段，两者在拆分后不再相等。没有可点击内容的空格式标记与真实的未关联高亮分开统计。阻塞原因记录的是当前解析阶段的结果，不是永久定性：解除一种阻塞后仍可能遇到版本或目标问题，不将新增可识别格式数视为新增正确链接数，各类阻塞数量也不能相加作为预计新增链接数。示例中的具体提及同样逐处判断，虚构人物不妨碍其中的真实法术或动作拥有引用目标。
 
-上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。各轮的实机样本与回归结果见[链接版验证记录](tests/链接版验证.md)。
+上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。各轮的实机样本与回归结果见[链接版验证记录](tests/linked-book-validation.md)。
 
 未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性、导出 ID 和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make linked` 会拒绝沿用过期的概念发现依据。
 
@@ -291,7 +295,7 @@ make build
 - `reprinted_as`：5etools-cn 的 `reprintedAs` 两端都唯一对应 anna 条目时，列出这对条目，作为重印或修订关系候选。
 - `unclaimed_record`：已对齐来源中标明译自不全书、却没有任何 anna 条目对应或列为候选的记录，提示可能漏提或名称解析差异。
 
-**产物。** `catalog.sqlite` 新增 `counterpart_records`、`counterpart_sources`、`counterparts` 与 `counterpart_findings` 表，元数据 `counterpart_coverage` 汇总镜像提交、输入指纹与各类计数；`summary.json` 的 `counterparts` 记录同一快照。导出文件为 `counterparts.csv`、`counterpart_findings.csv`（含 5etools-cn 记录在 JSON 中的位置）、`counterpart_sources.csv` 与 `counterpart_coverage.json`。`make audit` 校验结果与候选、外键、导出及计数一致，并在[提取审计](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/提取审计.md)中按类型列出对照结果与线索数量。
+**产物。** `catalog.sqlite` 新增 `counterpart_records`、`counterpart_sources`、`counterparts` 与 `counterpart_findings` 表，元数据 `counterpart_coverage` 汇总镜像提交、输入指纹与各类计数；`summary.json` 的 `counterparts` 记录同一快照。导出文件为 `counterparts.csv`、`counterpart_findings.csv`（含 5etools-cn 记录在 JSON 中的位置）、`counterpart_sources.csv` 与 `counterpart_coverage.json`。`make audit` 校验结果与候选、外键、导出及计数一致，并在[提取审计](data/extracted/audit.md)中按类型列出对照结果与线索数量。
 
 5etools-cn 的中文数据采用 CC BY-NC-SA 4.0。对照结果用于本机核对；若对外发布包含其中文内容的派生数据，需署名、非商用并以相同许可共享。
 
@@ -309,17 +313,17 @@ make check
 
 测试涵盖定义／引用跳转、阅读器刷新恢复、键盘焦点、滚动、窗口变窄和表格节点搬移。排版测试在同一 Chromium、视口和原文快照下同时渲染原版与链接版，对比可见文字、元素几何位置和截图像素，不以人工接受的历史截图作为基准。法术页、装备表、怪物数据卡和引用表分别在 1280px／390px 宽度检查页首与中段。
 
-报告保存到 `output/playwright/report/index.html`；截图、失败差异图和失败 trace 保存到 `output/playwright/results/`，均不入库。浏览器异常、定位绑定失败或任一像素差异都会令测试失败。可以用 `npm run test:browser:report` 查看报告。测试覆盖与实际运行记录见[链接版验证记录](tests/链接版验证.md)及[查询界面验证](tests/查询界面验证.md)。
+报告保存到 `output/playwright/report/index.html`；截图、失败差异图和失败 trace 保存到 `output/playwright/results/`，均不入库。浏览器异常、定位绑定失败或任一像素差异都会令测试失败。可以用 `npm run test:browser:report` 查看报告。测试覆盖与实际运行记录见[链接版验证记录](tests/linked-book-validation.md)及[查询界面验证](tests/query-ui-validation.md)。
 
 ## 查询与分析
 
-网页查询（Python 标准库，仅本机、只读）：
+网页查询（Python 标准库，仅本机、只读），在 anna 目录运行：
 
 ```sh
-python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/serve.py
+python3 scripts/serve.py
 ```
 
-打开 [查询页](http://127.0.0.1:8000/)。在条件栏输入名称即可查询；按 Enter 把搜索留作标签后可继续输入下一个。每个条件和搜索都是独立的标签，标签之间以“∧”连接，表示都要满足；点击标签文字切换为“不是／不含”，即排除这些取值或词，筛选区的“排除”按钮切换整个字段。下拉的第二项“正文包含”改在条目原文中查找。输入“法术”“塑能”“PHB”“坐骑”等文字时，下拉建议对应的类型、字段取值、来源或预设，选择即加入条件。“筛选”中的第一个字段是条目类型，与其他字段同样操作；所选类型决定表格的列与筛选字段。法术按环阶、学派、职业、施法时间及特性筛选；生物按 CR 范围、体型、类型及传奇动作筛选；物品按稀有度、类别及同调筛选。环境危害按类型“环境危害”查询，包括名称旁标注【危害】的术语、2024 城主指南标有危害度的危害物，以及“危害物”“环境灾害”“环境影响”等类别下在正文中应用了具体规则（DC、骰子、优势劣势、状态等）的条目；类别导言与查表页保持未分类段落。字段未选即不限制，点击取值即加入；同组多选取并集、组间取交集，支持清除与反选。每个取值旁的数字是选中后的结果数。表头可切换升降序；环阶、CR、稀有度按实际顺序排序，缺失或冲突数值置后。来源可多选；查询、排序与版本显示方式保存在地址栏。结果随滚动每批加载 150 行，底部也可点击“继续加载”；刷新或前进后退恢复已加载的行数和位置。结果底栏的“导出 CSV”导出全部匹配行及所选类型的属性。`Ctrl-C` 停止，`--port` 改端口。两层目录均可运行 `make anna`。
+打开 [查询页](http://127.0.0.1:8000/)。在条件栏输入名称即可查询；按 Enter 把搜索留作标签后可继续输入下一个。每个条件和搜索都是独立的标签，标签之间以“∧”连接，表示都要满足；点击标签文字切换为“不是／不含”，即排除这些取值或词，筛选区的“排除”按钮切换整个字段。下拉的第二项“正文包含”改在条目原文中查找。输入“法术”“塑能”“PHB”“坐骑”等文字时，下拉建议对应的类型、字段取值、来源或预设，选择即加入条件。“筛选”中的第一个字段是条目类型，与其他字段同样操作；所选类型决定表格的列与筛选字段。法术按环阶、学派、职业、施法时间及特性筛选；生物按 CR 范围、体型、类型及传奇动作筛选；物品按稀有度、类别及同调筛选。环境危害按类型“环境危害”查询，包括名称旁标注【危害】的术语、2024 城主指南标有危害度的危害物，以及“危害物”“环境灾害”“环境影响”等类别下在正文中应用了具体规则（DC、骰子、优势劣势、状态等）的条目；类别导言与查表页保持未分类段落。字段未选即不限制，点击取值即加入；同组多选取并集、组间取交集，支持清除与反选。每个取值旁的数字是选中后的结果数。表头可切换升降序；环阶、CR、稀有度按实际顺序排序，缺失或冲突数值置后。来源可多选；查询、排序与版本显示方式保存在地址栏。结果随滚动每批加载 150 行，底部也可点击“继续加载”；刷新或前进后退恢复已加载的行数和位置。结果底栏的“导出 CSV”导出全部匹配行及所选类型的属性。`Ctrl-C` 停止，`--port` 改端口。该脚本只提供查询，不含阅读器与正文资源；完整查询与阅读使用 `make up`。
 
 筛选区默认收起，已选条件（类型在最前）以标签显示在条件栏中，可逐个移除；“清空”去掉全部条件；点击“筛选”展开常用条件，“更多筛选条件”展开其余领域条件，来源与审核条件单独展开。展开状态在本标签页刷新和前进后退时保留。切换类型或条件时，旧结果变淡，直到新结果到达。结果表固定表头与名称列，其他属性可横向滚动，中文与英文名称同时保留；法术的成分与仪式／专注以字形条显示，导出仍逐项保留。手机宽度（640px 及以下）结果以列表显示。在某些类型中搜索时，结果栏显示其他类型中的匹配数；结果为空时，空状态列出去掉后能得到结果的条件。名称搜索没有结果、但原文还有未分类段落满足同一组条件时，空状态显示匹配数量；点击后以“包含未分类段落”重查。正文搜索不触发该提示，未分类段落仍只通过名称搜索的补查入口进入结果。
 
@@ -335,7 +339,7 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/serve.py
 
 “坐骑”列出带用途证据的生物数据卡；“动物购置”另列价格、载重和用途，通过详情中的“使用数据卡／购置条目”双向关联。购置条目不冒充数据卡，不将价格复制到怪物属性，也不跨版本合并。表列坐骑用途标为上下文推得；宠物／役畜不自动当作坐骑。
 
-本轮覆盖、分类变化和遗留待核项见[提取审计](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/提取审计.md)。
+本轮覆盖、分类变化和遗留待核项见[提取审计](data/extracted/audit.md)。
 
 全量重建（只读镜像）：
 
@@ -353,7 +357,7 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 
 `--show 版本ID` 查看正文、证据和关系；`--stats` 查看覆盖与异常统计。来源多选取并集，其余条件取交集。
 
-[结果](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/结果.md) · [来源](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/sources.csv) · [分类表](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/views) · [审核队列](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/review_queue.csv)
+[结果](data/extracted/results.md) · [来源](data/extracted/sources.csv) · [分类表](data/extracted/views) · [审核队列](data/extracted/review_queue.csv)
 
 `entry_marked`＝条目标旧；`source_archived`＝整书归档；`unmarked`＝未见标记，不代表新版。实体身份暂按定位区分，同名与同文匹配仅生成候选，不自动合并。未分类段落和原始表格保留在数据库中；恢复的断链仍保留原链接。
 
@@ -371,4 +375,4 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 
 可用 `--baseline /绝对路径/旧版catalog.sqlite --output /报告目录` 生成逐条增删及分类／字段差异。审计不等于全库人工核验；未支持表格和无法唯一关联的动物保留在审核队列。
 
-审计同时列出分类缺口，供补充识别规则时决定先读哪里。`untyped_pages.csv` 列出没有任何已分类条目的正文页及其来源和目录。`classification_gaps.csv` 列出位于已分类条目之外、自身正文出现豁免 DC、骰子伤害或骰值表的未分类段落，并给出每个信号的原文位置；数据卡内的“动作”等段落属于该数据卡，不计入。标题中的【标注】按条目所得分类汇总，同一标注分属多类时在报告中列出。缺口是线索，不作为审计失败条件；带 `--baseline` 时，[提取审计](/Users/arctic/Loom/Streamer/DnD/5e-anna/data/extracted/提取审计.md)对照修改前后的缺口数量。`type_conflicts.csv` 列出原文明示证据指向另一类型的条目（判定顺序见[整理规划](整理规划.md)），报告按所得分类与另有证据汇总；冲突同样是线索，不作为失败条件。
+审计同时列出分类缺口，供补充识别规则时决定先读哪里。`untyped_pages.csv` 列出没有任何已分类条目的正文页及其来源和目录。`classification_gaps.csv` 列出位于已分类条目之外、自身正文出现豁免 DC、骰子伤害或骰值表的未分类段落，并给出每个信号的原文位置；数据卡内的“动作”等段落属于该数据卡，不计入。标题中的【标注】按条目所得分类汇总，同一标注分属多类时在报告中列出。缺口是线索，不作为审计失败条件；带 `--baseline` 时，[提取审计](data/extracted/audit.md)对照修改前后的缺口数量。`type_conflicts.csv` 列出原文明示证据指向另一类型的条目（判定顺序见[整理规划](PLAN.md)），报告按所得分类与另有证据汇总；冲突同样是线索，不作为失败条件。

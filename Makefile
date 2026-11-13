@@ -11,70 +11,54 @@ BRANCH ?= pages
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-.DEFAULT_GOAL := help
-.PHONY: help clone update status index clean anna build inventory test audit check up linked test-unit test-browser browser-setup
+.DEFAULT_GOAL := usage
+.PHONY: usage clone update status index clean build inventory test audit check up linked test-unit test-browser browser-setup
 
-help:
-	@echo "anna 与共享不全书镜像（DnD 上层可使用相同命令）"
-	@echo "  make clone     原文或 5etools-cn 对照镜像缺失时下载；已有镜像不更新"
-	@echo "  make index     重建原文全文搜索索引"
-	@echo "  make anna      分析查询页 http://127.0.0.1:$(ANNA_PORT)"
-	@echo "  make build     从同一原文生成数据库与 5echm-anna"
-	@echo "  make up        启动 anna 查询与阅读（单一端口）"
-	@echo "  make linked    由现有数据库生成链接版（校验原文快照）"
-	@echo "  make inventory 盘点原文页面与目录"
-	@echo "  make test      运行单元测试和浏览器回归（需先构建数据）"
-	@echo "  make test-unit / test-browser  分别运行单元 / 浏览器测试"
-	@echo "  make browser-setup  安装锁定的浏览器测试依赖（首次运行）"
-	@echo "  make audit     审计数据库和导出文件"
-	@echo "  make check     运行测试与审计"
-	@echo "  make update    显式拉取原文与 5etools-cn 更新并刷新搜索索引；分析数据需 make build"
-	@echo "  make status    查看原文、5etools-cn 版本和搜索索引状态"
-	@echo "  make clean     删除共享原文镜像及搜索缓存（影响其他引用方）"
-	@echo "  变量: WEB_DIR=原文路径 5ETOOLS_DIR=5etools-cn路径 ANNA_PORT=8000 PYTHON=解释器"
-	@echo "  WEB_DIR、5ETOOLS_DIR 相对执行 make 的目录解析；默认为 anna 的同级 5echm-web、5etools-cn"
+# Commands and variables are documented in USAGE.md; keep the list in one place.
+usage:
+	@echo "Commands and variables are documented in $(CURDIR)/USAGE.md"
 
 clone:
 	@if [ ! -e "$(WEB_PATH)" ]; then \
 		git clone --depth 1 --branch "$(BRANCH)" "$(REPO)" "$(WEB_PATH)"; \
 	elif [ ! -d "$(WEB_PATH)/topics" ]; then \
-		echo "原文目录无 topics，拒绝覆盖：$(WEB_PATH)" >&2; exit 1; \
+		echo "Source has no topics directory; refusing to overwrite: $(WEB_PATH)" >&2; exit 1; \
 	fi
 	@if [ ! -e "$(5ETOOLS_PATH)" ]; then \
 		git clone --depth 1 --filter=blob:none --sparse --branch "$(5ETOOLS_BRANCH)" "$(5ETOOLS_REPO)" "$(5ETOOLS_PATH)" && \
 		git -C "$(5ETOOLS_PATH)" sparse-checkout set data; \
 	elif [ ! -d "$(5ETOOLS_PATH)/data" ]; then \
-		echo "5etools-cn 目录无 data，拒绝覆盖：$(5ETOOLS_PATH)" >&2; exit 1; \
+		echo "5etools-cn has no data directory; refusing to overwrite: $(5ETOOLS_PATH)" >&2; exit 1; \
 	fi
 
 update: clone
 	@git -C "$(WEB_PATH)" pull --ff-only
-	@git -C "$(WEB_PATH)" log -1 --format='已更新到 %h  %ad  %s' --date=iso
+	@git -C "$(WEB_PATH)" log -1 --format='source updated to %h  %ad  %s' --date=iso
 	@git -C "$(5ETOOLS_PATH)" pull --ff-only
-	@git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn 已更新到 %h  %ad  %s' --date=iso
+	@git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn updated to %h  %ad  %s' --date=iso
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
 
 status:
 	@if [ -d "$(WEB_PATH)/.git" ] || [ -f "$(WEB_PATH)/.git" ]; then \
 		git -C "$(WEB_PATH)" log -1 --format='commit %h  %ad  %s' --date=iso && \
-		printf '内容版本: ' && (grep -ho 'v2026[0-9.]*' "$(WEB_PATH)/topics/写在前面.html" 2>/dev/null | head -1) && \
+		printf 'content version: ' && (grep -ho 'v2026[0-9.]*' "$(WEB_PATH)/topics/写在前面.html" 2>/dev/null | head -1) && \
 		du -sh "$(WEB_PATH)"; \
 	elif [ -d "$(WEB_PATH)/topics" ]; then \
-		echo "原文目录（无 Git 版本）：$(WEB_PATH)"; \
+		echo "source directory (no Git version): $(WEB_PATH)"; \
 	else \
-		echo "尚未下载，运行 make clone"; \
+		echo "source: not downloaded yet; run make clone"; \
 	fi
 	@if [ -d "$(5ETOOLS_PATH)/.git" ] || [ -f "$(5ETOOLS_PATH)/.git" ]; then \
 		git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn: %h  %ad  %s' --date=iso; \
 	elif [ -d "$(5ETOOLS_PATH)/data" ]; then \
-		echo "5etools-cn（无 Git 版本）：$(5ETOOLS_PATH)"; \
+		echo "5etools-cn (no Git version): $(5ETOOLS_PATH)"; \
 	else \
-		echo "5etools-cn: 尚未下载，运行 make clone"; \
+		echo "5etools-cn: not downloaded yet; run make clone"; \
 	fi
 	@if [ -f .cache/5echm-search.pkl ]; then \
-		printf '搜索索引: %s（启动时校验来源与内容指纹）\n' "$$(du -h .cache/5echm-search.pkl | cut -f1 | tr -d ' ')"; \
+		printf 'search index: %s (source and content fingerprint checked at start)\n' "$$(du -h .cache/5echm-search.pkl | cut -f1 | tr -d ' ')"; \
 	else \
-		echo "搜索索引: 尚未构建（make up 时自动构建）"; \
+		echo "search index: not built yet (make up builds it)"; \
 	fi
 
 index: clone
@@ -83,15 +67,12 @@ index: clone
 clean:
 	@if [ -e "$(WEB_PATH)" ]; then \
 		if [ "$(WEB_PATH)" = "$(CURDIR)" ] || [ "$(WEB_PATH)" = "$(abspath ..)" ] || [ ! -d "$(WEB_PATH)/.git" ] || [ ! -d "$(WEB_PATH)/topics" ]; then \
-			echo "拒绝删除：目标必须是独立的原文 Git 镜像目录" >&2; exit 1; \
+			echo "Refusing to delete: target must be a standalone source Git mirror" >&2; exit 1; \
 		fi; \
 		rm -rf -- "$(WEB_PATH)" || exit 1; \
 	fi
 	@rm -f .cache/5echm-search.pkl
-	@echo "已删除 $(WEB_PATH) 及搜索缓存；make clone 可重新下载"
-
-anna:
-	@"$(PYTHON)" scripts/serve.py --port "$(ANNA_PORT)"
+	@echo "Deleted $(WEB_PATH) and the search cache; run make clone to download again"
 
 build: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/build.py --5etools "$(5ETOOLS_PATH)"

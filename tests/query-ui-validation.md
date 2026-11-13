@@ -278,6 +278,6 @@ ANNA_E2E_BOOK="$PWD/output/playwright/visual-data/book" \
   --db output/playwright/visual-data/extracted/catalog.sqlite
 ```
 
-测试服务仍检查原文、数据库、审核日志和生成文件是否配套，使用独立端口并在结束时退出。依赖及端口设置见[使用说明](../使用.md#自动化验证)。浏览器需要本机启动权限；本次 Chromium 启动被沙箱阻止后，在获准的沙箱外测试环境运行。
+测试服务仍检查原文、数据库、审核日志和生成文件是否配套，使用独立端口并在结束时退出。依赖及端口设置见[使用说明](../USAGE.md#自动化验证)。浏览器需要本机启动权限；本次 Chromium 启动被沙箱阻止后，在获准的沙箱外测试环境运行。
 
 完整浏览器报告位于 `output/playwright/report/index.html`，逐项截图位于 `output/playwright/results/`。本轮命令输出另存为 `output/playwright/unit-visual.log`、`full-browser-visual.log`、`audit-visual.log`。这些产物与独立测试数据均为本地生成文件，不入库。

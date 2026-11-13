@@ -646,7 +646,7 @@ class Build:
             '旧版状态区分条目标记、整书归档、未见标记；未见标记不表示新版。','',
             '数据：`catalog.sqlite`；分类表：`views/`；待核：`review_queue.csv`；统计：`summary.json`。','',
             '校验：输入逐页登记、ID唯一、证据范围、外键与SQLite完整性。分类准确率需抽样，不能由这些检查替代。']
-        (out/'结果.md').write_text('\n'.join(lines)+'\n')
+        (out/'results.md').write_text('\n'.join(lines)+'\n')
         return summary
 
 

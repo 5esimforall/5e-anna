@@ -339,7 +339,7 @@ def export_report(out,result,changes,gaps):
     lines+=gap_report(result,gaps)
     lines+=conflict_report(result)
     lines+=['',*counterpart_report(result)]
-    (out/'提取审计.md').write_text('\n'.join(lines)+'\n')
+    (out/'audit.md').write_text('\n'.join(lines)+'\n')
 
 
 def main():

@@ -102,7 +102,9 @@ class ServerTests(unittest.TestCase):
                             if 'Ctrl-C' in output or process.poll() is not None:break
                             time.sleep(.02)
                         self.assertIn('Ctrl-C',output,output)
-                        ports=[int(line.split(':')[-1].rstrip('/')) for line in output.splitlines() if line.startswith(('anna:',))]
+                        self.assertIn('Anna:',output)
+                        self.assertIn('Stella:',output)
+                        ports=[int(line.split(':')[-1].rstrip('/')) for line in output.splitlines() if line.startswith(('Anna:',))]
                         self.assertEqual(len(ports),1)
                         for path in ('/', '/read', '/book/topics/test.htm'):
                             port=ports[0]

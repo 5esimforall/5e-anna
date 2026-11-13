@@ -454,7 +454,7 @@ def main():
     if not args.db.is_file(): ap.error('Database not found; run build.py first')
     Handler.db_path=args.db
     server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
-    print(f'5e anna · http://127.0.0.1:{server.server_port}/ · read-only; Ctrl-C to stop',flush=True)
+    print(f'5e Anna · http://127.0.0.1:{server.server_port}/ · read-only; Ctrl-C to stop',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close()

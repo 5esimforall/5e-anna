@@ -17,7 +17,7 @@ import sys
 import tempfile
 import time
 
-from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
+from html_extract import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, skill_notation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
 from entry_types import classify, refine_page_types, mark_class_regions, evidence_status, type_conflicts, RULE_TYPES
 from source_extract import SourceRegistry
 from table_extract import extract_tables
@@ -33,7 +33,7 @@ INDEX_FIELDS={
 }
 TYPE_LABELS={'class':'职业','subclass':'子职','class_feature':'职业能力','species':'种族物种','background':'背景','feat':'专长',
     'spell':'法术','equipment':'普通装备','magic_item':'魔法物品','creature':'生物数据卡','reward':'奖励','vehicle':'载具',
-    'animal_offer':'动物购置','facility':'设施','condition':'状态','action':'动作','rule':'规则','trap':'陷阱','poison':'毒药','disease':'疾病','hazard':'环境危害',
+    'animal_offer':'动物购置','facility':'设施','ability':'属性','skill':'技能','condition':'状态','action':'动作','rule':'规则','trap':'陷阱','poison':'毒药','disease':'疾病','hazard':'环境危害',
     'subsystem':'扩展机制','lore':'资料索引','section':'文献段落'}
 EXCLUDED_DIRS={'速查 - 副本 - 副本','空白页模板','template','template2','Generator','格式转换工具包','鸣谢'}
 
@@ -441,6 +441,20 @@ class Build:
                     self.fact(target['id'],'role','坐骑',ev,'explicit_mount_example',status='上下文推得')
                     self.relation(subject['id'],'lists_mount',target['name'],ev,target['id'],'上下文推得')
 
+    def link_skill_abilities(self):
+        """A skill printed as a lead states its ability where its text applies it: 力量（运动）检定. The abilities read
+        there are the ones the rules define (entries typed ability), not a word list. Skills listed in a definition
+        table already carry the table's 属性 cell."""
+        abilities={e['name_zh'] for e in self.entries if e['type']=='ability' and e['name_zh']}
+        stated={f['entry_id'] for f in self.facts if f['field']=='ability'}
+        if not abilities:return
+        for e in self.entries:
+            if e['type']!='skill' or e['id'] in stated or not e['name_zh']:continue
+            text=self.pages[e['page_path']]['text']
+            for m in skill_notation(e['name_zh'],abilities).finditer(text,e['title_end'],e['end']):
+                self.fact(e['id'],'ability',m[1],{'path':e['page_path'],'span':list(m.span(1)),'raw':m[1],
+                    'notation':m[0],'notation_span':list(m.span())},'skill_check_notation')
+
     def finish(self):
         self.infer_source_rulesets()
         # Recover broken index links only with an exact English/Chinese name,
@@ -464,6 +478,7 @@ class Build:
         self.reviews=[r for r in self.reviews if not (r['target'] in recovered and r['reason'] in {'index_target_missing','index_entry_unresolved'})]
         self.link_animal_catalogs()
         self.link_mount_examples()
+        self.link_skill_abilities()
         # Deduplicate evidence without dropping alternative statements.
         self.facts=list({f['id']:f for f in self.facts}.values())
         facts=defaultdict(lambda:defaultdict(list))

@@ -13,6 +13,16 @@ from counterparts import align_sources, build_counterparts, compare, load_record
 from audit import audit_counterparts
 
 
+class SkillValueTests(unittest.TestCase):
+    def test_skills_compare_their_governing_ability(self):
+        self.assertEqual(counterparts.KINDS['skill'], ('skill',))
+        self.assertNotIn('skill', counterparts.KINDS['rule'])
+        self.assertEqual(counterparts.record_values('skill', {'ability': 'dex'}), {'ability': ['敏捷']})
+        self.assertEqual(counterparts.record_values('skill', {'ability': 'luck'}), {})
+        self.assertEqual(counterparts.entry_values('skill', {'ability': '敏捷'}), {'ability': ['敏捷']})
+        self.assertEqual(counterparts.entry_values('skill', {'ability': '运气'}), {})
+
+
 def spell(en, zh, source, level, school, **extra):
     return {'ENG_name': en, 'name': zh, 'source': source, 'level': level, 'school': school,
             'duration': [{'type': 'instant'}], **extra}

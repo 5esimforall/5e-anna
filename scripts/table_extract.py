@@ -13,6 +13,30 @@ HEADERS = {
 }
 NAMES={'物品','项目','名称','商品','船只类型','护甲','护甲名称','法器','徽章','种类','类型','大小','水晶大小','死亡象征','货物'}
 VEHICLE_NAMES=re.compile(r'Carriage|Wagon|Cart|Chariot|Sled\b|Galley|Keelboat|Longship|Rowboat|Sailing Ship|Warship|Airship',re.I)
+# A table whose first header names its rows' kind and whose every row prints a bilingual name defines those
+# terms: 技能 | 属性 | 适用示例 (特技Acrobatics | 敏捷 | …), 属性 | 数值衡量…… (力量Strength | 力气). Tables that
+# list the same words without English names (属性 | 进行检定用来……) show uses of terms defined elsewhere.
+DEFINITION_KINDS={'技能':'skill','属性':'ability'}
+DEFINITION_FIELDS={'skill':{'属性':'ability'}}
+
+
+def definition_rows(doc,table):
+    """Entries for the rows of a definition table, or [] when the table is not one."""
+    rows=table['rows'];headers=[re.sub(r'\s+','',h) for h in rows[0]['cells']]
+    kind=DEFINITION_KINDS.get(headers[0]) if headers else None
+    body=rows[1:]
+    if not kind or len(body)<2:return []
+    if any(len(r['cells'])!=len(headers) or any(s!='1' for s in r['rowspan']+r['colspan']) or not all(split_name(r['cells'][0])) for r in body):return []
+    columns={j:field for j,h in enumerate(headers) for label,field in DEFINITION_FIELDS.get(kind,{}).items() if h==label}
+    out=[]
+    for row in body:
+        left,right=row['cell_spans'][0][0],row['cell_spans'][-1][1]
+        fields={field:[(row['cells'][j],row['cell_spans'][j][0]-left,row['cell_spans'][j][1]-left)] for j,field in columns.items() if row['cells'][j]}
+        out.append({'name':row['cells'][0],'start':left,'title_end':row['cell_spans'][0][1],'end':right,'anchors':[],
+            'parent_index':None,'type':kind,'classification_rule':'definition_table','boundary_rule':'table_row',
+            'legacy_direct':False,'fields':fields,'extra_facts':[],'observation_ids':[],
+            'body_hash':sha256(compact(doc.text[left:right]).encode()).hexdigest(),'level':9,'is_primary':False})
+    return out
 
 
 def header_field(h):
@@ -28,6 +52,9 @@ def extract_tables(doc, candidates):
         tables.append({'id':'tbl_'+digest(doc.path,ti),'page_path':doc.path,'start':a,'end':b,
             'headers':rows[0]['cells'],'rows':[{k:r[k] for k in ('cells','span','rowspan','colspan')} for r in rows],
             'layout_warning':any(any(x!='1' for x in r['rowspan']+r['colspan']) for r in rows)})
+        defined=definition_rows(doc,t)
+        if defined:
+            output.extend(defined);continue
         # A caption/group row can precede the column headers. Only bounded, explicit schemas.
         hi=next((i for i,r in enumerate(rows[:4]) if any(header_field(h)=='price' for h in r['cells'])
                  and any(h in NAMES for h in r['cells'])),None)

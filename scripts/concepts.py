@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from html_extract import EXAMPLE_CLASSES,LEVEL_LABEL,Document,compact,digest,key,resolve_link,split_name
+from html_extract import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name
 from entry_types import RULE_TYPES
 
 def aliases(entry):
@@ -136,10 +136,40 @@ PLAIN_EN_TAIL=re.compile(r'^(?:$|[.,;:!?\n)\]”]|[ \t]+(?:action|and|or|to|for|
 ACTION_LEAD=re.compile(r'^(?:执行|采取|(?:take|perform)\b)',re.I)
 ACTION_TAIL=re.compile(r'^[ \t]*(?:动作|action\b)',re.I)
 PLAIN_JOIN=re.compile(r'[ \t]*(?:、|和|或|与|以及|及|或者|及其|\band\b|\bor\b)[ \t]*',re.I)
+# The d20-test notation names its parts, and each part is a definition of its own kind: the test itself (力量检定,
+# 豁免检定); what is tested, right before 检定 or 豁免 (体质豁免, 力量或敏捷豁免, 隐匿检定); the ability before the
+# parentheses (感知（察觉）检定); and each skill inside them (魅力（欺瞒或游说）检定). 死亡豁免 therefore does not apply
+# 死亡 as an ability, and 力量 in 力量检定 is the ability, not a table titled 力量.
+CHECK_ROLES={'test':None,'tested':{'ability','skill'},'ability':{'ability'},'skill':{'skill'}}
+CHECK_TEST=re.compile(r'(?:检定|豁免)$')
+CHECK_TESTED=re.compile(r'(?:[ \t]*'+NOTATION_JOINER+r'[ \t]*(?:(?!的)[㐀-鿿]){1,4}?){0,5}[ \t]*(?:检定|豁免)')
+CHECK_ABILITY=re.compile(r'[ \t]*[（(][^（）()\n]{1,30}[）)][ \t]*(?:检定|豁免)')
+CHECK_SKILL_LEAD=re.compile(r'[（(][ \t]*(?:[^（）()\n]{0,20}?'+NOTATION_JOINER+r'[ \t]*)?$')
+CHECK_SKILL_TAIL=re.compile(r'[ \t]*(?:'+NOTATION_JOINER+r'[^（）()\n]{0,20}?)?[）)][ \t]*检定')
+
+
+def check_notation(text,a,b):
+    """The part of a d20-test notation the name at a..b fills, or None."""
+    def part(role,start,end):return {'rule':'check_notation','slot':'rule','role':role,'cue_span':[start,end]}
+    if CHECK_TEST.search(text[a:b]):return part('test',a,b)
+    for role,pattern in (('tested',CHECK_TESTED),('ability',CHECK_ABILITY)):
+        after=pattern.match(text,b)
+        if after:return part(role,a,after.end())
+    before=CHECK_SKILL_LEAD.search(text[max(0,a-24):a]);after=CHECK_SKILL_TAIL.match(text,b)
+    if before and after:return part('skill',a-len(before[0]),after.end())
+    return None
 
 
 def plain_syntax(text,a,b,previous):
-    """A name must fill a rules-use slot, not just be a substring of prose."""
+    """A name must fill a rules-use slot, not just be a substring of prose. A name in a d20-test notation fills the
+    notation's slot; the rules-use clause it may also sit in is kept as `clause` for names the notation cannot use."""
+    clause=rule_use_clause(text,a,b,previous)
+    notation=None if text[a:b].isascii() else check_notation(text,a,b)
+    if notation:return {**notation,'clause':clause}
+    return clause
+
+
+def rule_use_clause(text,a,b,previous):
     english=text[a:b].isascii()
     lead=(PLAIN_EN_LEAD if english else PLAIN_LEAD).search(text[max(0,a-32):a])
     after=text[b:b+24]
@@ -177,7 +207,8 @@ class Resolver:
     def locator(self,path,fragment):
         ids=self.anchors.get((path,fragment),set()) if fragment else set()
         return sorted(ids)
-    def resolve(self,label,kind,path,position=None,*,scope=None):
+    def resolve(self,label,kind,path,position=None,*,scope=None,types=None):
+        """`types` narrows a concept to the definition kinds its position admits (a d20-test notation part)."""
         excluded_features=[]
         def result(candidates,reason,status=None):
             ids=sorted(e['id'] for e in candidates)
@@ -192,8 +223,8 @@ class Resolver:
             found['resolution_evidence']={'local_definition_ids':[d['id'] for d in local]}
             return found
         ids=self.names.get(key(label),set())
-        wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
-        def matches_kind(e):return e['type'] in wanted or kind=='concept' and e.get('table_span') and e['type']=='lore'
+        wanted=types or (RULE_TYPES|{'class_feature'} if kind=='concept' else {kind})
+        def matches_kind(e):return e['type'] in wanted or kind=='concept' and not types and e.get('table_span') and e['type']=='lore'
         candidates=[self.entries[i] for i in ids if matches_kind(self.entries[i])]
         for e in candidates:
             if e['type']!='class_feature':continue
@@ -245,8 +276,14 @@ class Resolver:
         return {'source_ids':list(source_ids),'ruleset':ruleset,'owner_ids':sorted(e['id'] for e in closest)}
 
     def resolve_plain(self,label,path,a,b,syntax,non_prose):
+        # A d20-test notation part admits only definitions of its own kind. A name with none of that kind is not
+        # that part (死亡 in 死亡豁免); it may still fill the rules-use clause it sits in.
+        types=CHECK_ROLES.get(syntax.get('role')) if syntax else None
+        mismatched=bool(types) and not any(self.entries[i]['type'] in types for i in self.names.get(key(label),()))
+        if mismatched and syntax.get('clause'):syntax,types,mismatched=syntax['clause'],None,False
+        if syntax:syntax={k:v for k,v in syntax.items() if k!='clause'}
         scope=self.plain_scope(path,a,b) if syntax and not non_prose else None
-        resolution=self.resolve(label,'concept',path,a,scope=scope)
+        resolution=self.resolve(label,'concept',path,a,scope=scope,types=types)
         evidence={'resolution_reason':resolution['reason']}
         if syntax:evidence['syntax']=syntax
         if scope:evidence['scope']=scope
@@ -254,6 +291,7 @@ class Resolver:
             return {'reason':reason,'status':status,'targets':resolution['targets'] if targets is None else targets}
         if non_prose:return pending('plain_non_prose'),evidence
         if not syntax:return pending('lexical_candidate'),evidence
+        if mismatched:return pending('plain_check_part_mismatch'),evidence
         if not scope:return pending('plain_scope_unconfirmed'),evidence
         if resolution['status']!='resolved':return resolution,evidence
         target_id=resolution['targets'][0];target=self.entries[target_id]
@@ -266,9 +304,9 @@ class Resolver:
             return pending('plain_action_context'),evidence
         if target['page_path']==path and target['start']<=a<b<=target['end']:
             return pending('definition_self_reference'),evidence
-        # Plain text supplies no visual type marker; a relevant non-rule
-        # homonym cannot be discarded just because the rule candidate is unique.
-        competitors=[e['id'] for i in self.names.get(key(label),set()) if (e:=self.entries[i])['type'] not in RULE_TYPES|{'section','class_feature'}
+        # Plain text supplies no visual type marker; a relevant non-rule homonym cannot be discarded just because the
+        # rule candidate is unique. A d20-test notation part states its kind, as a marker would.
+        competitors=[] if types else [e['id'] for i in self.names.get(key(label),set()) if (e:=self.entries[i])['type'] not in RULE_TYPES|{'section','class_feature'}
                      and e['ruleset']==scope['ruleset'] and (set(scope['source_ids']).intersection(e['source_ids']) or core(e))]
         if competitors:return pending('plain_competing_kind','ambiguous',[target_id,*competitors]),evidence
         return resolution,evidence
@@ -310,6 +348,15 @@ def build_concepts(db,source,out,entries,pages,sources=()):
         doc.close()
     terms={n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
     scan_terms=term_scanner(terms) if terms else None
+    by_initial=defaultdict(list)
+    for n in sorted(terms,key=lambda n:(-len(n),n)):by_initial[n[0].casefold()].append(n)
+    def shorter_names(text,a,b):
+        """Names that start where a longer match starts, longest first: 力量 inside 力量检定."""
+        for n in by_initial.get(text[a].casefold(),[]):
+            end=a+len(n)
+            if end>=b or text[a:end].casefold()!=n.casefold():continue
+            if n.isascii() and end<len(text) and re.match(r'[A-Za-z0-9_]',text[end]):continue
+            yield end
     profiles={};page_coverage=[];discovery_inputs={'webhelpcontents.htm'}
     for path,page in sorted(pages.items()):
         if page.get('parse_status')!='ok':continue
@@ -385,8 +432,17 @@ def build_concepts(db,source,out,entries,pages,sources=()):
                 if m[0].isascii() and ((a and re.match(r'[A-Za-z0-9_]',doc.text[a-1])) or (b<len(doc.text) and re.match(r'[A-Za-z0-9_]',doc.text[b]))):continue
                 syntax=plain_syntax(doc.text,a,b,previous)
                 resolution,evidence=resolver.resolve_plain(m[0],path,a,b,syntax,non_prose(a,b))
+                # A longer name defined only in the other rules generation (2014 力量检定 in 2024 text) yields to the
+                # longest name inside it that this generation defines.
+                if resolution['reason']=='ruleset_mismatch':
+                    for end in shorter_names(doc.text,a,b):
+                        inner_syntax=plain_syntax(doc.text,a,end,previous)
+                        inner,inner_evidence=resolver.resolve_plain(doc.text[a:end],path,a,end,inner_syntax,non_prose(a,end))
+                        if inner['status']!='resolved':continue
+                        inner_evidence['longer_name']={'text':m[0],'span':[a,b],'resolution_reason':resolution['reason']}
+                        b,syntax,resolution,evidence=end,inner_syntax,inner,inner_evidence;break
                 if resolution['status']=='resolved':previous=(b,syntax['slot'])
-                observe(path,a,b,m[0],'plain','concept',**resolution,evidence=evidence)
+                observe(path,a,b,doc.text[a:b],'plain','concept',**resolution,evidence=evidence)
         doc.close()
     db.executescript('''
     CREATE TABLE concepts(id TEXT PRIMARY KEY,definition_id TEXT UNIQUE REFERENCES entries(id),identity_status TEXT NOT NULL,data TEXT NOT NULL);

@@ -12,6 +12,7 @@ than the one it received carries the disagreement (`type_conflicts`) instead of 
 """
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from functools import cached_property
 import re
@@ -20,7 +21,8 @@ from typing import Callable
 from html_extract import CLASSES, GENERIC, SPELL, CLASS_PATH, Candidate, class_structure, compact, key, split_name
 
 # Types that define a rule of play rather than a game object; core-rule pages split these into subdefinitions.
-RULE_TYPES = {'rule','action','condition','hazard','subsystem'}
+# The six abilities and the skills checked with them are rule terms too: text applies them in d20 tests.
+RULE_TYPES = {'rule','action','condition','hazard','subsystem','ability','skill'}
 
 PRINTED = '原文明示'
 INFERRED = '上下文推得'
@@ -41,7 +43,12 @@ RULE_EVIDENCE = {
     'spell_fields':PRINTED, 'stat_fields':PRINTED, 'background_fields':PRINTED, 'species_fields':PRINTED,
     'item_descriptor':PRINTED, 'feat_descriptor':PRINTED, 'poison_descriptor':PRINTED,
     'class_structure':PRINTED, 'level_heading':PRINTED, 'level_statement':PRINTED, 'name_label':PRINTED,
+    # A table whose header names its rows' kind (技能, 属性) and lists them by bilingual name; a lead whose
+    # own text applies its name as a skill in an ability check, 力量（运动）检定.
+    'definition_table':PRINTED, 'skill_notation':PRINTED,
     # The place the text sits implies the type.
+    # A heading followed by the heading of its own check (力量 Strength, 力量检定 Strength Checks).
+    'checked_ability':INFERRED, 'ability_check_heading':INFERRED,
     'context_heading':INFERRED, 'context_fields':INFERRED, 'topic_context':INFERRED,
     'property_definition':INFERRED, 'named_table_structure':INFERRED, 'rule_subdefinition':INFERRED,
     'level_inline_heading':INFERRED, 'feature_inline_heading':INFERRED, 'choice_pool_heading':INFERRED,
@@ -208,6 +215,12 @@ def indexed_or_signed(p):
     if p.c.kinds:
         first=p.c.method if p.c.method.endswith('_signature') else 'index_or_statblock'
         return [(k,first if i==0 else 'index_or_statblock') for i,k in enumerate(p.c.kinds)]
+
+
+@recognizer('skill_notation')
+def skill_lead(p):
+    """A lead the page layout found applying its own name in an ability check (Document.skill_leads)."""
+    if p.c.method=='skill_lead':return 'skill'
 
 
 @recognizer('document_structure')
@@ -583,12 +596,29 @@ def type_topic_members(entries,primary,text,toc_place):
             admit(e,topic)
 
 
+def type_checked_abilities(entries):
+    """An ability's heading is followed by the heading of its own check: 力量 Strength, then 力量检定 Strength
+    Checks. The pair types both. A check heading alone names no ability, and the ability's own text is its
+    definition line; the uses that follow (its check, attacks, carrying) are sibling headings."""
+    siblings=defaultdict(list)
+    for e in entries:siblings[e['parent_index']].append(e)
+    for group in siblings.values():
+        group.sort(key=lambda e:e['start'])
+        for ability,check in zip(group,group[1:]):
+            if ability['type'] not in {'section','rule'} or check['type'] not in {'section','rule'}:continue
+            zh,en=split_name(ability['name']);check_zh,check_en=split_name(check['name'])
+            if not (zh and en and check_zh==zh+'检定' and re.fullmatch(re.escape(en)+r'\s+Checks?',check_en,re.I)):continue
+            ability['type'],ability['classification_rule']='ability','checked_ability'
+            check['type'],check['classification_rule']='rule','ability_check_heading'
+
+
 def refine_page_types(entries,text,toc_place=NO_TOC_PLACE):
     """Second pass: the page's primary entry and its catalogs type the headings beneath them.
 
     Classification of a heading cannot know what its page is until the page's own primary entry
     has been classified. This pass applies that context: a class or subclass owns its level
-    features, and a catalog owns its definitions (type_topic_members).
+    features, a catalog owns its definitions (type_topic_members), and an ability owns the check
+    heading that follows it (type_checked_abilities).
     """
     if not entries:return
     primary_index=1 if len(entries)>1 and entries[0]['boundary_rule']=='page_intro' else 0
@@ -607,3 +637,4 @@ def refine_page_types(entries,text,toc_place=NO_TOC_PLACE):
             e['type']='class_feature'
             e['classification_rule']='level_heading' if primary['type']=='class' else 'parent_class_context'
     type_topic_members(entries,primary,text,toc_place)
+    type_checked_abilities(entries)

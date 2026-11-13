@@ -15,7 +15,7 @@ LABELS = {
     'concentration':'专注', 'ritual':'仪式', 'verbal':'言语', 'somatic':'姿势', 'material':'材料',
     'special_material':'特殊材料', 'rarity':'稀有度', 'item_type':'物品类别', 'attunement':'同调',
     'size':'体型', 'creature_type':'生物类型', 'legendary_actions':'传奇动作', 'cr':'CR',
-    'feat_category':'专长类别', 'role':'使用角色', 'mastery':'精通', 'level':'等级',
+    'feat_category':'专长类别', 'role':'使用角色', 'mastery':'精通', 'level':'等级', 'ability':'属性',
 }
 COLUMN_LABELS = {**LABELS, 'components':'成分', 'spell_markers':'仪式/专注', 'attunement_requirements':'同调条件','item_subtypes':'子类别','prerequisite':'前置条件','ac':'AC','hp':'HP','price':'价格','carrying_capacity':'载重','speed':'速度','weight':'重量','damage':'伤害'}
 BOOL_FIELDS = {'concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions'}
@@ -31,6 +31,7 @@ ORDERS = {
     'size':['微型','小型','中型','大型','巨型','超巨型'],
     'creature_type':['异怪','野兽','天族','构装','龙类','元素','妖精','邪魔','巨人','类人','怪兽','泥怪','植物','亡灵'],
     'feat_category':['起源','通用','战斗风格','传奇恩惠','种族','血族'],
+    'ability':['力量','敏捷','体质','智力','感知','魅力'],
 }
 # Table columns may be composites of boolean fields; CSV export keeps every part as its own column.
 COMPOSITES = {'components':['verbal','somatic','material'], 'spell_markers':['ritual','concentration']}
@@ -52,6 +53,8 @@ SCHEMAS = {
     'equipment': {'facets':['mastery'], 'flags':[],
                   'columns':['name','price','weight','damage','mastery','sources','ruleset'],
                   'sorts':['source','name','name_en','mastery'], 'default_sort':'name'},
+    'skill': {'facets':['ability'], 'flags':[], 'columns':['name','ability','sources','ruleset'],
+              'sorts':['source','name','name_en','ability'], 'default_sort':'ability'},
     'feature': {'facets':['level'], 'flags':[], 'columns':['name','level','sources','ruleset'],
                 'sorts':['source','name','name_en','level'], 'default_sort':'level'},
     'animal': {'facets':['role'], 'flags':[], 'columns':['name','role','price','carrying_capacity','speed','sources','ruleset'], 'sorts':['source','name','name_en'],'default_sort':'source'},
@@ -71,7 +74,7 @@ def finish(config):
 
 
 # An entry's own type picks its quick-reference schema wherever it is read, whichever filter listed it.
-TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal', 'class_feature':'feature'}
+TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal', 'class_feature':'feature', 'skill':'skill'}
 GENERIC = 'generic'
 
 
@@ -203,7 +206,7 @@ def name_key(text):
 
 # Mixed results list kinds in the order a reader meets them: character options, spells, gear, creatures, then rules.
 TYPE_ORDER = ('class','subclass','class_feature','species','background','feat','spell','equipment','magic_item','creature',
-              'animal_offer','vehicle','reward','facility','condition','action','rule','hazard','trap','poison','disease',
+              'animal_offer','vehicle','reward','facility','ability','skill','condition','action','rule','hazard','trap','poison','disease',
               'subsystem','lore','section')
 TYPE_RANK = 'CASE e.type '+' '.join(f"WHEN '{t}' THEN {i}" for i,t in enumerate(TYPE_ORDER))+f' ELSE {len(TYPE_ORDER)} END'
 
@@ -306,7 +309,7 @@ def order_sql(params, default='name'):
 # (a spell, creature, item...). Class features are scoped by class, and rule or lore sections
 # share generic headings, so equal names there do not mean versions of one thing.
 STACKABLE_TYPES = ('spell','magic_item','creature','feat','equipment','species','background','class','subclass',
-                   'vehicle','animal_offer','reward','condition','action','trap','poison','disease','hazard','facility')
+                   'vehicle','animal_offer','reward','ability','skill','condition','action','trap','poison','disease','hazard','facility')
 RULESET_PREFERENCES = {'5r':('5r','5e'), '5e':('5e','5r')}
 # Columns that name or locate a version differ by definition; they are never reported as rule differences.
 IDENTITY_COLUMNS = {'name','sources','ruleset','type','classification_status','legacy'}

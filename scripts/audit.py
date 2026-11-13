@@ -52,7 +52,9 @@ def audit_concepts(db,folder):
             syntax=o['evidence'].get('syntax',{})
             scope=o['evidence'].get('scope',{})
             cue=syntax.get('cue_span',[])
-            if (o['role']!='mention' or not (len(cue)==2 and 0<=cue[0]<cue[1]==a)
+            # A rules-use clause ends where the name starts; a d20-test notation contains the name it applies.
+            located=len(cue)==2 and (cue[0]<=a<b<=cue[1] if syntax.get('rule')=='check_notation' else 0<=cue[0]<cue[1]==a)
+            if (o['role']!='mention' or not located
                 or scope.get('ruleset') not in {'5e','5r'} or len(scope.get('source_ids',[]))!=1
                 or not scope.get('owner_ids') or any(e not in entries for e in scope['owner_ids'])):
                 errors.append(mid+': missing plain reference provenance')

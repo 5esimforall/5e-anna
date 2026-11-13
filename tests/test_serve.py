@@ -331,6 +331,21 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.db.execute('SELECT count(*) FROM "危害" WHERE type=\'hazard\'').fetchone()[0],57)
         self.assertEqual(self.request('/api/entries?type=hazard')[0],200)
 
+    def test_abilities_and_skills_are_queryable(self):
+        # Both player's handbooks define the six abilities and eighteen skills; each pair stacks into one row.
+        self.assertEqual(query(self.db,{'type':['ability'],'versions':['each']})['total'],12)
+        self.assertEqual(query(self.db,{'type':['ability']})['total'],6)
+        each=query(self.db,{'type':['skill'],'versions':['each']})
+        self.assertEqual((each['total'],{r['ruleset'] for r in each['rows']}),(36,{'5e','5r'}))
+        skills=query(self.db,{'type':['skill']})
+        self.assertEqual(skills['total'],18)
+        # Skills read in ability order, and filter by the ability they use.
+        self.assertEqual(skills['rows'][0]['name_zh'],'运动')
+        dex=query(self.db,{'type':['skill'],'f_ability':['敏捷']})
+        self.assertEqual(sorted(r['name_zh'] for r in dex['rows']),['巧手','特技','隐匿'])
+        self.assertEqual(meta(self.db)['type_conditions']['skill'],['ability'])
+        self.assertEqual(self.db.execute('SELECT count(*) FROM "状态动作规则" WHERE type IN (\'ability\',\'skill\')').fetchone()[0],48)
+
     def test_metadata(self):
         m=meta(self.db)
         # The picker offers the types the data holds, in reading order; untyped sections stay behind their own filter.

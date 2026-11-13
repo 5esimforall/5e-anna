@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from concepts import Resolver,format_kind,build_concepts,plain_syntax,style_profile,term_scanner
+from concepts import Resolver,check_notation,format_kind,build_concepts,plain_syntax,style_profile,term_scanner
 from html_extract import Document
 from entry_types import NO_TOC_PLACE
 from build import Build,parse_one
@@ -93,6 +93,47 @@ class ConceptTests(unittest.TestCase):
         self.assertEqual(resolve('他通常需要进行护障。',[context,action])[0]['reason'],'plain_action_context')
         self.assertEqual(resolve('你可以执行护障。',[context,action])[0]['targets'],['new'])
         self.assertEqual(resolve('你可以进行护障动作。',[context,action])[0]['status'],'resolved')
+
+    def test_check_notation_applies_abilities_and_skills_of_their_own_kind(self):
+        path='topics/fixture/prose.htm'
+        context=entry('context','正文',path,kind='section',source='supplement')
+        wisdom=entry('wis','感知',kind='ability',source='core');perception=entry('per','察觉',kind='skill',source='core')
+        persuasion=entry('pers','游说',kind='skill',source='core');death=entry('dead','死亡',source='core')
+        check=entry('check','感知检定',source='old_core',ruleset='5e')
+        sources=[{'id':'core','ruleset_hint':'5r','reference_role':'core_rules','evidence':[]},
+                 {'id':'old_core','ruleset_hint':'5e','reference_role':'core_rules','evidence':[]},
+                 {'id':'supplement','ruleset_hint':'5r','reference_role':'other','evidence':[]}]
+        # A table titled after an ability is not what a notation tests.
+        table={**entry('table','感知',source='core',kind='lore'),'table_span':[0,100]}
+        charmed=entry('charmed','魅惑',kind='condition',source='core');armor=entry('ac','护甲等级',source='core')
+        resolver=Resolver([context,wisdom,perception,persuasion,death,check,table,charmed,armor],sources)
+        def resolve(text,name,at=0):
+            a=text.index(name,at);b=a+len(name)
+            return resolver.resolve_plain(name,path,a,b,plain_syntax(text,a,b,None),False)
+        for text,name,target,role in [('进行一次DC 15的感知（察觉）检定。','感知','wis','ability'),
+                                      ('进行一次DC 15的感知（察觉）检定。','察觉','per','skill'),
+                                      ('进行一次魅力（欺瞒或游说）检定。','游说','pers','skill'),
+                                      ('成功通过一次感知或魅力豁免。','感知','wis','tested'),
+                                      ('进行一次察觉检定。','察觉','per','tested')]:
+            result,evidence=resolve(text,name)
+            self.assertEqual((result['status'],result['targets'],evidence['syntax']['role']),('resolved',[target],role),(text,name))
+            self.assertNotIn('clause',evidence['syntax'])
+        # Each part must be a definition of its own kind: 死亡豁免 does not apply 死亡 as an ability, and the
+        # skill in the parentheses is no ability.
+        self.assertEqual(resolve('你需要进行死亡豁免。','死亡')[0]['reason'],'plain_check_part_mismatch')
+        self.assertEqual(resolve('察觉（感知）检定','感知')[0]['reason'],'plain_check_part_mismatch')
+        # A list of tested names holds short names, not a clause: 魅惑 here is a condition in a rules-use clause.
+        result,evidence=resolve('不容易陷入魅惑、恐慌或是受其他感知豁免的影响。','魅惑')
+        self.assertEqual((result['targets'],evidence['syntax']['rule']),(['charmed'],'rule_use_clause'))
+        self.assertIsNone(check_notation('抵抗魅惑和恐慌而作的豁免检定',2,4))
+        # A name the notation cannot use still fills the rules-use clause it sits in.
+        result,evidence=resolve('若它提供护甲等级、攻击和伤害掷骰、豁免或法术豁免DC的加值','护甲等级')
+        self.assertEqual((result['targets'],evidence['syntax']['rule']),(['ac'],'rule_use_clause'))
+        # Outside the notation the words are ordinary prose.
+        for text,name in [('他的感知很敏锐。','感知'),('被动感知（察觉）值','察觉'),('你察觉到了。','察觉')]:
+            self.assertEqual(resolve(text,name)[0]['reason'],'lexical_candidate',text)
+        # A test named in the other generation only stays a candidate of that generation.
+        self.assertEqual(resolve('进行一次感知检定。','感知检定')[0]['reason'],'ruleset_mismatch')
 
     def test_term_scanner_preserves_leftmost_longest_and_regex_case_behavior(self):
         names=['遮蔽','重度遮蔽','遮蔽区','Shield','shield wall','SHIELD','Keen','Keen eye','İN','in','long-rest','[D]']

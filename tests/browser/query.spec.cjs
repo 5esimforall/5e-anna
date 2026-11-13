@@ -326,6 +326,22 @@ test('environmental hazards read as their own query type and view',async({page})
   await expect(page.locator('#results .entry-name').filter({hasText:'薄冰'})).toHaveCount(1);
 });
 
+test('skills read by the ability they use and stack both rule generations',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,'/?type=skill');
+  const data=await queryMatchesAPI(page);
+  expect(data.total).toBe(18);
+  await expect(page.locator('#title')).toHaveText('技能');
+  const headers=await page.locator('#columns th').allTextContents();
+  expect(headers.some(h=>h.includes('属性'))).toBeTruthy();
+  // Ability order puts Strength's 运动 first; the 2014 and 2024 skill read as one stacked row.
+  await expect(page.locator('#results .entry-name').first()).toContainText('运动');
+  await expect(page.locator('#results tr').first().locator('td[data-label="属性"]')).toContainText('力量');
+  await visit(page,'/?type=skill&f_ability='+encodeURIComponent('敏捷'));
+  const dex=await queryMatchesAPI(page);
+  expect(dex.rows.map(r=>r.name_zh).sort()).toEqual(['巧手','特技','隐匿'].sort());
+});
+
 test('spell components read as glyph strips while filters and export keep every component',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await visit(page,spells+'&f_verbal=false&f_material=true');

@@ -24,7 +24,7 @@ KINDS = {
     'feat': ('feat',), 'class': ('class',), 'subclass': ('subclass',),
     'class_feature': ('classFeature', 'subclassFeature', 'optionalfeature'),
     'species': ('race', 'subrace'), 'background': ('background',),
-    'rule': ('variantrule', 'action', 'condition', 'status', 'sense', 'skill'),
+    'rule': ('variantrule', 'action', 'condition', 'status', 'sense'), 'skill': ('skill',),
     'action': ('action',), 'condition': ('condition', 'status'), 'disease': ('disease',),
     'hazard': ('hazard', 'trap'), 'trap': ('trap', 'hazard'), 'subsystem': ('variantrule',),
     'facility': ('facility',), 'vehicle': ('vehicle', 'object'), 'reward': ('reward', 'charoption'),
@@ -48,6 +48,7 @@ RARITIES = {'common': '普通', 'uncommon': '非普通', 'rare': '珍稀', 'very
 # Older 不全书 pages print rare items as 稀有 or 罕见; matched records confirm both mean rare.
 RARITY_WORDING = {'稀有': '珍稀', '罕见': '珍稀'}
 NUMERALS = {c: i for i, c in enumerate('一二三四五六七八九', 1)}
+ABILITIES = {'str': '力量', 'dex': '敏捷', 'con': '体质', 'int': '智力', 'wis': '感知', 'cha': '魅力'}
 
 
 def record_values(kind, item):
@@ -70,6 +71,9 @@ def record_values(kind, item):
         sizes = [SIZES[s] for s in item.get('size') or [] if s in SIZES]
         if sizes:
             values['size'] = sizes
+    elif kind == 'skill':
+        if item.get('ability') in ABILITIES:
+            values['ability'] = [ABILITIES[item['ability']]]
     elif kind in {'item', 'magicvariant', 'baseitem'}:
         fields = item.get('inherits', item) if kind == 'magicvariant' else item
         if fields.get('rarity') in RARITIES:
@@ -97,6 +101,8 @@ def entry_values(kind, fields):
     elif kind == 'creature':
         values['cr'] = [str(v) for v in listed('cr')]
         values['size'] = [v for v in listed('size') if v in SIZES.values()]
+    elif kind == 'skill':
+        values['ability'] = [v for v in listed('ability') if v in ABILITIES.values()]
     elif kind == 'magic_item':
         values['rarity'] = [RARITY_WORDING.get(v, v) for v in listed('rarity') if RARITY_WORDING.get(v, v) in RARITIES.values()]
         values['attunement'] = [v for v in listed('attunement') if isinstance(v, bool)]

@@ -11,6 +11,31 @@ from audit import classification_gaps, gap_report, type_conflict_report, conflic
 REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 
 
+class PlainProvenanceTests(unittest.TestCase):
+    """A resolved plain reference keeps the cue that made it a rules use, located against the name."""
+    def errors(self,syntax,a=10,b=12):
+        from audit import audit_concepts
+        db=sqlite3.connect(':memory:')
+        db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT);
+            CREATE TABLE concepts(definition_id TEXT,data TEXT);CREATE TABLE metadata(key TEXT,value TEXT);
+            CREATE TABLE concept_observations(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,data TEXT);''')
+        db.execute("INSERT INTO pages VALUES('p',?)",('x'*40,));db.executemany('INSERT INTO entries VALUES(?)',[('owner',),('wis',)])
+        db.execute('INSERT INTO concepts VALUES(?,?)',('wis',json.dumps({'ruleset':'5r','type':'ability'})))
+        o={'id':'o','path':'p','start':a,'end':b,'signal':'plain','status':'resolved','target_id':'wis','candidates':['wis'],'role':'mention',
+           'evidence':{'syntax':syntax,'scope':{'ruleset':'5r','source_ids':['s'],'owner_ids':['owner']}}}
+        db.execute('INSERT INTO concept_observations VALUES(?,?,?,?,?,?,?,?)',('o','p',a,b,'plain','resolved','wis',json.dumps(o)))
+        db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'observations':1,'outcomes':{'plain':{'resolved':1}},'gaps':{}})))
+        return [e for e in audit_concepts(db,'/nonexistent')['errors'] if 'provenance' in e]
+
+    def test_clause_cues_precede_and_notation_cues_contain_the_name(self):
+        self.assertEqual(self.errors({'rule':'rule_use_clause','slot':'rule','cue_span':[7,10]}),[])
+        self.assertEqual(self.errors({'rule':'check_notation','slot':'rule','role':'ability','cue_span':[10,18]}),[])
+        self.assertEqual(self.errors({'rule':'check_notation','slot':'rule','role':'skill','cue_span':[9,13]}),[])
+        # A notation cue that misses the name, or a clause cue that does not end at it, is no evidence.
+        self.assertTrue(self.errors({'rule':'check_notation','slot':'rule','role':'ability','cue_span':[11,18]}))
+        self.assertTrue(self.errors({'rule':'rule_use_clause','slot':'rule','cue_span':[10,18]}))
+
+
 class Corpus:
     """A minimal catalog: pages are assembled from named passages so spans follow the text."""
     def __init__(self):

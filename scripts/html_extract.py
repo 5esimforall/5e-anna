@@ -280,6 +280,17 @@ def class_structure(text,title=''):
     return label in CLASSES or label in title
 
 
+NOTATION_JOINER = r'(?:或|、|/|／|和)'
+
+
+def skill_notation(skill, abilities=()):
+    """The ability-check notation that applies a skill: 力量（运动）检定, 魅力（欺瞒或游说）检定. With `abilities`, the
+    ability printed before the parentheses must be one of them and is captured as group 1."""
+    lead='('+'|'.join(map(re.escape,sorted(abilities,key=len,reverse=True)))+r')\s*' if abilities else ''
+    return re.compile(lead+r'[（(]\s*(?:[^（）()\n]{1,20}?'+NOTATION_JOINER+r'\s*)?'+re.escape(skill)
+                      +r'\s*(?:'+NOTATION_JOINER+r'[^（）()\n]{1,20}?)?[）)]\s*检定')
+
+
 @dataclass
 class Candidate:
     start: int
@@ -501,6 +512,52 @@ class Document:
             if len({key(t[3]) for t in group})!=len(group) or len(group)<2:continue
             yield from ((*t,'rule_parallel_lead') for t in group if family(t[3]))
 
+    def line_leads(self):
+        """Bold runs that open a line and end at 。, ：or a period: (start, end, name) in text order. Adjacent bold
+        tags form one run (运动 + Athletics); the punctuation may sit outside the bold run."""
+        runs=[]
+        for tag in self.body.find_all(['b','strong']):
+            if tag.find_parent(['b','strong','table','a']+list(HEADINGS)):continue
+            a,b=self.span(tag)
+            if a>=b:continue
+            if runs and runs[-1][1]<=a and not compact(self.text[runs[-1][1]:a]):
+                runs[-1][1]=max(runs[-1][1],b);continue
+            line=self.text.rfind('\n',0,a)+1
+            if compact(self.text[line:a]):continue
+            runs.append([a,b])
+        leads=[]
+        for a,b in runs:
+            raw=compact(self.text[a:b]);after=self.text[b:b+3].lstrip(' ')
+            name=raw.rstrip('。:：.')
+            if not name or (raw==name and not after[:1] in {'。','：',':','.'}):continue
+            leads.append((a,b,name))
+        return leads
+
+    def skill_leads(self, headings=()):
+        """Leads that define the skills of an ability's check. Inside the heading that names the check (力量检定
+        Strength Checks), a lead whose text applies its own name in that check's notation is a skill: 运动Athletics。
+        力量（运动）检定涵盖… The name may stand among alternatives (魅力（欺瞒或游说）检定). A lead that only uses a skill
+        elsewhere, such as an armor table's 隐匿 Stealth column, sits under no check heading.
+
+        Yields (start, title_end, end, name, owning heading). A lead's text runs to the next lead that opens a line,
+        the next heading, or a line that is only a bilingual title, such as 边栏：寻找隐藏物件Finding a Hidden Object."""
+        headings=sorted(headings,key=lambda h:h.start)
+        leads=self.line_leads();bounds={h.start for h in headings}
+        for m in re.finditer(r'(?m)^[ \t]*(\S[^\n]{0,80}?)[ \t]*$',self.text):
+            title=compact(m[1]);zh,en=split_name(title)
+            if zh and en and not re.search(r'[。！？；，、]',title):bounds.add(m.start(1))
+        bounds=sorted(bounds)
+        for i,(a,b,name) in enumerate(leads):
+            zh,en=split_name(name)
+            if not (zh and en and len(name)<=60) or re.search(r'[。！？；，、]',name):continue
+            owner=next((h for h in reversed(headings) if h.start<a),None)
+            if owner is None:continue
+            check_zh,check_en=split_name(owner.name)
+            if not (len(check_zh)>2 and check_zh.endswith('检定') and re.search(r'\bChecks?$',check_en,re.I)):continue
+            end=min([leads[i+1][0]] if i+1<len(leads) else [len(self.text)])
+            end=min([end]+[s for s in bounds if s>a])
+            if skill_notation(zh,[check_zh[:-2]]).search(self.text,b,end):yield a,b,end,name,owner
+
     def candidates(self, observations=()):
         items=[]
         def add(tag,name=None,rank=4,method='heading',anchor='',kind='',ob=None,end=None):
@@ -571,6 +628,11 @@ class Document:
             children=[c for c in items if c.method=='feature_inline_heading']
             for c in children:
                 c.explicit_end=min([c.explicit_end]+[x.start for x in children if c.start<x.start<c.explicit_end])
+        # Skill leads are children of the check heading they belong to and end at the next lead.
+        headings=[c for c in items if c.method in {'heading','word_heading','colored_heading'}]
+        for a,b,end,name,owner in self.skill_leads(headings):
+            if any(c.start<=a<c.title_end for c in items):continue
+            items.append(Candidate(a,b,name,owner.rank+1,'skill_lead',None,[],[],[],end))
         # Named tables reuse a heading at the same location, or become bounded child entries.
         for tag,table_span in self.named_tables():
             a,b=self.span(tag)
@@ -737,6 +799,7 @@ def text_fields(text,kind):
         'species':{'ability_scores','creature_type','size','speed','languages','senses','resistances','immunities'},
         'class_feature':{'prerequisite'}, 'class':set(), 'subclass':{'prerequisite'},
         'vehicle':{'speed'}, 'facility':set(), 'section':set(), 'lore':set(), 'magic_item':set(),
+        'ability':set(), 'skill':set(),
     }
     if kind in allowed:result={k:v for k,v in result.items() if k in allowed[kind]}
     return result
@@ -746,7 +809,7 @@ VIEW_TYPES = {
     '职业':{'class'}, '子职':{'subclass'}, '职业能力':{'class_feature'}, '种族物种':{'species'},
     '背景':{'background'}, '专长':{'feat'}, '法术':{'spell'}, '装备':{'equipment','magic_item'},
     '魔法物品':{'magic_item'}, '生物数据卡':{'creature'}, '奖励':{'reward'}, '载具':{'vehicle'},
-    '动物购置':{'animal_offer'}, '设施':{'facility'}, '状态动作规则':{'condition','action','rule'}, '危害':{'trap','poison','disease','hazard'},
+    '动物购置':{'animal_offer'}, '设施':{'facility'}, '状态动作规则':{'ability','skill','condition','action','rule'}, '危害':{'trap','poison','disease','hazard'},
     '扩展机制':{'subsystem'}, '资料索引':{'lore'},
 }
 

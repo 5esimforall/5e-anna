@@ -48,6 +48,14 @@ class NormalizeTests(unittest.TestCase):
             self.assertEqual(result,expected+[None,None])
         db.close()
 
+    def test_skills_read_by_their_ability_in_ability_order(self):
+        config=browse.schema_for(['skill'])
+        self.assertEqual((config['columns'],config['facets']),(['name','ability','sources','ruleset'],['ability']))
+        self.assertEqual((browse.type_conditions('skill'),browse.type_conditions('ability')),(['ability'],[]))
+        self.assertLess(browse.sort_value('{"ability":"力量"}','ability'),browse.sort_value('{"ability":"魅力"}','ability'))
+        # Both generations of a skill or an ability stack as versions of one named object.
+        self.assertTrue({'ability','skill'}<=set(browse.STACKABLE_TYPES))
+
     def test_names_sort_naturally_and_types_in_reading_order(self):
         names=['10级：甲','2级：乙','1 平方码丝绸','１级：全角','Ｂeta','alpha']
         self.assertEqual(sorted(names,key=browse.name_key),['1 平方码丝绸','１级：全角','2级：乙','10级：甲','alpha','Ｂeta'])

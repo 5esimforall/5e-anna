@@ -5,8 +5,9 @@ import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
 from html_extract import Document,resolve_link,split_name,key
 from entry_types import printed_type,hazard_member,NO_TOC_PLACE
-from build import parse_one,normalize_value,observation_fields
+from build import Build,parse_one,normalize_value,observation_fields
 from source_extract import SourceRegistry
+from table_extract import extract_tables
 
 from paths import WEB
 
@@ -47,6 +48,70 @@ class StructureTests(unittest.TestCase):
         d=Document('topics/test.htm','<h4 id="A">甲 Alpha</h4><h4 id="A">甲 Alpha</h4>')
         cs=d.candidates([{'id':'o','target_anchor':'A','name':'甲Alpha','kind':'spell'}])
         self.assertFalse(any(c.observations for c in cs));d.close()
+
+    def test_skill_leads_apply_their_name_in_an_ability_check(self):
+        raw=('<h3>力量检定Strength Checks</h3><p>力量检定可以对应举重。</p>'
+             '<p><b>运动</b><b>Athletics</b>。力量（运动）检定涵盖了攀爬。其范例如下：</p><ul><li>你尝试攀爬陡坡。</li></ul>'
+             '<p><b>其他力量检定</b>。强行突破卡死的门。</p>'
+             '<p><b>载重Carrying Capacity</b>。你的载重是你的力量值乘以15。</p>'
+             '<p><b>被动察觉Passive Perception</b>。与被动感知（察觉）值对抗。</p>'
+             '<p><b>特技Acrobatics</b>。敏捷（特技）检定涵盖了保持平衡。</p>'
+             '<h3>魅力检定Charisma Checks</h3>'
+             '<p><b>游说Persuasion</b>。DM可能会要求你进行一次魅力（欺瞒或游说）检定。</p>'
+             '<p>边栏：寻找隐藏物件Finding a Hidden Object</p><p>进行一次感知（察觉）检定。</p>'
+             '<h3>护甲Armor</h3><p><b>隐匿Stealth</b>。如果护甲表的“隐匿”列显示劣势，穿着者在敏捷（隐匿）检定中具有劣势。</p>')
+        d=Document('topics/test.htm',raw);cs=d.candidates()
+        skills=[c for c in cs if c.method=='skill_lead']
+        # 载重 applies no check, 被动察觉 is not the word in the parentheses, 特技 is applied in another ability's
+        # check, and the armor's 隐匿 column uses a skill outside any check heading.
+        self.assertEqual([c.name for c in skills],['运动Athletics','游说Persuasion'])
+        athletics,persuasion=skills
+        self.assertEqual((cs[athletics.parent].name,cs[persuasion.parent].name),('力量检定Strength Checks','魅力检定Charisma Checks'))
+        # A lead's text keeps its examples and stops at the next lead or at a title line.
+        self.assertIn('攀爬陡坡',d.text[athletics.title_end:athletics.end])
+        self.assertNotIn('其他力量检定',d.text[athletics.title_end:athletics.end])
+        self.assertNotIn('边栏',d.text[persuasion.title_end:persuasion.end])
+        d.close()
+
+    def test_definition_tables_list_terms_by_bilingual_name(self):
+        raw=('<table><tr><td>技能</td><td>属性</td><td>适用示例</td></tr>'
+             '<tr><td>特技Acrobatics</td><td>敏捷</td><td>表演杂技。</td></tr>'
+             '<tr><td>巧手Sleight of Hand</td><td>敏捷</td><td>扒窃。</td></tr></table>'
+             '<table><tr><td>属性</td><td>数值衡量……</td></tr><tr><td>力量Strength</td><td>力气</td></tr><tr><td>敏捷Dexterity</td><td>灵活性</td></tr></table>'
+             # Uses of the abilities, not definitions: the rows print no English names.
+             '<table><tr><td>属性</td><td>进行检定用来……</td></tr><tr><td>力量</td><td>举起</td></tr><tr><td>敏捷</td><td>移动</td></tr></table>'
+             # One row without an English name makes the table no definition table.
+             '<table><tr><td>技能</td><td>属性</td></tr><tr><td>特技Acrobatics</td><td>敏捷</td></tr><tr><td>自创技能</td><td>智力</td></tr></table>')
+        d=Document('topics/test.htm',raw)
+        rows,_,_=extract_tables(d,d.candidates())
+        self.assertEqual([(r['type'],r['name']) for r in rows],[('skill','特技Acrobatics'),('skill','巧手Sleight of Hand'),('ability','力量Strength'),('ability','敏捷Dexterity')])
+        self.assertTrue(all(r['classification_rule']=='definition_table' and r['boundary_rule']=='table_row' for r in rows))
+        acrobatics=rows[0];value,a,b=acrobatics['fields']['ability'][0]
+        self.assertEqual((value,d.text[acrobatics['start']+a:acrobatics['start']+b].strip()),('敏捷','敏捷'))
+        self.assertEqual(rows[2]['fields'],{})
+        d.close()
+
+    def test_core_rules_define_abilities_and_skills_in_both_generations(self):
+        build=Build(WEB)
+        old,abilities,skills='topics/玩家手册/属性值应用/各属性值应用.htm','topics/玩家手册2024/进行游戏/六项属性.htm','topics/玩家手册2024/进行游戏/熟练.htm'
+        for path in (old,abilities,skills):build.consume(parse_one(build.parse_job(path)))
+        build.link_skill_abilities()
+        governing={f['entry_id']:f['value'] for f in build.facts if f['field']=='ability'}
+        six=['力量','敏捷','体质','智力','感知','魅力']
+        expected={'运动':'力量','特技':'敏捷','巧手':'敏捷','隐匿':'敏捷','奥秘':'智力','历史':'智力','调查':'智力','自然':'智力','宗教':'智力',
+                  '驯兽':'感知','洞悉':'感知','医药':'感知','察觉':'感知','求生':'感知','欺瞒':'魅力','威吓':'魅力','表演':'魅力','游说':'魅力'}
+        for ability_path,skill_path,ruleset in [(old,old,'5e'),(abilities,skills,'5r')]:
+            typed=lambda path,t:[e for e in build.page_entries[path] if e['type']==t]
+            self.assertEqual([e['name_zh'] for e in typed(ability_path,'ability')],six,ruleset)
+            found=typed(skill_path,'skill')
+            self.assertEqual({e['name_zh']:governing.get(e['id']) for e in found},expected,ruleset)
+            self.assertTrue(all(e['ruleset']==ruleset and e['name_en'] for e in found+typed(ability_path,'ability')),ruleset)
+        checks=[e['name_zh'] for e in build.page_entries[old] if e['classification_rule']=='ability_check_heading']
+        self.assertEqual(checks,[a+'检定' for a in six])
+        # The 2014 skill evidence quotes the ability inside the notation that applies the skill.
+        athletics=next(e for e in build.page_entries[old] if e['name_zh']=='运动')
+        fact=next(f for f in build.facts if f['entry_id']==athletics['id'] and f['field']=='ability')
+        self.assertEqual((fact['rule'],fact['evidence']['notation']),('skill_check_notation','力量（运动）检定'))
 
     def test_normalization(self):
         self.assertEqual(split_name('粉碎者 CrusherLegacy'),('粉碎者','Crusher'))

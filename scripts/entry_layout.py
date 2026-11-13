@@ -27,6 +27,9 @@ TAGS = {
 VOID = {'br','hr'}
 BLOCK_OUTPUT = {'p','div','h3','h4','h5','table','ul','ol','dl','blockquote','hr'}
 SHORT_CELL = 12
+# Readers place an entry of these types by one field before reading its text (a spell by its level, cantrip
+# through 9th), so that field leads the notes wherever its evidence lies: in the passage or a spell list.
+LEADING_NOTES = {'spell':('spell_level',)}
 # A block's own line breaks separate paragraphs; consecutive label lines form a parameter card.
 LINE_BLOCKS = {'p','div','section','center'}
 WRAPPERS = {'span','font','a'}
@@ -192,7 +195,9 @@ def entry_layout(db, entry_id, source_root):
     finally:
         doc.close()
     if not body.strip():return {'status':'empty','path':path}
-    # Notes follow reading order: each at its first located span; fields read elsewhere come last.
+    # A type's leading notes come first; the rest follow reading order, each at its first located span,
+    # and fields read elsewhere come last.
+    lead = LEADING_NOTES.get(e['type'],())
     notes = {}
     for f in facts:
         note = notes.setdefault(f['field'],{'field':f['field'],'status':f['status'],'located':False,'position':None})
@@ -200,5 +205,6 @@ def entry_layout(db, entry_id, source_root):
         if f['span']:
             note['located'] = True
             note['position'] = f['span'][0] if note['position'] is None else min(note['position'],f['span'][0])
-    ordered = sorted(notes.values(),key=lambda n:(n['position'] is None,n['position'] or 0,n['field']))
+    rank = lambda field:lead.index(field) if field in lead else len(lead)
+    ordered = sorted(notes.values(),key=lambda n:(rank(n['field']),n['position'] is None,n['position'] or 0,n['field']))
     return {'status':'ok','path':path,'html':body,'notes':[{k:n[k] for k in ('field','status','located')} for n in ordered]}

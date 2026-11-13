@@ -3,10 +3,12 @@ import json
 from pathlib import Path
 import re
 import shutil
+import sqlite3
 import sys
 import tempfile
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+from build import read_page
 from html_extract import Document
 from entry_layout import entry_layout, render
 import paths
@@ -75,6 +77,41 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(out,'<div><p><strong>本条 This</strong></p><p>本文。</p></div>')
 
 
+class NoteOrderTests(unittest.TestCase):
+    """Notes follow reading order, except a type's leading field, which comes first wherever it was read."""
+    PAGE='topics/fixture.html'
+    HTML='<html><body><p><b>智珠散尽 Baffle</b><br>惑控 戏法<br><b>施法时间：</b>动作<br><b>持续时间：</b>立即</p><p>正文。</p></body></html>'
+    def notes(self,entry_type,facts):
+        """facts: (field, the words it was read from in this page, or None when read on another page)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source=root/self.PAGE;source.parent.mkdir(parents=True);source.write_text(self.HTML,encoding='utf-8')
+            raw,_,sha=read_page(source);doc=Document(self.PAGE,raw);text=doc.text;doc.close()
+            db=sqlite3.connect(':memory:')
+            db.executescript('CREATE TABLE pages(path TEXT PRIMARY KEY,text TEXT,sha256 TEXT);CREATE TABLE entries(id TEXT PRIMARY KEY,data TEXT);'
+                             'CREATE TABLE facts(id INTEGER PRIMARY KEY,entry_id TEXT,field TEXT,value TEXT,evidence TEXT,rule TEXT,status TEXT);')
+            db.execute('INSERT INTO pages VALUES(?,?,?)',(self.PAGE,text,sha))
+            entry={'id':'ver_x','type':entry_type,'page_path':self.PAGE,'start':0,'title_end':text.index('惑控'),'end':len(text)}
+            db.execute('INSERT INTO entries VALUES(?,?)',('ver_x',json.dumps(entry)))
+            for field,words in facts:
+                at=text.index(words) if words else None
+                evidence={'path':self.PAGE,'span':[at,at+len(words)]} if words else {'path':'topics/速查/法术速查.html','span':[0,9]}
+                db.execute('INSERT INTO facts(entry_id,field,value,evidence,rule,status) VALUES(?,?,?,?,?,?)',('ver_x',field,'""',json.dumps(evidence),'fixture','原文明示'))
+            layout=entry_layout(db,'ver_x',root);db.close()
+        self.assertEqual(layout['status'],'ok')
+        return [(n['field'],n['located']) for n in layout['notes']]
+    def test_spell_level_leads_even_when_read_from_a_spell_list(self):
+        facts=[('duration','持续时间：立即'),('school',None),('casting_time','施法时间：动作'),('ritual',None),('spell_level',None)]
+        self.assertEqual(self.notes('spell',facts),
+                         [('spell_level',False),('casting_time',True),('duration',True),('ritual',False),('school',False)])
+    def test_spell_level_leads_when_read_beside_the_school(self):
+        facts=[('casting_time','施法时间：动作'),('school','惑控 戏法'),('spell_level','惑控 戏法')]
+        self.assertEqual(self.notes('spell',facts),[('spell_level',True),('school',True),('casting_time',True)])
+    def test_other_types_and_spells_without_a_level_keep_reading_order(self):
+        facts=[('rarity',None),('casting_time','施法时间：动作'),('duration','持续时间：立即')]
+        self.assertEqual(self.notes('magic_item',facts),[('casting_time',True),('duration',True),('rarity',False)])
+        self.assertEqual(self.notes('spell',[('school',None),('duration','持续时间：立即')]),[('duration',True),('school',False)])
+
+
 @unittest.skipUnless(DB.exists() and paths.WEB.is_dir(),'Build corpus first')
 class CorpusLayoutTests(unittest.TestCase):
     def setUp(self):self.db=connect()
@@ -86,7 +123,7 @@ class CorpusLayoutTests(unittest.TestCase):
         self.assertNotIn('以太化｜Etherealness',layout['html'])
         self.assertIn('<mark class="note" data-notes="school spell_level">七环 咒法</mark>',layout['html'])
         notes=[n['field'] for n in layout['notes']]
-        self.assertEqual(notes[:2],['school','spell_level'])
+        self.assertEqual(notes[:2],['spell_level','school'])
         self.assertTrue({'type','ruleset','source_id','source_code'}.isdisjoint(notes))
         # Fields read from a quick-reference table elsewhere follow, unlocated.
         located=[n['located'] for n in layout['notes']]

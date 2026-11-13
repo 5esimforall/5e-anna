@@ -14,6 +14,7 @@ const test=base.extend({page:async({page},use)=>{
 async function ready(page){await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');await expect(page.locator('#book-error')).toBeHidden();}
 async function visit(page,params={root:'root'}){await page.goto(anna+'/read?'+new URLSearchParams(params));await ready(page);}
 async function offset(page,y){await page.locator('#book-scroll').evaluate((e,y)=>{const f=document.querySelector('#content');e.scrollTop=f.getBoundingClientRect().top-e.getBoundingClientRect().top+e.scrollTop+y;},y);}
+async function readingPosition(page){return page.locator('#book-scroll').evaluate(e=>Math.max(0,e.getBoundingClientRect().top-document.querySelector('#content').getBoundingClientRect().top));}
 // Jumps within the scope through the reading bar's path, as a reader would: the scope name, or an item of a level's menu.
 async function jump(page,label){
   const scope=page.locator('#book-scope-title');
@@ -262,10 +263,46 @@ test('scrolling changes the current page without changing scope or adding browse
     const scroll=document.querySelector('#book-scroll');scroll.scrollTop=frame.getBoundingClientRect().top-scroll.getBoundingClientRect().top+scroll.scrollTop+150;
   });
   await expect.poll(async()=>(await saved(page)).page).toBe(paths[1]);
+  await expect.poll(()=>new URL(page.url()).searchParams.get('page')).toBe(paths[1]);
   expect((await saved(page)).root).toBe('root');
   expect(await page.evaluate(()=>history.length)).toBe(length);
   await expect(page.locator('#book-page-count')).toHaveText('2 / 3');
   await expect(page.locator('#book-outline-title')).not.toHaveText('野蛮人');
+});
+
+test('scrolling writes history state once after it stops and leaves the URL alone',async({page})=>{
+  await visit(page);
+  await page.waitForTimeout(500);
+  const url=page.url();
+  await page.evaluate(()=>{
+    window.__historyWrites=[];
+    const replace=History.prototype.replaceState;
+    History.prototype.replaceState=function(state,title,address){
+      window.__historyWrites.push({address,page:state?.book?.page});
+      return replace.apply(this,arguments);
+    };
+  });
+  // Continuous scroll stays inside the first page; the address bar must not receive a write per capture.
+  for(let i=0;i<10;i++){
+    await page.locator('#book-scroll').evaluate(e=>{e.scrollTop+=20;});
+    await page.waitForTimeout(40);
+  }
+  expect(await page.evaluate(()=>window.__historyWrites.length)).toBe(0);
+  await expect.poll(()=>page.evaluate(()=>window.__historyWrites.length)).toBe(1);
+  await page.waitForTimeout(300);
+  const writes=await page.evaluate(()=>window.__historyWrites);
+  expect(writes).toHaveLength(1);
+  expect(writes[0].address).toBeUndefined();
+  expect(writes[0].page).toBe(paths[0]);
+  expect(page.url()).toBe(url);
+});
+
+test('leaving the page flushes the reading position before the settle delay',async({page})=>{
+  await visit(page);
+  await offset(page,180);
+  await page.reload();
+  await ready(page);
+  await expect.poll(()=>readingPosition(page)).toBeGreaterThan(100);
 });
 
 test('wheel and keyboard scroll the outer reading surface; earlier document growth preserves local position',async({page})=>{

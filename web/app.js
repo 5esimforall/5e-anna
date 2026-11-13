@@ -112,7 +112,7 @@ function captureUiState(){
     sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,readerFull,
     readerTop:$('#detail-content').scrollTop,readerChainSpell:params.get('chain_spell'),readerChainPath:params.get('chain_path'),lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
-function saveUiState(){if(restoringUi)return;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
+function saveUiState(){if(restoringUi)return;clearTimeout(uiSaveTimer);uiSaveTimer=0;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
 // Anna shares her places with Stella only when both run from the same build.
 const sharing=()=>!!(metadata?.reader_url&&metadata.snapshot);
 // A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
@@ -162,7 +162,9 @@ function restoreUiState(state){
   $('#query-main').scrollTop=state.mainTop||0;window.scrollTo(0,state.windowTop||0);
   $('#detail-content').scrollTop=state.readerTop||0;lastResultEntry=state.lastResultEntry||null;
 }
-function queueUiSave(){clearTimeout(uiSaveTimer);uiSaveTimer=setTimeout(saveUiState,80);}
+// Scroll events arrive continuously; one state write after the reader settles keeps the address bar quiet.
+const UI_SAVE_DELAY=200;
+function queueUiSave(){clearTimeout(uiSaveTimer);uiSaveTimer=setTimeout(saveUiState,UI_SAVE_DELAY);}
 for(const el of [window,$('.table-wrap'),$('#query-main'),$('#filter-panel'),$('#detail-content')])el.addEventListener('scroll',queueUiSave,{passive:true});
 for(const el of [$('#source-details'),$('#audit-details')])el.addEventListener('toggle',queueUiSave);
 window.addEventListener('pagehide',saveUiState);

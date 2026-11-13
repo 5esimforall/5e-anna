@@ -11,11 +11,13 @@
   }
   for (const element of document.querySelectorAll('[data-placeholder]')) element.placeholder = ui[element.dataset.placeholder];
   const sidebar = $('#book-sidebar'), narrow = matchMedia('(max-width:800px)');
+  // Scrolling updates the position continuously; the history entry only needs the position where it stops.
+  const HISTORY_SAVE_DELAY = 200;
   let metadata, model, scope, flow, page, route, nodeId = '', focusedNode = '', nodes = new Map(), children = new Map(), pageNodes = new Map();
   let expanded = new Set(), pane = 'contents', sidebarOpen = !narrow.matches;
   let position = {x:0,y:0}, navigationId = 0, request, loading = true;
   let searchRequest, searchSequence = 0, searchPage = 1, searchTotalPages = 0, searchQuery = '', searchTitleOnly = false;
-  let restoring = true, contentsFollowing = true, contentsSyncTimer;
+  let restoring = true, contentsFollowing = true, contentsSyncTimer, historySaveTimer;
   history.scrollRestoration = 'manual';
 
   function readRoute() {
@@ -33,12 +35,23 @@
   }
   function nodeRoute(node) { return node.status === 'present' ? {root:node.id,page:node.path,anchor:node.fragment,node:node.id} : {root:node.id}; }
   function pageRoute(item) { return {root:scope.root,page:item.path,anchor:item.fragment,node:item.node}; }
-  function save() {
+  function save(url = '') {
+    clearTimeout(historySaveTimer); historySaveTimer = 0;
     if (!metadata || restoring || loading) return;
     const state = {version:2,snapshot:metadata.snapshot,root:scope?.root || '',page:page?.path || '',position, expanded:[...expanded], pane, sidebar:sidebarOpen, node:nodeId,
       followContents:contentsFollowing, filter:$('#book-filter').value, treeScroll:$('#book-tree-scroll').scrollTop, outlineScroll:$('#panel-outline').scrollTop,
       search:{query:searchQuery, titleOnly:searchTitleOnly, page:searchPage, draft:$('#book-search').value, scroll:$('#panel-search').scrollTop}};
-    try { history.replaceState({...history.state, book:state}, '', location.href); } catch { /* History storage may be unavailable. */ }
+    const next = {...history.state, book:state};
+    // A state-only write keeps the address bar quiet; URL changes happen at page boundaries and navigation.
+    try {
+      if (url) history.replaceState(next, '', url);
+      else history.replaceState(next, '');
+    } catch { /* History storage may be unavailable. */ }
+  }
+  function scheduleSave() {
+    if (!metadata || restoring || loading) return;
+    clearTimeout(historySaveTimer);
+    historySaveTimer = setTimeout(save, HISTORY_SAVE_DELAY);
   }
   /* Stella's places live in the shared workspace, newest first. A bare /read resumes the latest; a place chosen
      from Anna's switcher resumes in the tab that chose it. */
@@ -85,10 +98,10 @@
     if (changed) {
       nodeId = item.node;
       route = {root:scope.root,page:page.path,node:nodeId};
-      history.replaceState(history.state,'',routeURL(route));
       renderPage();
-    }
-    save(); rememberPosition(); followTopic();
+      save(routeURL(route));
+    } else scheduleSave();
+    rememberPosition(); followTopic();
   }
   async function api(path, signal) {
     let response;
@@ -288,7 +301,7 @@
     const count = expanded.size;
     reveal(nodeId);
     if (expanded.size !== count) renderTree();
-    scrollContentsTo(nodeId); save();
+    scrollContentsTo(nodeId); scheduleSave();
   }
   function scheduleContentsSync() {
     clearTimeout(contentsSyncTimer);
@@ -361,6 +374,7 @@
     $('#book-main').setAttribute('aria-busy','false'); $('#book-status').textContent = '';
   }
   async function load(target, saved, preserveScope = false) {
+    clearTimeout(historySaveTimer); historySaveTimer = 0;
     request?.abort(); request = new AbortController();
     const id = ++navigationId;
     loading = true;
@@ -406,8 +420,7 @@
       $('#book-main').setAttribute('aria-busy','false');
       $('#book-status').textContent = result.found ? '' : ui.errors.fragment_missing;
       $('#book-status').hidden = !!result.found;
-      history.replaceState(history.state,'',routeURL(route));
-      scheduleContentsSync(); save(); rememberPosition();
+      save(routeURL(route)); scheduleContentsSync(); rememberPosition();
       if (target.entry) shareTopic(target.entry);
     } catch (error) {
       if (id === navigationId && error.name !== 'AbortError') showError(error.message);
@@ -586,7 +599,7 @@
     }
   });
   $('.skip-link').onclick = event => { event.preventDefault(); flow?.focus(); };
-  for (const selector of ['#book-tree-scroll','#panel-outline','#panel-search']) $(selector).addEventListener('scroll',save,{passive:true});
+  for (const selector of ['#book-tree-scroll','#panel-outline','#panel-search']) $(selector).addEventListener('scroll',scheduleSave,{passive:true});
   window.addEventListener('pagehide',capturePosition);
   document.addEventListener('visibilitychange', () => { if (document.hidden) capturePosition(); });
   window.addEventListener('popstate', async () => {

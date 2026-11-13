@@ -52,7 +52,7 @@ test('scrolling follows the scope member, expands ancestors, and scrolls only en
   expect(Math.abs(item.y+item.height-scroll.y-scroll.height)).toBeLessThan(2);
   const before=await treeState(page);
   await offset(page,2,90);await page.waitForTimeout(300);expect(await treeState(page)).toEqual(before);
-  expect(await page.evaluate(()=>history.state.book.position.y)).toBeCloseTo(90,0);
+  await expect.poll(()=>page.evaluate(()=>history.state.book.position.y)).toBeCloseTo(90,0);
 });
 
 test('automatic subtree expansion does not steal focus or change a reading range',async({page})=>{
@@ -74,7 +74,7 @@ test('manual wheel scrolling pauses following; locate restores it without moving
   await expect(row(page,'last').locator('a')).toHaveAttribute('aria-current','page');
   await page.locator('#book-locate').click();await inView(page,'last');
   await expect(page.locator('#book-follow-status')).toHaveText('目录跟随中');
-  expect(await page.evaluate(()=>history.state.book.position.y)).toBeCloseTo(60,0);
+  await expect.poll(()=>page.evaluate(()=>history.state.book.position.y)).toBeCloseTo(60,0);
   await offset(page,0,60);await inView(page,'root');
 });
 

@@ -170,6 +170,33 @@ test('history and reload restore loaded rows, sorting, disclosure, reading tab a
   await page.goForward();await read(page,second);
 });
 
+test('scrolling the reading pane writes history state once after it settles',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,'/?type=spell&q='+encodeURIComponent('火球术'));
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
+  await page.waitForTimeout(700);
+  const url=page.url();
+  await page.evaluate(()=>{
+    window.__historyWrites=[];
+    const replace=History.prototype.replaceState;
+    History.prototype.replaceState=function(state,title,address){
+      window.__historyWrites.push({address});
+      return replace.apply(this,arguments);
+    };
+  });
+  for(let i=0;i<10;i++){
+    await page.locator('#detail-content').evaluate(e=>{e.scrollTop+=20;});
+    await page.waitForTimeout(40);
+  }
+  expect(await page.evaluate(()=>window.__historyWrites.length)).toBe(0);
+  await expect.poll(()=>page.evaluate(()=>window.__historyWrites.length)).toBe(1);
+  await page.waitForTimeout(300);
+  const writes=await page.evaluate(()=>window.__historyWrites);
+  expect(writes).toHaveLength(1);
+  expect(writes[0].address).toBeUndefined();
+  expect(page.url()).toBe(url);
+});
+
 test('narrow reader traps focus, tabs use arrow keys, resize keeps content and close restores focus',async({page},testInfo)=>{
   await page.setViewportSize({width:390,height:844});await visit(page);const id=await entry(page);
   await page.locator('#results .entry-name').first().click();await read(page,id);

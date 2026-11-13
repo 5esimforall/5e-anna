@@ -28,13 +28,13 @@ def main():
     ap.add_argument('--show',help='version ID: include original text, evidence and relations')
     ap.add_argument('--stats',action='store_true');ap.add_argument('--json',action='store_true')
     args=ap.parse_args()
-    if not args.db.exists():ap.error('先运行 build.py')
+    if not args.db.exists():ap.error('run build.py first')
     db=sqlite3.connect(args.db.resolve().as_uri()+'?mode=ro',uri=True);db.row_factory=sqlite3.Row
     if args.stats:
         print(json.dumps(json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0]),ensure_ascii=False,indent=2));return
     if args.show:
         row=db.execute('SELECT data FROM entries WHERE id=?',(args.show,)).fetchone()
-        if not row:ap.error('未找到版本ID')
+        if not row:ap.error('version ID not found')
         data=json.loads(row[0]);data['body']=db.execute('SELECT body FROM entry_text WHERE id=?',(args.show,)).fetchone()[0]
         data['facts']=[dict(r) for r in db.execute('SELECT field,value,evidence,rule,scope,status FROM facts WHERE entry_id=?',(args.show,))]
         for f in data['facts']:f['value']=json.loads(f['value']);f['evidence']=json.loads(f['evidence'])
@@ -43,7 +43,7 @@ def main():
     clauses=[];params=[]
     if args.view:
         views={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='view'")}
-        if args.view not in views:ap.error('未知视图：'+args.view)
+        if args.view not in views:ap.error('unknown view: '+args.view)
         clauses.append('e.id IN (SELECT id FROM "'+args.view.replace('"','""')+'")')
     if not args.include_sections:clauses.append("e.type!='section'")
     if args.type:
@@ -73,8 +73,8 @@ def main():
     rows=[json.loads(r[0]) for r in db.execute('SELECT e.data FROM entries e'+where+' ORDER BY e.name,e.id LIMIT ?',params+[max(0,args.limit)])]
     if args.json:print(json.dumps({'count':count,'rows':rows},ensure_ascii=False,indent=2))
     else:
-        print(f'{count} 个版本候选；显示 {len(rows)} 个。推断与待核不等于已确认。')
-        for r in rows:print('\t'.join([r['id'],r['name'],r['type'],r['ruleset'],r['legacy'],'；'.join(r['source_names'])]))
+        print(f'{count} version candidates; showing {len(rows)}. Inferences and pending reviews are not confirmed.')
+        for r in rows:print('\t'.join([r['id'],r['name'],r['type'],r['ruleset'],r['legacy'],'; '.join(r['source_names'])]))
     db.close()
 
 

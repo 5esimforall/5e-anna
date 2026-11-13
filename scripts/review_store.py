@@ -49,10 +49,10 @@ def require_appendable(db, path):
     events, _ = load_events(path)
     prefix = raw[:saved['bytes']] if 'bytes' in saved else b''.join(raw.splitlines(keepends=True)[:saved['events']])
     if len(events) < saved['events'] or sha256(prefix).hexdigest() != saved['sha256']:
-        raise ValueError('审核日志不是构建快照的追加历史，请重新构建')
+        raise ValueError('Review log is not an append-only extension of the build snapshot; rebuild')
     summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
     if summary.get('extraction_sha256') != extraction_hash():
-        raise ValueError('提取实现已变化或快照过旧，请先运行 make build')
+        raise ValueError('Extraction implementation changed or the snapshot is stale; run make build')
 
 
 def load_events(path=DEFAULT_DECISIONS):
@@ -128,7 +128,7 @@ def append_events(path, pending, expected_hash):
     """Atomically publish the entire validated batch under the caller's lock."""
     path = Path(path)
     _, current = load_events(path)
-    if current != expected_hash: raise ValueError('审核日志已变化，请重新读取后保存')
+    if current != expected_hash: raise ValueError('Review log changed; reload before saving')
     events = [{'schema': 1, 'id': 'review_'+uuid4().hex,
                'created_at': datetime.now(timezone.utc).isoformat(), **event} for event in pending]
     raw = path.read_bytes() if path.exists() else b''
@@ -151,7 +151,7 @@ def append_events(path, pending, expected_hash):
 
 def snapshot(db):
     row = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
-    if not row: raise ValueError('数据库缺少审核结果，请运行 make build')
+    if not row: raise ValueError('Database is missing review results; run make build')
     return json.loads(row[0])
 
 
@@ -159,5 +159,5 @@ def require_current(db, path=None):
     saved = snapshot(db)
     _, current = load_events(path or saved['path'])
     if current != saved['sha256']:
-        raise ValueError('审核日志尚未重放，请运行 make build')
+        raise ValueError('Review log has not been replayed; run make build')
     return saved

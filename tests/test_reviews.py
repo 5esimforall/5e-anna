@@ -79,7 +79,7 @@ class ReviewTests(unittest.TestCase):
 
     def test_save_replay_book_and_revoke(self):
         original = self.plain(); event = self.confirm(original)
-        with self.assertRaisesRegex(ValueError,'重放'): require_current(self.db,self.log)
+        with self.assertRaisesRegex(ValueError,'replayed'): require_current(self.db,self.log)
         self.rebuild()
         ref = query_references(self.db,reference_id=original['id'])['rows'][0]
         self.assertEqual((ref['target_id'],ref['review_status'],ref['can_link']),('target','applied',True))
@@ -136,11 +136,11 @@ class ReviewTests(unittest.TestCase):
 
     def test_stale_save_and_pending_log_are_rejected(self):
         ref = self.plain()
-        with self.assertRaisesRegex(ValueError,'依据已变化'):
+        with self.assertRaisesRegex(ValueError,'basis changed'):
             save(self.db,self.log,operation='confirm',reference_id=ref['id'],target='target',expected_basis='old',reviewer='fixture',reason='reason')
         self.confirm()
-        with self.assertRaisesRegex(ValueError,'已有有效或待核决策'): self.confirm()
-        with self.assertRaisesRegex(ValueError,'重放'): build_book(self.source,self.database,self.root/'book')
+        with self.assertRaisesRegex(ValueError,'active or pending decision'): self.confirm()
+        with self.assertRaisesRegex(ValueError,'replayed'): build_book(self.source,self.database,self.root/'book')
 
     def batch_items(self):
         refs = [self.plain(), next(r for r in query_references(self.db,signal='explicit')['rows'] if r['text']=='未知引用')]
@@ -152,11 +152,11 @@ class ReviewTests(unittest.TestCase):
         items = self.batch_items()
         bad = [items[0],dict(items[1],expected_basis='outdated')]
         before = load_events(self.log)[1]
-        with self.assertRaisesRegex(ValueError,'依据已变化'): save_batch(self.db,self.log,bad)
+        with self.assertRaisesRegex(ValueError,'basis changed'): save_batch(self.db,self.log,bad)
         self.assertEqual(load_events(self.log)[1],before)
         saved = save_batch(self.db,self.log,items)
         self.assertEqual(len(saved),2)
-        with self.assertRaisesRegex(ValueError,'重放'): require_current(self.db,self.log)
+        with self.assertRaisesRegex(ValueError,'replayed'): require_current(self.db,self.log)
         # A subsequent supersession is saved against the same input without a rebuild.
         save(self.db,self.log,**dict(items[0],supersedes=saved[0]['id']))
         self.rebuild()
@@ -165,9 +165,9 @@ class ReviewTests(unittest.TestCase):
 
     def test_batch_rejects_log_and_snapshot_changes(self):
         items = self.batch_items()
-        with self.assertRaisesRegex(ValueError,'构建快照'): save_batch(self.db,self.log,items,expected_snapshot='outdated')
-        with self.assertRaisesRegex(ValueError,'审核日志已变化'): save_batch(self.db,self.log,items,expected_log='outdated')
-        with self.assertRaisesRegex(ValueError,'重复'): save_batch(self.db,self.log,[items[0],items[0]])
+        with self.assertRaisesRegex(ValueError,'Build snapshot'): save_batch(self.db,self.log,items,expected_snapshot='outdated')
+        with self.assertRaisesRegex(ValueError,'Review log changed'): save_batch(self.db,self.log,items,expected_log='outdated')
+        with self.assertRaisesRegex(ValueError,'duplicated'): save_batch(self.db,self.log,[items[0],items[0]])
         self.assertEqual(load_events(self.log)[0],[])
 
     def test_comment_bytes_are_not_semantic_dependencies(self):
@@ -227,8 +227,8 @@ class ReviewTests(unittest.TestCase):
         self.page.write_text(self.page.read_text().replace('阅读上下文','<a href="#rule">阅读上下文</a>'))
         self.rebuild()
         title = next(r for r in query_references(self.db,signal='explicit')['rows'] if r['presentation']=='definition_title')
-        with self.assertRaisesRegex(ValueError,'定义入口'): self.confirm(title)
-        with self.assertRaisesRegex(ValueError,'目标条目不存在'): inspect(self.db,self.plain()['id'],'missing')
+        with self.assertRaisesRegex(ValueError,'definition entry'): self.confirm(title)
+        with self.assertRaisesRegex(ValueError,'Target entry not found'): inspect(self.db,self.plain()['id'],'missing')
 
     def test_invalid_log_is_rejected_without_rewriting_it(self):
         self.log.write_text('{"schema":99}\n')

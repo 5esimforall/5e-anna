@@ -146,6 +146,9 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .popup-menu-heading { padding: 6px 10px 2px; color: var(--anna-muted); font-size: 12px; }
 .popup-menu-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .popup-menu-detail { color: var(--anna-muted); font-size: 12px; }
+/* Companion destinations carry the other guide's avatar; the label alone says where it leads. */
+.popup-menu [role=menuitem].popup-menu-entry { gap: 8px; }
+.popup-menu-avatar { width: 18px; height: 18px; flex: 0 0 18px; align-self: center; object-fit: contain; }
 /* Borderless icon controls: the theme switch and the reader's navigation toggle. */
 .icon-button { display: inline-grid; place-items: center; flex-shrink: 0; width: 38px; height: 38px; min-height: 0; padding: 0; border-color: transparent; border-radius: 6px; background: transparent; color: var(--anna-secondary); }
 .icon-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }

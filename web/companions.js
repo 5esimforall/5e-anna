@@ -70,7 +70,9 @@ const annaCompanions = (() => {
   }
   function entry(choice, state, primary, secondary = '') {
     const anchor = link(choice, state, 'popup-menu-entry');
-    const main = document.createElement('span'); main.className = 'popup-menu-label'; main.textContent = primary; anchor.append(main);
+    const avatar = document.createElement('img'); avatar.className = 'popup-menu-avatar';
+    avatar.src = annaTopbar.pages[other[page]].logo; avatar.width = avatar.height = 18; avatar.alt = '';
+    const main = document.createElement('span'); main.className = 'popup-menu-label'; main.textContent = primary; anchor.append(avatar, main);
     if (secondary && secondary !== primary) {
       const detail = document.createElement('span'); detail.className = 'popup-menu-detail'; detail.textContent = secondary; anchor.append(detail);
     }

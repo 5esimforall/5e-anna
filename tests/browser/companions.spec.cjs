@@ -61,6 +61,7 @@ test('an entry open in Anna becomes the topic Stella turns to, and Anna resumes 
   await expect(go(page)).toHaveAccessibleName(/^5e Anna：查 /);
   expect((await workspace(page)).topic.from).toBe('book');
   await more(page).click();
+  await expect(page.locator('#companion-menu .popup-menu-avatar').first()).toHaveAttribute('src','/anna-logo.png');
   await page.locator('#companion-menu').getByRole('group',{name:'最近'}).getByRole('menuitem',{name:name}).click();await entryReady(page);
   await expect(page.locator('#entry-title')).toHaveText(name);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['护盾术']);
@@ -86,6 +87,8 @@ test('the menu lists the current topic and recent places, and works from the key
   await expect(menu.getByRole('group',{name:'当前'}).getByRole('menuitem')).toHaveCount(1);
   const places=menu.getByRole('group',{name:'最近'}).getByRole('menuitem');
   await expect(places).toHaveCount(2);
+  await expect(menu.locator('.popup-menu-avatar')).toHaveCount(3);
+  await expect(menu.locator('.popup-menu-avatar').first()).toHaveAttribute('src','/stella-logo.png');
   await expect(menu.getByRole('menuitem').first()).toBeFocused();
   await page.keyboard.press('End');await expect(places.last()).toBeFocused();
   await page.keyboard.press('Escape');

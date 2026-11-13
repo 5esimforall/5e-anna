@@ -109,6 +109,15 @@ class ConceptTests(unittest.TestCase):
         r=Resolver([a,b,context]);self.assertEqual(r.resolve('专注','concept',context['page_path'])['targets'],['a'])
         r=Resolver([a,entry('d','专注'),context]);self.assertEqual(r.resolve('专注','concept',context['page_path'])['targets'],['a','d'])
         context['ruleset']='待核';r=Resolver([a,context]);self.assertEqual(r.resolve('专注','concept',context['page_path'])['status'],'review')
+    def test_an_out_of_scope_class_feature_never_supplies_the_reference_scope(self):
+        # A same-name feature of another class, page and generation is left out of the candidates; its owner's
+        # generation must not stand in for the page's own (it made 专精 on 2024 feat pages depend on set order).
+        rule=entry('rule','专精');context=entry('c','正文','topics/book/feats.htm')
+        feature={**entry('feature','专精',path='topics/old/rogue.htm',ruleset='5e',kind='class_feature',source='old'),'parent_id':''}
+        result=Resolver([rule,feature,context]).resolve('专精','concept',context['page_path'],10)
+        self.assertEqual((result['status'],result['targets'],result['reason']),('resolved',['rule'],'same_source'))
+        self.assertEqual(result['resolution_evidence'],{'out_of_scope_feature_ids':['feature']})
+
     def test_no_arbitrary_registry_or_cross_source_preference(self):
         a=entry('a','专注');b=entry('b','专注');context=entry('c','正文','topics/book/text.htm')
         r=Resolver([a,b,context]);r.indexed.add('a')

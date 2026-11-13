@@ -197,8 +197,8 @@ class Resolver:
         candidates=[self.entries[i] for i in ids if matches_kind(self.entries[i])]
         for e in candidates:
             if e['type']!='class_feature':continue
-            scope=self.feature_scopes[e['id']]
-            if position is None or scope['page_path']!=path or not scope['start']<=position<scope['end']:
+            owner=self.feature_scopes[e['id']]
+            if position is None or owner['page_path']!=path or not owner['start']<=position<owner['end']:
                 excluded_features.append(e['id'])
         candidates=[e for e in candidates if e['id'] not in excluded_features]
         if not candidates and excluded_features:return result([], 'feature_out_of_scope','review')

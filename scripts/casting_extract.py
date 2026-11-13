@@ -6,6 +6,7 @@ clauses remain evidence-bearing gaps; an explicit exception never becomes a defa
 from __future__ import annotations
 from copy import deepcopy
 import re
+from rule_conditions import prerequisite_expression, bind_effects
 
 ABILITIES = ('力量', '敏捷', '体质', '智力', '感知', '魅力')
 CLASSES = ('吟游诗人', '牧师', '德鲁伊', '圣武士', '游侠', '术士', '法师', '魔契师', '奇械师')
@@ -49,8 +50,8 @@ def parse_prerequisites(entry, text):
     match=re.search(r'(?:先决|先决条件|前提|前置条件)[：:]([^）)\n]+)',text[entry['title_end']:entry['end']])
     if not match:return {'status':'not_stated'}
     a=entry['title_end']+match.start();b=entry['title_end']+match.end()
-    raw=match[1].strip();level=re.fullmatch(r'等级\s*(\d+)\+',raw)
-    return {'status':'parsed' if level else 'unparsed','expression':{'kind':'level','minimum':int(level[1])} if level else None,
+    raw=match[1].strip();expression=prerequisite_expression(raw)
+    return {'status':'parsed' if expression else 'unparsed','expression':expression,
             'evidence':evidence(entry['page_path'],text,a,b)}
 
 
@@ -271,4 +272,5 @@ def parse_spell(entry, text):
         if m:
             effects.append({'kind':'upcast','threshold':number(m[1]),'per_slot_level':1,'effect':{'kind':'additional_targets','count':1},'evidence':ev});continue
         gaps.append({'reason':'unsupported_effect','evidence':ev})
+    gaps.extend(bind_effects(effects,gaps))
     return {'casting':casting,'effects':effects,'unparsed':gaps}

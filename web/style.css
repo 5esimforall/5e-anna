@@ -595,3 +595,9 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 .chain-evidence{margin:8px 0;font-size:13px}.chain-evidence blockquote{margin:8px 0;padding-left:12px;border-left:2px solid var(--anna-line);white-space:pre-wrap}
 .chain-choices ul{list-style:none;padding:0;max-height:250px;overflow:auto}.chain-choices li{margin:5px 0}
 .chain-effect{margin:12px 0}.chain-effect h4{margin:8px 0}.chain-gaps{margin:16px 0}
+
+/* A chain keeps its question root visible as the reader follows evidence. */
+.chain-path{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;padding:.7rem 0;border-bottom:1px solid var(--anna-line)}
+.chain-path [aria-current="step"]{font-weight:700;text-decoration:underline;text-underline-offset:.2em}
+.chain-step{border-inline-start:3px solid var(--anna-brand);padding-inline-start:.8rem}
+.chain-effect small,.chain-grant h4 small,.chain-branch h5 small{font-weight:400;opacity:.65}

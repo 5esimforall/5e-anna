@@ -4,7 +4,7 @@
 window.annaKnowledge=(()=>{
   const {esc}=annaKit;
   const labels={
-    zh:{title:'规则链',filter:'施法链条件',hint:'这些条件必须命中同一授予、同一法术和同一使用分支。可选法术表示允许选择，不表示全部授予。',any:'不限',apply:'应用施法链条件',clear:'移除施法链条件',spell:'固定或可选法术名称',
+    zh:{path:'阅读路径',overview:'返回问题起点',step:'本步关系',provided_by:'获取途径',modified_by:'被这些能力修改',grants_feat:'授予专长',grants_spell:'固定授予',eligible_spell:'允许选择',coverage:'各环节的整理状态',content:'本段内容',dependencies:'通则目标',unresolvedRules:'仍有未确定的通则目标',scopeLabel:'适用范围',change:'修改字段',when:'适用条件',all:'同时满足',anyOf:'满足任一',not:'不满足',save:'豁免',failure:'失败',success:'成功',conditionActive:'状态生效',combat:'目标正与施法者或其同伴战斗',branchSelected:'使用此分支时',endsWhen:'结束条件',sourceText:'当前条目的原文',binding:'本链的施法属性供给',unknownBinding:'尚未明确施法属性',readingHint:'查看候选只改变阅读位置，不确认关系。路径不判断角色是否满足条件。',title:'规则链',filter:'施法链条件',hint:'这些条件必须命中同一授予、同一法术和同一使用分支。可选法术表示允许选择，不表示全部授予。',any:'不限',apply:'应用施法链条件',clear:'移除施法链条件',spell:'固定或可选法术名称',
       fields:{mode:'授予方式',resource:'法术位消耗',recovery:'该分支的恢复条件',selection:'目标方式'},
       mode:{known:'习得',prepared:'始终准备',cast:'允许施展',list:'加入法术列表'},resource:{slot_free:'无需消耗法术位',spell_slot:'消耗法术位',not_stated:'本段未明示'},recovery:{long_rest:'长休',short_rest:'短休',short_or_long_rest:'短休或长休',not_stated:'本分支未明示恢复'},selection:{fixed:'固定法术',choice:'受限选择'},
       empty:'尚未提取到这条规则链；不代表原文没有相关能力。',scope:'此处整理施法相关规则。尚未解析的限定明确列出，不作为无条件查询结果。',
@@ -23,10 +23,10 @@ window.annaKnowledge=(()=>{
       effect:{teleport:'传送',healing:'恢复生命值',saving_throw:'要求豁免',condition:'施加状态',attitude:'态度变化',awareness:'获知效应',upcast:'升环变化'},
       target:'目标',self:'自身',creature:'生物',humanoid:'类人生物',visible:'可见',unoccupied:'未被占据',touch:'触碰',foot:'尺',
       max:'至多',saveFailure:'豁免失败时',ends:'结束条件',spellEnds:'法术结束',damageEnds:'施法者或其同伴对目标造成伤害',
-      advantage:'目标正与施法者或其同伴战斗时，此次豁免具有优势',friendly:'受该状态影响期间，对施法者友好',aware:'法术结束时，目标知道该状态由施法者造成',
+      advantageName:'优势',advantage:'目标正与施法者或其同伴战斗时，此次豁免具有优势',friendly:'受该状态影响期间，对施法者友好',aware:'法术结束时，目标知道该状态由施法者造成',
       upcast:'法术位每高于 {level} 环一环',additional:'额外目标',spellModifier:'施法属性调整值',modifier:'调整值',minimum:'最低',
       confirmHint:'核对后可用 knowledge.py accept / reject 保存；重建后生效。',loading:'正在读取规则链…',error:'规则链读取失败',retry:'重新读取'},
-    en:{title:'Rule chain',filter:'Spell-access conditions',hint:'All conditions must match the same grant, spell and usage branch. Eligible choices are not all granted spells.',any:'Any',apply:'Apply casting conditions',clear:'Remove casting conditions',spell:'Fixed or eligible spell name',
+    en:{path:'Reading path',overview:'Back to the root question',step:'Relationship at this step',provided_by:'Provided by',modified_by:'Modified by',grants_feat:'Grants feat',grants_spell:'Grants spell',eligible_spell:'Eligible choice',coverage:'Progress by segment',content:'Statement content',dependencies:'Governing targets',unresolvedRules:'Some governing targets remain unresolved',scopeLabel:'Scope',change:'Changed field',when:'Applies when',all:'All of',anyOf:'Any of',not:'Not',save:'Save',failure:'Failure',success:'Success',conditionActive:'Condition active',combat:'Target is in combat with the caster or their allies',branchSelected:'When using this branch',endsWhen:'Ends when',sourceText:'Current definition text',binding:'Spellcasting ability supplied by this chain',unknownBinding:'Spellcasting ability is not established',readingHint:'Inspecting a candidate does not confirm the relationship. The path does not evaluate a character’s eligibility.',title:'Rule chain',filter:'Spell-access conditions',hint:'All conditions must match the same grant, spell and usage branch. Eligible choices are not all granted spells.',any:'Any',apply:'Apply casting conditions',clear:'Remove casting conditions',spell:'Fixed or eligible spell name',
       fields:{mode:'Access',resource:'Spell-slot cost',recovery:'Branch recovery',selection:'Target selection'},
       mode:{known:'Learned',prepared:'Always prepared',cast:'Permission to cast',list:'Added to spell list'},resource:{slot_free:'No spell slot consumed',spell_slot:'Consumes a spell slot',not_stated:'Not stated here'},recovery:{long_rest:'Long rest',short_rest:'Short rest',short_or_long_rest:'Short or long rest',not_stated:'Recovery not stated for this branch'},selection:{fixed:'Fixed spell',choice:'Constrained choice'},
       empty:'No rule chain extracted yet; this does not establish absence.',scope:'This view describes spell-related rules. Unparsed limitations remain visible and are not treated as unconditional query results.',
@@ -45,13 +45,13 @@ window.annaKnowledge=(()=>{
       effect:{teleport:'Teleport',healing:'Restore hit points',saving_throw:'Saving throw',condition:'Apply condition',attitude:'Attitude',awareness:'Awareness',upcast:'Higher-level slot'},
       target:'Target',self:'Self',creature:'Creature',humanoid:'Humanoid',visible:'Visible',unoccupied:'Unoccupied',touch:'Touch',foot:'ft',
       max:'Up to',saveFailure:'On a failed save',ends:'Ends when',spellEnds:'Spell ends',damageEnds:'Caster or caster’s allies damage the target',
-      advantage:'Advantage on this save if in combat with the caster or the caster’s allies',friendly:'Friendly to the caster while affected by this condition',aware:'When the spell ends, the target knows the caster caused the condition',
+      advantageName:'Advantage',advantage:'Advantage on this save if in combat with the caster or the caster’s allies',friendly:'Friendly to the caster while affected by this condition',aware:'When the spell ends, the target knows the caster caused the condition',
       upcast:'For each slot level above {level}',additional:'Additional targets',spellModifier:'Spellcasting ability modifier',modifier:'modifier',minimum:'minimum',
       confirmHint:'Use knowledge.py accept / reject after checking the evidence; rebuild to publish.',loading:'Loading rule chain…',error:'Unable to read the rule chain',retry:'Try again'}
   };
   const l=labels[document.documentElement.lang.startsWith('en')?'en':'zh'];
   const badge=t=>`<span class="badge">${esc(t)}</span>`;
-  const entryLink=(id,n)=>`<button type="button" class="link-button" data-entry="${esc(id)}" data-keep-tab>${esc(n||id)}</button>`;
+  const entryLink=(id,n,from='')=>`<button type="button" class="link-button" data-chain-entry="${esc(id)}" data-chain-from="${esc(from||id)}">${esc(n||id)}</button>`;
   const sourceLink=ev=>`<details class="chain-evidence"><summary>${esc(l.evidence)}</summary><blockquote>${esc(ev.raw)}</blockquote><a href="/source?${esc(new URLSearchParams({path:ev.path,start:ev.span[0],end:ev.span[1]}))}#evidence" target="_blank" rel="noopener">${esc(l.evidence)} ↗</a></details>`;
   function expression(v){
     if(!v)return l.notParsed;
@@ -69,40 +69,62 @@ window.annaKnowledge=(()=>{
     if(v.kind==='ability_increase_choice')return l.abilityIncrease+(contexts?.ability_increase?' ('+contexts.ability_increase.values.join(' / ')+')':'');
     return l.notParsed;
   }
-  function target(t,nodes){
+  function target(t,nodes,from){
     const r=t.resolution;
-    if(r?.status==='resolved')return entryLink(r.targets[0],nodes.get(r.targets[0])?.name||t.name);
-    return `<strong>${esc(t.name||'')}</strong> ${badge(r?.status==='ambiguous'?l.ambiguous:l.missing)}${r?.targets?.length?`<details><summary>${esc(l.options)} ${r.targets.length}</summary>${r.targets.map(id=>entryLink(id,nodes.get(id)?.name)).join(' ')}</details>`:''}`;
+    if(r?.status==='resolved')return entryLink(r.targets[0],nodes.get(r.targets[0])?.name||t.name,from);
+    return `<strong>${esc(t.name||'')}</strong> ${badge(r?.status==='ambiguous'?l.ambiguous:l.missing)}${r?.targets?.length?`<details><summary>${esc(l.options)} ${r.targets.length}</summary>${r.targets.map(id=>entryLink(id,nodes.get(id)?.name,from)).join(' ')}</details>`:''}`;
   }
-  function branch(b){
+  function condition(c){
+    if(!c)return l.notStated;
+    if(c.all||c.any){const terms=c.all||c.any;return (c.all?l.all:l.anyOf)+' ('+terms.map(condition).join(' · ')+')';}
+    if(c.not)return l.not+' ('+condition(c.not)+')';
+    if(c.kind==='level')return l.level+' ≥ '+c.minimum;
+    if(c.kind==='ability_score')return c.ability+' ≥ '+c.minimum;
+    if(c.kind==='save_result')return l.save+' '+(c.effect_id||l.notParsed)+' · '+l[c.result];
+    if(c.kind==='condition')return l.conditionActive+' '+c.value+' ('+(c.effect_id||l.notParsed)+')';
+    if(c.kind==='combat_with')return l.combat;
+    if(c.kind==='spell_ends')return l.spellEnds;
+    if(c.kind==='damage_from')return l.damageEnds;
+    if(c.kind==='branch_selected')return l.branchSelected+' · '+c.grant_id+' / '+c.branch_id;
+    return l.notParsed;
+  }
+  function scopeText(scope){
+    if(scope.kind==='usage_branch')return scope.grant_id+' / '+scope.branch_id;
+    if(scope.kind==='effect')return scope.effect_id;
+    if(scope.kind==='casting_field')return l[scope.field]||scope.field;
+    if(scope.kind==='acquisition')return scope.constraints.class_list?l.list+': '+scope.constraints.class_list.join(' / '):l.notStated;
+    if(scope.grant_id)return scope.grant_id+(scope.constraints?.class_list?' · '+l.list+': '+scope.constraints.class_list.join(' / '):'');
+    return Object.values(scope).flat().join(' / ')||l.notStated;
+  }
+  function branch(b,grantId){
     const resource=b.resource,kind=resource.consumed===false?'slot_free':resource.consumed===true?'spell_slot':'not_stated';
-    return `<section class="chain-branch"><h5>${esc(l.alternative)}</h5><dl class="detail-fields"><dt>${esc(l.fields.resource)}</dt><dd>${esc(l.resource[kind])}</dd>${resource.level?`<dt>${esc(l.slotLevel)}</dt><dd>${esc(l[resource.level]||resource.level)}</dd>`:''}${b.cast_level?`<dt>${esc(l.level)}</dt><dd>${esc(l[b.cast_level.kind])}</dd>`:''}<dt>${esc(l.uses)}</dt><dd>${b.uses?esc(expression(b.uses.quantity)+' · '+(b.uses.per==='spell'?l.perSpell:l.perGrant)):esc(l.notStated)}</dd><dt>${esc(l.fields.recovery)}</dt><dd>${esc(l.recovery[b.recovery?.event||'not_stated'])}</dd></dl>${b.evidence.map(sourceLink).join('')}</section>`;
+    return `<section class="chain-branch" data-branch="${esc(grantId+'/'+b.id)}"><h5>${esc(l.alternative)} <small>${esc(grantId+' / '+b.id)}</small></h5><dl class="detail-fields"><dt>${esc(l.fields.resource)}</dt><dd>${esc(l.resource[kind])}</dd>${resource.level?`<dt>${esc(l.slotLevel)}</dt><dd>${esc(l[resource.level]||resource.level)}</dd>`:''}${b.cast_level?`<dt>${esc(l.level)}</dt><dd>${esc(l[b.cast_level.kind])}</dd>`:''}<dt>${esc(l.uses)}</dt><dd>${b.uses?esc(expression(b.uses.quantity)+' · '+(b.uses.per==='spell'?l.perSpell:l.perGrant)):esc(l.notStated)}</dd><dt>${esc(l.fields.recovery)}</dt><dd>${esc(l.recovery[b.recovery?.event||'not_stated'])}</dd></dl>${b.evidence.map(sourceLink).join('')}</section>`;
   }
   function effect(e){
     let text='';
     if(e.kind==='teleport')text=`${l.self} → ${l.max} ${e.destination.distance.maximum} ${l.foot} · ${l.visible} · ${l.unoccupied}`;
     if(e.kind==='healing')text=`${l.touch} · ${e.target?.count||1} ${l.creature} → ${expression(e.quantity)}`;
-    if(e.kind==='saving_throw')text=`${e.target.count} ${l[e.target.kind]} · ${l.visible} · ${l.range} → ${e.ability}；${l.advantage}`;
-    if(e.kind==='condition')text=`${l.saveFailure} → ${e.condition}；${l.ends}：${l.spellEnds} / ${l.damageEnds}`;
+    if(e.kind==='saving_throw')text=`${e.target.count} ${l[e.target.kind]} · ${l.visible} · ${l.range} → ${e.ability}`;
+    if(e.kind==='condition')text=e.condition;
     if(e.kind==='attitude')text=l.friendly;
     if(e.kind==='awareness')text=l.aware;
     if(e.kind==='upcast')text=l.upcast.replace('{level}',e.threshold)+' → '+(e.effect.kind==='additional_targets'?`${l.additional} +${e.effect.count}`:`${l.effect.healing} +${expression(e.effect.quantity)}`);
-    return `<section class="chain-effect"><h4>${esc(l.effect[e.kind]||e.kind)}</h4><p>${esc(text)}</p>${sourceLink(e.evidence)}</section>`;
+    return `<section class="chain-effect" data-effect="${esc(e.id)}"><h4>${esc(l.effect[e.kind]||e.kind)} <small>${esc(e.id)}</small></h4><p>${esc(text)}</p>${e.when?`<p>${esc(l.when)}：${esc(condition(e.when))}</p>`:''}${e.ends?`<p>${esc(l.endsWhen)}：${esc(condition(e.ends))}</p>`:''}${(e.modifiers||[]).map(m=>`<p>${esc(l.when)}：${esc(condition(m.when))} → ${esc(m.effect==='advantage'?l.advantageName:m.effect)}</p>`).join('')}${sourceLink(e.evidence)}</section>`;
   }
   function record(r,chain,nodes,audit){
     const v=r.value,subject=nodes.get(r.subject_id);let body='';
     if(r.kind==='definition_role')body=`<p>${esc(l.roles[v.role]||v.role)}</p>`;
-    if(r.kind==='feat_access')body=`<p>${target(v.target,nodes)}</p>${v.constraints.class_list?`<p>${esc(l.list)}：${esc(v.constraints.class_list.join(' / '))}</p>`:''}${sourceLink(v.target.evidence)}`;
+    if(r.kind==='feat_access')body=`<p>${target(v.target,nodes,r.subject_id)}</p>${v.constraints.class_list?`<p>${esc(l.list)}：${esc(v.constraints.class_list.join(' / '))}</p>`:''}${sourceLink(v.target.evidence)}`;
     if(r.kind==='spell_access'){
       const pre=v.prerequisites;
-      body=(pre?.status!=='not_stated'?`<p>${esc(l.prerequisites)}：${esc(pre?.expression?`${l.level} ≥ ${pre.expression.minimum}`:l.notParsed)}</p>${pre?.evidence?sourceLink(pre.evidence):''}`:'');
+      body=(pre?.status!=='not_stated'?`<p>${esc(l.prerequisites)}：${esc(pre?.expression?condition(pre.expression):l.notParsed)}</p>${pre?.evidence?sourceLink(pre.evidence):''}`:'');
       body+=v.grants.map(g=>{
-        const t=g.target,options=chain.options.filter(o=>o.subject_id===r.subject_id&&o.grant_id===g.id),ids=[...new Set(options.flatMap(o=>o.spell_ids))];
-        const allowed=ids.length?ids:(r.status==='resolved'?t.options||[]:[]),c=t.constraints||{};
-        const heading=t.kind==='entry'?target(t,nodes):`${esc(l.choose)} ${t.count} ${esc(l.count)} · ${esc(l.notAll)}`;
-        const domain=t.kind==='choice'?`<p class="muted">${esc(l.levels)}：${esc((c.levels||[]).map(n=>n===0?l.cantrip:n).join(' / '))}${c.schools?' · '+esc(l.schools+'：'+c.schools.join(' / ')):''}${c.class_list?' · '+esc(l.list+'：'+(chain.options.find(o=>o.subject_id===r.subject_id)?.constraints.class_list||c.class_list.values).join(' / ')):''}</p>`:'';
-        const choices=allowed.length?`<details class="chain-choices" ${t.kind==='entry'?'open':''}><summary>${esc(t.kind==='entry'?l.inspectSpell:l.options)} (${allowed.length})</summary><ul>${allowed.map(id=>`<li><button type="button" class="link-button" data-chain-spell="${esc(id)}" ${id===chain.selected_spell_id?'aria-current="true"':''}>${esc(nodes.get(id)?.name||id)}</button></li>`).join('')}</ul></details>`:'';
-        return `<article class="chain-grant"><h4>${badge(l.mode[g.mode]||l.notParsed)} ${heading}</h4>${domain}<p>${esc(l.ability)}：${esc(ability(g.ability,v.contexts))}</p>${g.evidence.map(sourceLink).join('')}${choices}<h4>${esc(l.branches)}</h4><div class="chain-branches">${g.branches.map(branch).join('')}</div></article>`;
+        const t=g.target,edges=chain.edges.filter(e=>e.source_id===r.subject_id&&e.scope.grant_id===g.id&&['eligible_spell','grants_spell'].includes(e.relation)&&e.status==='resolved');
+        const allowed=[...new Set(edges.map(e=>e.target_id).filter(Boolean))],c=t.constraints||{};
+        const heading=t.kind==='entry'?target(t,nodes,r.subject_id):`${esc(l.choose)} ${t.count} ${esc(l.count)} · ${esc(l.notAll)}`;
+        const domain=t.kind==='choice'?`<p class="muted">${esc(l.levels)}：${esc((c.levels||[]).map(n=>n===0?l.cantrip:n).join(' / '))}${c.schools?' · '+esc(l.schools+'：'+c.schools.join(' / ')):''}${c.class_list?' · '+esc(l.list+'：'+(edges[0]?.scope.constraints?.class_list||c.class_list.values).join(' / ')):''}</p>`:'';
+        const choices=allowed.length?`<details class="chain-choices" ${t.kind==='entry'?'open':''}><summary>${esc(t.kind==='entry'?l.inspectSpell:l.options)} (${allowed.length})</summary><ul>${allowed.map(id=>`<li><button type="button" class="link-button" data-chain-spell="${esc(id)}" data-chain-from="${esc(r.subject_id)}" ${id===chain.selected_spell_id?'aria-current="true"':''}>${esc(nodes.get(id)?.name||id)}</button></li>`).join('')}</ul></details>`:'';
+        return `<article class="chain-grant" data-grant="${esc(g.id)}"><h4>${badge(l.mode[g.mode]||l.notParsed)} ${heading} <small>${esc(g.id)}</small></h4>${domain}<p>${esc(l.ability)}：${esc(ability(g.ability,v.contexts))}</p>${g.evidence.map(sourceLink).join('')}${choices}<h4>${esc(l.branches)}</h4><div class="chain-branches">${g.branches.map(b=>branch(b,g.id)).join('')}</div></article>`;
       }).join('');
       if(v.modifiers.length)body+=`<h4>${esc(l.modifiers)}</h4>${v.modifiers.map(m=>`<p>${esc(m.kind==='replace_choice'?l.gainLevel:l.repeat)}</p>${sourceLink(m.evidence)}`).join('')}`;
     }
@@ -110,12 +132,33 @@ window.annaKnowledge=(()=>{
       body=`<dl class="detail-fields">${['action','range','components','duration'].filter(k=>v.casting[k]).map(k=>[k,v.casting[k]]).map(([k,c])=>`<dt>${esc(l[k]||k)}</dt><dd>${esc(c.raw)}${sourceLink(c.evidence)}</dd>`).join('')}</dl>${v.effects.map(effect).join('')}`;
     }
     if(v.unparsed?.length)body+=`<details class="chain-gaps"><summary>${esc(l.unparsed)} (${v.unparsed.length})</summary>${v.unparsed.map(g=>sourceLink(g.evidence)).join('')}</details>`;
-    if(v.rules?.length)body+=`<details class="chain-rules"><summary>${esc(l.generalRules)}</summary>${v.rules.map(r=>`<p>${esc(l[r.relation])}：${target(r.target,nodes)}</p>${sourceLink(r.target.evidence)}`).join('')}</details>`;
+    if(v.rules?.length)body+=`<details class="chain-rules"><summary>${esc(l.generalRules)}</summary>${v.rules.map(link=>`<p>${esc(l[link.relation])}：${target(link.target,nodes,r.subject_id)}</p><p>${esc(l.scopeLabel)}：${esc(scopeText(link.scope))}</p>${link.when?`<p>${esc(l.when)}：${esc(condition(link.when))}</p>`:''}${link.change?`<p>${esc(l.change)}：${esc(link.change.field)} → ${esc(String(link.change.value))}</p>`:''}${sourceLink(link.target.evidence)}`).join('')}</details>`;
     return `<section class="knowledge-record" data-knowledge="${esc(r.id)}"><header><h3>${esc(l.kinds[r.kind])} · ${entryLink(r.subject_id,subject?.name)}</h3>${badge(l.status[r.status])}${audit?badge(l.review[r.review_status]):''}</header>${body}<div class="detail-links"><a href="/read?entry=${encodeURIComponent(r.subject_id)}" target="_blank" rel="noopener">${esc(l.reader)} ↗</a></div>${audit?`<details><summary>${esc(l.raw)}</summary><p>${esc(l.confirmHint)}</p><code>${esc(r.id)}</code><a href="/api/knowledge-inspect?id=${encodeURIComponent(r.id)}" target="_blank" rel="noopener"> JSON ↗</a><pre class="body-text">${esc(JSON.stringify(r,null,2))}</pre></details>`:''}</section>`;
+  }
+  function readingView(c,nodes){
+    if(!c.reading)return '';
+    const r=c.reading;
+    const breadcrumb=`<nav class="chain-path" aria-label="${esc(l.path)}">${r.path.map((id,index)=>`<button type="button" class="link-button" data-chain-path="${esc(JSON.stringify(r.path.slice(0,index+1)))}" ${index===r.path.length-1?'aria-current="step"':''}>${esc(nodes.get(id)?.name||id)}</button>`).join(' → ')}</nav>`;
+    const steps=r.steps.slice(-1).map(step=>`<section class="chain-step"><h3>${esc(l.step)}</h3>${step.relations.map(e=>`<p>${esc(l[e.relation]||e.relation)} · ${badge(l.status[e.status]||l[e.status]||l.notParsed)}${e.target_status&&e.target_status!==e.status?' · '+badge(l[e.target_status]||l.status[e.target_status]||l.notParsed):''} · ${esc(scopeText(e.scope))}</p>${e.when?`<p>${esc(condition(e.when))}</p>`:''}${e.change?`<p>${esc(l.change)}：${esc(e.change.field)} → ${esc(String(e.change.value))}</p>`:''}${sourceLink(e.evidence)}${(e.acquisition||[]).map(a=>sourceLink(a.evidence)).join('')}`).join('')}</section>`).join('');
+    const coverage=`<details class="chain-coverage"><summary>${esc(l.coverage)}</summary>${c.segments.map(s=>`<p>${entryLink(s.subject_id,nodes.get(s.subject_id)?.name)} · ${esc(l.kinds[s.kind])} · ${esc(l.content)}：${badge(l.status[s.content_status])} · ${badge(l.review[s.review_status])}${s.rule_targets.some(t=>t.status!=='resolved')?' · '+esc(l.unresolvedRules):''}</p>`).join('')}</details>`;
+    const rules=c.edges.filter(e=>e.source_id===r.focus_id&&e.target_id&&e.relation==='modified_by');
+    const reverse=rules.length?`<details class="chain-modifiers"><summary>${esc(l.modified_by)} (${rules.length})</summary>${rules.map(e=>`<p>${entryLink(e.target_id,nodes.get(e.target_id)?.name,e.source_id)} · ${badge(l.status[e.status]||l[e.status]||l.notParsed)}${e.target_status&&e.target_status!==e.status?' · '+badge(l[e.target_status]||l.status[e.target_status]||l.notParsed):''} · ${esc(scopeText(e.scope))}</p>${sourceLink(e.evidence)}`).join('')}</details>`:'';
+    const bindings=c.bindings.filter((b,i,all)=>all.findIndex(x=>x.subject_id===b.subject_id&&x.grant_id===b.grant_id)===i);
+    const variables=bindings.length?`<details class="chain-bindings"><summary>${esc(l.binding)}</summary>${bindings.map(b=>`<p>${entryLink(b.subject_id,nodes.get(b.subject_id)?.name)} → ${esc(b.value?ability(b.value):l.unknownBinding)}</p>${b.evidence?sourceLink(b.evidence):''}`).join('')}</details>`:'';
+    return breadcrumb+`<p class="muted">${esc(l.readingHint)}</p>`+steps+coverage+variables+reverse+(r.text?`<details class="chain-source"><summary>${esc(l.sourceText)} · ${esc(nodes.get(r.focus_id)?.name)}</summary><pre class="body-text">${esc(r.text)}</pre><a href="/read?entry=${encodeURIComponent(r.focus_id)}" target="_blank" rel="noopener">${esc(l.reader)} ↗</a></details>`:'');
+  }
+  function pathTo(c,target,from){
+    if(!c.reading)return [target];
+    const root=c.reading.root_id;
+    const find=id=>{const queue=[[root]],seen=new Set();while(queue.length){const path=queue.shift(),last=path.at(-1);if(last===id)return path;if(seen.has(last))continue;seen.add(last);for(const e of c.edges)if(e.source_id===last&&e.target_id&&!path.includes(e.target_id))queue.push([...path,e.target_id]);}return null;};
+    if(target===from)return c.reading.path.includes(target)?c.reading.path.slice(0,c.reading.path.indexOf(target)+1):find(target);
+    const prefix=c.reading.path.includes(from)?c.reading.path.slice(0,c.reading.path.indexOf(from)+1):find(from);
+    if(!prefix)return find(target);
+    return prefix.includes(target)?prefix.slice(0,prefix.indexOf(target)+1):[...prefix,target];
   }
   function render(entry,audit){
     const c=entry.rule_chain||{records:[],nodes:[],options:[],incoming:[]},nodes=new Map(c.nodes.map(n=>[n.id,n]));
-    return `<div class="rule-chain"><p class="muted">${esc(l.scope)}</p><a href="/api/knowledge-export?id=${encodeURIComponent(entry.id)}${c.selected_spell_id?'&spell='+encodeURIComponent(c.selected_spell_id):''}" download>${esc(l.export)}</a>${c.records.length?[...c.records].sort((a,b)=>(a.subject_id===entry.id?0:a.kind==='spell_access'?1:2)-(b.subject_id===entry.id?0:b.kind==='spell_access'?1:2)).map(r=>record(r,c,nodes,audit)).join(''):`<p>${esc(l.empty)}</p>`}${c.options.some(o=>o.selection==='choice')&&!c.selected_spell_id?`<p>${esc(l.noPreview)}</p>`:''}${c.incoming.length?`<details><summary>${esc(l.incoming)} (${c.incoming.length})</summary>${c.incoming.map(x=>entryLink(x.entry_id,`${x.name} · ${x.ruleset==='5e'?'2014':'2024'}`)).join(' ')}</details>`:''}</div>`;
+    return `<div class="rule-chain"><p class="muted">${esc(l.scope)}</p>${readingView(c,nodes)}<a href="/api/knowledge-export?id=${encodeURIComponent(entry.id)}${c.selected_spell_id?'&spell='+encodeURIComponent(c.selected_spell_id):''}${c.reading?'&path='+encodeURIComponent(JSON.stringify(c.reading.path)):''}" download>${esc(l.export)}</a>${c.records.length?[...c.records].sort((a,b)=>(a.subject_id===entry.id?0:a.kind==='spell_access'?1:2)-(b.subject_id===entry.id?0:b.kind==='spell_access'?1:2)).map(r=>record(r,c,nodes,audit)).join(''):`<p>${esc(l.empty)}</p>`}${c.options.some(o=>o.selection==='choice')&&!c.selected_spell_id?`<p>${esc(l.noPreview)}</p>`:''}${c.incoming.length?`<details><summary>${esc(l.incoming)} (${c.incoming.length})</summary>${c.incoming.map(x=>entryLink(x.entry_id,`${x.name} · ${x.ruleset==='5e'?'2014':'2024'}`,entry.id)).join(' ')}</details>`:''}</div>`;
   }
   function description(raw){
     try{return l.filter+'：'+Object.entries(JSON.parse(raw)).map(([k,v])=>k==='spell'?l.spell+' '+v:l[k]?.[v]||v).join(' · ');}catch{return l.filter;}
@@ -137,5 +180,5 @@ window.annaKnowledge=(()=>{
     box.addEventListener('toggle',counts);box.addEventListener('change',counts);
     return {sync(){const raw=params().get('casting')||params().get('not_casting')||'';if(raw!==last){let value={};try{value=raw?JSON.parse(raw):{};}catch{}for(const input of box.querySelectorAll('[data-casting]'))input.value=value[input.dataset.casting]||'';if(raw)box.open=true;last=raw;}counts();}};
   }
-  return {labels:l,render,description,install};
+  return {labels:l,render,description,install,pathTo};
 })();

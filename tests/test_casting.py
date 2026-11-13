@@ -70,6 +70,16 @@ class AccessTests(unittest.TestCase):
         value=parse_access(feature(body),body,[mention(body)])
         self.assertEqual(value['grants'][0]['ability']['values'],{'吟游诗人':'魅力','术士':'魅力','魔契师':'魅力','牧师':'感知','德鲁伊':'感知','法师':'智力'})
 
+    def test_compound_prerequisite_preserves_all_and_any(self):
+        body='通用专长（先决：等级4+，智力或感知13+）\n你习得测试法术。'
+        pre=parse_access(feature(body),body,[mention(body)])['prerequisites']
+        self.assertEqual(pre['expression'],{'all':[{'kind':'level','minimum':4},
+            {'any':[{'kind':'ability_score','ability':'智力','minimum':13},{'kind':'ability_score','ability':'感知','minimum':13}]}]})
+        self.assertIn('智力或感知13+',pre['evidence']['raw'])
+        for term in ['非邪恶阵营','感知至少十三','持有法器']:
+            changed=body.replace('智力或感知13+',term)
+            self.assertEqual(parse_access(feature(changed),changed,[mention(changed)])['prerequisites']['status'],'unparsed')
+
     def test_prerequisite_is_not_dropped(self):
         body='通用专长（先决：等级4+）\n你习得测试法术。'
         value=parse_access(feature(body),body,[mention(body)])
@@ -101,10 +111,41 @@ class EffectTests(unittest.TestCase):
     def test_condition_requires_failure_and_keeps_both_end_events(self):
         body='如果它豁免失败，它陷入魅惑状态直到法术结束，或者直到你或你的同伴对它造成伤害。'
         result=parse_spell(feature(body),body)['effects'][0]
-        self.assertEqual(result['when'],{'kind':'save_result','result':'failure'})
+        self.assertEqual(result['when'],{'kind':'save_result','result':'failure','candidate_effect_ids':[],'effect_id':None})
+        self.assertEqual(parse_spell(feature(body),body)['unparsed'][0]['reason'],'unresolved_effect_condition')
         self.assertEqual(result['ends']['any'][1],{'kind':'damage_from','actors':['caster','caster_allies']})
         changed=body.replace('豁免失败','豁免成功')
         self.assertTrue(parse_spell(feature(changed),changed)['unparsed'])
+
+    def test_outcome_binds_only_a_unique_evidenced_antecedent(self):
+        save='选择法术距离内你可见的一名类人生物，迫使该生物进行一次感知豁免，如果你或者你的同伴正在与它战斗，它进行的这次豁免将具有优势。'
+        outcome='如果它豁免失败，它陷入魅惑状态直到法术结束，或者直到你或你的同伴对它造成伤害。'
+        body=save+outcome+'被魅惑的生物将对你友好。'
+        result=parse_spell(feature(body),body)
+        self.assertFalse(result['unparsed'])
+        self.assertEqual(result['effects'][1]['when']['effect_id'],'effect_1')
+        self.assertEqual(result['effects'][2]['when']['effect_id'],'effect_2')
+        for prefix,candidates in [(save+save,['effect_1','effect_2']),(save+'另一个目标进行体质豁免。',['effect_1'])]:
+            changed=prefix+outcome;result=parse_spell(feature(changed),changed)
+            self.assertIsNone(result['effects'][-1]['when']['effect_id'])
+            self.assertEqual(result['effects'][-1]['when']['candidate_effect_ids'],candidates)
+            self.assertIn('unresolved_effect_condition',[g['reason'] for g in result['unparsed']])
+
+    def test_local_condition_references_and_rule_scopes_are_validated(self):
+        from rule_conditions import validate_conditions
+        from copy import deepcopy
+        value={'effects':[{'id':'s','kind':'saving_throw'},{'id':'c','kind':'condition',
+            'when':{'kind':'save_result','effect_id':'s'},'ends':{'not':{'any':[{'kind':'save_result','result':'success','effect_id':'s'}]}}}],
+            'rules':[{'scope':{'kind':'effect','effect_id':'c'},'when':{'kind':'save_result','effect_id':'s'}}]}
+        validate_conditions({'value':value})
+        for mutate in [lambda v:v['effects'][1]['when'].update(effect_id='absent'),
+                       lambda v:v['effects'][1]['when'].update(effect_id='c'),
+                       lambda v:v['rules'][0]['scope'].update(effect_id='absent'),
+                       lambda v:v['effects'][0].update(kind='healing'),
+                       lambda v:v['effects'][1]['ends']['not']['any'][0].update(effect_id='absent'),
+                       lambda v:v['effects'][1].update(when={'all':[{'kind':'save_result','effect_id':'c'}]})]:
+            bad=deepcopy(value);mutate(bad)
+            with self.assertRaises(ValueError):validate_conditions({'value':bad})
 
     def test_casting_query_validates_fields_and_correlates_one_branch(self):
         sql,values=casting_condition({'mode':'prepared','resource':'spell_slot','recovery':'long_rest'})
@@ -155,6 +196,17 @@ class CorpusCastingTests(unittest.TestCase):
                 self.assertEqual(o['constraints']['class_list'],[case['class_list']])
                 self.assertEqual(len(o['acquisition']),1)
             spell=next(i for i in ids if self.context.entries[i]['name_zh']==case['allowed_spell'])
+            provider=result['options'][0]['subject_id']
+            reverse=chain(self.db,spell,reading_path=[spell,root['id'],provider])
+            allowed_edges=[e for e in reverse['edges'] if e['source_id']==provider and e['relation']=='eligible_spell']
+            self.assertTrue(allowed_edges)
+            source_step=reverse['reading']['steps'][0]['relations'][0]
+            self.assertEqual(source_step['scope']['constraints']['class_list'],[case['class_list']])
+            self.assertEqual(source_step['acquisition'][0]['subject_id'],root['id'])
+            self.assertIn(case['class_list'],source_step['acquisition'][0]['evidence']['raw'])
+            self.assertNotIn(case['excluded_spell'],{self.context.entries[e['target_id']]['name_zh'] for e in allowed_edges})
+            excluded=next(e['id'] for e in self.context.entries.values() if e['name_zh']==case['excluded_spell'] and e['ruleset']==root['ruleset'] and e['type']=='spell')
+            with self.assertRaises(ValueError):chain(self.db,root['id'],reading_path=[root['id'],provider,excluded])
             selected=chain(self.db,root['id'],spell)
             self.assertTrue(any(r['subject_id']==spell and r['kind']=='spell_effect' for r in selected['records']))
             with self.assertRaises(ValueError):chain(self.db,root['id'],'nonexistent')

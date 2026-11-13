@@ -85,6 +85,16 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
         self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({'id':eid,'spell':'absent'}))[0],400)
         self.assertEqual(self.request('/api/knowledge-chain?id=absent')[0],404)
+        provider=chain['options'][0]['subject_id'];path=json.dumps([eid,provider])
+        status,_,raw=self.request('/api/knowledge-chain?'+urlencode({'id':eid,'path':path}))
+        self.assertEqual(status,200);reading=json.loads(raw)
+        self.assertEqual(reading['reading']['path'],[eid,provider])
+        for endpoint,key in [('/api/knowledge-export','path'),('/api/entry','chain_path')]:
+            status,_,raw=self.request(endpoint+'?'+urlencode({'id':eid,key:path}))
+            self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain' if key=='path' else 'rule_chain'],reading)
+            self.assertEqual(self.request(endpoint+'?'+urlencode({'id':eid,key:json.dumps([eid,'absent'])}))[0],400)
+        for invalid_path in [json.dumps([eid,eid]),'{',json.dumps([eid,4])]:
+            self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({'id':eid,'path':invalid_path}))[0],400)
         self.assertEqual(self.request('/api/entries?'+urlencode({'casting':'{"mode":"bad"}'}))[0],400)
         status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':condition}))
         self.assertEqual(status,200)

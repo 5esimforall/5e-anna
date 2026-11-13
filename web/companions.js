@@ -27,7 +27,15 @@ const annaCompanions = (() => {
       return '/?' + params;
     }
     const params = new URLSearchParams(choice.memory.query);
-    if (choice.memory.entry) params.set('entry', choice.memory.entry);
+    if (choice.memory.entry) {
+      params.set('entry', choice.memory.entry);
+      const ui=choice.memory.ui;
+      if(ui?.readerTab==='chain'){
+        params.set('tab','chain');
+        if(ui.readerChainSpell)params.set('chain_spell',ui.readerChainSpell);
+        if(ui.readerChainPath)params.set('chain_path',ui.readerChainPath);
+      }
+    }
     return '/' + (params.size ? '?' + params : '');
   }
   const href = (choice, state) => choice.kind === 'home' ? annaTopbar.pages[other[page]].home :

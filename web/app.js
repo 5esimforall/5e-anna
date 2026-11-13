@@ -110,13 +110,13 @@ function captureUiState(){
     mainTop:$('#query-main').scrollTop,windowTop:window.scrollY,filterTop:$('#filter-panel').scrollTop,
     filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,auditOpen:$('#audit-details').open,extraOpen:$('#domain-extra')?.open,
     sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,readerFull,
-    readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
+    readerTop:$('#detail-content').scrollTop,readerChainSpell:params.get('chain_spell'),readerChainPath:params.get('chain_path'),lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
 function saveUiState(){if(restoringUi)return;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
 // Anna shares her places with Stella only when both run from the same build.
 const sharing=()=>!!(metadata?.reader_url&&metadata.snapshot);
 // A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
-function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');query.delete('chain_spell');return query.toString();}
+function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');query.delete('chain_spell');query.delete('chain_path');return query.toString();}
 // Names a remembered query by its heading and search words, as a reader would describe it.
 function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.length?title:title===ui.allEntries?terms.join(' '):`${title} · ${terms.join(' ')}`;}
 // This tab's query is Anna's latest place in the shared workspace, so Stella's switcher can lead back to it.
@@ -646,8 +646,10 @@ $('#results').addEventListener('keydown',e=>{
 });
 $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
-  const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);if(t.dataset.tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate(true);$('#tab-'+t.dataset.tab).focus();saveUiState();}
-  const spell=e.target.closest('[data-chain-spell]');if(spell)inspectChainSpell(spell.dataset.chainSpell);
+  const t=e.target.closest('[data-tab]');if(t){++chainGeneration;renderDetail(t.dataset.tab);if(t.dataset.tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate(true);$('#tab-'+t.dataset.tab).focus();saveUiState();}
+  const hop=e.target.closest('[data-chain-entry]');if(hop){const path=annaKnowledge.pathTo(currentEntry.rule_chain,hop.dataset.chainEntry,hop.dataset.chainFrom);if(path)navigateChain(path);}
+  const path=e.target.closest('[data-chain-path]');if(path)navigateChain(JSON.parse(path.dataset.chainPath));
+  const spell=e.target.closest('[data-chain-spell]');if(spell)inspectChainSpell(spell.dataset.chainSpell,spell.dataset.chainFrom);
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
   const note=e.target.closest('.field-note[data-note]');
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}

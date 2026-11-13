@@ -15,6 +15,7 @@ from html_extract import key
 from review_store import (DEFAULT_DECISIONS, canonical, digest, lifecycle, load_events,
                           append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS)
 from paths import PROJECT
+from rule_conditions import validate_conditions
 
 SCHEMA = 1
 ACCESS_TYPES = {'feat', 'class_feature', 'species', 'magic_item', 'reward'}
@@ -125,6 +126,7 @@ def validate_record(record, context):
         elif isinstance(value,list):
             for v in value:walk(v)
     walk(record)
+    validate_conditions(record)
     for target in walk_targets(record['value']):
         r=target['resolution']
         if r['status']=='resolved' and len(r['targets'])!=1:raise ValueError('Resolved target must be unique')
@@ -133,24 +135,30 @@ def validate_record(record, context):
 
 
 def rule_links(entry, value, context):
-    """Domain slots name their governing concepts; the shared resolver chooses identities."""
-    wanted=[]
-    for field,label in [('action','施法时间'),('range','施法距离'),('components','法术成分'),('duration','持续时间')]:
-        if field in value.get('casting',{}):wanted.append((label,'uses_rule',value['casting'][field]['evidence']))
-    for g in value.get('grants',[]):
-        for branch in g['branches']:
-            if branch['resource']['kind']=='spell_slot':wanted.append(('法术位','exception_to' if branch['resource'].get('consumed') is False else 'uses_rule',branch['evidence'][0]))
-            if branch.get('recovery',{}).get('event')=='long_rest':wanted.append(('长休','uses_rule',branch['evidence'][-1]))
-    for effect in value.get('effects',[]):
-        if effect['kind']=='saving_throw':wanted.append(('豁免检定','uses_rule',effect['evidence']))
-        if effect['kind']=='condition':wanted.append((effect['condition'],'uses_rule',effect['evidence']))
-    links=[];seen=set()
-    for label,relation,ev in wanted:
-        token=(label,relation,tuple(ev['span']))
-        if token in seen:continue
-        seen.add(token)
-        links.append({'relation':relation,'target':{'kind':'entry','name':label,
+    """Every rule dependency names the local slot it governs; exceptions stay scoped."""
+    links=[]
+    def add(label, relation, scope, ev, *, change=None, when=None):
+        links.append({'id':'rule_'+str(len(links)+1),'relation':relation,'scope':scope,
+            'change':change,'when':when,'target':{'kind':'entry','name':label,
             'resolution':context.resolve(entry,label,'concept'),'evidence':ev}})
+    for field,label in [('action','施法时间'),('range','施法距离'),('components','法术成分'),('duration','持续时间')]:
+        if field in value.get('casting',{}):add(label,'uses_rule',{'kind':'casting_field','field':field},value['casting'][field]['evidence'])
+    for grant in value.get('grants',[]):
+        for branch in grant['branches']:
+            scope={'kind':'usage_branch','grant_id':grant['id'],'branch_id':branch['id']}
+            if branch['resource']['kind']=='spell_slot':
+                free=branch['resource'].get('consumed') is False
+                add('法术位','exception_to' if free else 'uses_rule',scope,branch['evidence'][0],
+                    change={'field':'spell_slot.consumed','value':False} if free else None,
+                    when={'kind':'branch_selected','grant_id':grant['id'],'branch_id':branch['id']})
+            if branch.get('recovery',{}).get('event')=='long_rest':add('长休','uses_rule',scope,branch['evidence'][-1])
+    for effect in value.get('effects',[]):
+        scope={'kind':'effect','effect_id':effect['id']}
+        if effect['kind']=='saving_throw':add('豁免检定','uses_rule',scope,effect['evidence'])
+        if effect['kind']=='condition':add(effect['condition'],'uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        for modifier in effect.get('modifiers',[]):
+            if modifier['effect']=='advantage':
+                add('优势','uses_rule',scope,effect['evidence'],when=modifier['when'])
     return links
 
 
@@ -316,6 +324,8 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
             review={'id':'knowledge_review_'+r['event']['id'],'target':r['event']['binding']['subject_id'],
                     'reason':'knowledge_decision_'+r['status'],'priority':'high','detail':r,'evidence':r['event']['binding']}
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)',(review['id'],review['target'],review['reason'],review['priority'],canonical(review)))
+    from chain_reading import build_rule_index
+    build_rule_index(db,effective)
     count=0
     for option in branches(context,effective):
         db.execute('INSERT INTO casting_options VALUES(?,?,?,?,?,?,?,?,?)',tuple(option[k] for k in ('id','root_id','subject_id','spell_id','mode','resource','recovery','selection'))+(canonical(option),));count+=1
@@ -350,6 +360,13 @@ def audit_knowledge(db, folder):
     expected={r['id']:r for r in branches(context,records)}
     actual={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM casting_options')}
     if expected!=actual:errors.append('casting_options: projection mismatch')
+    from chain_reading import rule_rows
+    expected_rules={r['id']:r for r in rule_rows(records)}
+    rule_columns=('id','source_id','target_id','relation','status')
+    actual_rules={r[0]:dict(zip(rule_columns,r[:-1]))|{'data':json.loads(r[-1])}
+                  for r in db.execute('SELECT id,source_id,target_id,relation,status,data FROM knowledge_rule_links')}
+    expected_rules={key:{k:row[k] for k in rule_columns}|{'data':row} for key,row in expected_rules.items()}
+    if expected_rules!=actual_rules:errors.append('knowledge_rule_links: projection mismatch')
     return {'records':len(records),'casting_options':len(actual),'errors':errors,
         'by_source':[{'source_id':sid,'kind':kind,'status':status,'count':count}
                      for (sid,kind,status),count in sorted(matrix.items())]}
@@ -385,7 +402,7 @@ def casting_condition(raw, alias='e'):
     return 'EXISTS(SELECT 1 FROM casting_options c WHERE '+' AND '.join(clauses)+')',values
 
 
-def chain(db, entry_id, spell_id=None):
+def chain(db, entry_id, spell_id=None, reading_path=None):
     if not exists(db):return {'schema':SCHEMA,'records':[],'nodes':[],'options':[],'incoming':[]}
     if not db.execute('SELECT 1 FROM entries WHERE id=?',(entry_id,)).fetchone():raise LookupError('Entry not found')
     subject_ids={entry_id};options=[]
@@ -420,7 +437,12 @@ def chain(db, entry_id, spell_id=None):
         r=db.execute('SELECT id,name,type,ruleset,page_path,start,end FROM entries WHERE id=?',(eid,)).fetchone()
         if r:nodes.append(dict(zip(('id','name','type','ruleset','page_path','start','end'),r)))
     incoming=[{'entry_id':r[0],'name':r[1],'ruleset':r[2]} for r in db.execute('SELECT DISTINCT e.id,e.name,e.ruleset FROM casting_options c JOIN entries e ON e.id=c.root_id WHERE c.spell_id=? ORDER BY e.name,e.id',(entry_id,))]
-    return {'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected}
+    if reading_path is None and spell_id:
+        providers={o['subject_id'] for o in options if spell_id in o['spell_ids']}
+        if len(providers)==1:
+            provider=next(iter(providers));reading_path=[entry_id]+([provider] if provider!=entry_id else [])+[spell_id]
+    from chain_reading import reading
+    return reading(db,entry_id,{'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected},reading_path)
 
 
 def inspect(db, rid):

@@ -22,7 +22,7 @@ class KnowledgeTests(unittest.TestCase):
                       '你也可以消耗合适的法术位来施展这些法术。')
         self.spell=('测试法术 Test Spell\n施法时间：附赠动作\n施法距离：自身\n法术成分：V\n持续时间：立即\n'
                     '你短暂地被银白的雾气所笼罩，传送到至多30尺内一个你能看见且未占据空间。')
-        self.other='无关文字';self.competitor=False;self.rebuild()
+        self.other='无关文字';self.competitor=False;self.rules=[];self.rebuild()
 
     def tearDown(self):
         if self.db:self.db.close()
@@ -42,7 +42,7 @@ class KnowledgeTests(unittest.TestCase):
         source={'id':'phb','name':'核心','ruleset_hint':'5r','reference_role':'core_rules','evidence':[]}
         self.db.execute('INSERT INTO sources VALUES(?,?)',('phb',canonical(source)))
         entries=[]
-        for eid,body,name,english,kind in [('feat',self.feature,'示例','Example','feat'),('spell',self.spell,'测试法术','Test Spell','spell'),('other',self.other,'无关','Other','section')]:
+        for eid,body,name,english,kind in [('feat',self.feature,'示例','Example','feat'),('spell',self.spell,'测试法术','Test Spell','spell'),('other',self.other,'无关','Other','section'),*self.rules]:
             entry={'id':eid,'entity_id':eid,'name':name+' '+english,'name_zh':name,'name_en':english,'type':kind,'ruleset':'5r',
                    'page_path':eid+'.htm','start':0,'title_end':body.find('\n')+1,'end':len(body),'source_ids':['phb'],
                    'fields':{},'anchors':[],'is_primary':True}
@@ -125,11 +125,62 @@ class KnowledgeTests(unittest.TestCase):
         from knowledge import audit_knowledge, knowledge_diff
         self.assertEqual(audit_knowledge(self.db,self.root)['errors'],[])
         self.assertEqual(knowledge_diff(self.db,self.db),[])
+        self.db.execute("UPDATE knowledge_rule_links SET relation='wrong'")
+        self.assertIn('knowledge_rule_links: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
         (self.root/'effective_knowledge.jsonl').write_text('')
         self.db.execute('DELETE FROM casting_options')
+        self.db.execute('DELETE FROM knowledge_rule_links')
         errors=audit_knowledge(self.db,self.root)['errors']
         self.assertIn('effective_knowledge: export mismatch',errors)
         self.assertIn('casting_options: projection mismatch',errors)
+        self.assertIn('knowledge_rule_links: projection mismatch',errors)
+
+    def test_path_preserves_root_and_validates_every_hop(self):
+        result=chain(self.db,'feat','spell')
+        self.assertEqual(result['reading']['path'],['feat','spell'])
+        self.assertEqual(result['reading']['root_id'],'feat')
+        self.assertIn('传送',result['reading']['text'])
+        self.assertEqual(result['reading']['steps'][0]['relations'][0]['relation'],'grants_spell')
+        self.assertEqual(chain(self.db,'feat','spell',['feat'])['reading']['focus_id'],'feat')
+        for bad in [['spell'],['feat','other'],['feat','spell','feat'],{},['feat',1],['x']*17,'invalid JSON']:
+            with self.subTest(path=bad),self.assertRaises(ValueError):chain(self.db,'feat',reading_path=bad)
+        self.competitor=True;self.rebuild()
+        candidate=chain(self.db,'feat',reading_path=['feat','competitor'])
+        self.assertFalse(candidate['options'])
+        self.assertEqual(candidate['reading']['steps'][0]['relations'][0]['target_status'],'ambiguous')
+        with self.assertRaises(ValueError):chain(self.db,'feat','competitor')
+
+    def test_exception_and_reverse_lookup_keep_the_specific_branch(self):
+        self.rules=[('slots','法术位 Spell Slots\n施法通常需要法术位。','法术位','Spell Slots','rule')];self.rebuild()
+        result=chain(self.db,'feat',reading_path=['feat','slots'])
+        relations=result['reading']['steps'][0]['relations']
+        exception=next(e for e in relations if e['relation']=='exception_to')
+        ordinary=next(e for e in relations if e['relation']=='uses_rule')
+        self.assertEqual(exception['change'],{'field':'spell_slot.consumed','value':False})
+        self.assertNotEqual(exception['scope']['branch_id'],ordinary['scope']['branch_id'])
+        self.assertIsNone(ordinary['change'])
+        self.assertEqual(exception['when']['branch_id'],exception['scope']['branch_id'])
+        reverse=chain(self.db,'slots',reading_path=['slots','feat'])['reading']['steps'][0]['relations']
+        self.assertEqual([e['relation'] for e in reverse],['modified_by'])
+        self.assertEqual(reverse[0]['scope'],exception['scope'])
+        extended=chain(self.db,'slots',reading_path=['slots','feat','spell'])
+        self.assertEqual(extended['reading']['focus_id'],'spell')
+        self.assertTrue(any(r['kind']=='spell_effect' for r in extended['records']))
+        self.assertEqual(extended['bindings'][0]['subject_id'],'feat')
+        self.accept('knowledge_reject');self.rebuild()
+        with self.assertRaises(ValueError):chain(self.db,'slots',reading_path=['slots','feat'])
+
+    def test_local_parse_and_governing_target_status_are_independent(self):
+        self.rules=[(eid,'法术位 Spell Slots\n定义。','法术位','Spell Slots','rule') for eid in ('slots_a','slots_b')];self.rebuild()
+        result=chain(self.db,'feat',reading_path=['feat','slots_a'])
+        segment=next(s for s in result['segments'] if s['subject_id']=='feat')
+        self.assertEqual(segment['content_status'],'resolved')
+        self.assertEqual(segment['review_status'],'unreviewed')
+        slots=[r for r in segment['rule_targets'] if r['name']=='法术位']
+        self.assertTrue(slots)
+        self.assertTrue(all(r['status']=='ambiguous' and set(r['candidates'])=={'slots_a','slots_b'} for r in slots))
+        self.assertEqual(result['reading']['steps'][0]['relations'][0]['status'],'ambiguous')
+        self.assertEqual(result['bindings'][0]['status'],'not_stated')
 
     def test_exports_and_evidence_are_exact(self):
         exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]

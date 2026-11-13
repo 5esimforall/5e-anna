@@ -40,6 +40,13 @@ class EvidenceTests(unittest.TestCase):
 
 
 class ClassifyTests(unittest.TestCase):
+    def test_spell_field_descriptions_do_not_type_a_chapter_as_a_spell(self):
+        prose='\n法术描述包含施法时间、施法距离、法术成分和持续时间。'
+        self.assertEqual(typed('施展法术 Casting a Spell',prose,core_rule_chapter=True).type,'rule')
+        self.assertEqual(typed('示例 Spell',SPELL_FIELDS).type,'spell')
+        for name in ('戏法 Cantrip','生物 Creature','怪物 Monster','法术 Spell','数据卡 Stat Block'):
+            self.assertEqual(typed(name,'\n术语定义。',path='topics/玩家手册2024/术语汇编/其他术语.htm').type,'rule')
+
     def test_first_recognizer_decides_and_later_printed_evidence_is_kept(self):
         t=typed('甲 Alpha【状态】',SPELL_FIELDS)
         self.assertEqual((t.type,t.rule),('spell','spell_fields'))

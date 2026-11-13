@@ -179,8 +179,8 @@ test('narrow reader traps focus, tabs use arrow keys, resize keeps content and c
   await page.getByRole('tab',{name:'正文',exact:true}).focus();await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab',{name:'属性',exact:true})).toBeFocused();
   await expect(page.getByRole('tab',{name:'属性',exact:true})).toHaveAttribute('aria-selected','true');
-  // Reading mode ends the tab list at relations; audit tabs are summarized below the panel.
-  await page.keyboard.press('End');await expect(page.getByRole('tab',{name:/^关系/})).toBeFocused();
+  // Reading mode ends the tab list at the rule chain; audit tabs are summarized below the panel.
+  await page.keyboard.press('End');await expect(page.getByRole('tab',{name:'规则链',exact:true})).toBeFocused();
   await expect(page.getByRole('tab',{name:/^待核/})).toHaveCount(0);await expect(page.locator('[data-audit-summary]')).toContainText('待核');
   await page.keyboard.press('Home');await expect(page.getByRole('tab',{name:'正文',exact:true})).toBeFocused();
   expect(await page.locator('#detail-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
@@ -656,7 +656,7 @@ test('reader sets label lines as a parameter card, starts after the title and gr
   await expect(page.locator('#detail-panel .layout-text')).not.toContainText('Toll the Dead');
   // Reading tabs lead; audit tabs follow their group label, and a tab with nothing in it is faded.
   const tabs=page.locator('.detail-tabs');await expect(tabs.locator('.tab-group')).toHaveText('核对');
-  expect(await tabs.locator('[role=tab]').evaluateAll(els=>els.map(e=>e.dataset.tab))).toEqual(['body','fields','versions','relations','facts','discoveries','references','reviews']);
+  expect(await tabs.locator('[role=tab]').evaluateAll(els=>els.map(e=>e.dataset.tab))).toEqual(['body','fields','versions','relations','chain','facts','discoveries','references','reviews']);
   for(const tab of await tabs.locator('[role=tab]').all()){
     const count=(await tab.textContent()).match(/ (\d+)$/)?.[1];
     if(count!==undefined)await expect(tab).toHaveClass(count==='0'?/\bempty\b/:/^(?!.*\bempty\b)/);

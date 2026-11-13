@@ -18,7 +18,7 @@ from functools import cached_property
 import re
 from typing import Callable
 
-from html_extract import CLASSES, GENERIC, SPELL, CLASS_PATH, Candidate, class_structure, compact, key, split_name
+from html_extract import CLASSES, GENERIC, CLASS_PATH, Candidate, class_structure, compact, key, split_name
 
 # Types that define a rule of play rather than a game object; core-rule pages split these into subdefinitions.
 # The six abilities and the skills checked with them are rule terms too: text applies them in d20 tests.
@@ -49,7 +49,7 @@ RULE_EVIDENCE = {
     # The place the text sits implies the type.
     # A heading followed by the heading of its own check (力量 Strength, 力量检定 Strength Checks).
     'checked_ability':INFERRED, 'ability_check_heading':INFERRED,
-    'context_heading':INFERRED, 'context_fields':INFERRED, 'topic_context':INFERRED,
+    'core_rule_heading':INFERRED, 'context_heading':INFERRED, 'context_fields':INFERRED, 'topic_context':INFERRED,
     'property_definition':INFERRED, 'named_table_structure':INFERRED, 'rule_subdefinition':INFERRED,
     'level_inline_heading':INFERRED, 'feature_inline_heading':INFERRED, 'choice_pool_heading':INFERRED,
     'subclass_structure':INFERRED, 'parent_class_context':INFERRED,
@@ -248,7 +248,7 @@ def option_catalog(p):
 
 @recognizer('document_structure')
 def structure_name(p):
-    if document_structure_name(p.name):return 'section'
+    if document_structure_name(p.name) and not ('术语汇编' in p.path and p.c.method=='heading'):return 'section'
 
 
 @recognizer('class_structure')
@@ -311,7 +311,7 @@ def trap_descriptor(p):
 
 @recognizer('spell_fields')
 def spell_layout(p):
-    if SPELL.search(p.intro):return 'spell'
+    if all(pattern.search(p.intro) for pattern in (field_label('施法时间'), field_label('施法距离','射程','距离'), field_label('法术成分','成分'))):return 'spell'
 
 
 @recognizer('stat_fields')
@@ -450,6 +450,11 @@ def poison_section(p):
 @recognizer('context_fields')
 def disease_section(p):
     if p.titled and re.search(r'疾病',p.context) and re.search(r'感染|豁免|治疗',p.intro):return 'disease'
+
+
+@recognizer('core_rule_heading')
+def core_rule_chapter_heading(p):
+    if p.c.fields.get('core_rule_chapter') and p.titled and p.c.method in {'heading','colored_heading','word_heading'}:return 'rule'
 
 
 @recognizer('context_heading')

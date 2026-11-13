@@ -1,0 +1,41 @@
+/* Actual corpus: acquisition constraints, same-branch filtering and evidence navigation. */
+const {test,expect}=require('@playwright/test');
+const anna=`http://127.0.0.1:${process.env.ANNA_E2E_PORT||18380}`;
+async function ready(page){await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');await expect(page.locator('#result-count')).toContainText('找到');}
+test('casting conditions stay branch-scoped; background chain reaches effects, evidence and Stella',async({page,context})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(anna);await ready(page);
+  await page.locator('#toggle-filters').click();await page.locator('#casting-filters summary').click();
+  await page.locator('[data-casting=mode]').selectOption('prepared');
+  await page.locator('[data-casting=resource]').selectOption('slot_free');
+  await page.locator('[data-casting=recovery]').selectOption('long_rest');
+  await page.locator('[data-casting=spell]').fill('疗伤术');
+  await page.locator('[data-casting-apply]').click();await ready(page);
+  const params=new URL(page.url()).searchParams;expect(JSON.parse(params.get('casting')).recovery).toBe('long_rest');
+  await page.locator('#results .entry-name').filter({hasText:'侍僧'}).click();
+  await page.getByRole('tab',{name:'规则链',exact:true}).click();
+  await expect(page.locator('.rule-chain')).toContainText('牧师');
+  const choices=page.locator('.chain-choices').filter({has:page.locator('[data-chain-spell]').filter({hasText:'疗伤术'})});
+  await choices.locator('summary').click();
+  await choices.locator('[data-chain-spell]').filter({hasText:'疗伤术'}).click();
+  await expect(page.locator('.chain-effect')).toHaveCount(2);
+  await expect(page.locator('.rule-chain')).toContainText('2d8');
+  await expect(page.locator('.chain-effect').first()).toContainText('恢复生命值');
+  const selected=new URL(page.url()).searchParams.get('chain_spell');expect(selected).toBeTruthy();
+  await page.reload();await expect(page.getByRole('tab',{name:'规则链',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect(page.locator('.chain-effect')).toHaveCount(2);
+  const exported=await page.request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'));
+  expect((await exported.json()).chain.selected_spell_id).toBe(selected);
+  const ev=page.locator('.chain-effect .chain-evidence').first();await ev.locator('summary').click();
+  const popup=page.waitForEvent('popup');await ev.getByRole('link').click();const evidence=await popup;
+  await expect(evidence.locator('#evidence')).toContainText('2d8');await evidence.close();
+  const reading=page.waitForEvent('popup');await page.locator('.knowledge-record').filter({has:page.locator('.chain-effect')}).getByRole('link',{name:'在 Stella 中阅读 ↗'}).click();
+  const stella=await reading;await expect(stella).toHaveURL(/\/read\?entry=/);await expect(stella.locator('.reader-error')).toHaveCount(0);await stella.close();
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('tab',{name:'规则链',exact:true}).focus();await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab',{name:/关系/})).toHaveAttribute('aria-selected','true');
+  await page.keyboard.press('ArrowRight');await expect(page.getByRole('tab',{name:'规则链',exact:true})).toHaveAttribute('aria-selected','true');
+  await page.screenshot({path:'output/playwright/casting-chain-mobile.png'});
+  await page.setViewportSize({width:1280,height:800});
+  expect(errors).toEqual([]);
+});

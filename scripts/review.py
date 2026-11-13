@@ -72,7 +72,7 @@ def save_batch(db, path, items, *, expected_snapshot=None, expected_log=None):
             if operation == 'confirm' and not view['basis']['target_locatable']:
                 raise ValueError('Confirming a reference requires a locatable definition entry')
             if operation in {'non_reference','missing_definition'} and target is not None: raise ValueError('Non-reference or missing-definition decisions cannot have a target')
-            active = [e['id'] for e in events if states.get(e['id']) == 'active' and e['binding']['reference_id'] == reference_id]
+            active = [e['id'] for e in events if states.get(e['id']) == 'active' and e.get('binding', {}).get('reference_id') == reference_id]
             if active != ([supersedes] if supersedes else []):
                 raise ValueError('This reference already has an active or pending decision; supersede the only decision, or revoke them one by one if they conflict')
             pending.append({'operation': operation, 'reviewer': reviewer.strip(), 'reason': reason.strip(),

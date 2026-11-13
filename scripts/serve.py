@@ -14,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit, quote
 import browse
+import knowledge
 import paths
 from entry_layout import entry_layout, text_start
 from references import query_references, query_decisions, query_missing_definitions
@@ -60,7 +61,7 @@ ENTRY_BODY = ("(SELECT substr(p.text,s.b+1,e.end-s.b) FROM pages p, (SELECT CASE
 # Any field of chosen values, and each name or body search, can be excluded: `not_<key>` holds the excluded
 # values or terms. Ranges, the conflict switch and the term being typed are not negated.
 NOT = 'not_'
-NEGATABLE = ('type','q','body','ruleset','legacy','status','source','origin')
+NEGATABLE = ('type','q','body','ruleset','legacy','status','source','origin','casting')
 
 
 def field_of(key):
@@ -111,6 +112,10 @@ def included(params):
     if value:
         if field not in FIELDS: raise ValueError('无效属性')
         out.append(('field','EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)',['$.'+field,{'true':'1','false':'0'}.get(value,value)]))
+    if first(params,'casting'):
+        if len(params['casting'])!=1:raise ValueError('Only one branch-scoped casting query is allowed')
+        clause,values=knowledge.casting_condition(first(params,'casting'))
+        out.append(('casting',clause,values))
     out.extend(browse.facet_conditions(params))
     return out
 
@@ -321,10 +326,27 @@ def version_compare(db, entry):
             'fields':fields}
 
 
-def detail(db, eid):
+
+def casting_facets(db, params):
+    """Counts retain ordinary filters and every other field of the same casting branch."""
+    selected=knowledge.casting_query(first(params,'casting')) if first(params,'casting') else {}
+    base={k:v for k,v in params.items() if k not in {'casting','not_casting'}}
+    where,values=filters(db,base)
+    result={}
+    for field,options in knowledge.QUERY_VALUES.items():
+        result[field]=[]
+        for value in options:
+            clause,arguments=knowledge.casting_condition({**selected,field:value})
+            count=db.execute('SELECT count(*) FROM entries e'+where+' AND '+clause,values+arguments).fetchone()[0]
+            result[field].append({'value':value,'count':count})
+    return {'groups':result}
+
+
+def detail(db, eid, chain_spell=None):
     row=db.execute('SELECT data FROM entries WHERE id=?',(eid,)).fetchone()
     if not row: raise LookupError('条目不存在')
     e=browse.enrich(json.loads(row[0]))
+    e['rule_chain']=knowledge.chain(db,eid,chain_spell)
     e['field_order']=browse.field_order(e)
     start=text_start(e)
     e['body']=db.execute('SELECT substr(text,?,?) FROM pages WHERE path=?',(start+1,e['end']-start,e['page_path'])).fetchone()[0].strip()
@@ -391,7 +413,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff')
         frames="'self'" if urlsplit(self.path).path=='/read' and self.reader_url else "'none'"
         self.send_header('Content-Security-Policy',f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src {frames}")
-        if download: self.send_header('Content-Disposition','attachment; filename="5e-anna.csv"')
+        if download: self.send_header('Content-Disposition','attachment; filename="'+(download if isinstance(download,str) else '5e-anna.csv')+'"')
         self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         # Reject DNS-rebinding hosts; never expose local data to a remote origin.
@@ -408,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
             static['/review-ui.js']=('review-ui.js','text/javascript; charset=utf-8')
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
-            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace','companions')})
+            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace','companions','knowledge')})
             static['/read']=('reader.html','text/html; charset=utf-8')
             static['/stella-logo.png']=('stella-logo.png','image/png')
             static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')
@@ -421,7 +443,11 @@ class Handler(BaseHTTPRequestHandler):
                 if url.path=='/api/meta': self.send({**meta(db),'reader_url':self.reader_url,'snapshot':self.snapshot})
                 elif url.path=='/api/facets': self.send(facets(db,p))
                 elif url.path=='/api/entries': self.send(query(db,p))
-                elif url.path=='/api/entry': self.send(detail(db,first(p,'id')))
+                elif url.path=='/api/entry': self.send(detail(db,first(p,'id'),first(p,'chain_spell') or None))
+                elif url.path=='/api/knowledge-chain': self.send(knowledge.chain(db,first(p,'id'),first(p,'spell') or None))
+                elif url.path=='/api/knowledge-inspect': self.send(knowledge.inspect(db,first(p,'id')))
+                elif url.path=='/api/knowledge-export': self.send({'schema':knowledge.SCHEMA,'snapshot':json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0]),'chain':knowledge.chain(db,first(p,'id'),first(p,'spell') or None)},download='anna-rule-chain.json')
+                elif url.path=='/api/casting-facets': self.send(casting_facets(db,p))
                 elif url.path=='/api/entry-layout': self.send(entry_layout(db,first(p,'id'),Path(self.source_root)))
                 elif url.path=='/api/references': self.send(query_references(db,path=first(p,'path'),reference_id=first(p,'id'),
                     status=first(p,'status'),signal=first(p,'signal'),review_status=first(p,'review_status'),

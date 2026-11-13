@@ -5,7 +5,7 @@ from pathlib import Path
 
 from concepts import aliases
 from html_extract import Document, compact, key, resolve_link
-from review_store import DEFAULT_DECISIONS, canonical, digest, lifecycle, load_events, REVIEW_SEMANTICS_VERSION
+from review_store import DEFAULT_DECISIONS, canonical, digest, lifecycle, load_events, REVIEW_SEMANTICS_VERSION, KNOWLEDGE_OPERATIONS
 
 
 class ReviewContext:
@@ -254,6 +254,9 @@ def presentation(refs, context, path):
 def build_references(db, source, out, decision_path=DEFAULT_DECISIONS):
     events, log_hash = load_events(decision_path)
     states = lifecycle(events)
+    all_event_count = len(events)
+    reference_ids = {e['id'] for e in events if e['operation'] not in KNOWLEDGE_OPERATIONS and e['operation'] != 'revoke'}
+    events = [e for e in events if e['id'] in reference_ids or e['operation']=='revoke' and e['decision_id'] in reference_ids]
     context = ReviewContext(db)
     originals = discover_originals(source, context)
     by_page = defaultdict(list)
@@ -307,7 +310,7 @@ def build_references(db, source, out, decision_path=DEFAULT_DECISIONS):
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)',
                        (record['id'], record['target'], record['reason'], record['priority'], canonical(record)))
     missing_counts = build_missing_definitions(db, events, results, out)
-    snapshot = {'path': str(Path(decision_path).resolve()), 'sha256': log_hash, 'events': len(events),
+    snapshot = {'path': str(Path(decision_path).resolve()), 'sha256': log_hash, 'events': all_event_count,
                 'bytes': Path(decision_path).stat().st_size if Path(decision_path).exists() else 0}
     report = {'references': total, 'missing_definitions': missing_counts, 'outcomes': {f'{review}/{status}': n for (review, status), n in sorted(counts.items())},
               'presentation': dict(presentations), 'decisions': dict(Counter(r['status'] for r in results.values()))}

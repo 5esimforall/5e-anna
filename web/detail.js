@@ -128,7 +128,7 @@ function renderDetail(tab='body') {
   const auditNames={facts:ui.facts,discoveries:linkLabels.discoveries,references:linkLabels.effectiveReferences,reviews:ui.reviews};
   const members=e.versions?.members||[];
   // Reading tabs come first; audit tabs follow under their own group label, and a tab with nothing in it fades.
-  const readingTabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',ui.versionsTab,members.length]]:[]),['relations',ui.relations,e.relations.length]];
+  const readingTabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',ui.versionsTab,members.length]]:[]),['relations',ui.relations,e.relations.length],['chain',annaKnowledge.labels.title]];
   const auditTabs=auditMode?Object.entries(counts).map(([id,n])=>[id,auditNames[id],n]):[];
   const tabButton=([id,name,count])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''} ${count===0?'empty':''}" data-tab="${id}">${esc(count===undefined?name:`${name} ${count}`)}</button>`;
   const auditSummary=auditMode?'':`<button type="button" class="audit-summary" data-audit-summary title="${esc(ui.auditSummaryHint)}">${esc(ui.auditSummary)}：${Object.entries(counts).map(([k,n])=>`${esc(auditNames[k])} ${n}`).join(' · ')}</button>`;
@@ -138,6 +138,7 @@ function renderDetail(tab='body') {
   if(tab==='fields') content=`<dl class="detail-fields">${(e.field_order||Object.keys(e.fields)).map(k=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(fieldText(e,k))}${e.field_conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
   if(tab==='facts') content=e.facts.map(f=>`<article class="fact"><div class="fact-head"><strong>${esc(fieldNames[f.field]||f.field)}</strong>${badge(f.status,f.status==='原文明示'?'green':'amber')}</div><div class="fact-value">${esc(displayValue(f.field,f.value))}</div><small>规则：${esc(f.rule)} · 作用域：${esc(f.scope)}</small>${f.excerpt?`<blockquote>${esc(f.excerpt)}</blockquote>`:''}${f.evidence.path?`<a href="${esc(sourceURL(f.evidence.path,...(f.evidence.span||[0,0])))}" target="_blank" rel="noopener">${esc(f.evidence.path)} ↗</a>`:`<details><summary class="muted">定位依据</summary><pre class="body-text">${esc(JSON.stringify(f.evidence,null,2))}</pre></details>`}</article>`).join('');
   if(tab==='facts'&&!content)content=`<p class="muted">${esc(ui.noEvidence)}</p>`;
+  if(tab==='chain')content=annaKnowledge.render(e,auditMode);
   if(tab==='versions'&&members.length>1) content=renderVersions(e);
   if(tab==='relations') content=e.relations.length?e.relations.map(r=>`<div class="related"><span class="muted">${esc(relationNames[r.predicate]||r.predicate)}</span>${r.object_id?`<button data-entry="${esc(r.object_id)}">${esc(r.target_label)}</button>`:`<span>${esc(r.target_label)} ${badge('目标未关联','amber')}</span>`}${badge(r.status)}</div>`).join(''):'<p class="muted">未提取到关系；不代表不存在。</p>';
   if(tab==='discoveries') content=(e.concept_observations||[]).map(o=>renderConceptObservation(o,linkLabels)).join('')||`<p class="muted">${esc(linkLabels.emptyDiscoveries)}</p>`;
@@ -160,7 +161,7 @@ const layoutOf=id=>api('/api/entry-layout?id='+encodeURIComponent(id)).catch(()=
 async function openEntry(id,update=true,tab='body',fromResult=false) {
   const gen=++detailGeneration,content=$('#detail-content');
   if(fromResult&&!currentReaderId)lastResultEntry=id;
-  if(update){params.set('entry',id);historyUpdate();}
+  if(update){if(id!==currentReaderId)params.delete('chain_spell');params.set('entry',id);if(tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate();}
   if(fromResult)lastResultEntry=id;
   const wasOpen=$('#detail').open;
   currentReaderId=id;currentEntry=null;detailTab=tab;updatePageChrome();
@@ -173,7 +174,7 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   updateReaderNavigation();
   const layout=layoutOf(id);
   try {
-    const e=await api('/api/entry?id='+encodeURIComponent(id));if(gen!==detailGeneration)return;
+    const e=await api('/api/entry?id='+encodeURIComponent(id)+(params.has('chain_spell')?'&chain_spell='+encodeURIComponent(params.get('chain_spell')):''));if(gen!==detailGeneration)return;
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
     currentEntry=e;renderDetail(tab);content.scrollTop=0;
@@ -259,7 +260,7 @@ function closeEntry({update=true,restoreFocus=true}={}) {
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();
-  if(update&&params.has('entry')){params.delete('entry');historyUpdate(true);}
+  if(update&&params.has('entry')){params.delete('entry');params.delete('tab');params.delete('chain_spell');historyUpdate(true);}
   saveUiState();
 }
 
@@ -299,4 +300,18 @@ function renderReview(record, labels) {
     </section>`).join('')}
     <details><summary>${esc(labels.evidence)}</summary><pre class="body-text">${esc(pretty(result))}</pre></details>
   </article>`;
+}
+
+let chainGeneration=0;
+async function inspectChainSpell(id){
+  const entry=currentEntry,gen=++chainGeneration;if(!entry)return;
+  const panel=$('#detail-panel');panel.setAttribute('aria-busy','true');
+  try{
+    const chain=await api('/api/knowledge-chain?id='+encodeURIComponent(entry.id)+'&spell='+encodeURIComponent(id));
+    if(gen!==chainGeneration||currentEntry!==entry)return;
+    entry.rule_chain=chain;params.set('chain_spell',id);params.set('tab','chain');historyUpdate();renderDetail('chain');saveUiState();
+    const target=$('#detail-panel').querySelector(`[data-knowledge="${CSS.escape(chain.records.find(r=>r.subject_id===id&&r.kind==='spell_effect')?.id||'')}"]`);
+    if(target){target.tabIndex=-1;target.focus({preventScroll:true});target.scrollIntoView({block:'start'});}
+  }catch(error){if(currentEntry===entry){panel.setAttribute('role','alert');const message=document.createElement('p');message.textContent=annaKnowledge.labels.error+': '+error.message;panel.append(message);}}
+  finally{if(currentEntry===entry)$('#detail-panel').removeAttribute('aria-busy');}
 }

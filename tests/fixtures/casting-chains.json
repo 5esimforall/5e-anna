@@ -1,0 +1,20 @@
+{
+  "scope": "从原文核对的施法部分；选择域表示可以选择的法术，不表示全部授予。",
+  "access": [
+    {"name":"魔法学徒","ruleset":"5e","path":"topics/玩家手册/自定义选项/专长.html","grants":2,"modes":["known","known"]},
+    {"name":"魔法学徒","ruleset":"5r","path":"topics/玩家手册2024/专长/起源专长.htm","grants":2,"modes":["known","prepared"]},
+    {"name":"妖精触碰","ruleset":"5e","path":"topics/塔莎的万事坩埚/玩家选项/专长.html","grants":2,"modes":["known","known"]},
+    {"name":"妖精触碰","ruleset":"5r","path":"topics/玩家手册2024/专长/通用专长.htm","grants":2,"modes":["prepared","prepared"]}
+  ],
+  "acquisition": [
+    {"name":"侍僧","path":"topics/玩家手册2024/角色起源/背景/侍僧.htm","class_list":"牧师","allowed_spell":"疗伤术","excluded_spell":"魔法飞弹"},
+    {"name":"向导","path":"topics/玩家手册2024/角色起源/背景/向导.htm","class_list":"德鲁伊","allowed_spell":"疗伤术","excluded_spell":"魔法飞弹"},
+    {"name":"智者","path":"topics/玩家手册2024/角色起源/背景/智者.htm","class_list":"法师","allowed_spell":"魔法飞弹","excluded_spell":"疗伤术"}
+  ],
+  "effects": [
+    {"name":"迷踪步","path":"topics/玩家手册/魔法/法术详述/2环.html","kinds":["teleport"]},
+    {"name":"迷踪步","path":"topics/玩家手册2024/法术详述/2环.htm","kinds":["teleport"]},
+    {"name":"疗伤术","path":"topics/玩家手册2024/法术详述/1环.htm","kinds":["healing","upcast"]},
+    {"name":"魅惑类人","path":"topics/玩家手册2024/法术详述/1环.htm","kinds":["saving_throw","condition","attitude","awareness","upcast"]}
+  ]
+}

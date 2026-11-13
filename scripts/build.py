@@ -124,6 +124,7 @@ def parse_one(args):
         output=[];rule_children=[]
         for i,c in enumerate(cs):
             full=doc.text[c.start:c.end]
+            c.fields['core_rule_chapter']=bool(core_rule_source and re.search(r'/(?:魔法|法术)/',path) and '/法术详述/' not in path)
             next_start=cs[i+1].start if i+1<len(cs) else c.end
             own=doc.text[c.start:min(c.end,next_start)]
             primary=i==0 or (i==1 and cs[0].method=='page_intro')
@@ -616,6 +617,8 @@ class Build:
         concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources)
         from references import build_references
         reference_coverage=build_references(db,self.web,out,decision_path)
+        from knowledge import build_knowledge
+        knowledge_coverage=build_knowledge(db,out,decision_path)
         counterpart_coverage=None
         if fivetools:
             from counterparts import build_counterparts
@@ -629,7 +632,7 @@ class Build:
             'legacy':dict(Counter(e['legacy'] for e in self.entries if e['type']!='section')),'index_rows':len(self.observations),
             'index_rows_linked':len({o for e in self.entries for o in e['observation_ids']}),'facts':len(self.facts),'relations':len(self.relations),'raw_tables':len(self.tables),
             'concept_definitions':concept_coverage['definitions'],'concept_observations':concept_coverage['observations'],'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in reviews)),
-            'reference_coverage':reference_coverage,
+            'reference_coverage':reference_coverage, 'knowledge_coverage':knowledge_coverage,
             'counterparts':{k:counterpart_coverage[k] for k in ('catalog','commit','input_sha256','records','entries','outcomes','findings')} if counterpart_coverage else {'catalog':'5etools-cn','status':'skipped'},
             'validation':validation,'runtime_seconds':round(elapsed,2),'identity_policy':'provisional locator identities; no name-based merge',
             'parser':'beautifulsoup4/html5lib','pipeline_sha256':pipeline_hash(),'extraction_sha256':extraction_hash()}

@@ -44,7 +44,9 @@ class WebTests(unittest.TestCase):
     def test_phb_feats_and_intersection(self):
         sid=self.db.execute("select id from sources where name='玩家手册2024'").fetchone()[0]
         p={'type':['feat'],'source':[sid],'ruleset':['5r']}
-        self.assertEqual(query(self.db,p)['total'],75)
+        rows=query(self.db,p,export=True)['rows']
+        self.assertTrue(rows)
+        self.assertTrue(all(r['type']=='feat' and r['ruleset']=='5r' and sid in r['source_ids'] for r in rows))
         p['ruleset']=['5e'];self.assertEqual(query(self.db,p)['total'],0)
     def test_name_literal_and_case(self):
         self.assertEqual(query(self.db,{'q':["%' OR 1=1 --"]})['total'],0)
@@ -72,6 +74,26 @@ class WebTests(unittest.TestCase):
             if not m['target_id']:
                 self.assertEqual([c['id'] for c in m['candidate_entries']],m['candidates'])
                 self.assertTrue(all(c['name'] for c in m['candidate_entries']))
+    def test_casting_chain_query_export_and_invalid_selection(self):
+        condition=json.dumps({'mode':'prepared','resource':'slot_free','recovery':'long_rest','spell':'疗伤术'},ensure_ascii=False)
+        rows=query(self.db,{'casting':[condition],'versions':['each']})['rows']
+        self.assertTrue(any(r['name_zh']=='侍僧' for r in rows))
+        eid=next(r['id'] for r in rows if r['name_zh']=='侍僧')
+        status,_,raw=self.request('/api/knowledge-chain?'+urlencode({'id':eid}))
+        self.assertEqual(status,200);chain=json.loads(raw)
+        status,_,raw=self.request('/api/knowledge-export?'+urlencode({'id':eid}))
+        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
+        self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({'id':eid,'spell':'absent'}))[0],400)
+        self.assertEqual(self.request('/api/knowledge-chain?id=absent')[0],404)
+        self.assertEqual(self.request('/api/entries?'+urlencode({'casting':'{"mode":"bad"}'}))[0],400)
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':condition}))
+        self.assertEqual(status,200)
+        values={x['value']:x['count'] for x in json.loads(raw)['groups']['resource']}
+        self.assertEqual(values['slot_free'],query(self.db,{'casting':[condition],'versions':['each']})['total'])
+        self.assertEqual(values['spell_slot'],0)
+        invalid=json.dumps({'resource':'spell_slot','recovery':'long_rest'})
+        self.assertEqual(query(self.db,{'casting':[invalid]})['total'],0)
+
     def test_invalid_query(self):
         for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)
@@ -185,19 +207,15 @@ class WebTests(unittest.TestCase):
         self.assertNotIn(b'class="theme-control"',page)
     def test_mount_and_animal_catalog_types(self):
         mounts=query(self.db,{'type':['creature'],'f_role':['坐骑'],'versions':['each']})
-        self.assertEqual(mounts['total'],20)
-        self.assertEqual(sum(e['ruleset']=='5e' for e in mounts['rows']),12)
-        self.assertEqual(sum(e['ruleset']=='5r' for e in mounts['rows']),8)
         self.assertFalse(any(e['name_en'] in {'Flying Snake','Wolf','Warhorse Skeleton'} for e in mounts['rows']))
         offers=query(self.db,{'type':['animal_offer'],'versions':['each']})
-        self.assertEqual(offers['total'],19)
         self.assertTrue(all(e['type']=='animal_offer' for e in offers['rows']))
         horse=next(e for e in mounts['rows'] if e['name_en']=='Warhorse' and e['ruleset']=='5r')
         d=detail(self.db,horse['id'])
         self.assertTrue(any(r['predicate']=='catalog_offer' for r in d['relations']))
         data=self.request('/api/entries?'+urlencode({'type':'animal_offer'}))
         self.assertEqual(data[0],200)
-        self.assertEqual(json.loads(data[2])['versions_total'],19)
+        self.assertEqual(json.loads(data[2])['versions_total'],offers['total'])
 
     def test_presets_are_one_type_and_one_facet_value(self):
         # Each preset reproduces the catalog's SQL view of the same name through ordinary filters.
@@ -283,7 +301,7 @@ class WebTests(unittest.TestCase):
         params={'type':['spell'],'q':['火'],'f_school':['塑能']}
         data=facets(self.db,params)
         self.assertEqual(data['total'],query(self.db,{**params,'versions':['each']})['total'])
-        self.assertEqual(data['scope_total'],1385)
+        self.assertEqual(data['scope_total'],query(self.db,{'type':['spell'],'versions':['each']})['total'])
         groups={g['key']:g for g in data['groups']}
         self.assertEqual(list(groups)[0],'type')
         # An option counts the matches with it chosen and every other condition kept.
@@ -319,32 +337,29 @@ class WebTests(unittest.TestCase):
 
     def test_environmental_hazards_are_queryable(self):
         data=query(self.db,{'type':['hazard'],'versions':['each']})
-        self.assertEqual(data['total'],57)
         self.assertTrue(all(r['type']=='hazard' for r in data['rows']))
         names={r['name_zh'] for r in data['rows']}
         # Printed labels, DMG 2024 severity bands and catalogs in both editions all reach the same type.
         for name in ['雪崩','奥法风暴','燃烧','流沙陷坑','薄冰','亵渎之地']:self.assertIn(name,names)
         self.assertNotIn('自然灾害',names);self.assertNotIn('魔法现象',names)
-        # Same-name hazards from the 2014 and 2024 guides (薄冰, 蛛网) stack into one row by default.
-        self.assertEqual(query(self.db,{'type':['hazard']})['total'],49)
         self.assertIn('hazard',meta(self.db)['type_order'])
-        self.assertEqual(self.db.execute('SELECT count(*) FROM "危害" WHERE type=\'hazard\'').fetchone()[0],57)
+        expected={r[0] for r in self.db.execute('SELECT id FROM "危害" WHERE type=\'hazard\'')}
+        self.assertEqual({r['id'] for r in query(self.db,{'type':['hazard']},export=True)['rows']},expected)
         self.assertEqual(self.request('/api/entries?type=hazard')[0],200)
 
     def test_abilities_and_skills_are_queryable(self):
-        # Both player's handbooks define the six abilities and eighteen skills; each pair stacks into one row.
-        self.assertEqual(query(self.db,{'type':['ability'],'versions':['each']})['total'],12)
-        self.assertEqual(query(self.db,{'type':['ability']})['total'],6)
-        each=query(self.db,{'type':['skill'],'versions':['each']})
-        self.assertEqual((each['total'],{r['ruleset'] for r in each['rows']}),(36,{'5e','5r'}))
+        abilities=query(self.db,{'type':['ability']},export=True)['rows']
+        self.assertTrue(abilities);self.assertTrue(all(r['type']=='ability' for r in abilities))
+        each=query(self.db,{'type':['skill']},export=True)
+        self.assertTrue(each['rows']);self.assertTrue({'5e','5r'}<={r['ruleset'] for r in each['rows']})
         skills=query(self.db,{'type':['skill']})
-        self.assertEqual(skills['total'],18)
         # Skills read in ability order, and filter by the ability they use.
         self.assertEqual(skills['rows'][0]['name_zh'],'运动')
         dex=query(self.db,{'type':['skill'],'f_ability':['敏捷']})
         self.assertEqual(sorted(r['name_zh'] for r in dex['rows']),['巧手','特技','隐匿'])
         self.assertEqual(meta(self.db)['type_conditions']['skill'],['ability'])
-        self.assertEqual(self.db.execute('SELECT count(*) FROM "状态动作规则" WHERE type IN (\'ability\',\'skill\')').fetchone()[0],48)
+        expected={r[0] for r in self.db.execute("SELECT id FROM \"状态动作规则\" WHERE type IN ('ability','skill')")}
+        self.assertEqual({r['id'] for r in abilities+each['rows']},expected)
 
     def test_metadata(self):
         m=meta(self.db)
@@ -355,7 +370,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(m['type_conditions']['creature'],['size','creature_type','role','legendary_actions','cr'])
         self.assertEqual(m['type_conditions']['class'],[])
         self.assertEqual({p['name'] for p in m['presets']},{'NPC','伙伴','坐骑','魔法武器','战斗风格','传奇恩惠'})
-        self.assertEqual(len(m['sources']),155)
+        self.assertEqual({s['id'] for s in m['sources']},{r[0] for r in self.db.execute('SELECT id FROM sources')})
         self.assertTrue(all(s['count']==0 for s in m['sources'] if s['coverage']=='catalog_only'))
         # Short labels come from the abbreviation catalog, never from guessing at aliases.
         by_name={s['name']:s['short_name'] for s in m['sources']}

@@ -12,6 +12,7 @@ from uuid import uuid4
 from paths import PROJECT
 
 DEFAULT_DECISIONS = PROJECT / 'reviews/decisions.jsonl'
+KNOWLEDGE_OPERATIONS = {'knowledge_accept', 'knowledge_reject'}
 
 
 def canonical(value):
@@ -29,7 +30,7 @@ def pipeline_hash():
 # Bump when the meaning of stored review dependencies changes, not for UI edits.
 REVIEW_SEMANTICS_VERSION = 1
 EXTRACTION_MODULES = ('build.py', 'html_extract.py', 'entry_types.py', 'source_extract.py', 'table_extract.py',
-                      'concepts.py', 'references.py', 'review_store.py', 'review_search.py')
+                      'concepts.py', 'references.py', 'review_store.py', 'review_search.py', 'casting_extract.py', 'knowledge.py')
 
 
 def extraction_hash():
@@ -64,7 +65,7 @@ def load_events(path=DEFAULT_DECISIONS):
         if not line.strip(): continue
         try:
             event = json.loads(line)
-            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'missing_definition', 'revoke'}:
+            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'missing_definition', 'revoke'} | KNOWLEDGE_OPERATIONS:
                 raise ValueError('未知审核事件版本或操作')
             for field in ('id', 'reviewer', 'reason', 'created_at'):
                 if not isinstance(event.get(field), str) or not event[field].strip():
@@ -73,6 +74,20 @@ def load_events(path=DEFAULT_DECISIONS):
             if event['operation'] == 'revoke':
                 previous = known.get(event.get('decision_id'))
                 if not previous or previous['operation'] == 'revoke': raise ValueError('撤销对象不存在')
+            elif event['operation'] in KNOWLEDGE_OPERATIONS:
+                binding = event['binding']
+                for field in ('knowledge_id', 'subject_id', 'kind', 'path', 'raw'):
+                    if not isinstance(binding.get(field), str) or not binding[field].strip():
+                        raise ValueError('Invalid knowledge binding: '+field)
+                span = binding.get('span')
+                if not isinstance(span, list) or len(span)!=2 or not all(type(n) is int for n in span) or not 0<=span[0]<span[1]:
+                    raise ValueError('Invalid knowledge evidence range')
+                if not isinstance(event.get('basis'), dict) or event.get('basis_sha256') != digest(event['basis']):
+                    raise ValueError('Knowledge basis fingerprint mismatch')
+                if event.get('supersedes'):
+                    previous = known.get(event['supersedes'])
+                    if not previous or previous['operation'] not in KNOWLEDGE_OPERATIONS or previous['binding']['knowledge_id'] != binding['knowledge_id']:
+                        raise ValueError('Superseded decision must concern the same knowledge record')
             else:
                 binding = event['binding']
                 for field in ('reference_id', 'path', 'text', 'signal', 'kind', 'role'):
@@ -92,7 +107,7 @@ def load_events(path=DEFAULT_DECISIONS):
                 if event.get('supersedes'):
                     previous = known.get(event['supersedes'])
                     if (not previous or previous['operation'] == 'revoke'
-                            or previous['binding']['reference_id'] != binding['reference_id']):
+                            or previous['binding'].get('reference_id') != binding['reference_id']):
                         raise ValueError('替代决策必须属于同一引用')
             known[event['id']] = event
             events.append(event)

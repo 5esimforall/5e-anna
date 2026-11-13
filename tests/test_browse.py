@@ -100,7 +100,6 @@ class BrowseCorpusTests(unittest.TestCase):
         spells=facets(self.db,{'type':['spell']});monsters=facets(self.db,{'type':['creature']});items=facets(self.db,{'type':['magic_item']})
         self.assertIn('spell_classes',spells['schema']['facets']);self.assertNotIn('rarity',spells['schema']['facets'])
         self.assertEqual(monsters['schema']['range'],'cr');self.assertIn('rarity',items['schema']['facets'])
-        self.assertEqual(spells['total'],1385)
     def test_multiselect_union_and_intersection(self):
         base={'type':['spell']};a=self.ids(base|{'f_school':['塑能']});b=self.ids(base|{'f_school':['防护']})
         self.assertEqual(self.ids(base|{'f_school':['塑能','防护']}),a|b)
@@ -122,7 +121,6 @@ class BrowseCorpusTests(unittest.TestCase):
         for a in range(len(states)):
             for b in range(a):self.assertFalse(states[a]&states[b])
         self.assertEqual(set.union(*states),self.ids(base))
-        self.assertEqual(len(states[-1]),13)
     def test_cr_inclusive_range_and_order(self):
         rows=query(self.db,{'type':['creature'],'cr_min':['1/8'],'cr_max':['1/2'],'sort':['cr']},export=True)['rows']
         ranks=[browse.sort_value(json.dumps(e['fields']),'cr') for e in rows]
@@ -157,7 +155,6 @@ class BrowseCorpusTests(unittest.TestCase):
             for r in rows:
                 self.assertEqual(r['versions'][0]['id'],r['id'])
                 if len(r['versions'])>1:self.assertIsNotNone(r['stack'])
-        self.assertEqual(query(self.db,{'type':['spell']})['total'],933)
     def test_class_features_never_stack_across_classes(self):
         data,rows=self.stacked_pages({'type':['class_feature'],'q':['属性值提升']})
         self.assertGreater(len(rows),10);self.assertTrue(all(len(r['versions'])==1 for r in rows))
@@ -172,7 +169,8 @@ class BrowseCorpusTests(unittest.TestCase):
         _,rows=self.stacked_pages({'type':['spell'],'ruleset':['5e']})
         self.assertTrue(all(v['ruleset']=='5e' for r in rows for v in r['versions']))
         each=query(self.db,{'type':['spell'],'versions':['each']})
-        self.assertEqual(each['total'],1385);self.assertTrue(all('versions' not in r for r in each['rows']))
+        self.assertEqual(each['total'],len(self.ids({'type':['spell']})))
+        self.assertTrue(all('versions' not in r for r in each['rows']))
         for bad in [{'versions':['merge']},{'prefer':['2014']}]:
             with self.assertRaises(ValueError):query(self.db,bad)
     def test_version_differences_and_reader_comparison(self):

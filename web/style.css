@@ -579,3 +579,19 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 .review-controls input {min-width:0;width:100%;box-sizing:border-box}
 .review-page code,.review-page a {overflow-wrap:anywhere}
 .review-page .fact {margin:12px 0}
+
+/* Rule chains share the entry reader and condition bar; source evidence is folded. */
+.casting-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:12px 0}
+.casting-controls label{display:flex;flex-direction:column;gap:5px;font-size:13px}
+.casting-controls input,.casting-controls select{width:100%;min-width:0}
+.casting-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.rule-chain{overflow-wrap:anywhere;max-width:100%}
+.knowledge-record{border-top:1px solid var(--anna-line);padding:18px 0;margin-top:16px}
+.knowledge-record h3,.chain-grant h4{font-size:15px;margin:8px 0;line-height:1.5}
+.chain-grant{padding:12px 0;border-top:1px solid var(--anna-line)}
+.chain-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
+.chain-branch{padding:12px;border:1px solid var(--anna-line);border-radius:8px;min-width:0}
+.chain-branch h5{margin:0 0 8px;font-size:13px}
+.chain-evidence{margin:8px 0;font-size:13px}.chain-evidence blockquote{margin:8px 0;padding-left:12px;border-left:2px solid var(--anna-line);white-space:pre-wrap}
+.chain-choices ul{list-style:none;padding:0;max-height:250px;overflow:auto}.chain-choices li{margin:5px 0}
+.chain-effect{margin:12px 0}.chain-effect h4{margin:8px 0}.chain-gaps{margin:16px 0}

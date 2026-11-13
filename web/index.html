@@ -8,7 +8,7 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
   <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48.png">
   <script src="/kit.js"></script><script src="/theme.js"></script>
-  <link rel="stylesheet" href="/style.css"><script src="/link-labels.js"></script><script src="/workspace.js" defer></script><script src="/menu.js" defer></script><script src="/companions.js" defer></script><script src="/detail.js" defer></script><script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css"><script src="/link-labels.js"></script><script src="/workspace.js" defer></script><script src="/menu.js" defer></script><script src="/companions.js" defer></script><script src="/knowledge.js" defer></script><script src="/detail.js" defer></script><script src="/app.js" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#q" data-ui="skipSearch"></a>
@@ -29,6 +29,7 @@
       <div class="filter-hint">未选的组不限制；同组所选取并集，不同组取交集。<span>数字为选中该项后的结果数；“否”不包含未知或冲突。</span></div>
       <div id="type-filters"></div>
       <div id="domain-filters"></div>
+      <details id="casting-filters"></details>
       <details id="source-details"><summary>来源与版本 <span id="common-count"></span></summary>
         <div id="common-filters"></div>
         <div class="source-search-row"><input id="source-search" type="search" placeholder="筛选书名 / 缩写" aria-label="筛选来源选项"><span class="muted">只过滤选项；不改变选择</span></div>

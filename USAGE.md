@@ -112,7 +112,7 @@ make up ANNA_PORT=8101
 
 ## 引用审核：保存、重建、撤销
 
-审核输入保存在仓库内的 `reviews/decisions.jsonl`，不属于可删除重建的 `data/`。日志采用追加事件：保存确认、确认此处非规则引用、替代旧决策及撤销均保留审核者、理由、时间和依据。当前小闭环只处理具体引用，不提供补定义、来源裁定、全局别名或批量规则批准；浏览器服务保持只读。
+审核输入保存在仓库内的 `reviews/decisions.jsonl`，不属于可删除重建的 `data/`。日志采用追加事件：保存确认、确认此处非规则引用、替代旧决策及撤销均保留审核者、理由、时间和依据。本节处理具体引用；施法规则陈述的采用与否决见[施法链查询与审核](#施法链查询与审核)。两者均不提供补定义、来源裁定、全局别名或批量规则批准；浏览器服务保持只读。
 
 先运行 `make build`，然后查询和检查一处引用：
 
@@ -376,3 +376,30 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 可用 `--baseline /绝对路径/旧版catalog.sqlite --output /报告目录` 生成逐条增删及分类／字段差异。审计不等于全库人工核验；未支持表格和无法唯一关联的动物保留在审核队列。
 
 审计同时列出分类缺口，供补充识别规则时决定先读哪里。`untyped_pages.csv` 列出没有任何已分类条目的正文页及其来源和目录。`classification_gaps.csv` 列出位于已分类条目之外、自身正文出现豁免 DC、骰子伤害或骰值表的未分类段落，并给出每个信号的原文位置；数据卡内的“动作”等段落属于该数据卡，不计入。标题中的【标注】按条目所得分类汇总，同一标注分属多类时在报告中列出。缺口是线索，不作为审计失败条件；带 `--baseline` 时，[提取审计](data/extracted/audit.md)对照修改前后的缺口数量。`type_conflicts.csv` 列出原文明示证据指向另一类型的条目（判定顺序见[数据结构与提取规则](MODEL.md)），报告按所得分类与另有证据汇总；冲突同样是线索，不作为失败条件。
+
+## 施法链查询与审核
+
+筛选区中的“施法链条件”可组合授予方式、法术位消耗、恢复条件、固定／选择目标和法术名称。条件必须命中同一使用分支；“消耗法术位＋长休恢复”不会借用同项能力免费分支的恢复条件。结果只包含完整解析的获取路径，空结果不表示原文不存在该能力。
+
+在条目详情打开“规则链”，可沿背景→专长查看固定法术或受限选择。点击可选法术只展开该法术的效果，不建立角色数据；页面地址和刷新保留所查法术。原文证据、Stella 阅读入口及 JSON 导出都使用同一条有效规则链。两代魔法学徒、TCE／2024 妖精触碰及 2024 侍僧／向导／智者是首组验收样本；更多句式仍可能显示“部分解析”。
+
+导出的 JSON 携带 `schema` 与构建快照，记录保留解析状态、审核状态和未解析原文。解析状态为已解析、部分解析、待核或已否决；审核状态为未人工核准、已采用、已撤销、依据变化或审核冲突。两套状态分开显示，不以空值代替未解析。未提取、明确没有、不适用等区分属于覆盖与验收，不混入单条记录的状态。条目身份以稳定 ID 连接；跨快照的移动、拆分、合并和删除尚未自动迁移旧标识，导出只携带当前有效身份与构建快照。
+
+核对模式显示记录 ID、结构化结果及检查入口。浏览器保持只读；审核通过命令行追加到现有独立决策日志：
+
+```sh
+.venv/bin/python scripts/knowledge.py list --kind spell_access --status resolved --limit 10
+.venv/bin/python scripts/knowledge.py inspect 记录ID
+.venv/bin/python scripts/knowledge.py accept 记录ID \
+  --basis 查看所得basis_sha256 --reviewer 审核者 --reason '说明原文依据'
+# 否决用 reject；替代旧决策加 --supersedes 旧审核事件ID
+.venv/bin/python scripts/knowledge.py revoke 审核事件ID \
+  --reviewer 审核者 --reason '说明撤销原因'
+make build
+```
+
+`accept` 表示核准当前记录，不补写缺失语义，也不消除目标歧义。原文或候选变化后，依据失效的记录不继续进入有效选项；重新检查后才能替代旧决定。无需审核即可只读检查：`knowledge.py chain 条目ID`。
+
+HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/api/knowledge-inspect?id=记录ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；非本链有效选项返回 400。查询接口的 `casting` 参数是 URL 编码后的 JSON，例如 `{"mode":"prepared","resource":"slot_free","recovery":"long_rest","spell":"疗伤术"}`。`/api/casting-facets` 返回其他条件保持时各选择的命中数。
+
+构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`audit.py --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。范围与验证证据见[施法链验证](tests/casting-chain-validation.md)。

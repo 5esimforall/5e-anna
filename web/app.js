@@ -63,7 +63,7 @@ const reasonNames = {animal_statblock_unresolved:'动物数据卡关联待核',c
 const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','七环','八环','九环'];
 const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions']);
-const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections']);
+const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections','casting']);
 // Audit mode is a per-browser viewing preference, never part of a shared query URL.
 const AUDIT_KEY='anna.audit', AUDIT_COLUMNS=new Set(['classification_status','legacy']), AUDIT_PARAMS=['status','legacy','conflict','sections'];
 const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
@@ -116,7 +116,7 @@ function saveUiState(){if(restoringUi)return;history.replaceState({...history.st
 // Anna shares her places with Stella only when both run from the same build.
 const sharing=()=>!!(metadata?.reader_url&&metadata.snapshot);
 // A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
-function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');return query.toString();}
+function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');query.delete('chain_spell');return query.toString();}
 // Names a remembered query by its heading and search words, as a reader would describe it.
 function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.length?title:title===ui.allEntries?terms.join(' '):`${title} · ${terms.join(' ')}`;}
 // This tab's query is Anna's latest place in the shared workspace, so Stella's switcher can lead back to it.
@@ -263,6 +263,7 @@ function sync(){
   const chips=[...active.slice(0,lead),...termKeys,...active.slice(lead)].map(chip);
   $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
   markStripEdges($('#active-filters'));
+  castingControls.sync();
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
 // header, rows and paging together; a failure clears them instead of leaving stale counts behind.
@@ -645,7 +646,8 @@ $('#results').addEventListener('keydown',e=>{
 });
 $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
-  const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);$('#tab-'+t.dataset.tab).focus();saveUiState();}
+  const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);if(t.dataset.tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate(true);$('#tab-'+t.dataset.tab).focus();saveUiState();}
+  const spell=e.target.closest('[data-chain-spell]');if(spell)inspectChainSpell(spell.dataset.chainSpell);
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
   const note=e.target.closest('.field-note[data-note]');
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
@@ -659,7 +661,7 @@ $('#detail-content').addEventListener('keydown',e=>{
   const t=e.target.closest('[data-tab]');if(!t||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
   e.preventDefault();const tabs=[...$('#detail-content').querySelectorAll('[data-tab]')],index=tabs.indexOf(t);
   const next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
-  const name=tabs[next].dataset.tab;renderDetail(name);$('#tab-'+name).focus();saveUiState();
+  const name=tabs[next].dataset.tab;renderDetail(name);if(name==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate(true);$('#tab-'+name).focus();saveUiState();
 });
 $('#close-detail').onclick=()=>closeEntry();
 $('#detail').addEventListener('cancel',e=>{e.preventDefault();closeEntry();});
@@ -681,7 +683,7 @@ window.addEventListener('popstate',async e=>{
   if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
   quietTopic=true;
-  if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:'body');
+  if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:(params.get('tab')==='chain'?'chain':'body'));
   quietTopic=false;
   if(gen!==navigationGeneration)return;
   restoreUiState(state);
@@ -772,6 +774,7 @@ function renderElsewhere(){
   $('#empty-elsewhere').innerHTML=drops.map(d=>`<button type="button" data-drop="${esc(d.key)}">${esc(ui.dropCondition.replace('{condition}',d.text))} <span class="muted">→ ${fmt(d.n)}</span></button>`).join('');
 }
 function conditionText(key){
+  if(baseKey(key)==='casting')return (key.startsWith(NOT)?ui.isNot+' ':'')+annaKnowledge.description(params.get(key));
   if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
   if(key==='conflict')return fieldNames.conflict;
   if(key==='typing')return `${ui.nameField}：${draft}`;
@@ -814,6 +817,7 @@ $('#compact-rows').onchange=()=>{
 };
 stored.watch(DENSITY_KEY,()=>applyDensity(storedDensity()));
 applyDensity(storedDensity());
+const castingControls=annaKnowledge.install({params:()=>params,changed,api});
 initReaderLayout();
 stored.watch(AUDIT_KEY,()=>{auditMode=stored.get(AUDIT_KEY)==='on';applyAuditMode();});
 async function init(){
@@ -828,7 +832,7 @@ async function init(){
     params.delete('view');readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
-    await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
+    await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:(params.get('tab')==='chain'?'chain':'body'));
     restoreUiState(saved);
   }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}
   finally{restoringUi=false;quietTopic=false;saveUiState();}

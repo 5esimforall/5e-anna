@@ -254,7 +254,7 @@ class Build:
                         self.review(ob['id'],'index_link_recovered',{'original_href':ob['href'],'resolved_path':rooted},{'path':path,'span':ob['span']},'low')
                     else:self.review(ob['id'],'index_target_missing',ob['href'],{'path':path,'span':ob['span']},'high')
             doc.close()
-        print(f'索引行：{len(self.observations)}；正文目标：{len(self.ob_targets)}',flush=True)
+        print(f'Index rows: {len(self.observations)}; body targets: {len(self.ob_targets)}',flush=True)
 
     def parse_job(self,path):
         owners,_=self.registry.owners(path)
@@ -673,7 +673,7 @@ def main():
     args=ap.parse_args()
     fivetools=None if args.no_counterparts else args.fivetools
     if fivetools and not (fivetools/'data').is_dir():
-        raise SystemExit(f'5etools-cn 对照镜像缺失：{fivetools}；运行 make clone 下载，或用 --no-counterparts 跳过对照')
+        raise SystemExit(f'5etools-cn mirror missing: {fivetools}; run make clone to download it, or pass --no-counterparts to skip the comparison')
     started=time.monotonic();extraction_at_start=extraction_hash();b=Build(args.source)
     paths=sorted(p.relative_to(args.source).as_posix() for p in (args.source/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
     total=len(paths)
@@ -685,12 +685,12 @@ def main():
         results=map(parse_one,jobs)
         for i,result in enumerate(results,1):
             b.consume(result)
-            if i%500==0:print(f'正文：{i}/{len(paths)}；候选：{len(b.entries)}',flush=True)
+            if i%500==0:print(f'Pages: {i}/{len(paths)}; candidates: {len(b.entries)}',flush=True)
     else:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
             for i,result in enumerate(pool.map(parse_one,jobs,chunksize=8),1):
                 b.consume(result)
-                if i%500==0:print(f'正文：{i}/{len(paths)}；候选：{len(b.entries)}',flush=True)
+                if i%500==0:print(f'Pages: {i}/{len(paths)}; candidates: {len(b.entries)}',flush=True)
     b.finish();validation=b.validate(paths)
     with tempfile.TemporaryDirectory(prefix='.build-',dir=PROJECT) as tmp:
         summary=b.export(Path(tmp),validation,total,time.monotonic()-started,args.decisions,fivetools)
@@ -698,7 +698,7 @@ def main():
         with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
             require_current(staged_db,args.decisions)
         if extraction_hash()!=extraction_at_start:
-            raise ValueError('构建期间提取实现变化，未发布；请重新构建')
+            raise ValueError('Extraction implementation changed during the build; nothing was published. Rebuild.')
         publish(Path(tmp),args.output)
     print(json.dumps(summary,ensure_ascii=False,indent=2))
 

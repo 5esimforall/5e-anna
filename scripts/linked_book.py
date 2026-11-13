@@ -54,15 +54,15 @@ def inject(raw,payload,encoding='utf-8'):
 
 def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output=BOOK):
     source=Path(source).resolve();output=Path(output).resolve();db_path=Path(db_path).resolve()
-    if output==source or source in output.parents or output in source.parents:raise ValueError('链接版与原文目录必须分离')
+    if output==source or source in output.parents or output in source.parents:raise ValueError('Linked book and source directory must be separate')
     with closing(sqlite3.connect(db_path.as_uri()+'?mode=ro',uri=True)) as db:
         summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
-        if not summary['full_scan']:raise ValueError('链接版需要完整数据库')
+        if not summary['full_scan']:raise ValueError('Linked book requires a complete database')
         pages={p:{'sha256':h,'text':t} for p,h,t in db.execute('SELECT path,sha256,text FROM pages')}
         entries={};by_page=defaultdict(list)
         for raw, in db.execute('SELECT data FROM entries'):
             e=json.loads(raw)
-            if 'title_end' not in e:raise ValueError('请先重新生成数据库：缺少 title_end')
+            if 'title_end' not in e:raise ValueError('Rebuild the database first: title_end is missing')
             entries[e['id']]=e;by_page[e['page_path']].append(e)
         review_snapshot=require_current(db)
         mentions=defaultdict(list)
@@ -70,14 +70,14 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
             for path,expected in coverage['discovery_inputs'].items():
                 actual=fingerprint(source/path) if (source/path).exists() else None
-                if actual!=expected:raise ValueError('概念发现依据与数据库快照不一致，请运行 make build：'+path)
+                if actual!=expected:raise ValueError('Concept discovery evidence does not match the database snapshot; run make build: '+path)
         for path,raw in db.execute("SELECT page_path,data FROM effective_references WHERE can_link=1 ORDER BY page_path,start,id"):
             mentions[path].append(json.loads(raw))
         reference_coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='reference_coverage'").fetchone()[0])
         unresolved=[json.loads(raw) for raw, in db.execute("SELECT data FROM effective_references WHERE signal='explicit' AND status IN ('review','unresolved','ambiguous')")]
     inputs={p.relative_to(source).as_posix():fingerprint(p) for p in source.rglob('*') if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}
     actual_pages={p for p in inputs if p.startswith('topics/') and Path(p).suffix.lower() in {'.html','.htm'}}
-    if actual_pages!=set(pages) or any(inputs.get(p)!=v['sha256'] for p,v in pages.items()):raise ValueError('原文与数据库快照不一致，请运行 make build')
+    if actual_pages!=set(pages) or any(inputs.get(p)!=v['sha256'] for p,v in pages.items()):raise ValueError('Source and database snapshot do not match; run make build')
     report={'definitions':len(entries),'clickable_definitions':0,'linked_references':0,'empty_definitions':[],'unlocatable_definitions':[],'unresolved':[]}
     report['unresolved']=[{'path':r['path'],'href':r['evidence']['href'],'label':r['text'],'reference_id':r['id'],'reason':r['reason']} for r in unresolved]
     report['reference_coverage']=reference_coverage
@@ -95,7 +95,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             # Editorial/template pages are byte-snapshotted but excluded from extraction.
             # They still belong in the reader; only bound ranges require canonical text.
             if (by_page.get(path) or pages[path]['text']) and doc.text!=pages[path]['text']:
-                raise ValueError('解析文本与数据库不一致：'+path)
+                raise ValueError('Parsed text does not match the database: '+path)
             definitions=[];references=[]
             page_entries=[]
             for e in sorted(by_page[path],key=lambda e:(e['start'],-e['end'],e['id'])):
@@ -113,7 +113,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                 if title and title['text'].strip():report['clickable_definitions']+=1
             for mention in mentions[path]:
                 r=text_slice(doc,mention['start'],mention['end'])
-                if not r:raise ValueError('有效引用无法绑定原文：'+mention['id'])
+                if not r:raise ValueError('A resolved reference cannot bind to its source: '+mention['id'])
                 references.append({'id':mention['target_id'],'reference_id':mention['id'],'range':r});report['linked_references']+=1
             reader['pages'][path]={'title':doc.title,'definitions':page_entries}
             # Even pages without extracted entries participate in reader navigation and history.
@@ -131,11 +131,11 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
         (stage/'anna-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False))
         (stage/'anna-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
         if load_events(review_snapshot['path'])[1]!=review_snapshot['sha256']:
-            raise ValueError('审核日志在生成期间变化，请运行 make build')
+            raise ValueError('Review log changed during generation; run make build')
         # Only replace a known generated directory; leave arbitrary user directories alone.
-        if output.exists() and not (output/'anna-manifest.json').is_file():raise ValueError('拒绝覆盖非生成目录：'+str(output))
+        if output.exists() and not (output/'anna-manifest.json').is_file():raise ValueError('Refusing to overwrite a non-generated directory: '+str(output))
         previous=output.with_name(output.name+'.previous')
-        if previous.exists():raise ValueError('存在上次构建备份，请核对：'+str(previous))
+        if previous.exists():raise ValueError('A previous build backup exists; check: '+str(previous))
         if output.exists():output.rename(previous)
         try:shutil.move(str(stage),str(output))
         except BaseException:

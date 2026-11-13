@@ -27,23 +27,23 @@ def validate_bundle(source, db, book):
     source, book = Path(source).resolve(), Path(book).resolve()
     manifest_path = book / 'anna-manifest.json'
     if not manifest_path.is_file():
-        raise ValueError('链接版不存在，请运行 make build')
+        raise ValueError('Linked book not found; run make build')
     m = json.loads(manifest_path.read_text())
     if m.get('reader_schema') != SCHEMA:
-        raise ValueError('阅读器数据需要更新，请运行 make linked')
+        raise ValueError('Reader data needs updating; run make linked')
     reviewed = m.get('review_snapshot')
     if not reviewed or load_events(reviewed['path'])[1] != reviewed['sha256']:
-        raise ValueError('审核日志与发布快照不匹配，请运行 make build')
+        raise ValueError('Review log does not match the published snapshot; run make build')
     if m['source_root'] != str(source) or not Path(db).is_file() or fingerprint(db) != m['database_sha256']:
-        raise ValueError('数据库与链接版不匹配，请运行 make build')
+        raise ValueError('Database and linked book do not match; run make build')
     actual = {p.relative_to(source).as_posix(): p for p in source.rglob('*')
               if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}
     if set(actual) != set(m['inputs']) or any(fingerprint(actual[p]) != h for p, h in m['inputs'].items()):
-        raise ValueError('原文快照已变化，请运行 make build')
+        raise ValueError('Source snapshot changed; run make build')
     for path, expected in m['outputs'].items():
         file = book / path
         if not file.is_file() or fingerprint(file) != expected:
-            raise ValueError('链接版文件缺失或被修改，请运行 make build：' + path)
+            raise ValueError('Linked book file missing or modified; run make build: ' + path)
     return m
 
 
@@ -196,10 +196,10 @@ def main():
         thread.start()
         print(f'anna: http://127.0.0.1:{server.server_port}/\n'
               f'reader: http://127.0.0.1:{server.server_port}/read\n'
-              'Ctrl-C 停止服务。', flush=True)
+              'Ctrl-C to stop.', flush=True)
         while not stop.wait(.5):
             if not thread.is_alive():
-                raise RuntimeError('站点服务意外退出')
+                raise RuntimeError('Server exited unexpectedly')
     except (OSError, ValueError, RuntimeError) as exc:
         parser.exit(1, str(exc) + '\n')
     finally:

@@ -76,7 +76,7 @@ class LinkedBuildTests(unittest.TestCase):
             root=Path(td);source,db=self.fixture(root);out=root/'book'
             build_book(source,db,out);before=(out/'anna-manifest.json').read_bytes()
             (source/'topics/test.htm').write_text('changed')
-            with self.assertRaisesRegex(ValueError,'快照'):build_book(source,db,out)
+            with self.assertRaisesRegex(ValueError,'snapshot'):build_book(source,db,out)
             self.assertEqual(before,(out/'anna-manifest.json').read_bytes())
     def test_whitespace_only_definition_is_unlocatable(self):
         with tempfile.TemporaryDirectory() as td:
@@ -171,7 +171,7 @@ class LinkedBuildTests(unittest.TestCase):
             before=json.loads((out/'anna-reader.json').read_text())['snapshot']
             page=source/'topics/test.htm'
             page.write_text('<h2 id="New">甲 Alpha</h2><p>更新后的规则。</p>')
-            with self.assertRaisesRegex(ValueError,'快照'):build_book(source,db,out)
+            with self.assertRaisesRegex(ValueError,'snapshot'):build_book(source,db,out)
             doc=Document('topics/test.htm',page.read_text());candidate=doc.candidates()[0]
             conn=sqlite3.connect(db)
             entry=json.loads(conn.execute('SELECT data FROM entries').fetchone()[0])
@@ -209,7 +209,7 @@ class LinkedBuildTests(unittest.TestCase):
             data=json.loads(raw.split(b'id="anna-bindings">')[1].split(b'</script>')[0])
             self.assertEqual(data['references'][-1]['range']['text'],'格式引用')
             css.write_text('changed convention')
-            with self.assertRaisesRegex(ValueError,'概念发现依据'):build_book(source,db,out)
+            with self.assertRaisesRegex(ValueError,'Concept discovery'):build_book(source,db,out)
             self.assertEqual((out/'topics/test.htm').read_bytes(),raw)
 
 

@@ -124,7 +124,7 @@ def build_index(force: bool = False, quiet: bool = False) -> list[dict]:
 
     started = time.time()
     if not quiet:
-        print(f"[搜索] 构建索引：扫描 {WEB / 'topics'} ...", flush=True)
+        print(f"[search] building index: scanning {WEB / 'topics'} ...", flush=True)
     toc_titles = load_toc_titles()
     entries: list[dict] = []
     for path in sorted((WEB / "topics").rglob("*")):
@@ -160,7 +160,7 @@ def build_index(force: bool = False, quiet: bool = False) -> list[dict]:
         )
 
     if index_signature() != snapshot:
-        raise ValueError('原文在索引期间变化，请重试 make index')
+        raise ValueError('Source changed while building the index; retry make index')
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_bytes(
         pickle.dumps({"source": str(WEB.resolve()), "commit": commit, "snapshot": snapshot, "built": time.time(), "entries": entries},
@@ -287,10 +287,10 @@ def search_entries(entries: list[dict], params: dict[str, list[str]]) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--rebuild', action='store_true', help='忽略缓存重建索引')
+    parser.add_argument('--rebuild', action='store_true', help='Rebuild the index and ignore the cache')
     args = parser.parse_args()
     entries = build_index(force=args.rebuild, quiet=True)
-    print(f'[搜索] 索引已保存到 {CACHE}（{len(entries)} 页）', flush=True)
+    print(f'[search] saved index to {CACHE} ({len(entries)} pages)', flush=True)
 
 
 if __name__ == '__main__':

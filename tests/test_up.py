@@ -78,7 +78,7 @@ class ServerTests(unittest.TestCase):
             root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
             m,_=build_book(source,db,book);self.assertEqual(validate_bundle(source,db,book),m)
             (book/'topics/style.css').write_text('changed')
-            with self.assertRaisesRegex(ValueError,'修改'):validate_bundle(source,db,book)
+            with self.assertRaisesRegex(ValueError,'modified'):validate_bundle(source,db,book)
     def test_obsolete_port_arguments_are_rejected(self):
         for argument in ('--anna-port', '--book-port'):
             result=subprocess.run([sys.executable, 'scripts/up.py', argument, '0'],capture_output=True,text=True)

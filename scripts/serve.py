@@ -451,10 +451,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__); ap.add_argument('--port',type=int,default=8000); ap.add_argument('--db',type=Path,default=DB); args=ap.parse_args()
-    if not args.db.is_file(): ap.error('数据库不存在，请先运行 build.py')
+    if not args.db.is_file(): ap.error('Database not found; run build.py first')
     Handler.db_path=args.db
     server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
-    print(f'5e anna · http://127.0.0.1:{server.server_port}/ · 只读；Ctrl-C 停止',flush=True)
+    print(f'5e anna · http://127.0.0.1:{server.server_port}/ · read-only; Ctrl-C to stop',flush=True)
     try: server.serve_forever()
     except KeyboardInterrupt: pass
     finally: server.server_close()

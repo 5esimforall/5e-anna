@@ -304,6 +304,24 @@ make build
 
 5etools-cn 的中文数据采用 CC BY-NC-SA 4.0。对照结果用于本机核对；若对外发布包含其中文内容的派生数据，需署名、非商用并以相同许可共享。
 
+### 第一批规则链语义对照
+
+条目对应之后，可以继续核对法术、等级、选择域、施法属性和资源表达。在 anna 目录运行：
+
+```sh
+.venv/bin/python scripts/counterpart_semantics.py
+# 指定既有数据库、两个只读镜像和报告输出前缀
+.venv/bin/python scripts/counterpart_semantics.py \
+  --db data/extracted/catalog.sqlite --source ../5echm-web \
+  --5etools ../5etools-cn --output output/counterpart-semantics
+```
+
+默认生成 [Markdown 报告](data/extracted/counterpart_semantics.md)和[完整 JSON](data/extracted/counterpart_semantics.json)。报告覆盖 PHB14 精灵亚种、PHB14／24 牧师领域法术、两代魔法学徒及 PHB24 侍僧／向导／智者、DMG14／24 魔法飞弹魔杖／火球魔杖／治愈法杖。它独立于 `make build`，只读已有数据库，不下载镜像、不改变有效规则或审核日志；缺少构建快照时先运行 `make build`。
+
+每个维度分别列出一致、结构化值分歧、anna 尚未表达、外部字段不足、外部结构暂不支持或对应范围待核。JSON 保留双方值、原文码点范围、外部 JSON Pointer、输入文件哈希、解析和审核状态。部分解析记录的局部一致不能计作整条链已支持；名称相同但范围未确认时只列候选。数据结构和比较边界见 [MODEL](MODEL.md#规则链语义对照报告)。
+
+更新外部镜像后，报告会拒绝沿用旧数据库的对应位置；先重建，再重新运行命令。所用不全书页面变动、证据范围损坏或生成期间输入变化同样会报错。报告只校验实际引用的原文文件；不替代全库构建校验。`--output` 是文件名前缀，产生 `.json` 与 `.md`，不可指向输入镜像内；这些本地含原文的报告不纳入版本控制，也不自动发布。当前样例发现与实际验证见[语义对照验证记录](tests/counterpart-semantics-validation.md)。
+
 ## 自动化验证
 
 `make test` 同时运行单元测试和 Playwright 浏览器回归；`make check` 再加数据审计。首次需要 Node.js 20+ 与 npm，并执行 `make browser-setup` 安装 `package-lock.json` 锁定的开发依赖及 Chromium；运行 anna 本身仍只需 Python 依赖。单独运行某层检查：

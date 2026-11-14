@@ -17,13 +17,14 @@ from review_store import (DEFAULT_DECISIONS, canonical, digest, lifecycle, load_
 from paths import PROJECT
 from rule_conditions import validate_conditions, condition_terms, conjunction
 from spell_effects import parse_spell
-from effect_queries import QUERY_VALUES as EFFECT_QUERY_VALUES, build_effect_index, audit_effect_index
+from effect_queries import QUERY_VALUES as EFFECT_QUERY_VALUES, QUERY_PARAMETERS as EFFECT_QUERY_PARAMETERS, build_effect_index, audit_effect_index
 
 SCHEMA = 1
 ACCESS_TYPES = {'feat', 'class_feature', 'species', 'magic_item', 'reward'}
 REVIEW_OPERATIONS = KNOWLEDGE_OPERATIONS
 KINDS = {'spell_access', 'spell_effect', 'feat_access', 'definition_role'}
 QUERY_VALUES = {
+    'query_subject': ('provider','spell'),
     'mode': ('known', 'prepared', 'cast', 'list'),
     'resource': ('slot_free', 'spell_slot', 'not_stated'),
     'recovery': ('long_rest', 'short_rest', 'short_or_long_rest', 'not_stated'),
@@ -32,6 +33,7 @@ QUERY_VALUES = {
     'casting_target': ('self','not_stated'),
     **EFFECT_QUERY_VALUES,
 }
+ACCESS_QUERY_FIELDS={'mode','resource','recovery','selection','access_condition','casting_target'}
 
 
 def exists(db):
@@ -142,12 +144,12 @@ def validate_record(record, context):
 def rule_links(entry, value, context):
     """Every rule dependency names the local slot it governs; exceptions stay scoped."""
     links=[]
-    def add(label, relation, scope, ev, *, change=None, when=None, ends=None):
+    def add(label, relation, scope, ev, *, change=None, when=None, ends=None, target_kind='concept'):
         # A target restriction governs spell targets, not range or a magic item's
         # unrelated "special purpose". Keep both evidenced English lookup names;
         # singular/plural chapter and glossary definitions still compete.
         lookup_names=['Target','Targets'] if label=='目标' else [label]
-        lookups=[{'name':name,'resolution':context.resolve(entry,name,'concept')} for name in lookup_names]
+        lookups=[{'name':name,'resolution':context.resolve(entry,name,target_kind)} for name in lookup_names]
         if len(lookups)==1:resolution=lookups[0]['resolution']
         else:
             applicable=[x['resolution'] for x in lookups if x['resolution']['status'] in {'resolved','ambiguous'}]
@@ -186,6 +188,8 @@ def rule_links(entry, value, context):
         scope={'kind':'effect','effect_id':effect['id']}
         if effect['kind']=='attack_roll':add('攻击检定','uses_rule',scope,effect['evidence'])
         if effect['kind']=='saving_throw':add('豁免检定','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect['kind'] in {'check_sequence','sequence_policy'}:
+            add('豁免检定','uses_rule',scope,effect['evidence'])
         if effect['kind']=='damage':
             add('伤害','uses_rule',scope,effect['evidence'],when=effect.get('when'))
             add('伤害掷骰','uses_rule',scope,effect['evidence'],when=effect.get('when'))
@@ -203,9 +207,16 @@ def rule_links(entry, value, context):
         if effect['kind']=='save_override':
             add('豁免检定','exception_to',scope,effect['evidence'],when=effect['when'],
                 change={'field':'saving_throw.result','value':effect['result'],'applies_to':effect['applies_to']})
+        if effect['kind']=='duration_override':
+            add('持续时间','exception_to',scope,effect['evidence'],when=effect['when'],ends=effect['ends'],
+                change={'field':'effect.duration','operation':'replace_end','value':'until_removed','applies_to':effect['applies_to']})
+            if effect['ends'].get('spell_name'):
+                add(effect['ends']['spell_name'],'removed_by',scope,effect['evidence'],target_kind='spell',when=effect['when'])
         if effect['kind']=='target_constraint':
             add('目标','exception_to',scope,effect['evidence'],change={'field':'casting.targets','value':effect['constraint']})
         if effect['kind']=='end_spell':
+            if any(c.get('kind')=='check_total' for c in condition_terms(effect['when'])):
+                add('持续时间','exception_to',scope,effect['evidence'],when=effect['when'],change={'field':'effect.duration','value':'end'})
             for condition in condition_terms(effect['when']):
                 if condition.get('kind')=='cover':add('全身掩护','uses_rule',scope,effect['evidence'],when=condition)
                 if condition.get('kind')=='outside_spell_range':add('施法距离','uses_rule',scope,effect['evidence'],when=condition)
@@ -456,27 +467,41 @@ def knowledge_diff(before, after):
 def casting_query(raw):
     try:query=json.loads(raw) if isinstance(raw,str) else raw
     except (ValueError,TypeError) as exc:raise ValueError('Invalid casting query') from exc
-    if not isinstance(query,dict) or not query or any(k not in {*QUERY_VALUES,'spell'} for k in query):raise ValueError('Invalid casting query fields')
+    if not isinstance(query,dict) or not query or any(k not in {*QUERY_VALUES,*EFFECT_QUERY_PARAMETERS,'spell'} for k in query):raise ValueError('Invalid casting query fields')
     for k,v in query.items():
         if k=='spell':
             if not isinstance(v,str) or not v.strip() or len(v)>200:raise ValueError('Invalid spell search')
+        elif k=='cumulative_count':
+            if type(v) is not int or not 1<=v<=1000000:raise ValueError('Invalid cumulative count')
         elif v not in QUERY_VALUES[k]:raise ValueError('Invalid casting query value')
+    if query.get('query_subject')=='spell' and ACCESS_QUERY_FIELDS & query.keys():
+        raise ValueError('Spell queries cannot contain provider conditions')
     return query
 
 
 def casting_condition(raw, alias='e'):
-    query=casting_query(raw);clauses=[];values=[];effects=[];effect_values=[]
+    query=casting_query(raw);clauses=[];values=[];effects=[];effect_values=[];thresholds=[];threshold_values=[]
     for k,v in query.items():
+        if k=='query_subject':continue
+        if k in {'cumulative_result','cumulative_count'}:
+            thresholds.append("json_extract(th.value,'$."+('result' if k=='cumulative_result' else 'count')+"')=?")
+            threshold_values.append(v);continue
         if k in EFFECT_QUERY_VALUES:
             effects.append('EXISTS(SELECT 1 FROM json_each(ef.data,\'$.'+k+'s\') WHERE value=?)' if k in {'trigger','end_trigger'} else 'ef.'+k+'=?')
             effect_values.append(v);continue
-        if k=='spell':clauses.append('EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
+        if k=='spell':clauses.append('instr(lower('+alias+'.name),lower(?))>0' if query.get('query_subject')=='spell' else 'EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
         elif k=='access_condition':clauses.append("EXISTS(SELECT 1 FROM json_each(c.data,'$.condition_kinds') WHERE value=?)")
         elif k=='casting_target':clauses.append("json_extract(c.data,'$.casting_target')=?")
         else:clauses.append('c.'+k+'=?')
         values.append(v)
+    if thresholds:
+        effects.append("EXISTS(SELECT 1 FROM json_each(ef.data,'$.thresholds') th WHERE "+' AND '.join(thresholds)+')')
+        effect_values.extend(threshold_values)
     if effects:
-        clauses.append('EXISTS(SELECT 1 FROM spell_effect_index ef WHERE ef.spell_id=c.spell_id AND '+' AND '.join(effects)+')');values.extend(effect_values)
+        spell=alias+'.id' if query.get('query_subject')=='spell' else 'c.spell_id'
+        clauses.append('EXISTS(SELECT 1 FROM spell_effect_index ef WHERE ef.spell_id='+spell+' AND '+' AND '.join(effects)+')');values.extend(effect_values)
+    if query.get('query_subject')=='spell':return '('+alias+".type='spell'"+(' AND '+' AND '.join(clauses) if clauses else '')+')',values
+    if not clauses:return alias+'.id IN(SELECT root_id FROM casting_options)',values
     return alias+'.id IN(SELECT c.root_id FROM casting_options c WHERE '+' AND '.join(clauses)+')',values
 
 

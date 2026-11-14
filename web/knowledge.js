@@ -95,8 +95,28 @@ window.annaKnowledge=(()=>{
       sameEffect:'Effect conditions must match one effect of the same spell. Ongoing automatic damage does not inherit the initial attack’s hit condition.'
     }
   };
+  const sequences={
+    zh:{query_subject:{provider:'授予者',spell:'法术本身'},defaultSubject:'授予者（默认）',subjectHint:'直接查法术时不使用获取条件；查询授予者时，各条件仍须属于同一使用分支。',unresolvedLinks:'尚未确定的效果引用',candidates:'候选（查看不确认）',referenceRole:{target_ref:'目标集合',attack_result:'攻击结果',save_result:'豁免结果',check_ref:'豁免检定',check_total:'累计阈值',sequence_ref:'检定序列',attack_complete:'攻击结束',event_ref:'前置事件',condition:'状态前提',damage_ref:'伤害效果',quantity_ref:'伤害数量'},fields:{query_subject:'查询对象',target_scope:'本效果的目标范围',cumulative_result:'累计结果'},target_scope:{single:'单个目标',area:'区域内各目标',not_stated:'未归类'},cumulative_result:{success:'成功次数',failure:'失败次数'},
+      effect:{event:'后续事件',check_sequence:'检定序列',sequence_policy:'累计计数规则',duration_override:'持续期限例外',no_effect:'明确不受影响'},
+      cumulativeCount:'累计次数阈值',cumulative:'累计',perTarget:'每个目标分别计数',initialCountUnknown:'原文未明确首次检定是否计入累计',separateTotals:'成功与失败分别累计，无需连续',stopAt:'任一计数达到阈值即停止',
+      burst:'爆裂',after:'发生于检定结束之后',includesOrigin:'包含原攻击目标',around:'以目标为中心',stone:'变为石头',concentrationMaximum:'专注维持至法术最大持续时间',magicRemoval:'由下列法术或类似魔法移除',
+      removed_by:'由该法术移除',untilRemoved:'持续至被移除',construct:'构装生物',undead:'亡灵生物',flesh:'血肉之躯',noEffect:'不受该效应影响',
+      timing:{cumulative:'累计结果'},trigger:{check_total:'累计检定结果',concentration_duration:'专注持续时长',creature_type:'生物类型',event_ref:'前置事件'},end_trigger:{magic_removal:'魔法移除'},
+      mechanic:{'saving_throw.sequence':'豁免序列','effect.duration':'效果期限'}},
+    en:{query_subject:{provider:'Providers',spell:'Spells'},defaultSubject:'Providers (default)',subjectHint:'Direct spell queries omit access conditions. Provider queries retain one usage branch.',unresolvedLinks:'Unresolved effect references',candidates:'Candidates (inspection does not confirm)',referenceRole:{target_ref:'Target group',attack_result:'Attack result',save_result:'Save result',check_ref:'Saving throw',check_total:'Cumulative threshold',sequence_ref:'Check sequence',attack_complete:'Attack completed',event_ref:'Prior event',condition:'Condition prerequisite',damage_ref:'Damage effect',quantity_ref:'Damage quantity'},fields:{query_subject:'Query subject',target_scope:'Target scope for this effect',cumulative_result:'Cumulative result'},target_scope:{single:'Single target',area:'Each target in an area',not_stated:'Not classified'},cumulative_result:{success:'Success count',failure:'Failure count'},
+      effect:{event:'Subsequent event',check_sequence:'Check sequence',sequence_policy:'Counting policy',duration_override:'Duration override',no_effect:'Explicitly unaffected'},
+      cumulativeCount:'Cumulative count threshold',cumulative:'Cumulative',perTarget:'Count separately for each target',initialCountUnknown:'Source does not specify whether the initial check counts',separateTotals:'Track successes and failures separately; not necessarily consecutive',stopAt:'Stop when either count reaches its threshold',
+      burst:'Burst',after:'After the check completes',includesOrigin:'Includes the original attack target',around:'Centered on target',stone:'Turns to stone',concentrationMaximum:'Concentration lasts for the spell’s maximum duration',magicRemoval:'Removed by the following spell or similar magic',
+      removed_by:'Removed by this spell',untilRemoved:'Until removed',construct:'Construct',undead:'Undead',flesh:'Flesh body',noEffect:'Unaffected by this effect',
+      timing:{cumulative:'Cumulative outcome'},trigger:{check_total:'Cumulative check result',concentration_duration:'Concentration duration',creature_type:'Creature type',event_ref:'Prior event'},end_trigger:{magic_removal:'Magical removal'},
+      mechanic:{'saving_throw.sequence':'Save sequence','effect.duration':'Effect duration'}}
+  };
   for(const lang of ['zh','en']){
+    for(const [key,value] of Object.entries(sequences[lang])){
+      if(value&&typeof value==='object')extended[lang][key]={...(extended[lang][key]||{}),...value};else extended[lang][key]=value;
+    }
     const {fields,effect,...rest}=extended[lang];Object.assign(labels[lang].fields,fields);Object.assign(labels[lang].effect,effect);Object.assign(labels[lang],rest);
+    labels[lang].fields={query_subject:labels[lang].fields.query_subject,...labels[lang].fields};
   }
   const l=labels[document.documentElement.lang.startsWith('en')?'en':'zh'];
   const badge=t=>`<span class="badge">${esc(t)}</span>`;
@@ -135,6 +155,11 @@ window.annaKnowledge=(()=>{
     if(c.kind==='item_state')return l.item_state[c.state];
     if(c.kind==='requires_sleep')return l.requiresSleep;
     if(c.kind==='condition_immunity')return l.immuneTo+' '+c.condition;
+    if(c.kind==='check_total')return l.cumulative+' '+l[c.result]+' ≥ '+c.count+' · '+(c.effect_id||l.notParsed);
+    if(c.kind==='concentration_duration')return l.concentrationMaximum;
+    if(c.kind==='magic_removal')return l.magicRemoval+' · '+c.spell_name;
+    if(c.kind==='creature_type')return l[c.value]||l.notParsed;
+    if(c.kind==='event_ref')return l.effect.event+' · '+(c.effect_id||l.notParsed);
     if(c.kind==='wake_action')return l.wakeAction+' '+c.distance.maximum+' '+l.foot;
     if(c.kind==='level')return l.level+' ≥ '+c.minimum;
     if(c.kind==='ability_score')return c.ability+' ≥ '+c.minimum;
@@ -142,7 +167,7 @@ window.annaKnowledge=(()=>{
     if(c.kind==='spell_active')return l.spellActive;
     if(c.kind==='turn')return l.actor[c.subject]+' · '+l.relative[c.relative]+' · '+l.phase[c.phase];
     if(c.kind==='damage_received')return l.actor[c.subject]+' '+l.takesDamage;
-    if(c.kind==='target_property')return l.property[c.property];
+    if(c.kind==='target_property')return l.property[c.property]||l[c.property]||l.notParsed;
     if(c.kind==='can_laugh')return l.canLaugh;
     if(c.kind==='outside_spell_range')return l.outsideRange;
     if(c.kind==='cover')return l.totalCover;
@@ -178,14 +203,14 @@ window.annaKnowledge=(()=>{
   function targetDescription(t){
     if(!t)return l.notStated;
     if(t.kind==='target_ref')return l.targetDefinition+' '+(t.effect_id||l.notParsed);
-    if(t.kind==='area')return (t.measure==='radius'?l.radius+' ':'')+t.size+' '+l.foot+' '+l.shape[t.shape]+' · '+(t.chosen_by==='caster'?l.chosenByCaster:l.creature);
+    if(t.kind==='area')return (t.measure==='radius'?l.radius+' ':'')+t.size+' '+l.foot+' '+(t.shape==='radius'?l.radius:l.shape[t.shape])+' · '+(t.chosen_by==='caster'?l.chosenByCaster:l.creature)+(t.origin?' · '+l.around+' '+(t.origin.effect_id||l.notParsed):'')+(t.includes_origin?' · '+l.includesOrigin:'');
     if(t.kind==='choice')return t.count+' · '+t.choices.map(k=>l[k]||l.property[k]||k).join(' / ');
     return [t.count,t.kind?l[t.kind]||t.kind:'',t.visible?l.visible:'',t.within==='spell_range'?l.range:''].filter(Boolean).join(' · ');
   }
   function changeText(c){
     const value=c.operation==='subtract'?l.subtract+' '+expression(c.quantity):c.operation==='advantage'?l.advantageName:
-      typeof c.value==='boolean'?l[c.value?'yes':'no']:c.value?.kind==='pairwise_distance'?l.pairwise+' '+c.value.maximum+' '+l.foot:Array.isArray(c.value)?c.value.join(' / '):c.value==='self'?l.self:c.value==='advantage'?l.advantageName:c.value==='disadvantage'?l.disadvantageName:l[c.value]||String(c.value??l.notStated);
-    return (l.mechanic[c.field]||c.field)+' → '+value+(c.applies==='next_attack_against_target'?' · '+l.nextAttack:'')+(c.check?' · '+(c.check.effect_id||l.notParsed):'')+(c.applies_to?.kind==='spell_saves'?' · '+l.allSpellSaves:'');
+      typeof c.value==='boolean'?l[c.value?'yes':'no']:c.value?.effect_id?c.value.effect_id:c.value?.kind==='pairwise_distance'?l.pairwise+' '+c.value.maximum+' '+l.foot:Array.isArray(c.value)?c.value.join(' / '):c.value==='self'?l.self:c.value==='advantage'?l.advantageName:c.value==='disadvantage'?l.disadvantageName:c.value==='until_removed'?l.untilRemoved:c.value==='end'?l.endAll:l[c.value]||String(c.value??l.notStated);
+    return (l.mechanic[c.field]||c.field)+' → '+value+(c.applies==='next_attack_against_target'?' · '+l.nextAttack:'')+(c.check?' · '+(c.check.effect_id||l.notParsed):'')+(c.applies_to?.kind==='spell_saves'?' · '+l.allSpellSaves:c.applies_to?' · '+(c.applies_to.effect_id||l.notParsed):'');
   }
   const localLink=(subject,id,label)=>`<button type="button" class="link-button" data-chain-effect="${esc(id)}" data-chain-subject="${esc(subject)}">${esc(label||id)}</button>`;
   function scopeView(scope,subject){
@@ -201,19 +226,26 @@ window.annaKnowledge=(()=>{
     if(e.kind==='behavior')text=l.laugh;
     if(e.kind==='check_modifier')text=(e.check.effect_id||l.notParsed)+' → '+(e.modifier==='advantage'?l.advantageName:l.disadvantageName);
     if(e.kind==='end_spell')text=e.scope==='target'?l.endTarget:l.endAll;
-    if(e.kind==='save_override')text=l.allSpellSaves+' → '+l[e.result];
+    if(e.kind==='save_override')text=(e.applies_to.kind==='spell_saves'?l.allSpellSaves:e.applies_to.effect_id||l.notParsed)+' → '+l[e.result];
+    if(e.kind==='event')text=l[e.event]+' · '+l.after+' '+(e.after.effect_id||l.notParsed);
+    if(e.kind==='check_sequence')text=(e.check.effect_id||l.notParsed)+' · '+l.perTarget+' · '+l.initialCountUnknown;
+    if(e.kind==='sequence_policy')text=(e.sequence.effect_id||l.notParsed)+' · '+l.separateTotals+' · '+l.stopAt+' ('+l.success+' '+e.stop.success+' / '+l.failure+' '+e.stop.failure+')';
+    if(e.kind==='duration_override')text=(e.applies_to.effect_id||l.notParsed)+' → '+l.untilRemoved;
+    if(e.kind==='no_effect')text=l.noEffect;
     if(e.kind==='target_constraint')text=l.pairwise+' '+e.constraint.maximum+' '+l.foot;
     if(e.kind==='ignite')text=l.effect.ignite;
     if(e.kind==='level_scale')text=e.levels.map(x=>l.level+' '+x.level+' → '+expression(x.quantity)).join(' · ');
     if(e.kind==='teleport')text=`${l.self} → ${l.max} ${e.destination.distance.maximum} ${l.foot} · ${l.visible} · ${l.unoccupied}`;
     if(e.kind==='healing')text=`${l.touch} · ${e.target?.count||1} ${l.creature} → ${expression(e.quantity)}`;
     if(e.kind==='saving_throw')text=targetDescription(e.target)+' → '+(e.ability||l.notParsed)+' · '+(e.check_role==='repeat'?l.repeatCheck:l.initial)+(e.occurrence?' · '+l.ordinalCheck.replace('{n}',e.occurrence):'')+(e.ability_source?' · '+l.inheritedAbility:'');
-    if(e.kind==='condition')text=e.condition;
+    if(e.kind==='condition')text=e.condition+(e.form?' · '+l[e.form]:'');
     if(e.kind==='attitude')text=l.friendly;
     if(e.kind==='awareness')text=l.aware;
     if(e.kind==='upcast')text=l.upcast.replace('{level}',e.threshold)+' → '+(e.effect.kind==='additional_targets'?`${l.additional} +${e.effect.count}`:`${l.effect[e.effect.kind]} +${expression(e.effect.quantity)}`);
+    const unresolved=(e.links||[]).filter(x=>!x.target_effect_id);
+    const candidates=unresolved.length?`<details class="effect-candidates"><summary>${esc(l.unresolvedLinks)} (${unresolved.length})</summary>${unresolved.map(x=>`<p>${esc(l.referenceRole[x.role]||x.role)} · ${esc(l.candidates)}: ${x.candidate_effect_ids.length?x.candidate_effect_ids.map(id=>localLink(subject,id)).join(' · '):esc(l.missing)}</p>`).join('')}</details>`:'';
     const links=(e.links||[]).filter(x=>x.target_effect_id).filter((x,i,a)=>a.findIndex(y=>y.target_effect_id===x.target_effect_id)===i);
-    return `<section class="chain-effect" data-effect="${esc(e.id)}" tabindex="-1"><h4>${esc(l.effect[e.kind]||e.kind)} <small>${esc(e.id)}</small></h4><p>${esc(text)}</p>${e.when?`<p>${esc(l.when)}：${esc(condition(e.when))}</p>`:''}${e.ends?`<p>${esc(l.endsWhen)}：${esc(condition(e.ends))}</p>`:''}${e.use?`<p>${esc(l.ongoingCost)}：${esc(e.use.action==='bonus_action'?l.bonusAction:l.standardAction)} · ${esc(l.oncePerTurn)}</p>`:''}${e.initial_attack_result?`<p>${esc(e.initial_attack_result==='irrelevant'?l.independentAttack:l.unresolvedAttack)}</p>`:''}${(e.modifiers||[]).map(m=>`<p>${esc(l.when)}：${esc(condition(m.when))} → ${esc(m.effect==='advantage'?l.advantageName:m.effect)}</p>`).join('')}${links.length?`<p class="effect-links">${esc(l.localLinks)}：${links.map(x=>localLink(subject,x.target_effect_id)).join(' · ')}</p>`:''}${sourceLink(e.evidence)}</section>`;
+    return `<section class="chain-effect" data-effect="${esc(e.id)}" tabindex="-1"><h4>${esc(l.effect[e.kind]||e.kind)} <small>${esc(e.id)}</small></h4><p>${esc(text)}</p>${e.target&&!['attack_roll','saving_throw','damage'].includes(e.kind)?`<p class="effect-target">${esc(l.target)}：${esc(targetDescription(e.target))}</p>`:''}${e.when?`<p>${esc(l.when)}：${esc(condition(e.when))}</p>`:''}${e.ends?`<p>${esc(l.endsWhen)}：${esc(condition(e.ends))}</p>`:''}${e.use?`<p>${esc(l.ongoingCost)}：${esc(e.use.action==='bonus_action'?l.bonusAction:l.standardAction)} · ${esc(l.oncePerTurn)}</p>`:''}${e.initial_attack_result?`<p>${esc(e.initial_attack_result==='irrelevant'?l.independentAttack:l.unresolvedAttack)}</p>`:''}${(e.modifiers||[]).map(m=>`<p>${esc(l.when)}：${esc(condition(m.when))} → ${esc(m.effect==='advantage'?l.advantageName:m.effect)}</p>`).join('')}${links.length?`<p class="effect-links">${esc(l.localLinks)}：${links.map(x=>localLink(subject,x.target_effect_id)).join(' · ')}</p>`:''}${candidates}${sourceLink(e.evidence)}</section>`;
   }
   function record(r,chain,nodes,audit){
     const v=r.value,subject=nodes.get(r.subject_id);let body='';
@@ -266,13 +298,13 @@ window.annaKnowledge=(()=>{
     return `<div class="rule-chain"><p class="muted">${esc(l.scope)}</p>${readingView(c,nodes)}<a href="/api/knowledge-export?id=${encodeURIComponent(entry.id)}${c.selected_spell_id?'&spell='+encodeURIComponent(c.selected_spell_id):''}${c.reading?'&path='+encodeURIComponent(JSON.stringify(c.reading.path)):''}${c.reading?.effect_id?'&effect='+encodeURIComponent(c.reading.effect_id):''}" download>${esc(l.export)}</a>${c.records.length?[...c.records].sort((a,b)=>(a.subject_id===entry.id?0:a.kind==='spell_access'?1:2)-(b.subject_id===entry.id?0:b.kind==='spell_access'?1:2)).map(r=>record(r,c,nodes,audit)).join(''):`<p>${esc(l.empty)}</p>`}${c.options.some(o=>o.selection==='choice')&&!c.selected_spell_id?`<p>${esc(l.noPreview)}</p>`:''}${c.incoming.length?`<details><summary>${esc(l.incoming)} (${c.incoming.length})</summary>${c.incoming.map(x=>entryLink(x.entry_id,`${x.name} · ${x.ruleset==='5e'?'2014':'2024'}`,entry.id)).join(' ')}</details>`:''}</div>`;
   }
   function description(raw){
-    try{return l.filter+'：'+Object.entries(JSON.parse(raw)).map(([k,v])=>k==='spell'?l.spell+' '+v:l[k]?.[v]||v).join(' · ');}catch{return l.filter;}
+    try{return l.filter+'：'+Object.entries(JSON.parse(raw)).map(([k,v])=>k==='spell'?l.spell+' '+v:k==='cumulative_count'?l.cumulativeCount+' '+v:l[k]?.[v]||v).join(' · ');}catch{return l.filter;}
   }
   function install({params,changed,api}){
     const box=document.querySelector('#casting-filters');let last='',generation=0,countTimer,countRequest;
-    box.innerHTML=`<summary>${esc(l.filter)}</summary><p class="muted">${esc(l.hint)}</p><p class="muted">${esc(l.sameEffect)}</p><div class="casting-controls">${Object.entries(l.fields).map(([key,label])=>`<label>${esc(label)}<select data-casting="${key}" aria-label="${esc(label)}"><option value="">${esc(l.any)}</option>${Object.entries(l[key]).map(([value,text])=>`<option value="${esc(value)}">${esc(text)}</option>`).join('')}</select></label>`).join('')}<label>${esc(l.spell)}<input type="text" data-casting="spell" maxlength="200" aria-label="${esc(l.spell)}"></label></div><div class="casting-actions"><button type="button" data-casting-apply>${esc(l.apply)}</button><button type="button" data-casting-clear>${esc(l.clear)}</button></div>`;
-    const read=()=>Object.fromEntries([...box.querySelectorAll('[data-casting]')].filter(el=>el.value.trim()).map(el=>[el.dataset.casting,el.value.trim()]));
-    box.querySelector('[data-casting-apply]').onclick=()=>{const value=read();if(Object.keys(value).length)params().set('casting',JSON.stringify(value));else params().delete('casting');params().delete('not_casting');changed();};
+    box.innerHTML=`<summary>${esc(l.filter)}</summary><p class="muted">${esc(l.hint)}</p><p class="muted">${esc(l.sameEffect)}</p><p class="muted">${esc(l.subjectHint)}</p><div class="casting-controls">${Object.entries(l.fields).map(([key,label])=>`<label>${esc(label)}<select data-casting="${key}" aria-label="${esc(label)}"><option value="">${esc(key==='query_subject'?l.defaultSubject:l.any)}</option>${Object.entries(l[key]).map(([value,text])=>`<option value="${esc(value)}">${esc(text)}</option>`).join('')}</select></label>`).join('')}<label>${esc(l.cumulativeCount)}<input type="number" min="1" max="1000000" step="1" data-casting="cumulative_count" aria-label="${esc(l.cumulativeCount)}"></label><label>${esc(l.spell)}<input type="text" data-casting="spell" maxlength="200" aria-label="${esc(l.spell)}"></label></div><div class="casting-actions"><button type="button" data-casting-apply>${esc(l.apply)}</button><button type="button" data-casting-clear>${esc(l.clear)}</button></div>`;
+    const read=()=>Object.fromEntries([...box.querySelectorAll('[data-casting]')].filter(el=>el.value.trim()).map(el=>[el.dataset.casting,el.dataset.casting==='cumulative_count'?Number(el.value):el.value.trim()]));
+    box.querySelector('[data-casting-apply]').onclick=()=>{if([...box.querySelectorAll('input')].some(el=>!el.reportValidity()))return;const value=read();if(Object.keys(value).length)params().set('casting',JSON.stringify(value));else params().delete('casting');params().delete('not_casting');changed();};
     box.querySelector('[data-casting-clear]').onclick=()=>{params().delete('casting');params().delete('not_casting');changed();};
     box.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target.matches('input')){event.preventDefault();box.querySelector('[data-casting-apply]').click();}});
     async function counts(gen){
@@ -284,8 +316,12 @@ window.annaKnowledge=(()=>{
       }catch{/* Main query owns error presentation; counts never replace edited values. */}
     }
     function scheduleCounts(){clearTimeout(countTimer);countRequest?.abort();const gen=++generation;if(box.open)countTimer=setTimeout(()=>counts(gen),180);}
-    box.addEventListener('toggle',scheduleCounts);box.addEventListener('change',scheduleCounts);
-    return {sync(){const raw=params().get('casting')||params().get('not_casting')||'';if(raw!==last){let value={};try{value=raw?JSON.parse(raw):{};}catch{}for(const input of box.querySelectorAll('[data-casting]'))input.value=value[input.dataset.casting]||'';if(raw)box.open=true;last=raw;}scheduleCounts();}};
+    function subjectMode(){
+      const direct=box.querySelector('[data-casting=query_subject]').value==='spell';
+      for(const key of ['mode','resource','recovery','selection','access_condition','casting_target']){const control=box.querySelector(`[data-casting="${key}"]`);control.disabled=direct;if(direct)control.value='';}
+    }
+    box.addEventListener('toggle',scheduleCounts);box.addEventListener('change',()=>{subjectMode();scheduleCounts();});
+    return {sync(){const raw=params().get('casting')||params().get('not_casting')||'';if(raw!==last){let value={};try{value=raw?JSON.parse(raw):{};}catch{}for(const input of box.querySelectorAll('[data-casting]'))input.value=value[input.dataset.casting]||'';if(raw)box.open=true;last=raw;}subjectMode();scheduleCounts();}};
   }
   return {labels:l,render,description,install,pathTo};
 })();

@@ -662,9 +662,13 @@ test('reader shows the original layout with field notes tied to their words and 
   await note.focus();await expect(mark).toHaveClass(/lit/);
   await expect(page.locator('.field-note.unlocated').first()).toBeVisible();
   await shot(page,testInfo,'layout-reader-notes.png');
-  // At 1280px the side reader is too narrow for text and margin both, so the notes follow the text.
+  // Notes respond to the reader container, not the viewport. Explicitly narrow
+  // the adjustable side reader instead of assuming a particular default share.
   await page.setViewportSize({width:1280,height:800});
+  const separator=page.getByRole('separator',{name:'调整阅读栏宽度'});
+  await separator.focus();await page.keyboard.press('Home');
   await expect.poll(async()=>{const n=await note.boundingBox(),box=await layout.boundingBox();return n.y>=box.y+box.height;}).toBeTruthy();
+  await separator.dblclick();await expect(separator).toHaveAttribute('aria-valuenow','60');
   await page.setViewportSize({width:1100,height:820});
   // An unavailable or changed source never yields a partial layout; extracted text stands in with the reason.
   await page.route('**/api/entry-layout?*',route=>route.fulfill({status:200,contentType:'application/json',body:JSON.stringify({status:'stale',path:'x'})}));
@@ -672,6 +676,7 @@ test('reader shows the original layout with field notes tied to their words and 
   await expect(page.locator('#detail-panel .layout-notice')).toContainText('原文已更新');
   await expect(page.locator('#detail-panel .body-text')).toContainText('以太');
   await expect(page.locator('#detail-panel .layout-text')).toHaveCount(0);
+  await page.setViewportSize({width:1280,height:800});
 });
 
 test('reader sets label lines as a parameter card, starts after the title and groups audit tabs',async({page})=>{

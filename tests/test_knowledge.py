@@ -316,6 +316,87 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(grants[0]['target']['resolution']['targets'],['spell'])
         self.assertEqual(self.effective()['status'],'resolved')
 
+    def test_cumulative_queries_follow_the_same_sequence_target_and_usage_branch(self):
+        from test_check_sequences import STONE
+        from effect_queries import audit_effect_index
+        self.spell='测试法术 Test Spell\n'+STONE
+        self.rules=[('save','豁免检定 Saving Throws\n定义。','豁免检定','Saving Throws','rule'),
+                    ('duration','持续时间 Duration\n定义。','持续时间','Duration','rule'),
+                    ('restoration','高等复原术 Greater Restoration\n施法时间：动作\n持续时间：立即\n未支持的正文。','高等复原术','Greater Restoration','spell')]
+        self.rebuild()
+        def roots(q):
+            sql,args=casting_condition(q)
+            return {r[0] for r in self.db.execute('SELECT e.id FROM entries e WHERE '+sql,args)}
+        query={'effect':'condition','cumulative_result':'failure','cumulative_count':3,'save_ability':'体质','target_scope':'single','timing':'cumulative'}
+        self.assertEqual(roots(query),{'feat'})
+        self.assertEqual(roots({**query,'resource':'slot_free','recovery':'long_rest'}),{'feat'})
+        self.assertEqual(roots({**query,'resource':'spell_slot','recovery':'long_rest'}),set())
+        for field,wrong in [('cumulative_count',2),('cumulative_result','success'),('save_ability','感知'),('target_scope','area'),('timing','repeat')]:
+            self.assertEqual(roots({**query,field:wrong}),set(),field)
+        self.assertEqual(roots({**query,'query_subject':'spell'}),{'spell'})
+        self.assertEqual(roots({'query_subject':'spell','spell':'测试'}),{'spell'})
+        self.assertEqual(roots({'query_subject':'provider'}),{'feat'})
+        with self.assertRaisesRegex(ValueError,'provider'):casting_condition({**query,'query_subject':'spell','resource':'slot_free'})
+        for count in [0,-1,True,1.5,'3',None,1000001]:
+            with self.assertRaisesRegex(ValueError,'count'):casting_condition({'cumulative_count':count})
+        read=chain(self.db,'feat','spell',effect_id='effect_9')
+        record=next(r for r in read['records'] if r['kind']=='spell_effect' and r['subject_id']=='spell')
+        self.assertEqual(read['reading']['effect_id'],'effect_9')
+        self.assertEqual(record['value']['effects'][8]['when']['effect_id'],'effect_7')
+        removal=chain(self.db,'feat','spell',['feat','spell','restoration'])
+        self.assertEqual(removal['reading']['steps'][-1]['relations'][0]['relation'],'removed_by')
+        reverse=chain(self.db,'duration',reading_path=['duration','spell'])
+        links=reverse['reading']['steps'][0]['relations']
+        cumulative=next(r for r in links if r['when'].get('kind')=='check_total')
+        self.assertEqual(cumulative['when']['count'],3);self.assertEqual(cumulative['scope']['effect_id'],'effect_8')
+        exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]
+        self.assertEqual(next(r for r in exported if r['id']==record['id']),record)
+        self.assertEqual(audit_effect_index(self.db,exported),[])
+        self.db.execute("UPDATE spell_effect_index SET target_scope='area' WHERE effect_id='effect_9'")
+        self.assertTrue(audit_effect_index(self.db,exported))
+
+    def test_threshold_result_and_count_are_correlated_inside_one_predicate(self):
+        from test_check_sequences import STONE
+        from effect_queries import build_effect_index
+        self.spell='测试法术 Test Spell\n'+STONE;self.rebuild()
+        record=json.loads(self.db.execute("SELECT data FROM effective_knowledge WHERE subject_id='spell'").fetchone()[0])
+        outcome=record['value']['effects'][7]
+        success=outcome['when'];outcome['when']={'any':[success,{**success,'result':'failure','count':5}]}
+        # Consumer fixture: a single effect with two independent threshold terms.
+        # The policy conflicts intentionally stay outside this consumer-only fixture.
+        self.db.execute('DROP TABLE spell_effect_index');build_effect_index(self.db,[record])
+        for result,count,wanted in [('success',3,True),('failure',5,True),('success',5,False),('failure',3,False)]:
+            sql,args=casting_condition({'effect':'end_spell','cumulative_result':result,'cumulative_count':count})
+            self.assertEqual(bool(self.db.execute('SELECT 1 FROM entries e WHERE '+sql,args).fetchone()),wanted)
+
+    def test_cumulative_review_dependencies_and_competing_rules_remain_explicit(self):
+        from test_check_sequences import STONE
+        self.spell='测试法术 Test Spell\n'+STONE
+        self.rules=[(eid,'豁免检定 Saving Throws\n'+eid+'定义。','豁免检定','Saving Throws','rule') for eid in ('chapter','glossary')]
+        self.rebuild()
+        record=json.loads(self.db.execute("SELECT data FROM effective_knowledge WHERE subject_id='spell'").fetchone()[0])
+        self.assertEqual(record['status'],'resolved')
+        save_link=next(r for r in record['value']['rules'] if r['scope'].get('effect_id')=='effect_7')
+        self.assertEqual(save_link['target']['resolution']['status'],'ambiguous')
+        self.assertEqual(set(save_link['target']['resolution']['targets']),{'chapter','glossary'})
+        view=inspect(self.db,record['id']);save(self.db,self.log,record['id'],'knowledge_accept',view['basis_sha256'],'fixture','checked sequence')
+        self.rebuild();self.spell=self.spell.replace('累计三次','累计四次');self.rebuild()
+        effective=json.loads(self.db.execute('SELECT data FROM effective_knowledge WHERE id=?',(record['id'],)).fetchone()[0])
+        self.assertEqual(effective['review_status'],'stale')
+        self.assertEqual(self.db.execute("SELECT count(*) FROM spell_effect_index WHERE spell_id='spell'").fetchone()[0],0)
+        self.assertTrue(chain(self.db,'feat')['options'])
+
+    def test_target_scoped_queries_never_pair_the_single_attack_with_area_save_damage(self):
+        from test_check_sequences import AREAS
+        self.spell='测试法术 Test Spell\n'+AREAS;self.rebuild()
+        sql,args=casting_condition({'effect':'damage','damage_type':'cold','save_ability':'敏捷','target_scope':'area'})
+        self.assertEqual({r[0] for r in self.db.execute('SELECT e.id FROM entries e WHERE '+sql,args)},{'feat'})
+        self.spell=self.spell.replace('10尺球状','10尺锥状');self.rebuild()
+        self.assertEqual(self.db.execute('SELECT count(*) FROM entries e WHERE '+sql,args).fetchone()[0],0)
+        record=json.loads(self.db.execute("SELECT data FROM effective_knowledge WHERE subject_id='spell'").fetchone()[0])
+        self.assertEqual(record['status'],'partial')
+        self.assertTrue(chain(self.db,'feat')['options'])
+
     def test_exports_and_evidence_are_exact(self):
         exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]
         self.assertEqual({r['id'] for r in exported},{r[0] for r in self.db.execute('SELECT id FROM effective_knowledge')})

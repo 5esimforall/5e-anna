@@ -150,6 +150,50 @@ class WebTests(unittest.TestCase):
         counts={row['value']:row['count'] for row in json.loads(raw)['groups']['save_ability']}
         self.assertGreater(counts['感知'],0);self.assertEqual(counts['体质'],0)
 
+    def test_cumulative_and_target_scope_filters_reach_real_spells_and_public_exports(self):
+        condition={'query_subject':'spell','effect':'condition','cumulative_result':'failure','cumulative_count':3,
+                   'save_ability':'体质','timing':'cumulative','target_scope':'single'}
+        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(condition),'versions':'each'}))
+        self.assertEqual(status,200);rows=json.loads(raw)['rows']
+        stone=next(r for r in rows if r['name_en']=='Flesh to Stone' and r['ruleset']=='5r')
+        self.assertFalse(any(r['name_en']=='Flesh to Stone' and r['ruleset']=='5e' for r in rows))
+        excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each']})
+        self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
+        for field,value in [('cumulative_count',2),('cumulative_result','success'),('save_ability','感知'),('target_scope','area')]:
+            query_params={'casting':[json.dumps({**condition,field:value})],'versions':['each']}
+            self.assertNotIn(stone['id'],{e['id'] for e in query(self.db,query_params)['rows']})
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
+        self.assertEqual(status,200);groups=json.loads(raw)['groups']
+        counts={r['value']:r['count'] for r in groups['cumulative_result']}
+        self.assertGreater(counts['failure'],0);self.assertEqual(counts['success'],0)
+        self.assertTrue(all(r['count']==0 for r in groups['resource']))
+        args={'id':stone['id'],'effect':'effect_9'}
+        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
+        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='spell_effect' and r['subject_id']==stone['id'])
+        self.assertEqual(effects[8]['when']['effect_id'],'effect_7');self.assertEqual(effects[6]['check']['effect_id'],'effect_6')
+        self.assertEqual(effects[5]['repeat_of']['effect_id'],'effect_2')
+        self.assertEqual(effects[6]['initial_inclusion'],'not_stated')
+        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
+        status,_,raw=self.request('/api/entry?'+urlencode({'id':stone['id'],'chain_effect':'effect_9'}));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],chain)
+        for bad in [0,True,'3',1.5,None]:
+            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({**condition,'cumulative_count':bad})}))[0],400)
+        for field in ['query_subject','target_scope','cumulative_result']:
+            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({field:'invalid'})}))[0],400)
+        self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({**condition,'resource':'slot_free'})}))[0],400)
+
+    def test_area_save_query_does_not_borrow_single_target_attack(self):
+        condition={'spell':'冰刃','effect':'damage','damage_type':'cold','target_scope':'area','delivery':'saving_throw','resource':'slot_free'}
+        rows=query(self.db,{'casting':[json.dumps(condition)],'versions':['each']})['rows']
+        self.assertTrue(any(r['name_zh']=='智者' for r in rows))
+        for change in [{'delivery':'attack_roll'},{'target_scope':'single'},{'damage_type':'piercing'}]:
+            self.assertFalse(query(self.db,{'casting':[json.dumps({**condition,**change})]})['rows'])
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
+        self.assertEqual(status,200)
+        subject_counts={r['value']:r['count'] for r in json.loads(raw)['groups']['query_subject']}
+        switched={k:v for k,v in condition.items() if k!='resource'}|{'query_subject':'spell'}
+        self.assertEqual(subject_counts['spell'],query(self.db,{'casting':[json.dumps(switched)],'versions':['each']})['total'])
+        self.assertGreater(subject_counts['spell'],0)
+
     def test_invalid_query(self):
         for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)

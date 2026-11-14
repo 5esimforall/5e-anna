@@ -231,3 +231,82 @@ test('rule-chain conditions and reference labels have matching Chinese and Engli
   for(const key of ['access_condition','casting_target','save_ability','trigger','end_trigger'])expect(Object.keys(zh[key])).toEqual(Object.keys(en[key]));
   expect(en.allSpellSaves).toBe('All saves against this spell');
 });
+
+test('cumulative queries select spells and preserve counts, scope, rule exceptions and local focus',async({page,request})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(anna);await ready(page);
+  await page.locator('#toggle-filters').click();await page.locator('#casting-filters summary').click();
+  await page.locator('[data-casting=resource]').selectOption('slot_free');
+  await page.locator('[data-casting=query_subject]').selectOption('spell');
+  await expect(page.locator('[data-casting=resource]')).toBeDisabled();await expect(page.locator('[data-casting=resource]')).toHaveValue('');
+  await page.locator('[data-casting=query_subject]').selectOption('provider');await expect(page.locator('[data-casting=resource]')).toBeEnabled();await expect(page.locator('[data-casting=resource]')).toHaveValue('');
+  await page.locator('[data-casting=query_subject]').selectOption('spell');
+  for(const [field,value] of Object.entries({effect:'condition',cumulative_result:'failure',save_ability:'体质',target_scope:'single',timing:'cumulative'}))await page.locator(`[data-casting=${field}]`).selectOption(value);
+  await page.locator('[data-casting=cumulative_count]').fill('0');await page.locator('[data-casting-apply]').click();await expect(page).not.toHaveURL(/casting=/);
+  await page.locator('[data-casting=cumulative_count]').fill('3');await page.locator('[data-casting-apply]').click();await ready(page);
+  const filter=JSON.parse(new URL(page.url()).searchParams.get('casting'));expect(filter.cumulative_count).toBe(3);expect(filter.resource).toBeUndefined();
+  await page.locator('#results .entry-name').filter({hasText:'石化术'}).click();await page.getByRole('tab',{name:'规则链',exact:true}).click();
+  await expect(page.locator('[data-effect=effect_9]')).toContainText('累计 失败 ≥ 3');
+  await page.locator('[data-effect=effect_9] [data-chain-effect=effect_7]').click();
+  await expect(page.locator('[data-effect=effect_7]')).toBeFocused();
+  await expect(page.locator('[data-effect=effect_7]')).toContainText('每个目标分别计数');
+  await expect(page.locator('[data-effect=effect_7]')).toContainText('原文未明确首次检定是否计入累计');
+  await expect(page.locator('[data-effect=effect_10]')).toContainText('成功与失败分别累计，无需连续');
+  await page.locator('[data-effect=effect_7] [data-chain-effect=effect_6]').click();
+  await page.locator('[data-effect=effect_6] [data-chain-effect=effect_2]').click();await expect(page.locator('[data-effect=effect_2]')).toBeFocused();
+  await page.goBack();await expect(page).toHaveURL(/chain_effect=effect_6/);await page.reload();await expect(page.locator('[data-effect=effect_6]')).toBeFocused();
+  await expect(page.locator('[data-casting=cumulative_count]')).toHaveValue('3');
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  const root=exported.chain.reading.root_id;expect(exported.chain.reading.effect_id).toBe('effect_6');
+  const exception=exported.chain.edges.find(e=>e.relation==='exception_to'&&e.scope.effect_id==='effect_11');expect(exception).toBeTruthy();
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root,tab:'chain',chain_path:JSON.stringify([root,exception.target_id])}));
+  await expect(page.locator('.chain-step')).toContainText('专注维持至法术最大持续时间');
+  await expect(page.locator('.chain-step')).toContainText('高等复原术');
+  await page.locator('.chain-step [data-chain-effect=effect_11]').click();await expect(page.locator('[data-effect=effect_11]')).toBeFocused();
+  await page.locator('[data-effect=effect_11] [data-chain-effect=effect_9]').click();await expect(page.locator('[data-effect=effect_9]')).toBeFocused();
+  const popup=page.waitForEvent('popup');await page.locator(`.knowledge-record[data-subject="${root}"] > .detail-links a`).click();
+  const stella=await popup;await expect(stella.locator('#book-main')).toHaveAttribute('aria-busy','false');await stella.locator('.companion-more').click();
+  await stella.locator('#companion-menu').getByRole('group',{name:'最近'}).locator('[href*="chain_effect=effect_9"]').click();
+  await expect(stella.locator('[data-effect=effect_9]')).toBeFocused();await stella.close();
+  const removal=exported.chain.edges.find(e=>e.relation==='removed_by');expect(removal).toBeTruthy();
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root,tab:'chain',chain_path:JSON.stringify([root,removal.target_id])}));
+  await expect(page.locator('.chain-step')).toContainText('由该法术移除');
+  await expect(page.locator('.chain-path [aria-current=step]')).toContainText('高等复原术');
+  await page.locator('.chain-step [data-chain-effect=effect_11]').click();await expect(page.locator('[data-effect=effect_11]')).toBeFocused();
+  await page.setViewportSize({width:390,height:844});await page.getByRole('tab',{name:'规则链',exact:true}).focus();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab',{name:'规则链',exact:true})).toHaveAttribute('aria-selected','true');
+  await page.locator('[data-effect=effect_7]').scrollIntoViewIfNeeded();
+  expect(await page.locator('.rule-chain').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  await page.screenshot({path:'output/playwright/check-sequence-mobile.png'});await page.setViewportSize({width:1280,height:800});
+  expect(errors).toEqual([]);
+});
+
+test('single attack and area checks stay distinct through provider queries and local links',async({page,request})=>{
+  const root=await corpusEntry(request,'智者'),spell=await corpusEntry(request,'冰刃');
+  const casting={effect:'damage',damage_type:'cold',target_scope:'area',delivery:'saving_throw',spell:'冰刃'};
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',chain_spell:spell.id,casting:JSON.stringify(casting)}));
+  await expect(page.locator('[data-effect=effect_5]')).toContainText('包含原攻击目标');
+  await expect(page.locator('[data-effect=effect_4]')).toContainText('无论首击是否命中');
+  await expect(page.locator('[data-effect=effect_7]')).toContainText('寒冷');
+  await page.locator('[data-effect=effect_7] [data-chain-effect=effect_5]').click();await expect(page.locator('[data-effect=effect_5]')).toBeFocused();
+  await page.locator('[data-effect=effect_5] [data-chain-effect=effect_1]').click();await expect(page.locator('[data-effect=effect_1]')).toBeFocused();
+  await page.reload();await expect(page.locator('[data-effect=effect_1]')).toBeFocused();
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  expect(exported.chain.reading.path[0]).toBe(root.id);expect(exported.chain.reading.focus_id).toBe(spell.id);
+  const mismatched=await (await request.get(anna+'/api/entries?'+new URLSearchParams({casting:JSON.stringify({...casting,delivery:'attack_roll'})}))).json();expect(mismatched.rows).toEqual([]);
+});
+
+test('ambiguous local candidates remain inspectable without confirming a reference',()=>{
+  const vm=require('node:vm'),fs=require('node:fs');
+  const context=vm.createContext({window:{},annaKit:{esc:String},document:{documentElement:{lang:'zh'}},URLSearchParams});
+  vm.runInContext(fs.readFileSync('web/knowledge.js','utf8'),context);
+  const ev={path:'fixture.htm',span:[0,3],raw:'原文。'};
+  const statement={id:'effect_3',kind:'condition',condition:'石化',evidence:ev,
+    when:{kind:'save_result',result:'failure',effect_id:null,candidate_effect_ids:['effect_1','effect_2']},
+    links:[{field:'when',role:'save_result',target_effect_id:null,candidate_effect_ids:['effect_1','effect_2'],status:'unresolved'}]};
+  const entry={id:'fixture',rule_chain:{options:[],incoming:[],edges:[],nodes:[{id:'fixture',name:'夹具'}],records:[{id:'record',subject_id:'fixture',kind:'spell_effect',status:'partial',review_status:'unreviewed',value:{casting:{},effects:[statement],rules:[],unparsed:[{reason:'unresolved_effect_condition',evidence:ev}]}}]}};
+  const before=JSON.stringify(entry),html=context.window.annaKnowledge.render(entry,false);
+  expect(html).toContain('effect-candidates');expect(html).toContain('候选（查看不确认）');
+  expect(html).toContain('data-chain-effect="effect_1"');expect(html).toContain('data-chain-effect="effect_2"');
+  expect(html).toContain('部分解析');expect(JSON.stringify(entry)).toBe(before);
+});

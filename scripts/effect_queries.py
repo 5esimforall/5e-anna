@@ -4,15 +4,41 @@ from rule_conditions import local_references, condition_terms, ABILITIES
 from spell_effects import DAMAGE_TYPES
 
 QUERY_VALUES={
-    'effect':('teleport','healing','saving_throw','condition','attitude','awareness','upcast','targets','attack_roll','damage','modifier','restriction','behavior','check_modifier','end_spell','level_scale','ignite','save_override','target_constraint'),
+    'effect':('teleport','healing','saving_throw','condition','attitude','awareness','upcast','targets','attack_roll','damage','modifier','restriction','behavior','check_modifier','end_spell','level_scale','ignite','save_override','target_constraint','event','check_sequence','sequence_policy','duration_override','no_effect'),
     'damage_type':tuple(DAMAGE_TYPES.values()),
     'delivery':('attack_roll','saving_throw','automatic','not_stated'),
-    'timing':('immediate','ongoing','repeat','not_stated'),
+    'timing':('immediate','ongoing','repeat','cumulative','not_stated'),
     'save_ability':(*ABILITIES,'not_stated'),
-    'trigger':('attack_result','save_result','turn','damage_received','wake_action','outside_spell_range','cover','action_spent','requires_sleep','condition_immunity'),
-    'end_trigger':('turn','spell_ends','damage_from'),
+    'trigger':('attack_result','save_result','turn','damage_received','wake_action','outside_spell_range','cover','action_spent','requires_sleep','condition_immunity','check_total','concentration_duration','creature_type','event_ref'),
+    'end_trigger':('turn','spell_ends','damage_from','magic_removal'),
+    'target_scope':('single','area','not_stated'),
+    'cumulative_result':('success','failure'),
 }
-COLUMNS=('id','spell_id','effect_id','effect','damage_type','delivery','timing','save_ability')
+QUERY_PARAMETERS={'cumulative_count'}
+COLUMNS=('id','spell_id','effect_id','effect','damage_type','delivery','timing','save_ability','target_scope')
+
+
+def check_sources(effect,by_id):
+    """Follow typed sequence references, never collect all checks in the spell."""
+    if effect['kind']=='saving_throw':return [effect]
+    found={}
+    for _,ref in local_references(effect):
+        target=by_id.get(ref.get('effect_id'))
+        if not target:continue
+        if ref['kind'] in {'save_result','check_ref'}:found[target['id']]=target
+        elif ref['kind'] in {'check_total','sequence_ref'}:
+            found.update({c['id']:c for c in check_sources(target,by_id)})
+    return list(found.values())
+
+
+def target_scope(effect,by_id,saves):
+    target=effect.get('selection') if effect['kind']=='targets' else effect.get('target')
+    if not target and saves:
+        targets=[s.get('target') for s in saves]
+        if all(t==targets[0] for t in targets):target=targets[0]
+    if not target:return 'not_stated'
+    if target.get('kind')=='target_ref':target=by_id.get(target.get('effect_id'),{}).get('selection',{})
+    return 'area' if target.get('kind')=='area' else 'single' if target.get('count')==1 else 'not_stated'
 
 
 def effect_rows(records):
@@ -26,15 +52,17 @@ def effect_rows(records):
             if not delivery:
                 delivery=effect['kind'] if effect['kind'] in {'attack_roll','saving_throw'} else \
                     'attack_roll' if any(r['kind']=='attack_result' for r in refs) else \
-                    'saving_throw' if any(r['kind'] in {'save_result','check_ref'} for r in refs) else 'not_stated'
+                    'saving_throw' if any(r['kind'] in {'save_result','check_ref','check_total','sequence_ref'} for r in refs) else 'not_stated'
             timing=effect.get('timing')
-            if not timing:timing='repeat' if effect.get('check_role')=='repeat' or any(r['kind'] in {'check_ref','save_result'} and r.get('scope')=='repeat' for r in refs) else 'immediate' if delivery in {'attack_roll','saving_throw'} else 'not_stated'
-            saves=[effect] if effect['kind']=='saving_throw' else [by_id[r['effect_id']] for r in refs if r['kind'] in {'save_result','check_ref'} and r.get('effect_id')]
+            if not timing:timing='cumulative' if any(r['kind']=='check_total' for r in refs) else 'repeat' if effect.get('check_role')=='repeat' or any(r['kind'] in {'check_ref','save_result'} and r.get('scope')=='repeat' for r in refs) else 'immediate' if delivery in {'attack_roll','saving_throw'} else 'not_stated'
+            saves=check_sources(effect,by_id)
             abilities={s.get('ability') for s in saves}
             save_ability=next(iter(abilities)) if len(abilities)==1 else None
             yield {'id':record['id']+':'+effect['id'],'spell_id':record['subject_id'],'effect_id':effect['id'],
                    'effect':effect['kind'],'damage_type':effect.get('damage_type','not_stated'),'delivery':delivery,'timing':timing,
                    'save_ability':save_ability or 'not_stated',
+                   'target_scope':target_scope(effect,by_id,saves),
+                   'thresholds':[{'result':r['result'],'count':r['count'],'sequence_id':r['effect_id']} for r in refs if r['kind']=='check_total'],
                    'triggers':sorted({t['kind'] for t in condition_terms(effect.get('when')) if 'kind' in t}),
                    'end_triggers':sorted({t['kind'] for t in condition_terms(effect.get('ends')) if 'kind' in t}),
                    'record_id':record['id'],'review_status':record['review_status'],'statement':effect}
@@ -42,10 +70,10 @@ def effect_rows(records):
 
 def build_effect_index(db,records):
     db.executescript('''CREATE TABLE spell_effect_index(id TEXT PRIMARY KEY,spell_id TEXT REFERENCES entries(id),
-        effect_id TEXT,effect TEXT,damage_type TEXT,delivery TEXT,timing TEXT,save_ability TEXT,data TEXT NOT NULL);
+        effect_id TEXT,effect TEXT,damage_type TEXT,delivery TEXT,timing TEXT,save_ability TEXT,target_scope TEXT,data TEXT NOT NULL);
         CREATE INDEX spell_effect_subject ON spell_effect_index(spell_id,effect,damage_type,delivery,timing);''')
     for row in effect_rows(records):
-        db.execute('INSERT INTO spell_effect_index VALUES(?,?,?,?,?,?,?,?,?)',tuple(row[k] for k in COLUMNS)+(json.dumps(row,ensure_ascii=False),))
+        db.execute('INSERT INTO spell_effect_index VALUES('+','.join('?' for _ in range(len(COLUMNS)+1))+')',tuple(row[k] for k in COLUMNS)+(json.dumps(row,ensure_ascii=False),))
 
 
 def audit_effect_index(db,records):

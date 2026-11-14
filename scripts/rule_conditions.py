@@ -5,6 +5,19 @@ ABILITIES=('力量','敏捷','体质','智力','感知','魅力')
 CLASSES=('吟游诗人','牧师','德鲁伊','圣武士','游侠','术士','法师','魔契师','奇械师')
 
 
+def reference(kind, **criteria):return {'kind':kind,**criteria}
+
+
+def outcome(kind, result, scope='initial', **criteria):
+    return reference(kind+'_result',result=result,scope=scope,**criteria)
+
+
+def target_ref(**criteria):return reference('target_ref',**criteria)
+
+
+def turn(subject,phase,relative):return reference('turn',subject=subject,phase=phase,relative=relative)
+
+
 def conjunction(*terms):
     terms=[term for term in terms if term]
     return terms[0] if len(terms)==1 else {'all':terms} if terms else None
@@ -101,7 +114,8 @@ def condition_terms(value):
 
 
 REFERENCE_KINDS={'attack_result':'attack_roll','save_result':'saving_throw','target_ref':'targets',
-                 'check_ref':'saving_throw','damage_ref':'damage','quantity_ref':'damage','condition':'condition'}
+                 'check_ref':'saving_throw','damage_ref':'damage','quantity_ref':'damage','condition':'condition',
+                 'check_total':'check_sequence','sequence_ref':'check_sequence','attack_complete':'attack_roll','event_ref':'event'}
 
 
 def local_references(value,path=''):
@@ -117,6 +131,9 @@ def local_references(value,path=''):
 
 def matches_reference(effect,ref):
     if effect['kind']!=REFERENCE_KINDS[ref['kind']]:return False
+    if ref.get('target'):
+        wanted=ref['target'].get('effect_id')
+        if not wanted or effect.get('target',{}).get('effect_id')!=wanted:return False
     if ref['kind']=='condition':return effect['condition']==ref['value']
     if ref['kind']=='target_ref' and ref.get('selector')=='area':
         return effect['selection']['kind']=='area' and (not ref.get('shape') or ref['shape']==effect['selection'].get('shape'))
@@ -125,8 +142,23 @@ def matches_reference(effect,ref):
             (not ref.get('ability') or effect.get('ability')==ref['ability']) and \
             ('occurrence' not in ref or effect.get('occurrence')==ref['occurrence'])
     if ref['kind'] in {'damage_ref','quantity_ref'}:
-        return effect['quantity']['kind']!='quantity_ref' and (ref.get('selector')!='initial_damage' or effect.get('timing')=='immediate')
+        return effect['quantity']['kind']!='quantity_ref' and (ref.get('selector')!='initial_damage' or effect.get('timing')=='immediate') and \
+            (not ref.get('damage_type') or ref['damage_type']==effect['damage_type'])
     return True
+
+
+def reference_candidates(effects,index,effect,ref):
+    prior=effects[:index];selector=ref.get('selector')
+    if selector=='same_clause':prior=[e for e in prior if e['evidence']['span']==effect['evidence']['span']]
+    elif selector=='same_paragraph':
+        prior=[e for e in prior if effect.get('paragraph') and e.get('paragraph')==effect['paragraph']]
+    elif selector=='previous_check':
+        checks=[e for e in prior if e['kind'] in {'saving_throw','attack_roll'}]
+        prior=[e for e in checks if e['evidence']['span']==checks[-1]['evidence']['span']] if checks else []
+    elif selector=='attack_target':
+        targets={e.get('target',{}).get('effect_id') for e in prior if e['kind']=='attack_roll'}
+        prior=[e for e in prior if e['id'] in targets]
+    return [e for e in prior if matches_reference(e,ref)]
 
 
 def effect_links(effect):
@@ -140,20 +172,12 @@ def bind_effects(effects,unparsed=()):
     gaps=[]
     for index,effect in enumerate(effects):effect['id']='effect_'+str(index+1)
     for index,effect in enumerate(effects):
-        # Resolve an inherited check first. Its ability is a supplied value, with an
-        # explicit link to the statement supplying it, rather than a second observation.
         refs=list(local_references(effect))
-        refs.sort(key=lambda item:0 if item[0]=='repeat_of' else 1)
+        # Nested target constraints must resolve before their check, and a repeated
+        # check supplies its evidenced ability before later statements refer to it.
+        refs.sort(key=lambda item:(0 if item[1]['kind']=='target_ref' else 1 if item[0]=='repeat_of' else 2,-item[0].count('.')))
         for field,ref in refs:
-            prior=effects[:index]
-            selector=ref.get('selector')
-            if selector=='same_clause':prior=[e for e in prior if e['evidence']['span']==effect['evidence']['span']]
-            elif selector=='previous_check':
-                checks=[e for e in prior if e['kind'] in {'saving_throw','attack_roll'}]
-                # Pick a statement group, not the last matching value. A later check
-                # of a different type/ability must not silently revive an older check.
-                prior=[e for e in checks if e['evidence']['span']==checks[-1]['evidence']['span']] if checks else []
-            candidates=[e for e in prior if matches_reference(e,ref)]
+            candidates=reference_candidates(effects,index,effect,ref)
             ref['candidate_effect_ids']=[e['id'] for e in candidates]
             ref['effect_id']=candidates[0]['id'] if len(candidates)==1 else None
             if ref['effect_id'] and any(candidates[0]['evidence']['span'][1]<=g['evidence']['span'][0]<effect['evidence']['span'][0] for g in unparsed):
@@ -165,6 +189,17 @@ def bind_effects(effects,unparsed=()):
             if field=='repeat_of' and effect.get('ability_source')=='repeat_of':
                 effect['ability']=candidates[0].get('ability') if ref['effect_id'] else None
         effect['links']=effect_links(effect)
+    # Different thresholds may be stages or conflicting policies. Without that
+    # relationship, retain competing statements instead of selecting the last one.
+    for sequence in (e for e in effects if e['kind']=='check_sequence'):
+        policies=[e for e in effects if e['kind']=='sequence_policy' and e['sequence'].get('effect_id')==sequence['id']]
+        thresholds=[(e,r) for e in effects for _,r in local_references(e) if r['kind']=='check_total' and r.get('effect_id')==sequence['id']]
+        for result in ('success','failure'):
+            counts={r['count'] for _,r in thresholds if r['result']==result}|{p['stop'][result] for p in policies}
+            if len(counts)>1:
+                for e in [*[e for e,r in thresholds if r['result']==result],*policies]:
+                    gap={'reason':'competing_sequence_threshold','field':result,'evidence':e['evidence']}
+                    if gap not in gaps:gaps.append(gap)
     return gaps
 
 
@@ -181,22 +216,41 @@ def validate_conditions(record):
             if not matches_reference(by_id[target_id],ref):raise ValueError('Local effect reference has the wrong type or scope')
     for index,effect in enumerate(effects):
         check(effect,index)
+        paragraph=effect.get('paragraph')
+        if paragraph and (paragraph['path']!=effect['evidence']['path'] or not paragraph['span'][0]<=effect['evidence']['span'][0]<effect['evidence']['span'][1]<=paragraph['span'][1]):
+            raise ValueError('Effect escapes its source paragraph')
+        if effect['kind']=='check_sequence' and (effect.get('counting_scope')!='per_target' or effect.get('initial_inclusion')!='not_stated'):
+            raise ValueError('Unsupported check sequence counting scope')
+        if effect['kind']=='check_sequence' and effect['check'].get('effect_id'):
+            repeated=by_id[effect['check']['effect_id']]
+            # Selection syntax may differ while naming the very same target.
+            if effect['check'].get('scope')!='repeat' or repeated.get('target',{}).get('effect_id')!=effect.get('target',{}).get('effect_id'):
+                raise ValueError('Check sequence and repeated check disagree on target scope')
+        if effect['kind']=='sequence_policy':
+            if effect.get('consecutive') is not False or effect.get('counting')!='separate_totals' or set(effect.get('stop',{}))!={'success','failure'} or any(type(n) is not int or n<1 for n in effect['stop'].values()):
+                raise ValueError('Invalid check sequence policy')
         if effect.get('ability_source')=='repeat_of':
             target=by_id.get(effect['repeat_of'].get('effect_id'))
             if effect.get('ability')!=(target.get('ability') if target else None):raise ValueError('Inherited check ability disagrees with its antecedent')
         for _,ref in local_references(effect):
+            if ref['kind']=='check_total' and (ref.get('result') not in {'success','failure'} or type(ref.get('count')) is not int or ref['count']<1):
+                raise ValueError('Invalid cumulative check threshold')
             target=by_id.get(ref.get('effect_id'))
             candidates=ref.get('candidate_effect_ids')
             if candidates is not None:
                 if any(cid not in by_id or positions[cid]>=index for cid in candidates):raise ValueError('Invalid local reference candidate')
                 if target and candidates!=[target['id']]:raise ValueError('Resolved local reference must have one candidate')
-            if not target:continue
-            if ref.get('selector')=='same_clause' and target['evidence']['span']!=effect['evidence']['span']:
+            if target and ref.get('selector')=='same_clause' and target['evidence']['span']!=effect['evidence']['span']:
                 raise ValueError('Local check reference escapes its clause')
-            if ref.get('selector')=='previous_check':
+            if target and ref.get('selector')=='previous_check':
                 checks=[e for e in effects[:index] if e['kind'] in {'saving_throw','attack_roll'}]
                 if not checks or target['evidence']['span']!=checks[-1]['evidence']['span']:
                     raise ValueError('Local check reference skips a later check')
+            expected=reference_candidates(effects,index,effect,ref)
+            if target and target not in expected:
+                raise ValueError('Local reference escapes its target or paragraph scope')
+            if candidates is not None and candidates!=[e['id'] for e in expected]:
+                raise ValueError('Local reference candidates disagree with source scope')
         if 'links' in effect and effect['links']!=effect_links(effect):raise ValueError('Local effect links disagree with their references')
     branches={(g['id'],b['id']) for g in value.get('grants',[]) for b in g['branches']}
     for rule in value.get('rules',[]):

@@ -2,27 +2,13 @@
 from copy import deepcopy
 import re
 from casting_extract import ABILITIES, NUMBER, number, evidence, sentences, quantity_expression
-from rule_conditions import bind_effects
+from rule_conditions import bind_effects, reference, outcome, turn, target_ref
+from check_sequences import parse_sequence_clause
 
 DAMAGE_TYPES=dict(zip(('强酸','寒冷','火焰','力场','闪电','暗蚀','毒素','心灵','光耀','雷鸣','钝击','穿刺','挥砍'),
                      ('acid','cold','fire','force','lightning','necrotic','poison','psychic','radiant','thunder','bludgeoning','piercing','slashing')))
 DAMAGE='(?:'+'|'.join(DAMAGE_TYPES)+')'
 ABILITY='(?:'+'|'.join(ABILITIES)+')'
-
-
-def reference(kind, **criteria):
-    return {'kind':kind,**criteria}
-
-
-def outcome(kind, result, scope='initial', **criteria):
-    return {'kind':kind+'_result','result':result,'scope':scope,**criteria}
-
-
-def turn(subject,phase,relative):
-    return {'kind':'turn','subject':subject,'phase':phase,'relative':relative}
-
-
-def target_ref(**criteria):return reference('target_ref',**criteria)
 
 
 def damage(quantity, damage_type, when, **extra):
@@ -32,6 +18,8 @@ def damage(quantity, damage_type, when, **extra):
 
 def parse_effect_clause(clause, ev):
     """A complete matching clause returns its claims; an unknown suffix rejects it all."""
+    sequence=parse_sequence_clause(clause,ev,DAMAGE_TYPES)
+    if sequence is not None:return sequence
     nodes=[]
     def emit(kind,**fields):nodes.append({'kind':kind,**fields})
     # Target selection and attack delivery are independent statements. Flavor text is
@@ -53,7 +41,7 @@ def parse_effect_clause(clause, ev):
         kind='ranged_spell' if '远程' in clause else 'melee_spell'
         emit('attack_roll',attack_type=kind,target=target_ref())
     else:
-        m=re.fullmatch(r'(?:若命中，则|命中(?:时[，,]|则))(?:该)?目标(?:将)?(?:受到|受)(\d+d\d+)(?:点|的)?('+DAMAGE+r')伤害(.*)。',clause)
+        m=re.fullmatch(r'(?:若(?:命中|击中)，(?:则)?|命中(?:时[，,]|则))(?:该)?目标(?:将)?(?:受到|受)(\d+d\d+)(?:点|的)?('+DAMAGE+r')伤害(.*)。',clause)
         if m:
             hit=outcome('attack','hit');nodes.append(damage(m[1],m[2],hit));tail=m[3]
             if tail:
@@ -81,10 +69,10 @@ def parse_save_or_duration(clause,ev):
     m=re.fullmatch(r'处于(\d+)尺(锥状|球状|立方)区域内的生物必须进行一次('+ABILITY+r')豁免。',clause)
     if m:
         emit('targets',selection={'kind':'area','shape':{'锥状':'cone','球状':'sphere','立方':'cube'}[m[2]],'size':int(m[1]),'unit':'foot','members':'creature'})
-        emit('saving_throw',ability=m[3],target=target_ref(),check_role='initial')
+        emit('saving_throw',ability=m[3],target=target_ref(selector='same_clause'),check_role='initial')
     elif (m:=re.fullmatch(r'施法距离内你可见的一名生物进行一次('+ABILITY+r')豁免。',clause)):
         emit('targets',selection={'kind':'creature','count':1,'visible':True,'within':'spell_range'})
-        emit('saving_throw',ability=m[1],target=target_ref(),check_role='initial')
+        emit('saving_throw',ability=m[1],target=target_ref(selector='same_clause'),check_role='initial')
     elif (m:=re.fullmatch(r'豁免失败者(?:将)?受到(\d+d\d+)点?('+DAMAGE+r')伤害，豁免成功(?:者受到一半伤害|则伤害减半)。',clause)):
         nodes.append(damage(m[1],m[2],outcome('save','failure')))
         emit('damage',quantity=reference('quantity_ref',selector='base_damage',factor={'numerator':1,'denominator':2}),
@@ -244,6 +232,11 @@ def parse_spell(entry, text):
     for field,reading in casting.items():
         if reading.get('kind')=='unparsed':gaps.append({'reason':'unsupported_casting_field','field':field,'evidence':reading['evidence']})
     for effect in effects:
+        a,b=effect['evidence']['span']
+        # Paragraph boundaries are source evidence, not a heuristic choice of the
+        # nearest check. Explicit cross-paragraph references use target identity.
+        pa=text.rfind('\n',last,a)+1;pb=text.find('\n',b,end)
+        effect['paragraph']=evidence(path,text,max(last,pa),pb if pb!=-1 else end)
         if effect.get('initial_attack_result')=='not_stated':gaps.append({'reason':'unresolved_ongoing_precondition','evidence':effect['evidence']})
     gaps.extend(bind_effects(effects,gaps))
     return {'casting':casting,'effects':effects,'descriptions':descriptions,'unparsed':gaps}

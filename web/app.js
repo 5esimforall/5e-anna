@@ -3,7 +3,7 @@ const $ = s => document.querySelector(s);
 const {esc,stored}=annaKit;
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
-  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',sectionMatches:'原文中还有 {count} 条未分类段落匹配，点击查看',
+  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',reloading:'数据正在更新，服务会在完整构建后自动换包；换包完成后刷新页面。',reloadFailed:'数据重建未通过校验，服务未切换到新快照；请查看 make upper 的终端输出并重新构建。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',sectionMatches:'原文中还有 {count} 条未分类段落匹配，点击查看',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
@@ -25,7 +25,7 @@ const annaUiLabels = {
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
-  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',sectionMatches:'{count} unclassified passages in the source also match; show them',
+  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',reloading:'The data is being updated; the service switches snapshots after a complete build. Refresh when it finishes.',reloadFailed:'The rebuild did not validate, so the service kept its previous snapshot. Check the make upper terminal and build again.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',sectionMatches:'{count} unclassified passages in the source also match; show them',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
@@ -102,7 +102,7 @@ function fieldText(entry,field,short=false){
   if(raw===undefined||raw===null||raw==='')return '—';
   return Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
 }
-async function api(path,signal){const r=await fetch(path,{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.error||'请求失败');return d;}
+async function api(path,signal){const r=await fetch(path,{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:d.error||'请求失败');return d;}
 let restoringUi=false, uiSaveTimer, lastResultEntry=null;
 history.scrollRestoration='manual';
 function captureUiState(){

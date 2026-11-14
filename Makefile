@@ -12,7 +12,7 @@ ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status index clean build inventory test audit check up linked test-unit test-browser browser-setup
+.PHONY: usage clone update status index clean build inventory test audit check up upper linked test-unit test-browser browser-setup
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -96,6 +96,9 @@ linked:
 
 up:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --port "$(ANNA_PORT)"
+
+upper:
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --port "$(ANNA_PORT)" --watch
 
 # Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:

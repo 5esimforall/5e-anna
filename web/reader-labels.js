@@ -30,6 +30,8 @@ const annaReaderLabels = {
       entry_missing:'当前快照中没有这个条目版本。不会自动跳到同名条目，请重新查询。',
       entry_unlocatable:'这个条目没有可靠的原文范围，请在 Anna 查看提取证据。',
       bundle_changed:'数据已经重建，请重启 make up，再刷新页面。',
+      reloading:'数据正在更新，服务会在完整构建后自动换包；换包完成后刷新页面。',
+      reload_failed:'数据重建未通过校验，服务未切换到新快照；请查看 make upper 的终端输出并重新构建。',
       snapshot_changed:'原文快照已经变化，请刷新页面后重新定位。',
       frame_timeout:'正文未能完成加载，请重试；若已重建数据，请重启 make up。',
       fragment_missing:'正文已打开，但原锚点无法定位。请通过本页条目重新选择位置。'
@@ -65,6 +67,8 @@ const annaReaderLabels = {
       entry_missing:'This entry version is not in the current snapshot. No same-name substitution was made; search again.',
       entry_unlocatable:'This entry has no reliable source range. Inspect its extraction evidence in Anna.',
       bundle_changed:'The data was rebuilt. Restart make up, then refresh this page.',
+      reloading:'The data is being updated; the service switches snapshots after a complete build. Refresh when it finishes.',
+      reload_failed:'The rebuild did not validate, so the service kept its previous snapshot. Check the make upper terminal and build again.',
       snapshot_changed:'The source snapshot changed. Refresh before navigating again.',
       frame_timeout:'The source did not finish loading. Retry, or restart make up if the data was rebuilt.',
       fragment_missing:'The source is open, but its anchor could not be located. Choose an entry on this page.'

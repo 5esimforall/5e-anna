@@ -1,16 +1,19 @@
-from contextlib import closing
+from contextlib import closing, ExitStack
 from http.client import HTTPConnection
 import json
 from pathlib import Path
 import socket
 import signal
+import sqlite3
 import subprocess
 import time
 import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
+import up
 from up import validate_bundle,create_server
 from linked_book import build_book
 import test_linked_book as fixtures
@@ -35,8 +38,9 @@ class ServerTests(unittest.TestCase):
                 reader=json.loads(self.request(server,'/api/reader')[2])
                 self.assertEqual(reader['content_base'],'/book/')
                 self.assertIsNone(reader['source_release'])
-                # The query page's metadata carries the reader's build snapshot, which binds their shared workspace.
-                self.assertEqual((server.RequestHandlerClass.reader_url,server.RequestHandlerClass.snapshot),('/read',reader['snapshot']))
+                # One bundle binds the query page's snapshot to the reader's model.
+                handler=object.__new__(up.AnnaHandler);handler.current=server.bundle
+                self.assertEqual((up.AnnaHandler.reader_url,handler.snapshot),('/read',reader['snapshot']))
                 target=json.loads(self.request(server,'/api/reader-page?entry=ver_test')[2])
                 self.assertEqual((target['path'],target['fragment']),('topics/test.htm','anna-ver_test'))
                 self.assertEqual(self.request(server,'/api/reader-page?entry=ver_test&path=topics/test.htm')[0],400)
@@ -65,7 +69,8 @@ class ServerTests(unittest.TestCase):
                 # A running reader cannot combine a rebuilt book with its old navigation/model.
                 (book/'anna-manifest.json').write_text('{}')
                 self.assertEqual(self.request(server,'/read')[0],200)
-                self.assertEqual(self.request(server,'/api/reader')[0],409)
+                status,_,body=self.request(server,'/api/reader')
+                self.assertEqual((status,json.loads(body)),(409,{'code':'bundle_changed'}))
                 self.assertEqual(self.request(server,'/book/topics/test.htm')[0],409)
                 with closing(HTTPConnection('127.0.0.1', server.server_port)) as c:
                     c.request('GET', '/book/topics/style.css', headers={'If-None-Match': etag})
@@ -129,3 +134,79 @@ class ServerTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 t.join()
+
+class WatchTests(unittest.TestCase):
+    def request(self,server,path):
+        with closing(HTTPConnection('127.0.0.1',server.server_port)) as c:
+            c.request('GET',path);r=c.getresponse();return r.status,r.read()
+    def snapshot(self,server):
+        status,body=self.request(server,'/api/reader')
+        return json.loads(body)['snapshot'] if status==200 else None
+    def wait_for(self,predicate,timeout=15):
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            if predicate():return True
+            time.sleep(.05)
+        return False
+    def rebuilt_database(self,db):
+        # build.py publishes the database before the linked book; this leaves a database the old book cannot explain.
+        with closing(sqlite3.connect(db)) as conn:
+            conn.execute("UPDATE metadata SET value=? WHERE key='summary'",(json.dumps({'full_scan':True,'rebuilt':True}),));conn.commit()
+    def start(self,root,source,db,book,manifest):
+        stack=ExitStack()
+        stack.enter_context(patch.object(up.search,'CACHE',root/'search.pkl'))
+        stack.enter_context(patch.object(up.search,'WEB',source))
+        server=create_server(db,book,manifest,0,watch=True)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        self.addCleanup(stack.close);self.addCleanup(thread.join)
+        self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
+        return server
+    def test_rebuilt_bundle_is_swapped_without_restart(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
+            manifest,_=build_book(source,db,book)
+            server=self.start(root,source,db,book,manifest)
+            before=self.snapshot(server);self.assertTrue(before)
+            self.rebuilt_database(db)
+            build_book(source,db,book)
+            self.assertTrue(self.wait_for(lambda:self.snapshot(server) not in (None,before)),'service did not swap in the rebuilt bundle')
+            self.assertEqual(self.snapshot(server),json.loads((book/'anna-reader.json').read_text())['snapshot'])
+            self.assertIsNone(server.reload_error)
+            self.assertEqual(server.bundle.snapshot,self.snapshot(server))
+            handler=object.__new__(up.AnnaHandler);handler.current=server.bundle
+            self.assertEqual((handler.snapshot,handler.search_entries),(server.bundle.snapshot,server.bundle.entries))
+            self.assertEqual(self.request(server,'/book/topics/test.htm')[0],200)
+            self.assertEqual(self.request(server,'/api/reader-page?entry=ver_test&snapshot=stale')[0],409)
+    def test_half_published_rebuild_stays_409_without_a_false_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
+            manifest,_=build_book(source,db,book)
+            server=self.start(root,source,db,book,manifest)
+            before=self.snapshot(server);self.assertTrue(before)
+            self.rebuilt_database(db)
+            self.assertTrue(self.wait_for(lambda:self.request(server,'/api/reader')[0]==409),'service served a database the old book cannot explain')
+            status,body=self.request(server,'/api/reader')
+            self.assertEqual((status,json.loads(body)['code']),(409,'reloading'))
+            self.assertIsNone(server.reload_error)
+            self.assertEqual(self.request(server,'/book/topics/test.htm')[0],409)
+            # Publishing the linked book completes the pair and swaps it in.
+            build_book(source,db,book)
+            self.assertTrue(self.wait_for(lambda:self.snapshot(server) not in (None,before)))
+            self.assertIsNone(server.reload_error)
+    def test_invalid_manifest_reports_reload_failed_and_recovers(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
+            manifest,_=build_book(source,db,book)
+            server=self.start(root,source,db,book,manifest)
+            before=self.snapshot(server);self.assertTrue(before)
+            (book/'anna-manifest.json').write_text('{}')
+            self.assertTrue(self.wait_for(lambda:self.request(server,'/api/reader')[0]==409 and server.reload_error),'invalid manifest was not reported')
+            status,body=self.request(server,'/api/reader')
+            self.assertEqual((status,json.loads(body)['code']),(409,'reload_failed'))
+            self.assertTrue(json.loads(body)['error'])
+            self.assertEqual(self.request(server,'/book/topics/test.htm')[0],409)
+            # A complete rebuild publishes a valid manifest and recovers the same service.
+            build_book(source,db,book)
+            self.assertTrue(self.wait_for(lambda:self.request(server,'/api/reader')[0]==200))
+            self.assertEqual(self.snapshot(server),before)
+            self.assertIsNone(server.reload_error)

@@ -31,6 +31,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('--port "8000"', result.stdout)
         self.assertNotIn('--book-port', result.stdout)
 
+    def test_upper_reloads_the_same_single_port_service(self):
+        result = self.make(PROJECT, '-n', 'upper')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--port "8000"', result.stdout)
+        self.assertIn('--watch', result.stdout)
+        self.assertNotIn('--book-port', result.stdout)
+
     def test_status_with_and_without_search_cache(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -48,12 +55,14 @@ class WorkflowTests(unittest.TestCase):
         wrapper = WORKSPACE / 'Makefile'
         if not wrapper.exists() or '5e-anna' not in wrapper.read_text():
             self.skipTest('standalone checkout without workspace wrapper')
-        result = self.make(WORKSPACE, '-n', 'up', 'WEB_DIR=custom mirror', 'ANNA_PORT=8123')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn(f'WEB_DIR="{WORKSPACE / "custom mirror"}"', result.stdout)
-        self.assertIn('scripts/up.py', result.stdout)
-        self.assertIn('--port "8123"', result.stdout)
-        self.assertNotIn('git pull', result.stdout)
+        for command in ('up', 'upper'):
+            result = self.make(WORKSPACE, '-n', command, 'WEB_DIR=custom mirror', 'ANNA_PORT=8123')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f'WEB_DIR="{WORKSPACE / "custom mirror"}"', result.stdout)
+            self.assertIn('scripts/up.py', result.stdout)
+            self.assertIn('--port "8123"', result.stdout)
+            self.assertNotIn('git pull', result.stdout)
+            self.assertEqual('--watch' in result.stdout, command == 'upper')
 
     def test_paths_independent_of_cwd_and_environment_override(self):
         code = 'import paths, build, inventory, book_search; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == inventory.WEB == book_search.WEB'
@@ -130,7 +139,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
-        for command in ('up', 'build', 'index', 'inventory'):
+        for command in ('up', 'upper', 'build', 'index', 'inventory'):
             result = self.make(PROJECT, '-n', command)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('git pull', result.stdout)

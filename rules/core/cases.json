@@ -1346,7 +1346,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "equal",
@@ -1410,7 +1410,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "check.twenty",
@@ -1474,7 +1474,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "check.one",
@@ -1538,7 +1538,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "attack.twenty",
@@ -1558,7 +1558,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "attack.twenty",
@@ -1622,7 +1622,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "attack.one",
@@ -1642,7 +1642,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "attack.one",
@@ -1706,7 +1706,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "save.twenty",
@@ -1770,7 +1770,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "advantage",
@@ -1845,7 +1845,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "disadvantage",
@@ -1920,7 +1920,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "cancel",
@@ -2002,7 +2002,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "training.proficient",
@@ -2072,7 +2072,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "training.expertise",
@@ -2142,7 +2142,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "training.half",
@@ -2212,7 +2212,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "exhaustion.check",
@@ -2296,7 +2296,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "cover.1",
@@ -2316,7 +2316,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "cover.1",
@@ -2391,7 +2391,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "cover.2",
@@ -2411,7 +2411,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "cover.2",
@@ -2486,7 +2486,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "cover.3",
@@ -2506,7 +2506,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "cover.3",
@@ -2581,7 +2581,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "cover.save",
@@ -2643,7 +2643,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "range.long",
@@ -2663,7 +2663,7 @@
             4
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "range.long",
@@ -2718,7 +2718,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "range.out",
@@ -2738,7 +2738,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "range.out",
@@ -2793,7 +2793,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "unseen.cancel",
@@ -2813,7 +2813,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "unseen.cancel",
@@ -2868,7 +2868,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "wrong.location",
@@ -2888,7 +2888,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "wrong.location",
@@ -2952,7 +2952,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "close.enemy",
@@ -2972,7 +2972,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "close.enemy",
@@ -3035,7 +3035,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "auto.paralyzed",
@@ -3106,7 +3106,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "auto.stunned",
@@ -3177,7 +3177,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "auto.petrified",
@@ -3248,7 +3248,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "auto.unconscious",
@@ -3319,7 +3319,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "attack.poisoned",
@@ -3339,7 +3339,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "attack.poisoned",
@@ -3401,7 +3401,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "attack.blinded",
@@ -3421,7 +3421,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "attack.blinded",
@@ -3483,7 +3483,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "attack.restrained",
@@ -3503,7 +3503,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "attack.restrained",
@@ -3565,7 +3565,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "attack.prone",
@@ -3585,7 +3585,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "attack.prone",
@@ -3647,7 +3647,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "prone.5",
@@ -3667,7 +3667,7 @@
             20
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "prone.5",
@@ -3729,7 +3729,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "prone.10",
@@ -3749,7 +3749,7 @@
             2
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "prone.10",
@@ -3811,7 +3811,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "critical.paralyzed",
@@ -3831,7 +3831,7 @@
             15
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "critical.paralyzed",
@@ -3858,7 +3858,7 @@
             "paralyzed"
           ]
         ],
-        "DamageDice": [
+        "DamageDiceInput": [
           [
             "5r",
             "critical.paralyzed",
@@ -3927,7 +3927,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "poison.immune",
@@ -4003,7 +4003,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "poison.explicit.immune",
@@ -4063,7 +4063,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "sense.sight",
@@ -4132,7 +4132,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "sense.hearing",
@@ -4201,7 +4201,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "fear.visible",
@@ -4272,7 +4272,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "fear.hidden",
@@ -4334,7 +4334,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "grapple.other",
@@ -4354,7 +4354,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "grapple.other",
@@ -4425,7 +4425,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "charmed.attack",
@@ -4445,7 +4445,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "charmed.attack",
@@ -4516,7 +4516,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "charmed.social",
@@ -4594,7 +4594,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "initiative.surprise",
@@ -4656,7 +4656,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "initiative.invisible",
@@ -5100,7 +5100,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "dodge.visible",
@@ -5120,7 +5120,7 @@
             3
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "dodge.visible",
@@ -5195,7 +5195,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "dodge.blind",
@@ -5215,7 +5215,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "dodge.blind",
@@ -5290,7 +5290,7 @@
             14
           ]
         ],
-        "Test": [
+        "TestInput": [
           [
             "5r",
             "dodge.zero",
@@ -5310,7 +5310,7 @@
             0
           ]
         ],
-        "Attack": [
+        "AttackInput": [
           [
             "5r",
             "dodge.zero",
@@ -5992,6 +5992,3014 @@
             "5r",
             "cancelled",
             14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.skill_tool",
+      "description": "5e: skill_tool",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-skill",
+            "int",
+            14
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-skill",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5e",
+            "5e-skill-check",
+            "5e-skill",
+            "investigation",
+            15,
+            0
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5e",
+            "5e-skill",
+            "investigation",
+            "proficient"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5e",
+            "5e-skill-check",
+            "thieves_tools"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5e",
+            "5e-skill",
+            "thieves_tools"
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-skill-check",
+            5,
+            15
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-skill-check",
+            10
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5e",
+            "5e-skill-check",
+            3
+          ]
+        },
+        {
+          "relation": "RollMode",
+          "values": [
+            "5e",
+            "5e-skill-check",
+            "normal"
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-skill-check",
+            "failure"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-skill-check",
+            10
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5e",
+            "5e-skill-check",
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.tool_none",
+      "description": "5e: tool_none",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-none",
+            "str",
+            12
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-none",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5e",
+            "5e-none-check",
+            "5e-none",
+            "intimidation",
+            15,
+            0
+          ]
+        ],
+        "SkillAbilityOverride": [
+          [
+            "5e",
+            "5e-none-check",
+            "str"
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5e",
+            "5e-none",
+            "intimidation",
+            "none"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5e",
+            "5e-none-check",
+            "disguise_kit"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5e",
+            "5e-none",
+            "disguise_kit"
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-none-check",
+            10,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-none-check",
+            14
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5e",
+            "5e-none-check",
+            3
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-none-check",
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.tool_half",
+      "description": "5e: tool_half",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-half",
+            "str",
+            12
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-half",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5e",
+            "5e-half-check",
+            "5e-half",
+            "intimidation",
+            15,
+            0
+          ]
+        ],
+        "SkillAbilityOverride": [
+          [
+            "5e",
+            "5e-half-check",
+            "str"
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5e",
+            "5e-half",
+            "intimidation",
+            "half"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5e",
+            "5e-half-check",
+            "disguise_kit"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5e",
+            "5e-half",
+            "disguise_kit"
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-half-check",
+            10,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-half-check",
+            14
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5e",
+            "5e-half-check",
+            3
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-half-check",
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.tool_expertise",
+      "description": "5e: tool_expertise",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-expertise",
+            "str",
+            12
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-expertise",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5e",
+            "5e-expertise-check",
+            "5e-expertise",
+            "intimidation",
+            15,
+            0
+          ]
+        ],
+        "SkillAbilityOverride": [
+          [
+            "5e",
+            "5e-expertise-check",
+            "str"
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5e",
+            "5e-expertise",
+            "intimidation",
+            "expertise"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5e",
+            "5e-expertise-check",
+            "disguise_kit"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5e",
+            "5e-expertise",
+            "disguise_kit"
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-expertise-check",
+            10,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-expertise-check",
+            17
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5e",
+            "5e-expertise-check",
+            6
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-expertise-check",
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.tool_check",
+      "description": "5e: tool_check",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-tool",
+            "dex",
+            16
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-tool",
+            1
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5e",
+            "5e-tool",
+            "woodcarver"
+          ]
+        ],
+        "ToolCheck": [
+          [
+            "5e",
+            "5e-tool-check",
+            "5e-tool",
+            "woodcarver",
+            "dex",
+            15,
+            0
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-tool-check",
+            10,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-tool-check",
+            15
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-tool-check",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-tool-check",
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.armor_leather",
+      "description": "5e: armor_leather",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-leather",
+            "dex",
+            16
+          ],
+          [
+            "5e",
+            "5e-leather",
+            "str",
+            15
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-leather",
+            "ver_f06b612e93909ba2a39d0d2b",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-leather",
+            16
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-leather",
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.armor_medium_negative",
+      "description": "5e: armor_medium_negative",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-medium_negative",
+            "dex",
+            7
+          ],
+          [
+            "5e",
+            "5e-medium_negative",
+            "str",
+            15
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-medium_negative",
+            "ver_23c5acc60613f473c0b7c407",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-medium_negative",
+            13
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-medium_negative",
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.armor_heavy_negative",
+      "description": "5e: armor_heavy_negative",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-heavy_negative",
+            "dex",
+            7
+          ],
+          [
+            "5e",
+            "5e-heavy_negative",
+            "str",
+            15
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-heavy_negative",
+            "ver_ad7215c395ff76be28458689",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-heavy_negative",
+            20
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-heavy_negative",
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.dagger",
+      "description": "5e: dagger",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-dagger",
+            "dex",
+            16
+          ],
+          [
+            "5e",
+            "5e-dagger-target",
+            "dex",
+            14
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-dagger",
+            5
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-dagger-target",
+            "ver_f06b612e93909ba2a39d0d2b",
+            1,
+            1,
+            1
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5e",
+            "5e-dagger-attack",
+            "5e-dagger",
+            "ver_ba7662556535b8923728ab01",
+            "5e-dagger-target",
+            "thrown",
+            "dex",
+            30,
+            0
+          ]
+        ],
+        "WeaponProficiency": [
+          [
+            "5e",
+            "5e-dagger",
+            "ver_ba7662556535b8923728ab01"
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5e",
+            "5e-dagger-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5e",
+            "5e-dagger-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-dagger-attack",
+            15,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-dagger-attack",
+            16
+          ]
+        },
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5e",
+            "5e-dagger-attack",
+            15
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-dagger-attack",
+            "success"
+          ]
+        },
+        {
+          "relation": "WeaponDamageModifier",
+          "values": [
+            "5e",
+            "5e-dagger-attack",
+            3
+          ]
+        },
+        {
+          "relation": "DamageDiceRequired",
+          "values": [
+            "5e",
+            "5e-dagger-attack",
+            "weapon",
+            1,
+            4
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-dagger-attack",
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.small_strong",
+      "description": "5e: small_strong",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-small_strong",
+            "dex",
+            14
+          ],
+          [
+            "5e",
+            "5e-small_strong-target",
+            "dex",
+            10
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-small_strong",
+            1
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-small_strong-target",
+            "unarmored",
+            1,
+            0,
+            0
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5e",
+            "5e-small_strong-attack",
+            "5e-small_strong",
+            "ver_f95604ac76a4eb59e43c6874",
+            "5e-small_strong-target",
+            "ranged",
+            "default",
+            60,
+            0
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5e",
+            "5e-small_strong-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5e",
+            "5e-small_strong-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-small_strong-attack",
+            15,
+            5
+          ]
+        ],
+        "ActorSize": [
+          [
+            "5e",
+            "5e-small_strong",
+            "small"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5e",
+            "5e-small_strong-attack",
+            "disadvantage"
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-small_strong-attack",
+            "failure"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5e",
+            "5e-small_strong-attack",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.medium_weak",
+      "description": "5e: medium_weak",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-medium_weak",
+            "dex",
+            12
+          ],
+          [
+            "5e",
+            "5e-medium_weak-target",
+            "dex",
+            10
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-medium_weak",
+            1
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-medium_weak-target",
+            "unarmored",
+            1,
+            0,
+            0
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5e",
+            "5e-medium_weak-attack",
+            "5e-medium_weak",
+            "ver_f95604ac76a4eb59e43c6874",
+            "5e-medium_weak-target",
+            "ranged",
+            "default",
+            60,
+            0
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5e",
+            "5e-medium_weak-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5e",
+            "5e-medium_weak-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-medium_weak-attack",
+            15,
+            5
+          ]
+        ],
+        "ActorSize": [
+          [
+            "5e",
+            "5e-medium_weak",
+            "medium"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5e",
+            "5e-medium_weak-attack",
+            "normal"
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-medium_weak-attack",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5e",
+            "5e-medium_weak-attack",
+            "normal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.spell_dc",
+      "description": "5e: spell_dc",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-wizard",
+            "int",
+            18
+          ],
+          [
+            "5e",
+            "5e-wizard-target",
+            "wis",
+            10
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-wizard",
+            5
+          ]
+        ],
+        "CastingSource": [
+          [
+            "5e",
+            "5e-wizard",
+            "ver_f68f2241cc9fd6a17aefead9"
+          ]
+        ],
+        "SpellSave": [
+          [
+            "5e",
+            "5e-wizard-save",
+            "5e-wizard-target",
+            "5e-wizard",
+            "ver_f68f2241cc9fd6a17aefead9",
+            "wis",
+            0
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-wizard-save",
+            14,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-wizard-save",
+            "failure"
+          ]
+        },
+        {
+          "relation": "SpellSaveDC",
+          "values": [
+            "5e",
+            "5e-wizard",
+            "ver_f68f2241cc9fd6a17aefead9",
+            15
+          ]
+        },
+        {
+          "relation": "SpellAttackBonus",
+          "values": [
+            "5e",
+            "5e-wizard",
+            "ver_f68f2241cc9fd6a17aefead9",
+            7
+          ]
+        },
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5e",
+            "5e-wizard-save",
+            15
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-wizard-save",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.mage_active",
+      "description": "5e: mage_active",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-mage-active",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-mage-active",
+            "unarmored",
+            1,
+            1,
+            1
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5e",
+            "5e-mage-active-effect",
+            "ver_6c717543a5b29b61a09b6bae",
+            "5e-mage-active",
+            0,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-active",
+            18
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-active",
+            18
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.mage_expired",
+      "description": "5e: mage_expired",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-mage-expired",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-mage-expired",
+            "unarmored",
+            1,
+            1,
+            1
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5e",
+            "5e-mage-expired-effect",
+            "ver_6c717543a5b29b61a09b6bae",
+            "5e-mage-expired",
+            8,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-expired",
+            15
+          ]
+        },
+        {
+          "relation": "ArmorSpellEnded",
+          "values": [
+            "5e",
+            "5e-mage-expired-effect",
+            "duration"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-expired",
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.mage_dismissed",
+      "description": "5e: mage_dismissed",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-mage-dismissed",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-mage-dismissed",
+            "unarmored",
+            1,
+            1,
+            1
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5e",
+            "5e-mage-dismissed-effect",
+            "ver_6c717543a5b29b61a09b6bae",
+            "5e-mage-dismissed",
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-dismissed",
+            15
+          ]
+        },
+        {
+          "relation": "ArmorSpellEnded",
+          "values": [
+            "5e",
+            "5e-mage-dismissed-effect",
+            "dismissed"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-dismissed",
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.mage_armored",
+      "description": "5e: mage_armored",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-mage-armored",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-mage-armored",
+            "ver_f06b612e93909ba2a39d0d2b",
+            1,
+            0,
+            0
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5e",
+            "5e-mage-armored-effect",
+            "ver_6c717543a5b29b61a09b6bae",
+            "5e-mage-armored",
+            1,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-armored",
+            14
+          ]
+        },
+        {
+          "relation": "ArmorSpellEnded",
+          "values": [
+            "5e",
+            "5e-mage-armored-effect",
+            "armor"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-armored",
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.skill_tool",
+      "description": "5r: skill_tool",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-skill",
+            "int",
+            14
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-skill",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5r",
+            "5r-skill-check",
+            "5r-skill",
+            "investigation",
+            15,
+            0
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5r",
+            "5r-skill",
+            "investigation",
+            "proficient"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5r",
+            "5r-skill-check",
+            "thieves_tools"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5r",
+            "5r-skill",
+            "thieves_tools"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-skill-check",
+            5,
+            15
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-skill-check",
+            20
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "5r-skill-check",
+            3
+          ]
+        },
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-skill-check",
+            "advantage"
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-skill-check",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-skill-check",
+            20
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "5r-skill-check",
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.tool_none",
+      "description": "5r: tool_none",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-none",
+            "str",
+            12
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-none",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5r",
+            "5r-none-check",
+            "5r-none",
+            "intimidation",
+            15,
+            0
+          ]
+        ],
+        "SkillAbilityOverride": [
+          [
+            "5r",
+            "5r-none-check",
+            "str"
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5r",
+            "5r-none",
+            "intimidation",
+            "none"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5r",
+            "5r-none-check",
+            "disguise_kit"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5r",
+            "5r-none",
+            "disguise_kit"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-none-check",
+            10,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-none-check",
+            14
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "5r-none-check",
+            3
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-none-check",
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.tool_half",
+      "description": "5r: tool_half",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-half",
+            "str",
+            12
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-half",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5r",
+            "5r-half-check",
+            "5r-half",
+            "intimidation",
+            15,
+            0
+          ]
+        ],
+        "SkillAbilityOverride": [
+          [
+            "5r",
+            "5r-half-check",
+            "str"
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5r",
+            "5r-half",
+            "intimidation",
+            "half"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5r",
+            "5r-half-check",
+            "disguise_kit"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5r",
+            "5r-half",
+            "disguise_kit"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-half-check",
+            10,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-half-check",
+            14
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "5r-half-check",
+            3
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-half-check",
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.tool_expertise",
+      "description": "5r: tool_expertise",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-expertise",
+            "str",
+            12
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-expertise",
+            5
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5r",
+            "5r-expertise-check",
+            "5r-expertise",
+            "intimidation",
+            15,
+            0
+          ]
+        ],
+        "SkillAbilityOverride": [
+          [
+            "5r",
+            "5r-expertise-check",
+            "str"
+          ]
+        ],
+        "SkillProficiency": [
+          [
+            "5r",
+            "5r-expertise",
+            "intimidation",
+            "expertise"
+          ]
+        ],
+        "ToolUse": [
+          [
+            "5r",
+            "5r-expertise-check",
+            "disguise_kit"
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5r",
+            "5r-expertise",
+            "disguise_kit"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-expertise-check",
+            10,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-expertise-check",
+            17
+          ]
+        },
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "5r-expertise-check",
+            6
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-expertise-check",
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.tool_check",
+      "description": "5r: tool_check",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-tool",
+            "dex",
+            16
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-tool",
+            1
+          ]
+        ],
+        "ToolProficiency": [
+          [
+            "5r",
+            "5r-tool",
+            "woodcarver"
+          ]
+        ],
+        "ToolCheck": [
+          [
+            "5r",
+            "5r-tool-check",
+            "5r-tool",
+            "woodcarver",
+            "dex",
+            15,
+            0
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-tool-check",
+            10,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-tool-check",
+            15
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-tool-check",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-tool-check",
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.armor_leather",
+      "description": "5r: armor_leather",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-leather",
+            "dex",
+            16
+          ],
+          [
+            "5r",
+            "5r-leather",
+            "str",
+            15
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-leather",
+            "ver_3c6985bce3365892258b3aa7",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-leather",
+            16
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-leather",
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.armor_medium_negative",
+      "description": "5r: armor_medium_negative",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-medium_negative",
+            "dex",
+            7
+          ],
+          [
+            "5r",
+            "5r-medium_negative",
+            "str",
+            15
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-medium_negative",
+            "ver_fabe048a7af43ac582c1067f",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-medium_negative",
+            13
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-medium_negative",
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.armor_heavy_negative",
+      "description": "5r: armor_heavy_negative",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-heavy_negative",
+            "dex",
+            7
+          ],
+          [
+            "5r",
+            "5r-heavy_negative",
+            "str",
+            15
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-heavy_negative",
+            "ver_7ffe146f06ee9c1bbce3cd09",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-heavy_negative",
+            20
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-heavy_negative",
+            20
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.dagger",
+      "description": "5r: dagger",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-dagger",
+            "dex",
+            16
+          ],
+          [
+            "5r",
+            "5r-dagger-target",
+            "dex",
+            14
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-dagger",
+            5
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-dagger-target",
+            "ver_3c6985bce3365892258b3aa7",
+            1,
+            1,
+            1
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5r",
+            "5r-dagger-attack",
+            "5r-dagger",
+            "ver_96fa837d8dcbbd58d610d900",
+            "5r-dagger-target",
+            "thrown",
+            "dex",
+            30,
+            0
+          ]
+        ],
+        "WeaponProficiency": [
+          [
+            "5r",
+            "5r-dagger",
+            "ver_96fa837d8dcbbd58d610d900"
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5r",
+            "5r-dagger-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "5r-dagger-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-dagger-attack",
+            15,
+            10
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-dagger-attack",
+            16
+          ]
+        },
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5r",
+            "5r-dagger-attack",
+            15
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-dagger-attack",
+            "success"
+          ]
+        },
+        {
+          "relation": "WeaponDamageModifier",
+          "values": [
+            "5r",
+            "5r-dagger-attack",
+            3
+          ]
+        },
+        {
+          "relation": "DamageDiceRequired",
+          "values": [
+            "5r",
+            "5r-dagger-attack",
+            "weapon",
+            1,
+            4
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-dagger-attack",
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.small_strong",
+      "description": "5r: small_strong",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-small_strong",
+            "dex",
+            14
+          ],
+          [
+            "5r",
+            "5r-small_strong-target",
+            "dex",
+            10
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-small_strong",
+            1
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-small_strong-target",
+            "unarmored",
+            1,
+            0,
+            0
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5r",
+            "5r-small_strong-attack",
+            "5r-small_strong",
+            "ver_1792979b8fb825a21a8a28e5",
+            "5r-small_strong-target",
+            "ranged",
+            "default",
+            60,
+            0
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5r",
+            "5r-small_strong-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "5r-small_strong-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-small_strong-attack",
+            15,
+            5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-small_strong-attack",
+            "normal"
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-small_strong-attack",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-small_strong-attack",
+            "normal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.medium_weak",
+      "description": "5r: medium_weak",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-medium_weak",
+            "dex",
+            12
+          ],
+          [
+            "5r",
+            "5r-medium_weak-target",
+            "dex",
+            10
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-medium_weak",
+            1
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-medium_weak-target",
+            "unarmored",
+            1,
+            0,
+            0
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5r",
+            "5r-medium_weak-attack",
+            "5r-medium_weak",
+            "ver_1792979b8fb825a21a8a28e5",
+            "5r-medium_weak-target",
+            "ranged",
+            "default",
+            60,
+            0
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5r",
+            "5r-medium_weak-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "5r-medium_weak-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-medium_weak-attack",
+            15,
+            5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-medium_weak-attack",
+            "disadvantage"
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-medium_weak-attack",
+            "failure"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-medium_weak-attack",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.spell_dc",
+      "description": "5r: spell_dc",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-wizard",
+            "int",
+            18
+          ],
+          [
+            "5r",
+            "5r-wizard-target",
+            "wis",
+            10
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-wizard",
+            5
+          ]
+        ],
+        "CastingSource": [
+          [
+            "5r",
+            "5r-wizard",
+            "ver_3da6e6d72da148370f936b2d"
+          ]
+        ],
+        "SpellSave": [
+          [
+            "5r",
+            "5r-wizard-save",
+            "5r-wizard-target",
+            "5r-wizard",
+            "ver_3da6e6d72da148370f936b2d",
+            "wis",
+            0
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-wizard-save",
+            14,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-wizard-save",
+            "failure"
+          ]
+        },
+        {
+          "relation": "SpellSaveDC",
+          "values": [
+            "5r",
+            "5r-wizard",
+            "ver_3da6e6d72da148370f936b2d",
+            15
+          ]
+        },
+        {
+          "relation": "SpellAttackBonus",
+          "values": [
+            "5r",
+            "5r-wizard",
+            "ver_3da6e6d72da148370f936b2d",
+            7
+          ]
+        },
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5r",
+            "5r-wizard-save",
+            15
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-wizard-save",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.mage_active",
+      "description": "5r: mage_active",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-mage-active",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-mage-active",
+            "unarmored",
+            1,
+            1,
+            1
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5r",
+            "5r-mage-active-effect",
+            "ver_992b31e3033fc968022d586c",
+            "5r-mage-active",
+            0,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-active",
+            18
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-active",
+            18
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.mage_expired",
+      "description": "5r: mage_expired",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-mage-expired",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-mage-expired",
+            "unarmored",
+            1,
+            1,
+            1
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5r",
+            "5r-mage-expired-effect",
+            "ver_992b31e3033fc968022d586c",
+            "5r-mage-expired",
+            8,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-expired",
+            15
+          ]
+        },
+        {
+          "relation": "ArmorSpellEnded",
+          "values": [
+            "5r",
+            "5r-mage-expired-effect",
+            "duration"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-expired",
+            15
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.mage_armored",
+      "description": "5r: mage_armored",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-mage-armored",
+            "dex",
+            16
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-mage-armored",
+            "ver_3c6985bce3365892258b3aa7",
+            1,
+            0,
+            0
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5r",
+            "5r-mage-armored-effect",
+            "ver_992b31e3033fc968022d586c",
+            "5r-mage-armored",
+            1,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-armored",
+            14
+          ]
+        },
+        {
+          "relation": "ArmorSpellEnded",
+          "values": [
+            "5r",
+            "5r-mage-armored-effect",
+            "armor"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-armored",
+            14
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.untrained_shield",
+      "description": "5r: untrained_shield",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-shield",
+            "dex",
+            10
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-shield",
+            "unarmored",
+            1,
+            1,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-shield",
+            10
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-shield",
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.untrained_armor",
+      "description": "Untrained 2024 armor penalizes physical tests and prevents casting, not Wisdom checks.",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-untrained",
+            "dex",
+            16
+          ],
+          [
+            "5r",
+            "5r-untrained",
+            "wis",
+            14
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-untrained",
+            "ver_3c6985bce3365892258b3aa7",
+            0,
+            0,
+            0
+          ]
+        ],
+        "SkillCheck": [
+          [
+            "5r",
+            "5r-untrained-dex",
+            "5r-untrained",
+            "stealth",
+            10,
+            0
+          ],
+          [
+            "5r",
+            "5r-untrained-wis",
+            "5r-untrained",
+            "perception",
+            10,
+            0
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-untrained-dex",
+            15,
+            5
+          ],
+          [
+            "5r",
+            "5r-untrained-wis",
+            15,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-untrained-dex",
+            "disadvantage"
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-untrained-dex",
+            8
+          ]
+        },
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "5r-untrained-wis",
+            "normal"
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-untrained-wis",
+            17
+          ]
+        },
+        {
+          "relation": "CannotCast",
+          "values": [
+            "5r",
+            "5r-untrained"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "CannotCast",
+          "values": [
+            "5r",
+            "5r-untrained"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5e.mage_target",
+      "description": "An actual weapon attacks a target protected by an actual spell; both parameter chains enter the proof.",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5e",
+            "5e-mage-attacker",
+            "dex",
+            14
+          ],
+          [
+            "5e",
+            "5e-mage-defender",
+            "dex",
+            14
+          ]
+        ],
+        "Rank": [
+          [
+            "5e",
+            "5e-mage-attacker",
+            1
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5e",
+            "5e-mage-defender",
+            "unarmored",
+            1,
+            0,
+            0
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5e",
+            "5e-mage-defense",
+            "ver_6c717543a5b29b61a09b6bae",
+            "5e-mage-defender",
+            0,
+            0
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5e",
+            "5e-mage-attacker-attack",
+            "5e-mage-attacker",
+            "ver_ba7662556535b8923728ab01",
+            "5e-mage-defender",
+            "melee",
+            "dex",
+            5,
+            0
+          ]
+        ],
+        "WeaponProficiency": [
+          [
+            "5e",
+            "5e-mage-attacker",
+            "ver_ba7662556535b8923728ab01"
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5e",
+            "5e-mage-attacker-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5e",
+            "5e-mage-attacker-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5e",
+            "5e-mage-attacker-attack",
+            11,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-mage-attacker-attack",
+            "success"
+          ]
+        },
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5e",
+            "5e-mage-attacker-attack",
+            15
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5e",
+            "5e-mage-attacker-attack",
+            15
+          ]
+        },
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5e",
+            "5e-mage-defender",
+            15
+          ]
+        },
+        {
+          "relation": "SpellRequirements",
+          "values": [
+            "5e",
+            "ver_6c717543a5b29b61a09b6bae",
+            "action",
+            "touch"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5e",
+            "5e-mage-attacker-attack",
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "inputs.5r.mage_target",
+      "description": "An actual weapon attacks a target protected by an actual spell; both parameter chains enter the proof.",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "5r-mage-attacker",
+            "dex",
+            14
+          ],
+          [
+            "5r",
+            "5r-mage-defender",
+            "dex",
+            14
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "5r-mage-attacker",
+            1
+          ]
+        ],
+        "ArmorLoadout": [
+          [
+            "5r",
+            "5r-mage-defender",
+            "unarmored",
+            1,
+            0,
+            0
+          ]
+        ],
+        "ArmorSpell": [
+          [
+            "5r",
+            "5r-mage-defense",
+            "ver_992b31e3033fc968022d586c",
+            "5r-mage-defender",
+            0,
+            0
+          ]
+        ],
+        "WeaponUse": [
+          [
+            "5r",
+            "5r-mage-attacker-attack",
+            "5r-mage-attacker",
+            "ver_96fa837d8dcbbd58d610d900",
+            "5r-mage-defender",
+            "melee",
+            "dex",
+            5,
+            0
+          ]
+        ],
+        "WeaponProficiency": [
+          [
+            "5r",
+            "5r-mage-attacker",
+            "ver_96fa837d8dcbbd58d610d900"
+          ]
+        ],
+        "WeaponReady": [
+          [
+            "5r",
+            "5r-mage-attacker-attack",
+            1
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "5r-mage-attacker-attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "5r-mage-attacker-attack",
+            11,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-mage-attacker-attack",
+            "success"
+          ]
+        },
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5r",
+            "5r-mage-attacker-attack",
+            15
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "5r-mage-attacker-attack",
+            15
+          ]
+        },
+        {
+          "relation": "ArmorClass",
+          "values": [
+            "5r",
+            "5r-mage-defender",
+            15
+          ]
+        },
+        {
+          "relation": "SpellRequirements",
+          "values": [
+            "5r",
+            "ver_992b31e3033fc968022d586c",
+            "action",
+            "touch"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "5r-mage-attacker-attack",
+            "success"
           ]
         }
       ]

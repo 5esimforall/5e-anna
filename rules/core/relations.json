@@ -76,6 +76,48 @@
         "sight",
         "hearing"
       ]
+    },
+    "Size": {
+      "base": "symbol",
+      "values": [
+        "tiny",
+        "small",
+        "medium",
+        "large",
+        "huge",
+        "gargantuan"
+      ]
+    },
+    "WeaponMode": {
+      "base": "symbol",
+      "values": [
+        "melee",
+        "ranged",
+        "thrown"
+      ]
+    },
+    "WeaponChoice": {
+      "base": "symbol",
+      "values": [
+        "default",
+        "str",
+        "dex"
+      ]
+    },
+    "WeaponCategory": {
+      "base": "symbol",
+      "values": [
+        "melee",
+        "ranged"
+      ]
+    },
+    "ArmorCategory": {
+      "base": "symbol",
+      "values": [
+        "light",
+        "medium",
+        "heavy"
+      ]
     }
   },
   "relations": {
@@ -180,7 +222,8 @@
         }
       },
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "ProficiencyBonus": {
@@ -235,24 +278,7 @@
           "Training"
         ]
       ],
-      "input": "scenario",
-      "key": [
-        0,
-        1
-      ],
-      "bounds": {
-        "target": {
-          "min": 0,
-          "max": 1000
-        },
-        "circumstance": {
-          "min": -1000,
-          "max": 1000
-        }
-      },
-      "editions": [
-        "5r"
-      ]
+      "output": true
     },
     "Roll": {
       "fields": [
@@ -289,7 +315,8 @@
         }
       },
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "AdvantageCause": {
@@ -309,7 +336,8 @@
       ],
       "input": "scenario",
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "DisadvantageCause": {
@@ -329,7 +357,8 @@
       ],
       "input": "scenario",
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "HasAdvantage": {
@@ -564,7 +593,8 @@
         }
       },
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "HigherCover": {
@@ -683,28 +713,7 @@
           "Number"
         ]
       ],
-      "input": "scenario",
-      "key": [
-        0,
-        1
-      ],
-      "bounds": {
-        "distance": {
-          "min": 0,
-          "max": 10000
-        },
-        "normal_range": {
-          "min": 0,
-          "max": 10000
-        },
-        "maximum_range": {
-          "min": 0,
-          "max": 10000
-        }
-      },
-      "editions": [
-        "5r"
-      ]
+      "output": true
     },
     "Visibility": {
       "fields": [
@@ -735,7 +744,8 @@
         1
       ],
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "CloseEnemy": {
@@ -759,7 +769,8 @@
       ],
       "input": "scenario",
       "editions": [
-        "5r"
+        "5r",
+        "5e"
       ]
     },
     "CriticalHit": {
@@ -798,25 +809,7 @@
           "Number"
         ]
       ],
-      "input": "scenario",
-      "key": [
-        0,
-        1,
-        2
-      ],
-      "bounds": {
-        "count": {
-          "min": 1,
-          "max": 100
-        },
-        "sides": {
-          "min": 1,
-          "max": 1000
-        }
-      },
-      "editions": [
-        "5r"
-      ]
+      "output": true
     },
     "DamageDiceRequired": {
       "fields": [
@@ -1912,6 +1905,1209 @@
         ]
       ],
       "output": true
+    },
+    "TestInput": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "kind",
+          "TestKind"
+        ],
+        [
+          "ability",
+          "Ability"
+        ],
+        [
+          "target",
+          "Number"
+        ],
+        [
+          "circumstance",
+          "Number"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "target": {
+          "min": 0,
+          "max": 1000
+        },
+        "circumstance": {
+          "min": -1000,
+          "max": 1000
+        }
+      },
+      "editions": [
+        "5r",
+        "5e"
+      ]
+    },
+    "AttackInput": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ],
+        [
+          "distance",
+          "Number"
+        ],
+        [
+          "mode",
+          "Text"
+        ],
+        [
+          "normal_range",
+          "Number"
+        ],
+        [
+          "maximum_range",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "distance": {
+          "min": 0,
+          "max": 10000
+        },
+        "normal_range": {
+          "min": 0,
+          "max": 10000
+        },
+        "maximum_range": {
+          "min": 0,
+          "max": 10000
+        }
+      },
+      "editions": [
+        "5r",
+        "5e"
+      ]
+    },
+    "DamageDiceInput": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "component",
+          "Text"
+        ],
+        [
+          "dice_count",
+          "Number"
+        ],
+        [
+          "sides",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1,
+        2
+      ],
+      "bounds": {
+        "sides": {
+          "min": 1,
+          "max": 1000
+        },
+        "dice_count": {
+          "min": 1,
+          "max": 100
+        }
+      },
+      "editions": [
+        "5r",
+        "5e"
+      ]
+    },
+    "SkillAbility": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "skill",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ]
+      ],
+      "input": "library",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "SkillCheck": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "skill",
+          "Text"
+        ],
+        [
+          "dc",
+          "Number"
+        ],
+        [
+          "circumstance",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "dc": {
+          "min": 0,
+          "max": 1000
+        },
+        "circumstance": {
+          "min": -1000,
+          "max": 1000
+        }
+      }
+    },
+    "SkillAbilityOverride": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "SkillProficiency": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "skill",
+          "Text"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1,
+        2
+      ]
+    },
+    "ToolProficiency": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "tool",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "ToolUse": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "tool",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "ToolCheck": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "tool",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ],
+        [
+          "dc",
+          "Number"
+        ],
+        [
+          "circumstance",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "dc": {
+          "min": 0,
+          "max": 1000
+        },
+        "circumstance": {
+          "min": -1000,
+          "max": 1000
+        }
+      }
+    },
+    "CheckAbility": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ]
+      ],
+      "output": true
+    },
+    "SkillTraining": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "output": true
+    },
+    "CheckTraining": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "output": true
+    },
+    "TrainedTool": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "TestRequest": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "kind",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "WeaponProfile": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "category",
+          "WeaponCategory"
+        ],
+        [
+          "normal_range",
+          "Number"
+        ],
+        [
+          "maximum_range",
+          "Number"
+        ],
+        [
+          "finesse",
+          "Flag"
+        ],
+        [
+          "thrown",
+          "Flag"
+        ],
+        [
+          "heavy",
+          "Flag"
+        ],
+        [
+          "dice_count",
+          "Number"
+        ],
+        [
+          "sides",
+          "Number"
+        ]
+      ],
+      "input": "library",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "normal_range": {
+          "min": 0,
+          "max": 10000
+        },
+        "maximum_range": {
+          "min": 0,
+          "max": 10000
+        },
+        "dice_count": {
+          "min": 1,
+          "max": 100
+        },
+        "sides": {
+          "min": 1,
+          "max": 1000
+        }
+      }
+    },
+    "WeaponUse": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ],
+        [
+          "mode",
+          "WeaponMode"
+        ],
+        [
+          "ability_choice",
+          "WeaponChoice"
+        ],
+        [
+          "distance",
+          "Number"
+        ],
+        [
+          "circumstance",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "distance": {
+          "min": 0,
+          "max": 10000
+        },
+        "circumstance": {
+          "min": -1000,
+          "max": 1000
+        }
+      }
+    },
+    "WeaponProficiency": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "entry",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "WeaponReady": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "ready",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "ActorSize": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "size",
+          "Size"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "WeaponAbility": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ]
+      ],
+      "output": true
+    },
+    "WeaponTraining": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "output": true
+    },
+    "WeaponDamageModifier": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "modifier",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ArmorProfile": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "category",
+          "ArmorCategory"
+        ],
+        [
+          "base",
+          "Number"
+        ],
+        [
+          "strength",
+          "Number"
+        ],
+        [
+          "stealth",
+          "Flag"
+        ]
+      ],
+      "input": "library",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "base": {
+          "min": 0,
+          "max": 1000
+        },
+        "strength": {
+          "min": 0,
+          "max": 30
+        }
+      }
+    },
+    "ArmorLoadout": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "armor",
+          "Text"
+        ],
+        [
+          "armor_trained",
+          "Flag"
+        ],
+        [
+          "shield",
+          "Flag"
+        ],
+        [
+          "shield_trained",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "ArmorBase": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "ac",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ShieldBonus": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "bonus",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ArmorClass": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "ac",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ArmorSpeedPenalty": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "penalty",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "CannotCast": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "CastingAbility": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ]
+      ],
+      "input": "library",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ]
+    },
+    "CastingSource": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "entry",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1,
+        2
+      ]
+    },
+    "SpellSaveDC": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "dc",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "SpellAttackBonus": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "bonus",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "SpellSave": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "caster",
+          "Text"
+        ],
+        [
+          "casting_entry",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ],
+        [
+          "circumstance",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "circumstance": {
+          "min": -1000,
+          "max": 1000
+        }
+      }
+    },
+    "SaveProficiency": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "SaveTraining": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "output": true
+    },
+    "ArmorSpellProfile": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "base",
+          "Number"
+        ],
+        [
+          "hours",
+          "Number"
+        ]
+      ],
+      "input": "library",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "base": {
+          "min": 0,
+          "max": 1000
+        },
+        "hours": {
+          "min": 1,
+          "max": 100000
+        }
+      }
+    },
+    "ArmorSpell": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "effect",
+          "Text"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ],
+        [
+          "elapsed_hours",
+          "Number"
+        ],
+        [
+          "dismissed",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "elapsed_hours": {
+          "min": 0,
+          "max": 100000
+        }
+      }
+    },
+    "ArmorSpellActive": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "effect",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ],
+        [
+          "base",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ArmorSpellEnded": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "effect",
+          "Text"
+        ],
+        [
+          "reason",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "SpellRequirements": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "entry",
+          "Text"
+        ],
+        [
+          "action",
+          "Text"
+        ],
+        [
+          "range_kind",
+          "Text"
+        ]
+      ],
+      "input": "library",
+      "output": true,
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
     }
   }
 }

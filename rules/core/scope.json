@@ -6,31 +6,47 @@
     "condition implications and mechanical D20/action/speed effects",
     "initiative comparisons and ties; action/bonus/reaction availability; dash, movement cost and opportunity triggers",
     "critical damage dice; damage modification, resistance, vulnerability and immunity; temporary HP and healing",
-    "Dodge benefits with sight/speed/incapacitation gates; passive perception"
+    "Dodge benefits with sight/speed/incapacitation gates; passive perception",
+    "2014/2024 skill-to-ability lookup, tool checks, single proficiency application; 2024 skill/tool advantage",
+    "source-bound dagger/longbow profiles and explicit finesse choice; edition-specific Heavy; armor table AC and shield training",
+    "source-bound wizard casting ability, spell save DC and attack bonus; save requests consume the calculated DC",
+    "Mage Armor settled effects: existing procedure duration/action/range, base AC replacement, expiration, armor termination and 2014 dismissal"
   ],
   "partial": [
-    "2014: ability modifiers only; other scenario relations reject this edition.",
     "ActionOption enumerates choices, not full effects of every action",
     "Movement cost supports ordinary, difficult terrain and crawling; geometry is supplied",
-    "one typed damage packet per event; combine same-type dice before input; multiple packets require external sequencing"
+    "one typed damage packet per event; combine same-type dice before input; multiple packets require external sequencing",
+    "2014 supports the newly compared check/attack/AC/casting subset only; conditions, exhaustion, actions and HP relations remain unsupported.",
+    "Weapon profiles currently cover dagger and longbow in each PHB; WeaponReady explicitly supplies already-adjudicated hands, ammunition and permission.",
+    "CastingSource selects one concrete ability-granting entry per use. It does not infer spell access from class membership or a shared display name.",
+    "ArmorSpell describes a spell already successfully cast on a willing, unarmored target. It evaluates a later settled snapshot, not casting permission or resource consumption.",
+    "SpellRequirements transports action and range from effective knowledge; components, spell-slot spending and action budgets are not executed.",
+    "2014 untrained armor/shield is rejected pending interpretation of the mirror wording; no 2024 penalty or shield rule is substituted.",
+    "Pinned entry projections remain unreviewed. They preserve effective-knowledge IDs, evidence, review and decision records; they do not replace the review/publish workflow."
   ],
   "deferred": [
     "Full action implementations (hide, help, ready), rerolls and replacement choices",
-    "Skill default-ability lookup, spell save DC",
-    "weapon properties, armor variants, underwater combat, mounted combat, light/special-sense resolution",
     "zero-HP death/stabilization, rests, concentration saves, durations and automatic state transitions",
-    "condition effects outside the selected relations (equipment drops, aging/weight, charm harmful effects, frightened approach)"
+    "condition effects outside the selected relations (equipment drops, aging/weight, charm harmful effects, frightened approach)",
+    "Remaining weapon profiles/properties, mastery, special AC formula selection, underwater/mounted combat and sense resolution",
+    "General casting grants/choices and resource-consuming spell execution; durations below one hour and automatic state advancement"
   ],
   "input_contract": [
     "All scenario IDs must be unique across cases in a build; facts describe one settled evaluation snapshot.",
     "Absent optional cause/condition/resistance means absent within this complete scenario, not unknown.",
-    "Ability scores, target DC/base AC, selected ability/training, positions/visibility and settled dice are explicit external facts.",
+    "Ability scores, ranks, proficiency ownership, loadouts, DM choices, geometry/visibility and settled dice are external facts. SkillCheck, ToolCheck, WeaponUse and SpellSave derive Test/Attack; TestInput/AttackInput are explicit low-level inputs, never fallbacks for failed requests.",
     "ReactionWindow is since the actor’s last turn start; Turn describes the current actor’s own turn.",
     "Rule and claim annotations are assistant-authored, unreviewed; source coordinates do not imply approved rule identity.",
     "DodgeActive means its duration has not ended; DodgeAttackerSeen is the defender’s sight of this attacker.",
     "PassivePerception.modifier is the complete supplied perception modifier, including training and penalties.",
     "Symbols are nonempty, at most 2048 characters, and exclude controls, double quotes and backslashes (Soufflé 2.5 proof serialization).",
     "A build is one joint snapshot (and one initiative contest); use separate builds for independent encounters. Rank accepts integer levels/CR bands 1–30 only.",
-    "AvailableAction and DashExtra describe available options and their potential extra movement, not actions already executed. MovementCost does not maintain a movement budget."
+    "AvailableAction and DashExtra describe available options and their potential extra movement, not actions already executed. MovementCost does not maintain a movement budget.",
+    "Each requested test has exactly one request kind. Finesse requires an explicit str/dex choice; default does not choose the higher modifier.",
+    "SkillAbilityOverride records DM approval (the 2014 variant or the 2024 discretion); tool use records that this tool is applicable. Proficiencies are a complete snapshot, not inferred from names.",
+    "ArmorLoadout uses a versioned armor entry ID or unarmored, with explicit armor/shield training. Only one armor and one shield are modeled.",
+    "2014 Rank accepts player levels 1–20; 2024 retains integer level/CR bands 1–30. No cross-edition lookup or fallback is performed.",
+    "ArmorSpell elapsed_hours is whole elapsed hours; an ending event must remove the effect from later snapshots. It cannot be revived by removing armor. Dismissal in 2024 is unsupported.",
+    "Entry IDs and pinned body/field/effective-knowledge revisions must still match the catalog. Changes fail closed until the projection is re-inspected."
   ]
 }

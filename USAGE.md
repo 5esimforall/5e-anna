@@ -537,6 +537,11 @@ make datalog
 # 查询稳定子句身份或从原文反查子句、事实与证明
 .venv/bin/python -m anna.datalog.runtime inspect --rule condition.close.critical
 .venv/bin/python -m anna.datalog.runtime inspect --source-id condition.paralyzed
+# 同一个输入问题在两代中的规则对应与差异
+.venv/bin/python -m anna.datalog.runtime inspect --comparison heavy_weapon
+# 从现有法师护甲条目计算 AC，并查看既有知识参数的来源
+.venv/bin/python -m anna.datalog.runtime build --case inputs.5r.mage_active \
+  --output .cache/datalog-mage-armor
 ```
 
 `make datalog` 不拉取镜像、不重建查询库，也不修改原文。默认产物在 `data/extracted/datalog/`，包括可直接打开的 `report.html`、`source-map.json`、`results.json`、`explanations.json` 和 `manifest.json`。运行 `make up` 后，报告里的证据链接会打开 Anna 的精确范围，原文链接会打开 Stella。`ANNA_PORT` 同时配置 make 命令写入的链接端口；直接运行脚本可用 `--base-url` 指定服务地址，`--lang en` 生成英文报告界面。
@@ -544,6 +549,12 @@ make datalog
 `--source`、`--db`、`--library`、`--output` 分别选择镜像、目录库、规则库与生成目录，`--engine` 或 `SOUFFLE` 指定引擎。`inspect --bundle 路径` 先核验产物文件哈希，再读取保存的结果；它不重新判定原文是否有新版本。原文更新后先运行 `make build`，再运行 `make datalog` 重新绑定范围。引文、上下文变动或匹配不唯一时构建失败，旧产物保留。
 
 自定义场景通过 `--cases 文件.json` 传入。文件结构与 `rules/core/cases.json` 一致：顶层为 `{"schema":1,"cases":[…]}`，每个场景包含唯一 `id`、按关系名组织的 `facts`，以及可选的 `expect`、`absent` 和 `explain` 查询。元组的字段顺序、类型、唯一键和数值边界以 `relations.json` 为准。一次构建中的场景合并求值，因此角色、检定与事件标识须按场景区分；需要同一角色的多个时间点时分别构建。固定骰值是输入，不由 Python 模拟掷骰。
+
+优先按问题提供 `SkillCheck`、`ToolCheck`、`WeaponUse` 或 `SpellSave`，并提供角色属性、熟练、装备及必要场景状态；具体组合可从 `inputs.5e.*`、`inputs.5r.*` 场景复制。旧场景的直接 `Test`、`Attack`、`DamageDice` 输入已改名为 `TestInput`、`AttackInput`、`DamageDiceInput`；原名称现在是派生结果，不再接受写入。低层输入用于显式裁定，不能与同一检定的高层请求混用。
+
+装备和施法来源使用 `entries.json` 中具体代际的条目标识，不使用名称查找。该文件固定所核对的正文、字段和有效知识修订；任一版本改变时，先核对差异、重新确认标注及参数绑定，再更新投影，不能只替换指纹来绕过失败。`source-map.json` 的 `entries` 和证明中的 `entry_origins` 可追到条目、知识状态和决策记录。法师护甲场景代表已成功施放后的状态，尚不模拟材料、动作和法术位消耗。
+
+`rules/core/editions.json` 保存两代的对应、差异和未支持清单，构建时校验来源与子句引用，并复制到产物目录。用 `inspect --comparison 标识` 读取当前产物中的一项。缺失的本代条目、规则、参数或相互冲突的请求会报错，不会用另一代结果补齐。
 
 报告区分源规则、结构投影、输入校验及待人工审核状态，不将子句数量当作规则完成度。动作选项表不表示每个动作效果都已实现；完整覆盖边界见 `scope.json`。单元测试会调用本机 Soufflé 执行正反场景和证明校验；未安装时明确跳过引擎测试，`make datalog` 则直接报错。
 

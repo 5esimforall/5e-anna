@@ -152,3 +152,51 @@ def validate_origins(origins, sources, editions, owner):
         for ref in refs:
             if ref not in sources or sources[ref]['edition'] != edition:
                 raise DatalogError('invalid_source_reference', owner, source_id=ref, edition=edition)
+
+
+def bind_entries(selectors, sources, db_path):
+    """Validate explicit version IDs and pinned annotations, never resolve by name.
+
+    A semantic projection is valid only for the entry and effective knowledge
+    revision that its author inspected. Source-only selectors may relocate;
+    changes to pinned knowledge (including review/evidence) require inspection.
+    """
+    result = {}
+    with closing(sqlite3.connect(Path(db_path).resolve().as_uri() + '?mode=ro', uri=True)) as db:
+        db.execute('PRAGMA query_only=ON')
+        for eid, selector in sorted(selectors.items()):
+            row = db.execute('SELECT data FROM entries WHERE id=?', (eid,)).fetchone()
+            if row is None:
+                raise DatalogError('entry_missing', eid)
+            entry = json.loads(row[0])
+            if entry['ruleset'] != selector['edition']:
+                raise DatalogError('entry_edition_mismatch', eid)
+            if (entry['type'] != selector['type'] or entry['body_hash'] != selector['body_hash'] or
+                    entry['fields'] != selector['fields'] or entry.get('field_conflicts') or
+                    entry.get('type_conflicts')):
+                raise DatalogError('entry_changed', eid)
+            for sid in selector['sources']:
+                source = sources.get(sid)
+                if (not source or source['edition'] != selector['edition'] or
+                        eid not in source['entry_ids']):
+                    raise DatalogError('entry_evidence_mismatch', eid, source_id=sid)
+            knowledge = []
+            for kid, expected in selector['knowledge'].items():
+                row = db.execute('SELECT data FROM effective_knowledge WHERE id=?', (kid,)).fetchone()
+                if row is None:
+                    raise DatalogError('entry_knowledge_missing', eid, knowledge_id=kid)
+                record = json.loads(row[0])
+                if (record['subject_id'] != eid or record['ruleset'] != selector['edition'] or
+                        record['status'] not in {'resolved', 'partial'} or
+                        record['review_status'] not in {'unreviewed', 'applied', 'revoked'} or
+                        sha256(row[0].encode()).hexdigest() != expected):
+                    raise DatalogError('entry_knowledge_changed', eid, knowledge_id=kid)
+                knowledge.append({'id': kid, 'sha256': expected, 'status': record['status'],
+                                  'review_status': record['review_status'],
+                                  'decision_ids': record.get('decision_ids', []),
+                                  'parameters': record.get('value', {}).get('parameters', {})})
+            result[eid] = {'entry_id': eid, 'edition': entry['ruleset'], 'name': entry['name'],
+                           'identity_status': entry['identity_status'], 'body_hash': entry['body_hash'],
+                           'sources': selector['sources'], 'knowledge': knowledge,
+                           'review_status': 'unreviewed'}
+    return result

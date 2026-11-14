@@ -17,7 +17,7 @@ import tempfile
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from anna.datalog.sources import (DatalogError, bind_sources, read_json, validate_origins,
+from anna.datalog.sources import (DatalogError, bind_entries, bind_sources, read_json, validate_origins,
                              verify_pages, within)
 from anna.paths import PROJECT, WEB
 from anna.serialization import canonical, digest
@@ -137,7 +137,8 @@ def load_library(root):
     config = read_json(root / 'library.json')
     if config.get('schema') != SCHEMA or config.get('engine') != {'name': 'souffle', 'version': '2.5'}:
         raise DatalogError('unsupported_library', str(root))
-    loaded = {key: read_json(within(root, config[key])) for key in ('relations', 'sources', 'rules', 'facts', 'cases', 'scope')}
+    loaded = {key: read_json(within(root, config[key])) for key in
+              ('relations', 'sources', 'rules', 'facts', 'cases', 'scope', 'entries', 'editions')}
     schema = loaded['relations']
     program = schema_text(schema)
     required_gate = {'fields': [['rule_id', 'RuleId'], ['edition', 'Edition']], 'input': 'infrastructure', 'key': [0, 1]}
@@ -146,6 +147,25 @@ def load_library(root):
     rules, seen = loaded['rules'], set()
     if not isinstance(rules, dict) or not rules:
         raise DatalogError('invalid_rule_registry')
+    if not isinstance(loaded['entries'], dict):
+        raise DatalogError('invalid_entry_registry')
+    for eid, entry in loaded['entries'].items():
+        if (not isinstance(entry, dict) or set(entry) !=
+                {'edition', 'type', 'body_hash', 'fields', 'sources', 'knowledge'} or
+                entry['edition'] not in {'5e', '5r'} or not isinstance(entry['fields'], dict) or
+                not isinstance(entry['knowledge'], dict)):
+            raise DatalogError('invalid_entry_binding', eid)
+        validate_origins({entry['edition']: entry['sources']}, loaded['sources'], [entry['edition']], eid)
+    comparisons = set()
+    for comparison in loaded['editions']:
+        cid = comparison.get('id')
+        if (not isinstance(cid, str) or not RULE_ID.fullmatch(cid) or cid in comparisons or
+                comparison.get('status') not in {'shared', 'different', 'unresolved', 'unsupported'} or
+                comparison.get('review_status') != 'unreviewed' or
+                any(rid not in rules for rid in comparison.get('rule_ids', []))):
+            raise DatalogError('invalid_edition_comparison', str(cid))
+        comparisons.add(cid)
+        validate_origins(comparison.get('sources'), loaded['sources'], ['5e', '5r'], cid)
     rule_map = {}
     files = {config[key] for key in loaded} | {'library.json'}
     for module in config['modules']:
@@ -180,7 +200,7 @@ def load_library(root):
             'rule_map': rule_map, 'file_hashes': hashes, 'revision': digest(hashes)}
 
 
-def collect_facts(library, cases):
+def collect_facts(library, cases, bound_entries=None):
     schema, rows, origins, keys = library['schema'], defaultdict(dict), defaultdict(list), defaultdict(dict)
 
     def add(relation, values, origin, input_kind):
@@ -212,8 +232,37 @@ def collect_facts(library, cases):
             raise DatalogError('review_evidence_required', cid)
         validate_tuple(schema, relation, values, input_kind='library')
         validate_origins({values[0]: claim.get('sources')}, library['sources'], [values[0]], cid)
+        eid = claim.get('entry_id')
+        if eid:
+            entry = library['entries'].get(eid)
+            if (not entry or entry['edition'] != values[0] or eid not in values or
+                    not set(entry['sources']).issubset(claim['sources'])):
+                raise DatalogError('invalid_entry_claim', cid, entry_id=eid)
         add(relation, values, {'kind': 'claim', 'claim_id': cid, 'sources': claim['sources'],
                                'review_status': claim.get('review_status', 'unreviewed')}, 'library')
+        if eid and bound_entries is not None:
+            add(relation, values, {'kind': 'entry', **bound_entries[eid]}, 'library')
+        for index, projection in claim.get('parameter_bindings', {}).items():
+            if (not isinstance(index, str) or not index.isdecimal() or not 1 < int(index) < len(values) or
+                    not isinstance(projection, dict) or
+                    set(projection) - {'knowledge_id', 'parameter', 'field', 'requires'} or
+                    not all(isinstance(projection.get(k), str) for k in ('knowledge_id', 'parameter', 'field')) or
+                    not isinstance(projection.get('requires', {}), dict) or not eid or
+                    projection['knowledge_id'] not in library['entries'][eid]['knowledge']):
+                raise DatalogError('invalid_parameter_binding', cid)
+            if bound_entries is None:
+                # Pure engine fixtures use the pinned tuple. Builds must verify
+                # the current effective record before transporting its value.
+                continue
+            record = next(k for k in bound_entries[eid]['knowledge'] if k['id'] == projection['knowledge_id'])
+            parameter = record['parameters'].get(projection['parameter'], {})
+            if (canonical(parameter.get(projection['field'])) != canonical(values[int(index)]) or
+                    any(parameter.get(k) != v for k, v in projection.get('requires', {}).items())):
+                raise DatalogError('knowledge_parameter_mismatch', cid, field=index)
+            add(relation, values, {'kind': 'knowledge_parameter', 'knowledge_id': record['id'],
+                'parameter': projection['parameter'], 'field': projection['field'],
+                'evidence': parameter['evidence'], 'sources': claim['sources'],
+                'review_status': record['review_status'], 'decision_ids': record['decision_ids']}, 'library')
     case_ids = set()
     for case in cases:
         if (not isinstance(case, dict) or not isinstance(case.get('id'), str) or
@@ -380,7 +429,7 @@ def explain(executable, directory, queries, schema, origins, rule_map):
         raise DatalogError('provenance_count_mismatch')
     result = []
     for (key, query), document in zip(queries.items(), documents):
-        sources, rules, inputs = set(), set(), {}
+        sources, rules, inputs, entries, reviews = set(), set(), {}, {}, set()
 
         def annotate(node):
             if not isinstance(node, dict):
@@ -399,10 +448,14 @@ def explain(executable, directory, queries, schema, origins, rule_map):
                     bound['origins'] = refs
                 for ref in refs:
                     sources.update(ref.get('sources', []))
+                    if ref.get('review_status'):
+                        reviews.add(ref['review_status'])
                     if ref['kind'] == 'rule':
                         rules.add(ref['rule_id'])
                     if ref['kind'] == 'scenario':
                         inputs[canonical(ref)] = ref
+                    if ref['kind'] == 'entry':
+                        entries[ref['entry_id']] = ref
             elif 'axiom' in node:
                 # The engine's guard rendering can substitute symbol-table IDs
                 # and arbitrary values for existential wildcards. Keep it as a
@@ -425,7 +478,8 @@ def explain(executable, directory, queries, schema, origins, rule_map):
         result.append({'id': key, **query, 'proof': proof, 'engine_rules': relevant_rules,
                        'source_ids': sorted(sources), 'rule_ids': sorted(rules),
                        'input_origins': list(inputs.values()),
-                       'review_statuses': sorted({rule_map[r]['review_status'] for r in rules})})
+                       'entry_origins': list(entries.values()),
+                       'review_statuses': sorted(reviews | {rule_map[r]['review_status'] for r in rules})})
     return result
 
 
@@ -466,9 +520,10 @@ def build(library_root=DEFAULT_LIBRARY, db_path=PROJECT / 'data/extracted/catalo
     engine = engine_version(executable)
     library = load_library(library_root)
     cases = selected_cases(library, case_file, case_id)
-    rows, origins = collect_facts(library, cases)
     sources, pages = bind_sources(library['sources'], db_path, source_root, base_url)
-    inputs = {'library_revision': library['revision'], 'sources': sources, 'cases': cases}
+    entries = bind_entries(library['entries'], sources, db_path)
+    rows, origins = collect_facts(library, cases, entries)
+    inputs = {'library_revision': library['revision'], 'sources': sources, 'cases': cases, 'entries': entries}
     snapshot = digest(inputs)
     with output_directory(output, (library_root, source_root, db_path)) as directory:
         (directory / 'facts').mkdir()
@@ -486,7 +541,7 @@ def build(library_root=DEFAULT_LIBRARY, db_path=PROJECT / 'data/extracted/catalo
             raise DatalogError('invalid_scenario', violations=violations)
         queries = check_expectations(cases, results, library['schema'])
         explanations = explain(executable, directory, queries, library['schema'], origins, library['rule_map'])
-        source_map = {'schema': SCHEMA, 'snapshot': snapshot, 'sources': sources,
+        source_map = {'schema': SCHEMA, 'snapshot': snapshot, 'sources': sources, 'entries': entries,
                       'rules': library['rule_map'], 'fact_origins': dict(origins)}
         write_json(directory / 'source-map.json', source_map)
         write_json(directory / 'relations.json', library['schema'])
@@ -494,12 +549,14 @@ def build(library_root=DEFAULT_LIBRARY, db_path=PROJECT / 'data/extracted/catalo
         write_json(directory / 'results.json', {'schema': SCHEMA, 'snapshot': snapshot, 'relations': results})
         write_json(directory / 'explanations.json', {'schema': SCHEMA, 'snapshot': snapshot, 'explanations': explanations})
         write_json(directory / 'scope.json', library['scope'])
+        write_json(directory / 'editions.json', library['editions'])
         (directory / 'engine-diagnostics.txt').write_text(diagnostics, 'utf-8')
         manifest = {'schema': SCHEMA, 'producer': 'anna-datalog', 'snapshot': snapshot, 'engine': engine,
                     'library_id': library['config']['id'], 'library_revision': library['revision'],
                     'library_files': library['file_hashes'], 'source_pages': pages,
                     'source_commits': sorted({c for s in sources.values() for c in s['source_commits']}),
                     'counts': {'rules': len(library['rule_map']), 'claims': len(library['facts']),
+                               'entry_projections': len(entries), 'edition_comparisons': len(library['editions']),
                                'source_clauses': sum(r['kind'] == 'source' for r in library['rule_map'].values()),
                                'projection_clauses': sum(r['kind'] == 'projection' for r in library['rule_map'].values()),
                                'sources': len(sources), 'pages': len(pages), 'cases': len(cases),
@@ -508,7 +565,7 @@ def build(library_root=DEFAULT_LIBRARY, db_path=PROJECT / 'data/extracted/catalo
                     'acceptance': {'status': 'passed', 'present': sum(len(c.get('expect', [])) for c in cases),
                                    'absent': sum(len(c.get('absent', [])) for c in cases)},
                     'review_status': 'unreviewed' if any(r['review_status'] != 'reviewed'
-                        for r in [*library['rule_map'].values(), *library['facts']]) else 'reviewed'}
+                        for r in [*library['rule_map'].values(), *library['facts'], *entries.values()]) else 'reviewed'}
         from anna.datalog.report import render_report
         labels = read_json(Path(__file__).with_name('labels.json'))
         (directory / 'report.html').write_text(render_report(manifest, source_map, results, explanations,
@@ -517,6 +574,8 @@ def build(library_root=DEFAULT_LIBRARY, db_path=PROJECT / 'data/extracted/catalo
                                  for p in sorted(directory.rglob('*')) if p.is_file()}
         write_json(directory / 'manifest.json', manifest)
         verify_pages(pages, source_root)
+        if bind_entries(library['entries'], sources, db_path) != entries:
+            raise DatalogError('entries_changed_during_build')
         for file, expected in library['file_hashes'].items():
             if sha256(within(library_root, file).read_bytes()).hexdigest() != expected:
                 raise DatalogError('library_changed_during_build', file)
@@ -553,6 +612,7 @@ def main():
     inspect.add_argument('--rule')
     inspect.add_argument('--source-id')
     inspect.add_argument('--explanation')
+    inspect.add_argument('--comparison')
     args = parser.parse_args()
     try:
         if args.command == 'build':
@@ -560,7 +620,7 @@ def main():
                            args.cases, args.case, args.lang)
         else:
             result = verify_bundle(args.bundle)
-            selectors = sum(bool(v) for v in (args.rule, args.source_id, args.explanation))
+            selectors = sum(bool(v) for v in (args.rule, args.source_id, args.explanation, args.comparison))
             if selectors > 1:
                 raise DatalogError('conflicting_query')
             mapping = read_json(args.bundle / 'source-map.json')
@@ -576,6 +636,8 @@ def main():
                                               if args.source_id in proof['source_ids']]} if source else None
             elif args.explanation:
                 result = next((e for e in read_json(args.bundle / 'explanations.json')['explanations'] if e['id'] == args.explanation), None)
+            elif args.comparison:
+                result = next((e for e in read_json(args.bundle / 'editions.json') if e['id'] == args.comparison), None)
             if result is None:
                 raise DatalogError('not_found')
         print(json.dumps(result, ensure_ascii=False, indent=2))

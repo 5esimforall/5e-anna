@@ -1,0 +1,223 @@
+[
+  {
+    "id": "ability_and_training",
+    "status": "shared",
+    "sources": {
+      "5e": [
+        "5e.ability",
+        "5e.rank",
+        "5e.training"
+      ],
+      "5r": [
+        "ability",
+        "training"
+      ]
+    },
+    "rule_ids": [
+      "ability.modifier",
+      "training.bonus"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "属性调整值与角色1–20级熟练加值共用子句；2014 的 CR 扩展尚未启用。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "skill_defaults",
+    "status": "shared",
+    "sources": {
+      "5e": [
+        "5e.checks"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "rule_ids": [
+      "skill.ability.default",
+      "skill.ability.override",
+      "skill.test"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "18项技能的通常属性对应一致；换属性由场景明确记录 DM 选择，2014 原文标作变体。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "skill_and_tool",
+    "status": "different",
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "rule_ids": [
+      "skill.tool.advantage",
+      "skill.tool.expertise.advantage",
+      "skill.training.tool.proficient"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "两代都只加一次熟练加值；2024 同时熟练适用技能和工具时给予优势，2014 PHB 未给出这项通则。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "weapon_ability",
+    "status": "shared",
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack"
+      ]
+    },
+    "rule_ids": [
+      "weapon.ability.finesse.str",
+      "weapon.ability.finesse.dex",
+      "weapon.context.thrown"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "灵巧在力量与敏捷间明确选一项，攻击和伤害使用同一项。投掷沿用武器的属性；2024 投掷可随攻击拔出的额外文字未实现。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "heavy_weapon",
+    "status": "different",
+    "sources": {
+      "5e": [
+        "5e.weapons"
+      ],
+      "5r": [
+        "5r.weapons"
+      ]
+    },
+    "rule_ids": [
+      "weapon.heavy.size.small",
+      "weapon.heavy.size.tiny",
+      "weapon.heavy.ability.melee",
+      "weapon.heavy.ability.ranged"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "2014 微型/小型持用重型武器具有劣势；2024 近战看力量13、远程看敏捷13。当前实物验收使用两代长弓。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "armor_class",
+    "status": "shared",
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "rule_ids": [
+      "armor.base.light",
+      "armor.base.medium",
+      "armor.base.heavy",
+      "armor.shield.trained"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "轻甲加完整敏捷，中甲仅限制正加值上限2，重甲不使用敏捷；受训盾牌加2。24行护甲分别绑定本代条目。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "untrained_armor_and_shield",
+    "status": "unresolved",
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "rule_ids": [
+      "armor.untrained.str",
+      "armor.untrained.dex",
+      "armor.shield.untrained",
+      "validate.input.legacy.armor",
+      "validate.input.legacy.shield"
+    ],
+    "support": {
+      "5e": "rejected_pending_interpretation",
+      "5r": "implemented"
+    },
+    "summary": "2014 镜像写作“所有的属性检定、豁免检定、以及以力量或敏捷进行的攻击检定”，限定范围待核；不擅自改成2024措辞。2024 未受训甲对力量/敏捷检定给劣势并禁止施法，未受训盾牌无AC增益。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "wizard_casting",
+    "status": "shared",
+    "sources": {
+      "5e": [
+        "5e.entry.wizard",
+        "5e.spells"
+      ],
+      "5r": [
+        "5r.entry.wizard",
+        "5r.spells"
+      ]
+    },
+    "rule_ids": [
+      "casting.dc",
+      "casting.attack",
+      "save.test"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "各自法师施法条目指定智力；法术DC为8+熟练+施法属性调整值，攻击加值为熟练+施法属性调整值。具体施法来源不由同名合并。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "mage_armor",
+    "status": "different",
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "rule_ids": [
+      "mage.armor.active",
+      "mage.armor.base",
+      "mage.armor.expired",
+      "mage.armor.armored",
+      "mage.armor.dismissed"
+    ],
+    "support": {
+      "5e": "implemented",
+      "5r": "implemented"
+    },
+    "summary": "两代基础AC均为13+敏捷，持续8小时，穿甲提前结束；2014另写施法者可用动作解散，2024未写此条。动作、触碰和时长绑定既有procedure参数；当前仅执行已成功施法后的状态。",
+    "review_status": "unreviewed"
+  }
+]

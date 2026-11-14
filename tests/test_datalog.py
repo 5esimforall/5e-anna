@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 import anna.datalog.runtime as d
-from anna.datalog.sources import DatalogError, bind_sources, locate, read_json, within
+from anna.datalog.sources import DatalogError, bind_entries, bind_sources, locate, read_json, within
 from anna.source.html import Document
 from anna.datalog.report import render_report
 
@@ -52,7 +52,13 @@ class ContractTests(unittest.TestCase):
         for values in [valid[:-1], ['5r','actor','str',True], ['5r','actor','str',31], ['5r','actor','luck',10]]:
             with self.assertRaises(DatalogError):d.validate_tuple(schema, 'AbilityScore', values)
         self.error('invalid_relation', d.validate_tuple, schema, 'Outcome', ['5r','test','success'], input_kind='scenario')
-        self.error('unsupported_relation_edition', d.validate_tuple, schema, 'Rank', ['5e','actor',1])
+        self.error('unsupported_relation_edition', d.validate_tuple, schema, 'Exhaustion', ['5e','actor',1])
+        for relation, values in [('Condition',['5e','actor','blinded']),
+                                 ('Turn',['5e','actor',0,0,0]), ('Damage',['5e','event','actor','fire',1,0])]:
+            self.error('unsupported_relation_edition',d.validate_tuple,schema,relation,values)
+        self.error('invalid_value',d.validate_tuple,schema,'DamageDiceInput',['5r','attack','weapon',0,4])
+        self.error('invalid_relation',d.validate_tuple,schema,'Test',
+                   ['5r','test','actor','check','str',10,0,'none'],input_kind='scenario')
         for bad in ['x\nquit', 'quote"', 'backslash\\', '']:
             self.error('invalid_value', d.validate_tuple, schema, 'Roll', ['5r',bad,1,0])
 
@@ -144,6 +150,55 @@ class ContractTests(unittest.TestCase):
             self.assertGreater(rebound['s']['span'][0],b['span'][0])
             self.assertEqual(rebound['s']['raw'],b['raw'])
 
+    def test_entry_binding_identity_revision_and_knowledge_parameters(self):
+        with tempfile.TemporaryDirectory() as temp:
+            db = Path(temp)/'catalog.sqlite'
+            entry = {'id':'entry', 'ruleset':'5r', 'type':'spell', 'body_hash':'body',
+                     'fields':{'duration':'8 hours'}, 'name':'Mage Armor', 'identity_status':'provisional'}
+            record = {'id':'knowledge', 'subject_id':'entry', 'ruleset':'5r', 'status':'partial',
+                      'review_status':'unreviewed', 'value':{'parameters':{'duration':{
+                          'quantity':8, 'kind':'timed', 'unit':'hour', 'concentration':False,
+                          'evidence':{'path':'page', 'raw':'8 hours', 'span':[0,7]}}}}}
+            raw = json.dumps(record)
+            selector = {'edition':'5r','type':'spell','body_hash':'body','fields':entry['fields'],
+                        'sources':['source'],'knowledge':{'knowledge':sha256(raw.encode()).hexdigest()}}
+            sources = {'source':{'edition':'5r','entry_ids':['entry']}}
+            with closing(sqlite3.connect(db)) as conn:
+                conn.executescript('CREATE TABLE entries(id TEXT,data TEXT); CREATE TABLE effective_knowledge(id TEXT,data TEXT);')
+                conn.execute('INSERT INTO entries VALUES(?,?)',('entry',json.dumps(entry)))
+                conn.execute('INSERT INTO effective_knowledge VALUES(?,?)',('knowledge',raw));conn.commit()
+            bound = bind_entries({'entry':selector},sources,db)
+            self.assertEqual(bound['entry']['knowledge'][0]['parameters']['duration']['quantity'],8)
+            self.assertEqual(bound['entry']['identity_status'],'provisional')
+            library = copy.deepcopy(self.library)
+            library['sources']['source'] = {'edition':'5r'}
+            library['entries'] = {'entry':selector}
+            library['facts'] = [{'id':'test.spell','relation':'ArmorSpellProfile',
+                'values':['5r','entry',13,8], 'sources':['source'], 'entry_id':'entry',
+                'review_status':'unreviewed', 'parameter_bindings':{'3':{'knowledge_id':'knowledge',
+                    'parameter':'duration','field':'quantity','requires':{'kind':'timed','unit':'hour'}}}}]
+            _, origins = d.collect_facts(library,[],bound)
+            refs = origins[d.fact_key('ArmorSpellProfile',['5r','entry',13,8])]
+            self.assertEqual({x['kind'] for x in refs},{'claim','entry','knowledge_parameter'})
+            library['facts'][0]['values'][3] = 9
+            self.error('knowledge_parameter_mismatch',d.collect_facts,library,[],bound)
+            for field,value,code in [('edition','5e','entry_edition_mismatch'),
+                                      ('body_hash','changed','entry_changed'),
+                                      ('fields',{},'entry_changed')]:
+                wrong = {**selector,field:value}
+                self.error(code,bind_entries,{'entry':wrong},sources,db)
+            self.error('entry_missing',bind_entries,{'unknown':selector},sources,db)
+            self.error('entry_evidence_mismatch',bind_entries,{'entry':selector},
+                       {'source':{'edition':'5r','entry_ids':['different-same-name']}},db)
+            for status,review in [('partial','applied'),('rejected','applied'),('review','stale'),('review','conflict')]:
+                changed = {**record,'status':status,'review_status':review}
+                with closing(sqlite3.connect(db)) as conn:
+                    conn.execute('UPDATE effective_knowledge SET data=?',(json.dumps(changed),));conn.commit()
+                self.error('entry_knowledge_changed',bind_entries,{'entry':selector},sources,db)
+            with closing(sqlite3.connect(db)) as conn:
+                conn.execute('DELETE FROM effective_knowledge');conn.commit()
+            self.error('entry_knowledge_missing',bind_entries,{'entry':selector},sources,db)
+
 
 @unittest.skipUnless(shutil.which('souffle'), 'Install Soufflé 2.5 to run actual engine acceptance')
 class EngineTests(unittest.TestCase):
@@ -196,7 +251,7 @@ class EngineTests(unittest.TestCase):
         second['facts']['Roll'][0][-1]=0;variants.append((second,'missing_second_die'))
         orphan={'id':'orphan','facts':{'Roll':[['5r','missing-test',1,0]]}};variants.append((orphan,'orphan_Roll'))
         wrong_kind=copy.deepcopy(next(c for c in self.library['cases']['cases'] if c['id']=='attack.twenty'))
-        wrong_kind['facts']['Test'][0][3]='check';variants.append((wrong_kind,'invalid_attack_test'))
+        wrong_kind['facts']['TestInput'][0][3]='check';variants.append((wrong_kind,'invalid_attack_test'))
         variants.append(({'id':'healing.missing','facts':{'Healing':[['5r','heal',3]]}},'missing_hit_points'))
         variants.append(({'id':'dodge.missing','facts':{'DodgeActive':[['5r','actor']]}},'missing_speed'))
         variants.append(({'id':'charm.missing','facts':{'Condition':[['5r','actor','charmed']]}},'missing_condition_source'))
@@ -213,6 +268,65 @@ class EngineTests(unittest.TestCase):
         proof=d.explain('souffle',directory,queries,self.library['schema'],origins,self.library['rule_map'])[0]
         self.assertEqual(proof['values'],['5r',actor,'str',-5])
 
+    def test_input_dependencies_reject_missing_conflicting_and_cross_edition_values(self):
+        def case(name):
+            return copy.deepcopy(next(c for c in self.library['cases']['cases'] if c['id']==name))
+        variants=[]
+        for relation,code in [('WeaponReady','missing_weapon_readiness'),('AbilityScore','missing_ability'),
+                              ('ArmorLoadout','missing_target_ac'),('Rank','missing_rank')]:
+            value=case('inputs.5r.dagger')
+            if relation=='AbilityScore':value['facts'][relation].pop(0)
+            else:value['facts'].pop(relation)
+            variants.append((value,code))
+        value=case('inputs.5r.dagger');value['facts']['WeaponUse'][0][3]='ver_ba7662556535b8923728ab01'
+        variants.append((value,'unsupported_weapon'))
+        value=case('inputs.5r.dagger');value['facts']['WeaponUse'][0][6]='default'
+        variants.append((value,'missing_or_invalid_weapon_ability'))
+        value=case('inputs.5r.dagger');value['facts']['TestInput']=[['5r',value['facts']['WeaponUse'][0][1],
+            value['facts']['WeaponUse'][0][2],'attack','dex',1,0,'none']]
+        variants.append((value,'conflicting_test_request'))
+        value=case('inputs.5r.dagger');value['facts']['WeaponProficiency'][0][2]='ver_ba7662556535b8923728ab01'
+        variants.append((value,'unsupported_weapon_proficiency'))
+        value=case('inputs.5r.skill_tool');value['facts']['SkillCheck'][0][3]='unknown'
+        variants.append((value,'unsupported_skill'))
+        value=case('inputs.5e.small_strong');value['facts'].pop('ActorSize');variants.append((value,'missing_actor_size'))
+        value=case('inputs.5r.spell_dc');value['facts']['CastingSource'][0][2]='ver_f68f2241cc9fd6a17aefead9'
+        variants.append((value,'unsupported_casting_source'))
+        value=case('inputs.5r.spell_dc');value['facts'].pop('CastingSource');variants.append((value,'missing_casting_source'))
+        value=case('inputs.5r.mage_active');value['facts']['ArmorSpell'][0][-1]=1
+        variants.append((value,'unsupported_spell_dismissal'))
+        value=case('inputs.5r.mage_active');value['facts'].pop('ArmorLoadout');variants.append((value,'missing_armor_loadout'))
+        value=case('inputs.5r.mage_active');other=value['facts']['ArmorSpell'][0].copy();other[1]+='-other'
+        value['facts']['ArmorSpell'].append(other);variants.append((value,'multiple_armor_spells'))
+        value=case('inputs.5e.armor_leather');value['facts']['ArmorLoadout'][0][3]=0
+        variants.append((value,'unresolved_2014_armor_training'))
+        value=case('inputs.5e.armor_leather');value['facts']['ArmorLoadout'][0][-1]=0
+        variants.append((value,'unresolved_2014_shield_training'))
+        for i,(value,code) in enumerate(variants):
+            with self.subTest(code=code):
+                _,result,_=self.evaluate([value],f'input-reject-{i}')
+                self.assertIn(code,[v[2] for v in result['Violation']])
+
+    def test_annotation_change_propagates_and_missing_inputs_do_not_borrow_other_editions(self):
+        case=copy.deepcopy(next(c for c in self.library['cases']['cases'] if c['id']=='inputs.5r.mage_target'))
+        _,before,_=self.evaluate([case],'before-annotation')
+        original=self.library
+        try:
+            self.library=copy.deepcopy(original)
+            claim=next(f for f in self.library['facts'] if f['id']=='5r.entry.mage_armor')
+            claim['values'][2]=14
+            _,after,_=self.evaluate([case],'after-annotation')
+            self.assertEqual(before['ArmorClass'],[['5r','5r-mage-defender',15]])
+            self.assertEqual(after['ArmorClass'],[['5r','5r-mage-defender',16]])
+            self.assertEqual(before['Outcome'],[['5r','5r-mage-attacker-attack','success']])
+            self.assertEqual(after['Outcome'],[['5r','5r-mage-attacker-attack','failure']])
+            self.assertEqual(before['TestTotal'],after['TestTotal'])
+            self.library['facts'].remove(claim)
+            _,missing,_=self.evaluate([case],'without-annotation')
+            self.assertIn('unsupported_armor_spell',[v[2] for v in missing['Violation']])
+            self.assertEqual(missing['ArmorSpellActive'],[])
+        finally:self.library=original
+
     @unittest.skipUnless((d.PROJECT/'data/extracted/catalog.sqlite').exists() and d.WEB.exists(), 'Build the source catalog first')
     def test_real_corpus_bundle_and_tamper_detection(self):
         output=self.root/'bound'
@@ -221,11 +335,19 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(manifest['review_status'],'unreviewed')
         self.assertEqual(d.verify_bundle(output)['snapshot'],manifest['snapshot'])
         mapping=read_json(output/'source-map.json')
+        self.assertEqual(len(mapping['entries']),32)
         for source in mapping['sources'].values():
             self.assertEqual(source['quote'],source['raw'])
             self.assertIn('sha256=',source['links']['evidence'])
         proof=next(p for p in read_json(output/'explanations.json')['explanations'] if p['relation']=='DamageDiceRequired')
         self.assertIn('condition.paralyzed',proof['source_ids'])
+        mage=next(p for p in read_json(output/'explanations.json')['explanations'] if p['case_ids']==['inputs.5r.mage_active'])
+        self.assertEqual(mage['entry_origins'][0]['entry_id'],'ver_992b31e3033fc968022d586c')
+        self.assertIn('knowledge_parameter',json.dumps(mage['proof']))
+        attack=next(p for p in read_json(output/'explanations.json')['explanations'] if p['case_ids']==['inputs.5r.mage_target'])
+        self.assertEqual({e['entry_id'] for e in attack['entry_origins']},
+                         {'ver_96fa837d8dcbbd58d610d900','ver_992b31e3033fc968022d586c'})
+        self.assertTrue(all(mapping['sources'][s]['edition']=='5r' for s in attack['source_ids']))
         report=(output/'report.html').read_text()
         self.assertIn('id="source-condition.paralyzed"',report)
         self.assertIn('href="#rule-critical.dice"',report)

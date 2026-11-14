@@ -17,6 +17,9 @@
     "conditions.dl",
     "actions.dl",
     "damage.dl",
-    "validation.dl"
-  ]
+    "validation.dl",
+    "inputs.dl"
+  ],
+  "entries": "entries.json",
+  "editions": "editions.json"
 }

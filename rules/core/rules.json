@@ -18,11 +18,15 @@
   "training.bonus": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "training"
+      ],
+      "5e": [
+        "5e.rank"
       ]
     },
     "review_status": "unreviewed"
@@ -30,11 +34,15 @@
   "roll.advantage": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -42,11 +50,15 @@
   "roll.disadvantage": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -54,11 +66,15 @@
   "roll.mode.normal": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -66,11 +82,15 @@
   "roll.mode.cancel": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -78,11 +98,15 @@
   "roll.mode.higher": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -90,11 +114,15 @@
   "roll.mode.lower": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -102,11 +130,15 @@
   "roll.select.normal": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -114,11 +146,15 @@
   "roll.select.advantage": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -126,11 +162,15 @@
   "roll.select.disadvantage": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "advantage"
+      ],
+      "5e": [
+        "5e.advantage"
       ]
     },
     "review_status": "unreviewed"
@@ -138,11 +178,15 @@
   "training.none": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "training"
+      ],
+      "5e": [
+        "5e.training"
       ]
     },
     "review_status": "unreviewed"
@@ -150,11 +194,15 @@
   "training.proficient": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "training"
+      ],
+      "5e": [
+        "5e.training"
       ]
     },
     "review_status": "unreviewed"
@@ -162,11 +210,15 @@
   "training.expertise": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "training"
+      ],
+      "5e": [
+        "5e.training"
       ]
     },
     "review_status": "unreviewed"
@@ -174,11 +226,15 @@
   "training.half": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "training"
+      ],
+      "5e": [
+        "5e.training"
       ]
     },
     "review_status": "unreviewed"
@@ -210,11 +266,15 @@
   "cover.higher": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -222,11 +282,15 @@
   "cover.bonus.0": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -234,11 +298,15 @@
   "cover.bonus.1": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -246,11 +314,15 @@
   "cover.bonus.2": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -258,11 +330,15 @@
   "cover.bonus.3": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -270,11 +346,15 @@
   "cover.absent": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -282,11 +362,15 @@
   "save.cover": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -294,11 +378,17 @@
   "other.adjustment.check": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "d20"
+      ],
+      "5e": [
+        "5e.checks",
+        "5e.save",
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -306,11 +396,17 @@
   "other.adjustment.save": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "d20"
+      ],
+      "5e": [
+        "5e.checks",
+        "5e.save",
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -318,12 +414,16 @@
   "attack.target": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack",
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -331,11 +431,17 @@
   "other.target": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "d20"
+      ],
+      "5e": [
+        "5e.checks",
+        "5e.save",
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -343,12 +449,18 @@
   "test.total": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "d20",
         "condition.exhaustion"
+      ],
+      "5e": [
+        "5e.checks",
+        "5e.save",
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -356,11 +468,15 @@
   "attack.natural.one": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -368,11 +484,15 @@
   "attack.natural.twenty": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -380,11 +500,15 @@
   "attack.compare.success": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -392,11 +516,17 @@
   "test.compare.success": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "d20"
+      ],
+      "5e": [
+        "5e.checks",
+        "5e.save",
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -404,11 +534,15 @@
   "attack.compare.failure": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -416,11 +550,17 @@
   "test.compare.failure": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "d20"
+      ],
+      "5e": [
+        "5e.checks",
+        "5e.save",
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -440,12 +580,16 @@
   "attack.blocked": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target",
         "range"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -453,11 +597,15 @@
   "armor.unarmored": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack"
+      ],
+      "5e": [
+        "5e.unarmored"
       ]
     },
     "review_status": "unreviewed"
@@ -465,11 +613,15 @@
   "cover.total": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.cover"
       ]
     },
     "review_status": "unreviewed"
@@ -477,12 +629,16 @@
   "range.exceeded": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "range",
         "opportunity"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -490,11 +646,15 @@
   "range.long": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "range"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -502,11 +662,15 @@
   "range.close.enemy": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "range"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -514,11 +678,15 @@
   "visibility.unseen.target": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -526,11 +694,15 @@
   "visibility.unseen.attacker": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -538,11 +710,15 @@
   "visibility.wrong.location": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -550,11 +726,15 @@
   "critical.natural": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "attack"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -562,11 +742,15 @@
   "critical.dice": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "critical"
+      ],
+      "5e": [
+        "5e.critical"
       ]
     },
     "review_status": "unreviewed"
@@ -574,11 +758,15 @@
   "ordinary.dice": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "damage"
+      ],
+      "5e": [
+        "5e.critical"
       ]
     },
     "review_status": "unreviewed"
@@ -1228,10 +1416,12 @@
   "validate.test.ability": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1239,10 +1429,12 @@
   "validate.test.roll": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1250,10 +1442,12 @@
   "validate.test.training": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1261,10 +1455,12 @@
   "validate.roll.second": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1272,10 +1468,12 @@
   "validate.attack.context": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1283,10 +1481,12 @@
   "validate.attack.visibility": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1294,10 +1494,12 @@
   "validate.attack.range": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1305,10 +1507,12 @@
   "validate.attack.mode": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1316,10 +1520,12 @@
   "validate.hp.maximum": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1327,10 +1533,12 @@
   "validate.initiative.kind": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1338,10 +1546,12 @@
   "validate.damage.healing": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1349,10 +1559,12 @@
   "validate.damage.temp": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1360,10 +1572,12 @@
   "validate.healing.temp": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1408,10 +1622,12 @@
   "validate.orphan.roll": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1419,10 +1635,12 @@
   "validate.orphan.advantagecause": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1430,10 +1648,12 @@
   "validate.orphan.disadvantagecause": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1441,10 +1661,12 @@
   "validate.orphan.cover": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1452,10 +1674,12 @@
   "validate.orphan.attack": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1463,10 +1687,12 @@
   "validate.orphan.visibility": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1474,10 +1700,12 @@
   "validate.orphan.closeenemy": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1485,10 +1713,12 @@
   "validate.orphan.damagedice": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1496,10 +1726,12 @@
   "validate.orphan.requiredsense": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1507,10 +1739,12 @@
   "validate.orphan.socialcheck": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1518,10 +1752,12 @@
   "validate.orphan.initiative": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1529,10 +1765,12 @@
   "validate.orphan.dodgeattackerseen": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1540,10 +1778,12 @@
   "validate.condition.source.frightened": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1551,10 +1791,12 @@
   "validate.condition.source.charmed": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1562,10 +1804,12 @@
   "validate.condition.source.grappled": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1573,10 +1817,12 @@
   "validate.expertise.check": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
@@ -1597,11 +1843,15 @@
   "attack.forced.miss": {
     "kind": "source",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
       "5r": [
         "target"
+      ],
+      "5e": [
+        "5e.attack"
       ]
     },
     "review_status": "unreviewed"
@@ -1609,10 +1859,12 @@
   "validate.attack.kind": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1620,10 +1872,12 @@
   "validate.sense.kind": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1631,10 +1885,12 @@
   "validate.social.kind": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1642,10 +1898,12 @@
   "validate.dodge.speed": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1653,10 +1911,12 @@
   "validate.healing.hp": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1664,10 +1924,12 @@
   "validate.temporary.hp": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1675,10 +1937,12 @@
   "validate.attack.support.visibility": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1686,10 +1950,12 @@
   "validate.attack.support.closeenemy": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
@@ -1697,15 +1963,1385 @@
   "validate.attack.support.damagedice": {
     "kind": "projection",
     "editions": [
-      "5r"
+      "5r",
+      "5e"
     ],
     "sources": {
-      "5r": []
+      "5r": [],
+      "5e": []
     },
     "review_status": "unreviewed",
     "rationale": "Validate required context and relation roles in the explicit scenario contract."
   },
   "validate.attack.support.dodgeattackerseen": {
+    "kind": "projection",
+    "editions": [
+      "5r",
+      "5e"
+    ],
+    "sources": {
+      "5r": [],
+      "5e": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "input.test": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "input.attack": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "input.damagedice": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "input.legacy.penalty": {
+    "kind": "projection",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "2014 exhaustion is unsupported and cannot enter this edition; no implicit 2024 penalty."
+  },
+  "validate.legacy.rank": {
+    "kind": "projection",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "skill.ability.default": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.ability.override": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.known": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.none": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "tool.trained": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.alone": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.tool.proficient": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.tool.expertise": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.tool.replace.none": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.training.tool.replace.half": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.tool.advantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.tool.expertise.advantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "skill.test": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "tool.test.trained": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "tool.test.untrained": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.tools",
+        "5e.training"
+      ],
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.ability.melee": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.ability.ranged": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.ability.finesse.str": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.ability.finesse.dex": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.training.yes": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.training.no": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.test": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "weapon.context.melee": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.context.ranged": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.context.thrown": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.damage.modifier": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.damage.dice": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ],
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.not.ready": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "weapon.heavy.size.tiny": {
+    "kind": "source",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.heavy.size.small": {
+    "kind": "source",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": [
+        "5e.weapons",
+        "5e.attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.heavy.ability.melee": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "weapon.heavy.ability.ranged": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "5r.weapons",
+        "attack",
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.base.unarmored": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "armor.base.light": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.base.medium": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.base.heavy": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.shield.none": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.shield.trained": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.shield.untrained": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.total": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.strength.penalty": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.strength.sufficient": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.stealth": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.armor"
+      ],
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.untrained.str": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.untrained.dex": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.casting.blocked": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "5r.armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "casting.dc": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.spells"
+      ],
+      "5r": [
+        "5r.spells"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "casting.attack": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.spells"
+      ],
+      "5r": [
+        "5r.spells"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "save.training.yes": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "save.training.no": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.checks",
+        "5e.training"
+      ],
+      "5r": [
+        "training",
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "save.test": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "mage.armor.active": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "mage.armor.base": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "mage.armor.expired": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "mage.armor.armored": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "mage.armor.dismissed": {
+    "kind": "source",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "request.explicit": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "request.skill": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "request.tool": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "request.weapon": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "request.spell_save": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.request.conflict": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.request.unresolved": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.skill.unknown": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.skill.override": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.skill.tool": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.unknown": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.choice": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.mode": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.ac": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.ready": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.ready.orphan": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.explicit.context": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.weapon.explicit.dice": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.armor.unknown": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.armor.dex": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.armor.strength": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.casting.unknown": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.casting.ability": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.casting.rank": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.save.source": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.spell.unknown": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.spell.loadout": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.spell.overlap": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.legacy.armor": {
+    "kind": "projection",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.legacy.shield": {
+    "kind": "projection",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.legacy.size": {
+    "kind": "projection",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.revised.dismissal": {
     "kind": "projection",
     "editions": [
       "5r"
@@ -1714,6 +3350,84 @@
       "5r": []
     },
     "review_status": "unreviewed",
-    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+    "rationale": "Normalize explicit requests and validate the closed evaluation snapshot."
+  },
+  "validate.input.armor.worn.dex": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
+  },
+  "validate.input.weapon.proficiency": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
+  },
+  "validate.input.skill.proficiency": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
+  },
+  "validate.input.weapon.heavy.ability": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
+  },
+  "armor.strength.not.required": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
+  },
+  "armor.strength.unarmored": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
   }
 }

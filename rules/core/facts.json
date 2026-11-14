@@ -636,5 +636,1125 @@
       "actions"
     ],
     "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.athletics",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "athletics",
+      "str"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.acrobatics",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "acrobatics",
+      "dex"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.sleight_of_hand",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "sleight_of_hand",
+      "dex"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.stealth",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "stealth",
+      "dex"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.arcana",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "arcana",
+      "int"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.history",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "history",
+      "int"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.investigation",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "investigation",
+      "int"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.nature",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "nature",
+      "int"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.religion",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "religion",
+      "int"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.animal_handling",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "animal_handling",
+      "wis"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.insight",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "insight",
+      "wis"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.medicine",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "medicine",
+      "wis"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.perception",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "perception",
+      "wis"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.survival",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "survival",
+      "wis"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.deception",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "deception",
+      "cha"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.intimidation",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "intimidation",
+      "cha"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.performance",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "performance",
+      "cha"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.skill.persuasion",
+    "relation": "SkillAbility",
+    "values": [
+      "5e",
+      "persuasion",
+      "cha"
+    ],
+    "sources": [
+      "5e.checks"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5e.entry.dagger",
+    "relation": "WeaponProfile",
+    "values": [
+      "5e",
+      "ver_ba7662556535b8923728ab01",
+      "melee",
+      20,
+      60,
+      1,
+      1,
+      0,
+      1,
+      4
+    ],
+    "sources": [
+      "5e.entry.dagger"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_ba7662556535b8923728ab01"
+  },
+  {
+    "id": "5e.entry.longbow",
+    "relation": "WeaponProfile",
+    "values": [
+      "5e",
+      "ver_f95604ac76a4eb59e43c6874",
+      "ranged",
+      150,
+      600,
+      0,
+      0,
+      1,
+      1,
+      8
+    ],
+    "sources": [
+      "5e.entry.longbow"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_f95604ac76a4eb59e43c6874"
+  },
+  {
+    "id": "5e.entry.armor.padded",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_82a75c28e15f0923b926a588",
+      "light",
+      11,
+      0,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.padded",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_82a75c28e15f0923b926a588"
+  },
+  {
+    "id": "5e.entry.armor.leather",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_f06b612e93909ba2a39d0d2b",
+      "light",
+      11,
+      0,
+      0
+    ],
+    "sources": [
+      "5e.entry.armor.leather",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_f06b612e93909ba2a39d0d2b"
+  },
+  {
+    "id": "5e.entry.armor.studded_leather",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_d3746a3ef241aa670d85e289",
+      "light",
+      12,
+      0,
+      0
+    ],
+    "sources": [
+      "5e.entry.armor.studded_leather",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_d3746a3ef241aa670d85e289"
+  },
+  {
+    "id": "5e.entry.armor.hide",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_a74206e5f5b96fa9f44506e7",
+      "medium",
+      12,
+      0,
+      0
+    ],
+    "sources": [
+      "5e.entry.armor.hide",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_a74206e5f5b96fa9f44506e7"
+  },
+  {
+    "id": "5e.entry.armor.chain_shirt",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_23c5acc60613f473c0b7c407",
+      "medium",
+      13,
+      0,
+      0
+    ],
+    "sources": [
+      "5e.entry.armor.chain_shirt",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_23c5acc60613f473c0b7c407"
+  },
+  {
+    "id": "5e.entry.armor.scale_mail",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_f5277b8b734af061e9086001",
+      "medium",
+      14,
+      0,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.scale_mail",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_f5277b8b734af061e9086001"
+  },
+  {
+    "id": "5e.entry.armor.breastplate",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_8751bea3335e34ef8b9ebfd3",
+      "medium",
+      14,
+      0,
+      0
+    ],
+    "sources": [
+      "5e.entry.armor.breastplate",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_8751bea3335e34ef8b9ebfd3"
+  },
+  {
+    "id": "5e.entry.armor.half_plate",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_97f96ad13f8c889e76f8d377",
+      "medium",
+      15,
+      0,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.half_plate",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_97f96ad13f8c889e76f8d377"
+  },
+  {
+    "id": "5e.entry.armor.ring_mail",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_108544d7fbcb6c2443e08666",
+      "heavy",
+      14,
+      0,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.ring_mail",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_108544d7fbcb6c2443e08666"
+  },
+  {
+    "id": "5e.entry.armor.chain_mail",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_2efe1a5bf2085aee2e5c4817",
+      "heavy",
+      16,
+      13,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.chain_mail",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_2efe1a5bf2085aee2e5c4817"
+  },
+  {
+    "id": "5e.entry.armor.splint",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_3028d0299a91dea3fa730d31",
+      "heavy",
+      17,
+      15,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.splint",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_3028d0299a91dea3fa730d31"
+  },
+  {
+    "id": "5e.entry.armor.plate",
+    "relation": "ArmorProfile",
+    "values": [
+      "5e",
+      "ver_ad7215c395ff76be28458689",
+      "heavy",
+      18,
+      15,
+      1
+    ],
+    "sources": [
+      "5e.entry.armor.plate",
+      "5e.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_ad7215c395ff76be28458689"
+  },
+  {
+    "id": "5e.entry.wizard",
+    "relation": "CastingAbility",
+    "values": [
+      "5e",
+      "ver_f68f2241cc9fd6a17aefead9",
+      "int"
+    ],
+    "sources": [
+      "5e.entry.wizard"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_f68f2241cc9fd6a17aefead9"
+  },
+  {
+    "id": "5e.entry.mage_armor",
+    "relation": "ArmorSpellProfile",
+    "values": [
+      "5e",
+      "ver_6c717543a5b29b61a09b6bae",
+      13,
+      8
+    ],
+    "sources": [
+      "5e.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_6c717543a5b29b61a09b6bae",
+    "parameter_bindings": {
+      "3": {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "parameter": "duration",
+        "field": "quantity",
+        "requires": {
+          "kind": "timed",
+          "unit": "hour",
+          "concentration": false
+        }
+      }
+    }
+  },
+  {
+    "id": "5r.skill.athletics",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "athletics",
+      "str"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.acrobatics",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "acrobatics",
+      "dex"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.sleight_of_hand",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "sleight_of_hand",
+      "dex"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.stealth",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "stealth",
+      "dex"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.arcana",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "arcana",
+      "int"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.history",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "history",
+      "int"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.investigation",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "investigation",
+      "int"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.nature",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "nature",
+      "int"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.religion",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "religion",
+      "int"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.animal_handling",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "animal_handling",
+      "wis"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.insight",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "insight",
+      "wis"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.medicine",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "medicine",
+      "wis"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.perception",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "perception",
+      "wis"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.survival",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "survival",
+      "wis"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.deception",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "deception",
+      "cha"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.intimidation",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "intimidation",
+      "cha"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.performance",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "performance",
+      "cha"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.skill.persuasion",
+    "relation": "SkillAbility",
+    "values": [
+      "5r",
+      "persuasion",
+      "cha"
+    ],
+    "sources": [
+      "training"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "5r.entry.dagger",
+    "relation": "WeaponProfile",
+    "values": [
+      "5r",
+      "ver_96fa837d8dcbbd58d610d900",
+      "melee",
+      20,
+      60,
+      1,
+      1,
+      0,
+      1,
+      4
+    ],
+    "sources": [
+      "5r.entry.dagger"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_96fa837d8dcbbd58d610d900"
+  },
+  {
+    "id": "5r.entry.longbow",
+    "relation": "WeaponProfile",
+    "values": [
+      "5r",
+      "ver_1792979b8fb825a21a8a28e5",
+      "ranged",
+      150,
+      600,
+      0,
+      0,
+      1,
+      1,
+      8
+    ],
+    "sources": [
+      "5r.entry.longbow"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_1792979b8fb825a21a8a28e5"
+  },
+  {
+    "id": "5r.entry.armor.padded",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_928ce192522d3762d788d840",
+      "light",
+      11,
+      0,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.padded",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_928ce192522d3762d788d840"
+  },
+  {
+    "id": "5r.entry.armor.leather",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_3c6985bce3365892258b3aa7",
+      "light",
+      11,
+      0,
+      0
+    ],
+    "sources": [
+      "5r.entry.armor.leather",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_3c6985bce3365892258b3aa7"
+  },
+  {
+    "id": "5r.entry.armor.studded_leather",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_4b35c59fcec6830e9dedc60a",
+      "light",
+      12,
+      0,
+      0
+    ],
+    "sources": [
+      "5r.entry.armor.studded_leather",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_4b35c59fcec6830e9dedc60a"
+  },
+  {
+    "id": "5r.entry.armor.hide",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_2705da712e41cfaea5b1fbda",
+      "medium",
+      12,
+      0,
+      0
+    ],
+    "sources": [
+      "5r.entry.armor.hide",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_2705da712e41cfaea5b1fbda"
+  },
+  {
+    "id": "5r.entry.armor.chain_shirt",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_fabe048a7af43ac582c1067f",
+      "medium",
+      13,
+      0,
+      0
+    ],
+    "sources": [
+      "5r.entry.armor.chain_shirt",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_fabe048a7af43ac582c1067f"
+  },
+  {
+    "id": "5r.entry.armor.scale_mail",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_a6a24d85eab7d760ab8e1541",
+      "medium",
+      14,
+      0,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.scale_mail",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_a6a24d85eab7d760ab8e1541"
+  },
+  {
+    "id": "5r.entry.armor.breastplate",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_ee271688b3dac832dfb154cc",
+      "medium",
+      14,
+      0,
+      0
+    ],
+    "sources": [
+      "5r.entry.armor.breastplate",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_ee271688b3dac832dfb154cc"
+  },
+  {
+    "id": "5r.entry.armor.half_plate",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_64aa2e6ff107a1d48cd476da",
+      "medium",
+      15,
+      0,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.half_plate",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_64aa2e6ff107a1d48cd476da"
+  },
+  {
+    "id": "5r.entry.armor.ring_mail",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_f9c785cd66b5bad1d7062264",
+      "heavy",
+      14,
+      0,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.ring_mail",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_f9c785cd66b5bad1d7062264"
+  },
+  {
+    "id": "5r.entry.armor.chain_mail",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_3b4ece4942f00a88b70b2f85",
+      "heavy",
+      16,
+      13,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.chain_mail",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_3b4ece4942f00a88b70b2f85"
+  },
+  {
+    "id": "5r.entry.armor.splint",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_ff40be42e3ce1e49bf3fb3c1",
+      "heavy",
+      17,
+      15,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.splint",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_ff40be42e3ce1e49bf3fb3c1"
+  },
+  {
+    "id": "5r.entry.armor.plate",
+    "relation": "ArmorProfile",
+    "values": [
+      "5r",
+      "ver_7ffe146f06ee9c1bbce3cd09",
+      "heavy",
+      18,
+      15,
+      1
+    ],
+    "sources": [
+      "5r.entry.armor.plate",
+      "5r.armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_7ffe146f06ee9c1bbce3cd09"
+  },
+  {
+    "id": "5r.entry.wizard",
+    "relation": "CastingAbility",
+    "values": [
+      "5r",
+      "ver_3da6e6d72da148370f936b2d",
+      "int"
+    ],
+    "sources": [
+      "5r.entry.wizard"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_3da6e6d72da148370f936b2d"
+  },
+  {
+    "id": "5r.entry.mage_armor",
+    "relation": "ArmorSpellProfile",
+    "values": [
+      "5r",
+      "ver_992b31e3033fc968022d586c",
+      13,
+      8
+    ],
+    "sources": [
+      "5r.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "entry_id": "ver_992b31e3033fc968022d586c",
+    "parameter_bindings": {
+      "3": {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "parameter": "duration",
+        "field": "quantity",
+        "requires": {
+          "kind": "timed",
+          "unit": "hour",
+          "concentration": false
+        }
+      }
+    }
+  },
+  {
+    "id": "5e.entry.mage_armor.requirements",
+    "relation": "SpellRequirements",
+    "values": [
+      "5e",
+      "ver_6c717543a5b29b61a09b6bae",
+      "action",
+      "touch"
+    ],
+    "entry_id": "ver_6c717543a5b29b61a09b6bae",
+    "sources": [
+      "5e.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "parameter_bindings": {
+      "2": {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "parameter": "action",
+        "field": "kind"
+      },
+      "3": {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "parameter": "range",
+        "field": "kind"
+      }
+    }
+  },
+  {
+    "id": "5r.entry.mage_armor.requirements",
+    "relation": "SpellRequirements",
+    "values": [
+      "5r",
+      "ver_992b31e3033fc968022d586c",
+      "action",
+      "touch"
+    ],
+    "entry_id": "ver_992b31e3033fc968022d586c",
+    "sources": [
+      "5r.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "parameter_bindings": {
+      "2": {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "parameter": "action",
+        "field": "kind"
+      },
+      "3": {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "parameter": "range",
+        "field": "kind"
+      }
+    }
   }
 ]

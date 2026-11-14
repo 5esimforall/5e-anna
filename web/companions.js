@@ -34,6 +34,7 @@ const annaCompanions = (() => {
         params.set('tab','chain');
         if(ui.readerChainSpell)params.set('chain_spell',ui.readerChainSpell);
         if(ui.readerChainPath)params.set('chain_path',ui.readerChainPath);
+        if(ui.readerChainEffect)params.set('chain_effect',ui.readerChainEffect);
       }
     }
     return '/' + (params.size ? '?' + params : '');

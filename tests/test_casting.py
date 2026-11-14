@@ -5,7 +5,8 @@ import sqlite3
 import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from casting_extract import parse_access, parse_spell, evidence, quantity_expression
+from casting_extract import parse_access, evidence, quantity_expression
+from spell_effects import parse_spell
 from knowledge import Context, record_for, branches, casting_condition, casting_query
 
 
@@ -149,8 +150,15 @@ class EffectTests(unittest.TestCase):
 
     def test_casting_query_validates_fields_and_correlates_one_branch(self):
         sql,values=casting_condition({'mode':'prepared','resource':'spell_slot','recovery':'long_rest'})
-        self.assertEqual(sql.count('EXISTS'),1)
         self.assertEqual(values,['prepared','spell_slot','long_rest'])
+        db=sqlite3.connect(':memory:')
+        try:
+            db.executescript('''CREATE TABLE entries(id TEXT); INSERT INTO entries VALUES('split'),('same');
+                CREATE TABLE casting_options(root_id TEXT,mode TEXT,resource TEXT,recovery TEXT);
+                INSERT INTO casting_options VALUES('split','prepared','slot_free','long_rest'),
+                    ('split','prepared','spell_slot','not_stated'),('same','prepared','spell_slot','long_rest');''')
+            self.assertEqual(db.execute('SELECT e.id FROM entries e WHERE '+sql,values).fetchall(),[('same',)])
+        finally:db.close()
         for value in [{},{'mode':'invented'},{'sql':'drop table'},[],{'spell':''}]:
             with self.assertRaises(ValueError):casting_query(value)
 

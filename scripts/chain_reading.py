@@ -16,7 +16,7 @@ def rule_rows(records):
                 row={'id':record['id']+':'+link['id']+':'+str(tid),'source_id':record['subject_id'],
                      'target_id':tid,'relation':link['relation'],'status':status,'record_id':record['id'],
                      'review_status':record['review_status'],'target_status':target['status'],'scope':link['scope'],'when':link['when'],
-                     'change':link['change'],'evidence':link['target']['evidence']}
+                     'change':link['change'],'ends':link['ends'],'evidence':link['target']['evidence']}
                 yield row
 
 
@@ -95,7 +95,7 @@ def segment_status(record):
                             for r in rules]}
 
 
-def reading(db, root, chain, raw_path=None):
+def reading(db, root, chain, raw_path=None, effect_id=None):
     path=path_value(raw_path) or [root]
     if path[0]!=root:raise ValueError('Reading path must start at its root')
     scoped=defaultdict(list)
@@ -131,10 +131,13 @@ def reading(db, root, chain, raw_path=None):
         row=db.execute('SELECT data FROM entries WHERE id=?',(eid,)).fetchone()
         if not row:raise ValueError('Reading path target disappeared')
         e=json.loads(row[0]);nodes[eid]={k:e.get(k) for k in ('id','name','type','ruleset','source_ids','page_path','start','end')}
+    if effect_id is not None:
+        if not isinstance(effect_id,str) or not any(r['kind']=='spell_effect' and r['subject_id']==path[-1] and any(e['id']==effect_id for e in r['value']['effects']) for r in records.values()):
+            raise ValueError('Effect is not part of the focused spell')
     focus=nodes[path[-1]]
     text=db.execute('SELECT text FROM pages WHERE path=?',(focus['page_path'],)).fetchone()[0]
     chain.update(records=list(records.values()),nodes=list(nodes.values()),edges=all_edges,
-        reading={'root_id':root,'path':path,'steps':steps,'focus_id':path[-1],
+        reading={'root_id':root,'path':path,'steps':steps,'focus_id':path[-1],'effect_id':effect_id,
                  'text':text[focus['start']:focus['end']] if len(path)>1 else None},
         segments=[segment_status(r) for r in records.values()])
     # Bind only the inspected path's supplier, not every grant that could mention this spell.

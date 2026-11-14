@@ -342,11 +342,11 @@ def casting_facets(db, params):
     return {'groups':result}
 
 
-def detail(db, eid, chain_spell=None, chain_path=None):
+def detail(db, eid, chain_spell=None, chain_path=None, chain_effect=None):
     row=db.execute('SELECT data FROM entries WHERE id=?',(eid,)).fetchone()
     if not row: raise LookupError('条目不存在')
     e=browse.enrich(json.loads(row[0]))
-    e['rule_chain']=knowledge.chain(db,eid,chain_spell,chain_path)
+    e['rule_chain']=knowledge.chain(db,eid,chain_spell,chain_path,chain_effect)
     e['field_order']=browse.field_order(e)
     start=text_start(e)
     e['body']=db.execute('SELECT substr(text,?,?) FROM pages WHERE path=?',(start+1,e['end']-start,e['page_path'])).fetchone()[0].strip()
@@ -443,10 +443,10 @@ class Handler(BaseHTTPRequestHandler):
                 if url.path=='/api/meta': self.send({**meta(db),'reader_url':self.reader_url,'snapshot':self.snapshot})
                 elif url.path=='/api/facets': self.send(facets(db,p))
                 elif url.path=='/api/entries': self.send(query(db,p))
-                elif url.path=='/api/entry': self.send(detail(db,first(p,'id'),first(p,'chain_spell') or None,first(p,'chain_path') or None))
-                elif url.path=='/api/knowledge-chain': self.send(knowledge.chain(db,first(p,'id'),first(p,'spell') or None,first(p,'path') or None))
+                elif url.path=='/api/entry': self.send(detail(db,first(p,'id'),first(p,'chain_spell') or None,first(p,'chain_path') or None,first(p,'chain_effect') or None))
+                elif url.path=='/api/knowledge-chain': self.send(knowledge.chain(db,first(p,'id'),first(p,'spell') or None,first(p,'path') or None,first(p,'effect') or None))
                 elif url.path=='/api/knowledge-inspect': self.send(knowledge.inspect(db,first(p,'id')))
-                elif url.path=='/api/knowledge-export': self.send({'schema':knowledge.SCHEMA,'snapshot':json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0]),'chain':knowledge.chain(db,first(p,'id'),first(p,'spell') or None,first(p,'path') or None)},download='anna-rule-chain.json')
+                elif url.path=='/api/knowledge-export': self.send({'schema':knowledge.SCHEMA,'snapshot':json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0]),'chain':knowledge.chain(db,first(p,'id'),first(p,'spell') or None,first(p,'path') or None,first(p,'effect') or None)},download='anna-rule-chain.json')
                 elif url.path=='/api/casting-facets': self.send(casting_facets(db,p))
                 elif url.path=='/api/entry-layout': self.send(entry_layout(db,first(p,'id'),Path(self.source_root)))
                 elif url.path=='/api/references': self.send(query_references(db,path=first(p,'path'),reference_id=first(p,'id'),

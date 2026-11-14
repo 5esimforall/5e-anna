@@ -379,9 +379,11 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 
 ## 施法链查询与审核
 
-筛选区中的“施法链条件”可组合授予方式、法术位消耗、恢复条件、固定／选择目标和法术名称。条件必须命中同一使用分支；“消耗法术位＋长休恢复”不会借用同项能力免费分支的恢复条件。结果只包含完整解析的获取路径，空结果不表示原文不存在该能力。
+筛选区中的“施法链条件”可组合授予方式、法术位消耗、恢复条件、固定／选择目标、法术名称，以及效果、伤害类型、判定方式和时机。条件必须命中同一使用分支；“消耗法术位＋长休恢复”不会借用同项能力免费分支的恢复条件。效果条件还须命中同一法术的同一个效果，例如“闪电伤害＋自动造成＋后续使用”不会混入首次攻击。结果只包含完整解析的获取路径，效果筛选另要求效果记录完整解析；空结果不表示原文不存在该能力。
 
 在条目详情打开“规则链”，可沿背景→专长查看固定法术或受限选择。点击法术或通则，在保留问题起点的情况下继续阅读；面包屑、浏览器前进／后退与刷新保留路径。查看法术不建立角色数据，查看歧义候选不确认关系。展开“各环节的整理状态”可分别核对本段解析、审核和通则目标；从通则的“被这些能力修改”可反查具体例外分支。
+
+效果中的“沿效果关系阅读”可定位到对应的目标、检定或基础伤害；通则关系的作用范围也可返回具体效果。刷新、历史导航及 JSON 导出保留这个局部位置。持续效果分别显示触发、每次使用成本、首次命中依赖及结束事件；原文依赖不明确时仍显示未解析内容。
 
 原文证据、Stella 阅读入口及 JSON 导出都使用同一条有效规则链。从 Stella 的“最近打开的位置”选择原查询，可恢复规则链路径；直接查当前话题则打开该条目自身。
 
@@ -406,8 +408,10 @@ make build
 
 HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/api/knowledge-inspect?id=记录ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；指定时必须属于起点条目的有效选项，否则返回 400。
 
-两个规则链接口另接受 `path`，值为 URL 编码的条目 ID 数组 JSON，须以起点开头、无重复且最多 16 项；每一跳必须有关系依据，否则返回 400。`/api/entry` 使用同义参数 `chain_spell`、`chain_path`，页面地址也使用这两个参数。沿通则反查能力后继续看法术，使用路径而不改变起点的选项域。
+两个规则链接口另接受 `path`，值为 URL 编码的条目 ID 数组 JSON，须以起点开头、无重复且最多 16 项；每一跳必须有关系依据，否则返回 400。可选的 `effect` 指定路径末端条目的局部效果 ID；不存在或属于其他条目的效果返回 400。`/api/entry` 使用同义参数 `chain_spell`、`chain_path`、`chain_effect`，页面地址也使用这三个参数。沿通则反查能力后继续看法术，使用路径而不改变起点的选项域。
 
 查询接口的 `casting` 参数是 URL 编码后的 JSON，例如 `{"mode":"prepared","resource":"slot_free","recovery":"long_rest","spell":"疗伤术"}`。`/api/casting-facets` 返回其他条件保持时各选择的命中数。
+
+效果查询示例为 `{"effect":"damage","damage_type":"lightning","delivery":"automatic","timing":"ongoing"}`。`delivery` 可选 `attack_roll`、`saving_throw`、`automatic` 或 `not_stated`；`timing` 可选 `immediate`、`ongoing`、`repeat` 或 `not_stated`。攻击判定表示该效果涉及攻击检定，不等于已经命中；重复豁免及依赖其结果的效果归入 `repeat`。非法字段或取值返回 400。
 
 构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`audit.py --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。范围与验证证据见[施法链验证](tests/casting-chain-validation.md)。

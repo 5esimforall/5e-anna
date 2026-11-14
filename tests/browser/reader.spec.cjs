@@ -264,8 +264,9 @@ test('source reference navigation has one history entry and restores scroll on b
   const link=source.getByRole('link',{name:'查看定义: '+m.text,exact:true}).first();
   await scrollToPosition(page,1000);
   await link.focus();await expect(link).toBeFocused();
-  await expect.poll(()=>page.evaluate(()=>history.state?.book?.position.y)).toBeGreaterThan(0);
-  const before=await page.evaluate(()=>history.state.book.position.y), url=page.url();
+  const before=await readingPosition(page), url=page.url();
+  expect(before).toBeGreaterThan(0);
+  await expect.poll(()=>page.evaluate(()=>history.state?.book?.position.y)).toBeCloseTo(before,0);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(new RegExp('entry='+m.target_id));await ready(page);
   expect(content(page).url()).toContain('#'+m.target.fragment);
@@ -273,8 +274,7 @@ test('source reference navigation has one history entry and restores scroll on b
   await expect.poll(()=>readingPosition(page)).toBeCloseTo(before,0);
   await page.goForward();await ready(page);await expect(page).toHaveURL(new RegExp('entry='+m.target_id));
   await page.locator('#book-scroll').evaluate(e=>e.scrollBy(0,250));
-  await expect.poll(()=>page.evaluate(()=>history.state.book.position.y)).toBeGreaterThan(200);
-  const position=await page.evaluate(()=>history.state.book.position.y);
+  const position=await readingPosition(page);expect(position).toBeGreaterThan(200);
   await page.reload();await ready(page);
   await expect.poll(()=>readingPosition(page)).toBeCloseTo(position,0);
 });
@@ -392,7 +392,9 @@ test('mobile drawer, focus, outline and resize keep the same document',async({pa
 
 test('full-text results, paging and reading state survive reload; search failure is recoverable',async({page})=>{
   await visit(page);await sidebar(page,'search');
+  const readingURL=page.url();
   await page.locator('#book-search').fill('护盾');await page.locator('#book-search-form button').click();
+  expect(page.url()).toBe(readingURL);
   await expect(page.locator('#book-search-status')).toContainText('找到');
   await expect(page.locator('#book-search-next')).toBeEnabled();await page.locator('#book-search-next').click();
   await expect(page.locator('#book-search-page')).toContainText('第 2 /');

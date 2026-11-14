@@ -104,6 +104,32 @@ class WebTests(unittest.TestCase):
         invalid=json.dumps({'resource':'spell_slot','recovery':'long_rest'})
         self.assertEqual(query(self.db,{'casting':[invalid]})['total'],0)
 
+    def test_effect_filters_and_local_focus_share_the_export_contract(self):
+        condition={'effect':'damage','damage_type':'lightning','delivery':'automatic','timing':'ongoing','resource':'slot_free','spell':'巫术箭'}
+        rows=query(self.db,{'casting':[json.dumps(condition)],'versions':['each']})['rows']
+        root=next(r['id'] for r in rows if r['name_zh']=='智者')
+        self.assertFalse(any(r['name_zh']=='侍僧' for r in rows))
+        wrong={**condition,'delivery':'attack_roll'}
+        self.assertFalse(query(self.db,{'casting':[json.dumps(wrong)]})['rows'])
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
+        self.assertEqual(status,200)
+        counts={r['value']:r['count'] for r in json.loads(raw)['groups']['delivery']}
+        self.assertEqual(counts['automatic'],len(rows));self.assertEqual(counts['attack_roll'],0)
+        excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each'],'limit':['1500']})
+        self.assertFalse({r['id'] for r in rows}&{r['id'] for r in excluded['rows']})
+        self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
+        spell=next(r['id'] for r in query(self.db,{'q':['巫术箭'],'versions':['each']})['rows'] if r['ruleset']=='5r')
+        args={'id':root,'spell':spell,'effect':'effect_4'}
+        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200)
+        value=json.loads(raw);self.assertEqual(value['reading']['effect_id'],'effect_4')
+        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],value)
+        status,_,raw=self.request('/api/entry?'+urlencode({'id':root,'chain_spell':spell,'chain_effect':'effect_4'}))
+        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],value)
+        for effect in ('missing','effect_0'):
+            self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({**args,'effect':effect}))[0],400)
+        for field in ('effect','damage_type','delivery','timing'):
+            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({field:'invalid'})}))[0],400)
+
     def test_invalid_query(self):
         for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)

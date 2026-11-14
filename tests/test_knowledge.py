@@ -182,6 +182,37 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(result['reading']['steps'][0]['relations'][0]['status'],'ambiguous')
         self.assertEqual(result['bindings'][0]['status'],'not_stated')
 
+    def test_effect_conditions_match_one_effect_of_the_same_spell_and_branch(self):
+        from test_spell_effects import WITCH
+        self.spell='测试法术 Test Spell\n'+WITCH;self.rebuild()
+        def roots(query):
+            sql,values=casting_condition(query)
+            return {r[0] for r in self.db.execute('SELECT e.id FROM entries e WHERE '+sql,values)}
+        self.assertEqual(roots({'effect':'damage','delivery':'automatic','timing':'ongoing','resource':'slot_free','recovery':'long_rest'}),{'feat'})
+        self.assertEqual(roots({'effect':'damage','delivery':'attack_roll','timing':'ongoing'}),set())
+        self.assertEqual(roots({'effect':'damage','damage_type':'lightning','delivery':'attack_roll','timing':'immediate'}),{'feat'})
+        self.assertEqual(roots({'effect':'damage','timing':'ongoing','resource':'spell_slot','recovery':'long_rest'}),set())
+        focused=chain(self.db,'feat','spell',effect_id='effect_4')
+        self.assertEqual(focused['reading']['effect_id'],'effect_4')
+        for path,effect in [(['feat'],'effect_4'),(['feat','spell'],'effect_missing')]:
+            with self.assertRaises(ValueError):chain(self.db,'feat','spell',path,effect)
+        rid=self.db.execute("SELECT id FROM rule_knowledge WHERE subject_id='spell' AND kind='spell_effect'").fetchone()[0]
+        view=inspect(self.db,rid);save(self.db,self.log,rid,'knowledge_accept',view['basis_sha256'],'fixture','checked ongoing mechanism')
+        self.spell=self.spell.replace('2d12','3d12');self.rebuild()
+        self.assertFalse(roots({'effect':'damage','timing':'ongoing'}))
+        self.assertTrue(chain(self.db,'feat')['options'])
+        state=json.loads(self.db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()[0])
+        self.assertEqual(state['review_status'],'stale')
+
+    def test_effect_index_audit_checks_scalar_fields_and_payload(self):
+        from knowledge import audit_knowledge
+        self.assertEqual(audit_knowledge(self.db,self.root)['errors'],[])
+        self.db.execute("UPDATE spell_effect_index SET delivery='automatic'")
+        self.assertIn('spell_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
+        self.rebuild()
+        self.db.execute("UPDATE spell_effect_index SET data=json_set(data,'$.statement.kind','damage')")
+        self.assertIn('spell_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
+
     def test_exports_and_evidence_are_exact(self):
         exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]
         self.assertEqual({r['id'] for r in exported},{r[0] for r in self.db.execute('SELECT id FROM effective_knowledge')})

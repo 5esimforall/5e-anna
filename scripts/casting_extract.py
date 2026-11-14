@@ -6,7 +6,7 @@ clauses remain evidence-bearing gaps; an explicit exception never becomes a defa
 from __future__ import annotations
 from copy import deepcopy
 import re
-from rule_conditions import prerequisite_expression, bind_effects
+from rule_conditions import prerequisite_expression
 
 ABILITIES = ('力量', '敏捷', '体质', '智力', '感知', '魅力')
 CLASSES = ('吟游诗人', '牧师', '德鲁伊', '圣武士', '游侠', '术士', '法师', '魔契师', '奇械师')
@@ -214,63 +214,3 @@ def parse_access(entry, text, spell_mentions):
         if not g['branches']:
             g['branches']=[{'id':'branch_1','resource':{'kind':'not_stated'},'evidence':g['evidence']}]
     return {'grants':grants,'contexts':contexts,'prerequisites':prerequisites,'modifiers':modifiers,'unparsed':gaps,'evidence':handled}
-
-
-def parse_spell(entry, text):
-    """Typed recurring effect clauses; all unmatched effect prose remains explicit."""
-    start,end=entry['title_end'],entry['end'];path=entry['page_path'];fields=entry.get('fields',{})
-    casting={};effects=[];gaps=[]
-    # Evidence uses original field lines, not normalized field values without provenance.
-    last=start
-    for m in re.finditer(r'(施法时间|施法距离|法术成分|持续时间)[：:]([^\n]+)', text[start:end]):
-        key={'施法时间':'action','施法距离':'range','法术成分':'components','持续时间':'duration'}[m[1]]
-        ev=evidence(path,text,start+m.start(),start+m.end());raw=re.sub(r'\s+','',m[2]);last=max(last,start+m.end())
-        value={'raw':m[2].strip()}
-        if key=='action':
-            value.update(kind='bonus_action' if '附赠' in raw else 'reaction' if '反应' in raw else 'action' if '动作' in raw else 'timed',ritual='仪式' in raw)
-        elif key=='range':
-            measure=re.fullmatch(r'(\d+)(尺|里)',raw)
-            value.update(kind='self' if raw=='自身' else 'touch' if raw=='触碰' else 'distance' if measure else 'unparsed')
-            if measure: value.update(quantity=int(measure[1]),unit='foot' if measure[2]=='尺' else 'mile')
-        elif key=='components': value.update(required=[v for v in ('V','S','M') if v in raw])
-        elif key=='duration':
-            value.update(concentration=raw.startswith('专注'),kind='instantaneous' if raw=='立即' else 'timed')
-            m2=re.search(r'(\d+)(分钟|小时|轮|日)',raw)
-            if m2:value.update(quantity=int(m2[1]),unit={'分钟':'minute','小时':'hour','轮':'round','日':'day'}[m2[2]],maximum='至多' in raw)
-            elif raw!='立即':value['kind']='unparsed'
-        casting[key]={**value,'evidence':ev}
-    for a,b,clause in sentences(text,last,end):
-        ev=evidence(path,text,a,b)
-        if not re.search(r'[\u3400-\u9fff]',clause):continue
-        # Teleportation states the destination predicates explicitly.
-        m=re.fullmatch(r'(?:你短暂地被[^。]+[，,])?传送到至多(\d+)尺内一个你能看见且未(?:被占据的位置|占据空间)[。]?',clause)
-        if m:
-            effects.append({'kind':'teleport','subject':'self','destination':{'distance':{'maximum':int(m[1]),'unit':'foot'},'visible':True,'unoccupied':True},'evidence':ev});continue
-        m=re.fullmatch(r'你触碰的一名生物恢复等同于(.+?)点生命值[。]?',clause)
-        if m and (expr:=quantity_expression(m[1])):
-            effects.append({'kind':'healing','target':{'kind':'creature','count':1,'contact':True},'quantity':expr,'evidence':ev});continue
-        m=re.fullmatch(r'(?:升环施法[。])?使用的法术位每比('+NUMBER+r')环高一环[，,](?:此法术的治疗量就增加|法术的治疗量就增加)(\d+d\d+)点?[。]?',clause)
-        if m:
-            effects.append({'kind':'upcast','threshold':number(m[1]),'per_slot_level':1,'effect':{'kind':'healing','quantity':quantity_expression(m[2])},'evidence':ev});continue
-        if clause=='升环施法。':continue
-        # Conditions are bound to a specific outcome, not flattened into unconditional effects.
-        m=re.fullmatch(r'选择法术距离内你可见的一名(类人生物|生物)[，,]迫使该生物进行一次('+ '|'.join(ABILITIES)+r')豁免[，,]如果你或者你的同伴正在与它战斗[，,]它进行的这次豁免将具有优势[。]?',clause)
-        if m:
-            effects.append({'kind':'saving_throw','target':{'kind':'humanoid' if m[1]=='类人生物' else 'creature','count':1,'visible':True,'within':'spell_range'},'ability':m[2],
-                'modifiers':[{'when':{'kind':'combat_with','actors':['caster','caster_allies']},'effect':'advantage'}],'evidence':ev});continue
-        m=re.fullmatch(r'如果它豁免失败[，,]它陷入(.+?)状态直到法术结束[，,]或者直到你或你的同伴对它造成伤害[。]?',clause)
-        if m:
-            effects.append({'kind':'condition','condition':m[1],'when':{'kind':'save_result','result':'failure'},
-                'ends':{'any':[{'kind':'spell_ends'},{'kind':'damage_from','actors':['caster','caster_allies']}]},'evidence':ev});continue
-        m=re.fullmatch(r'被(.+?)的生物将对你友好[。]?',clause)
-        if m:
-            effects.append({'kind':'attitude','value':'friendly','toward':'caster','when':{'kind':'condition','value':m[1]},'evidence':ev});continue
-        m=re.fullmatch(r'在法术结束时[，,]生物会知道它曾被你(.+?)[。]?',clause)
-        if m:
-            effects.append({'kind':'awareness','when':{'kind':'spell_ends'},'subject':'target','knows':{'kind':'condition_from','value':m[1],'actor':'caster'},'evidence':ev});continue
-        m=re.fullmatch(r'使用的法术位每比('+NUMBER+r')环高一环[，,]你就可以额外选择一个生物作为目标[。]?',clause)
-        if m:
-            effects.append({'kind':'upcast','threshold':number(m[1]),'per_slot_level':1,'effect':{'kind':'additional_targets','count':1},'evidence':ev});continue
-        gaps.append({'reason':'unsupported_effect','evidence':ev})
-    gaps.extend(bind_effects(effects,gaps))
-    return {'casting':casting,'effects':effects,'unparsed':gaps}

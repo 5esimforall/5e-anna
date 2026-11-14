@@ -601,3 +601,6 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 .chain-path [aria-current="step"]{font-weight:700;text-decoration:underline;text-underline-offset:.2em}
 .chain-step{border-inline-start:3px solid var(--anna-brand);padding-inline-start:.8rem}
 .chain-effect small,.chain-grant h4 small,.chain-branch h5 small{font-weight:400;opacity:.65}
+
+.chain-effect:focus{outline:2px solid var(--anna-focus);outline-offset:4px}
+.effect-links{font-size:13px;border-inline-start:2px solid var(--anna-line);padding-inline-start:.65rem}

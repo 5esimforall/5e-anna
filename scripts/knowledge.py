@@ -9,13 +9,15 @@ from pathlib import Path
 import re
 import sqlite3
 
-from casting_extract import parse_access, parse_spell, evidence, CLASSES, ABILITIES, GRANT
+from casting_extract import parse_access, evidence, CLASSES, ABILITIES, GRANT
 from concepts import Resolver, aliases
 from html_extract import key
 from review_store import (DEFAULT_DECISIONS, canonical, digest, lifecycle, load_events,
                           append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS)
 from paths import PROJECT
 from rule_conditions import validate_conditions
+from spell_effects import parse_spell
+from effect_queries import QUERY_VALUES as EFFECT_QUERY_VALUES, build_effect_index, audit_effect_index
 
 SCHEMA = 1
 ACCESS_TYPES = {'feat', 'class_feature', 'species', 'magic_item', 'reward'}
@@ -26,6 +28,7 @@ QUERY_VALUES = {
     'resource': ('slot_free', 'spell_slot', 'not_stated'),
     'recovery': ('long_rest', 'short_rest', 'short_or_long_rest', 'not_stated'),
     'selection': ('fixed', 'choice'),
+    **EFFECT_QUERY_VALUES,
 }
 
 
@@ -137,12 +140,14 @@ def validate_record(record, context):
 def rule_links(entry, value, context):
     """Every rule dependency names the local slot it governs; exceptions stay scoped."""
     links=[]
-    def add(label, relation, scope, ev, *, change=None, when=None):
+    def add(label, relation, scope, ev, *, change=None, when=None, ends=None):
         links.append({'id':'rule_'+str(len(links)+1),'relation':relation,'scope':scope,
-            'change':change,'when':when,'target':{'kind':'entry','name':label,
+            'change':change,'when':when,'ends':ends,'target':{'kind':'entry','name':label,
             'resolution':context.resolve(entry,label,'concept'),'evidence':ev}})
     for field,label in [('action','施法时间'),('range','施法距离'),('components','法术成分'),('duration','持续时间')]:
         if field in value.get('casting',{}):add(label,'uses_rule',{'kind':'casting_field','field':field},value['casting'][field]['evidence'])
+    if value.get('casting',{}).get('duration',{}).get('concentration'):
+        add('专注','uses_rule',{'kind':'casting_field','field':'duration'},value['casting']['duration']['evidence'])
     for grant in value.get('grants',[]):
         for branch in grant['branches']:
             scope={'kind':'usage_branch','grant_id':grant['id'],'branch_id':branch['id']}
@@ -154,7 +159,24 @@ def rule_links(entry, value, context):
             if branch.get('recovery',{}).get('event')=='long_rest':add('长休','uses_rule',scope,branch['evidence'][-1])
     for effect in value.get('effects',[]):
         scope={'kind':'effect','effect_id':effect['id']}
-        if effect['kind']=='saving_throw':add('豁免检定','uses_rule',scope,effect['evidence'])
+        if effect['kind']=='attack_roll':add('攻击检定','uses_rule',scope,effect['evidence'])
+        if effect['kind']=='saving_throw':add('豁免检定','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect['kind']=='damage':
+            add('伤害','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+            add('伤害掷骰','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect.get('use'):
+            add('附赠动作' if effect['use']['action']=='bonus_action' else '动作','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect['kind'] in {'modifier','restriction'}:
+            label={'speed':'速度','attack_roll':'攻击检定','healing.allowed':'治疗','prone.self_end':'倒地'}[effect['field']]
+            change={k:effect[k] for k in ('field','operation','quantity','value','applies','uses') if k in effect}
+            add(label,'exception_to',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'),change=change)
+            if effect.get('operation')=='advantage':add('优势','uses_rule',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'))
+        if effect['kind']=='check_modifier':add('优势','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect['kind']=='end_spell':
+            from rule_conditions import condition_terms
+            for condition in condition_terms(effect['when']):
+                if condition.get('kind')=='cover':add('全身掩护','uses_rule',scope,effect['evidence'],when=condition)
+                if condition.get('kind')=='outside_spell_range':add('施法距离','uses_rule',scope,effect['evidence'],when=condition)
         if effect['kind']=='condition':add(effect['condition'],'uses_rule',scope,effect['evidence'],when=effect.get('when'))
         for modifier in effect.get('modifiers',[]):
             if modifier['effect']=='advantage':
@@ -326,6 +348,7 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)',(review['id'],review['target'],review['reason'],review['priority'],canonical(review)))
     from chain_reading import build_rule_index
     build_rule_index(db,effective)
+    build_effect_index(db,effective)
     count=0
     for option in branches(context,effective):
         db.execute('INSERT INTO casting_options VALUES(?,?,?,?,?,?,?,?,?)',tuple(option[k] for k in ('id','root_id','subject_id','spell_id','mode','resource','recovery','selection'))+(canonical(option),));count+=1
@@ -367,6 +390,7 @@ def audit_knowledge(db, folder):
                   for r in db.execute('SELECT id,source_id,target_id,relation,status,data FROM knowledge_rule_links')}
     expected_rules={key:{k:row[k] for k in rule_columns}|{'data':row} for key,row in expected_rules.items()}
     if expected_rules!=actual_rules:errors.append('knowledge_rule_links: projection mismatch')
+    errors.extend(audit_effect_index(db,records))
     return {'records':len(records),'casting_options':len(actual),'errors':errors,
         'by_source':[{'source_id':sid,'kind':kind,'status':status,'count':count}
                      for (sid,kind,status),count in sorted(matrix.items())]}
@@ -394,15 +418,18 @@ def casting_query(raw):
 
 
 def casting_condition(raw, alias='e'):
-    query=casting_query(raw);clauses=['c.root_id='+alias+'.id'];values=[]
+    query=casting_query(raw);clauses=[];values=[];effects=[];effect_values=[]
     for k,v in query.items():
+        if k in EFFECT_QUERY_VALUES:effects.append('ef.'+k+'=?');effect_values.append(v);continue
         if k=='spell':clauses.append('EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
         else:clauses.append('c.'+k+'=?')
         values.append(v)
-    return 'EXISTS(SELECT 1 FROM casting_options c WHERE '+' AND '.join(clauses)+')',values
+    if effects:
+        clauses.append('EXISTS(SELECT 1 FROM spell_effect_index ef WHERE ef.spell_id=c.spell_id AND '+' AND '.join(effects)+')');values.extend(effect_values)
+    return alias+'.id IN(SELECT c.root_id FROM casting_options c WHERE '+' AND '.join(clauses)+')',values
 
 
-def chain(db, entry_id, spell_id=None, reading_path=None):
+def chain(db, entry_id, spell_id=None, reading_path=None, effect_id=None):
     if not exists(db):return {'schema':SCHEMA,'records':[],'nodes':[],'options':[],'incoming':[]}
     if not db.execute('SELECT 1 FROM entries WHERE id=?',(entry_id,)).fetchone():raise LookupError('Entry not found')
     subject_ids={entry_id};options=[]
@@ -442,7 +469,7 @@ def chain(db, entry_id, spell_id=None, reading_path=None):
         if len(providers)==1:
             provider=next(iter(providers));reading_path=[entry_id]+([provider] if provider!=entry_id else [])+[spell_id]
     from chain_reading import reading
-    return reading(db,entry_id,{'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected},reading_path)
+    return reading(db,entry_id,{'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected},reading_path,effect_id)
 
 
 def inspect(db, rid):

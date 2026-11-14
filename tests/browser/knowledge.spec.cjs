@@ -89,7 +89,7 @@ test('reverse exception reading keeps scope and can continue to spell effects',a
   await page.locator(`.chain-modifiers [data-chain-entry="${feat.id}"]`).first().click();
   await expect(page.locator('.chain-step')).toContainText('被这些能力修改');
   await expect(page.locator('.chain-step')).toContainText(edge.scope.branch_id);
-  await expect(page.locator('.chain-step')).toContainText('spell_slot.consumed → false');
+  await expect(page.locator('.chain-step')).toContainText('法术位消耗 → 否');
   const choices=page.locator('.chain-choices').filter({has:page.locator('[data-chain-spell]').filter({hasText:'魅惑类人'})});
   await choices.locator('summary').click();await choices.locator('[data-chain-spell]').filter({hasText:'魅惑类人'}).click();
   await expect(page.locator('.chain-path button')).toHaveCount(3);
@@ -109,4 +109,61 @@ test('late chain responses cannot reopen a tab the reader left',async({page,requ
   await page.waitForResponse(r=>r.url().includes('/api/knowledge-chain?'));
   await expect(page.getByRole('tab',{name:'正文',exact:true})).toHaveAttribute('aria-selected','true');
   expect(new URL(page.url()).searchParams.has('chain_spell')).toBe(false);
+});
+
+
+test('effect filters keep initial attacks separate from ongoing uses and local links survive reload',async({page,request})=>{
+  await page.goto(anna);await ready(page);
+  await page.locator('#toggle-filters').click();await page.locator('#casting-filters summary').click();
+  for(const [field,value] of Object.entries({effect:'damage',damage_type:'lightning',delivery:'automatic',timing:'ongoing',resource:'slot_free',recovery:'long_rest'}))await page.locator(`[data-casting=${field}]`).selectOption(value);
+  await page.locator('[data-casting=spell]').fill('巫术箭');await page.locator('[data-casting-apply]').click();await ready(page);
+  await expect(page.locator('#results .entry-name').filter({hasText:'智者'})).toBeVisible();
+  await expect(page.locator('#results .entry-name').filter({hasText:'侍僧'})).toHaveCount(0);
+  await page.locator('#results .entry-name').filter({hasText:'智者'}).click();
+  await page.getByRole('tab',{name:'规则链',exact:true}).click();
+  const choices=page.locator('.chain-choices').filter({has:page.locator('[data-chain-spell]').filter({hasText:'巫术箭'})});
+  await choices.locator('summary').click();await choices.locator('[data-chain-spell]').filter({hasText:'巫术箭'}).click();
+  const root=new URL(page.url()).searchParams.get('entry');
+  await expect(page.locator('[data-effect=effect_4]')).toContainText('无论首击是否命中');
+  await expect(page.locator('[data-effect=effect_4]')).toContainText('附赠动作');
+  await expect(page.locator('[data-effect=effect_4]')).toContainText('1d12');
+  await page.locator('[data-effect=effect_6] [data-chain-effect=effect_3]').click();
+  await expect(page.locator('[data-effect=effect_3]')).toBeFocused();
+  await expect(page.locator('[data-effect=effect_3]')).toContainText('2d12');
+  expect(new URL(page.url()).searchParams.get('chain_effect')).toBe('effect_3');
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(root);
+  await page.reload();await expect(page.locator('[data-effect=effect_3]')).toBeFocused();
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  expect(exported.chain.reading.effect_id).toBe('effect_3');
+  const popup=page.waitForEvent('popup');
+  await page.locator(`.knowledge-record[data-subject="${exported.chain.reading.focus_id}"] > .detail-links a`).click();
+  const stella=await popup;await expect(stella.locator('#book-main')).toHaveAttribute('aria-busy','false');
+  await stella.locator('.companion-more').click();
+  const resume=stella.locator('#companion-menu').getByRole('group',{name:'最近'}).locator('[href*="chain_effect=effect_3"]');
+  await expect(resume).toHaveCount(1);await resume.click();
+  await expect(stella.locator('[data-effect=effect_3]')).toBeFocused();
+  expect(new URL(stella.url()).searchParams.get('entry')).toBe(root);await stella.close();
+  const condition=JSON.parse(new URL(page.url()).searchParams.get('casting'));condition.delivery='attack_roll';
+  const none=await (await request.get(anna+'/api/entries?'+new URLSearchParams({casting:JSON.stringify(condition)}))).json();expect(none.rows).toEqual([]);
+});
+
+test('repeated-save links and timed exceptions return to the exact effect without losing the root',async({page,request})=>{
+  const root=await corpusEntry(request,'妖精触碰'),spell=await corpusEntry(request,'塔莎狂笑术');
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',chain_spell:spell.id}));
+  await expect(page.locator('[data-effect=effect_7]')).toContainText('满足任一');
+  await expect(page.locator('[data-effect=effect_8]')).toContainText('目标 受到伤害');
+  await page.locator('[data-effect=effect_9] [data-chain-effect=effect_7]').click();
+  await expect(page.locator('[data-effect=effect_7]')).toBeFocused();
+  await page.locator('[data-effect=effect_7] [data-chain-effect=effect_2]').click();
+  await expect(page.locator('[data-effect=effect_2]')).toBeFocused();
+  await page.goBack();await expect(page).toHaveURL(/chain_effect=effect_7/);
+  const chain=await (await request.get(anna+'/api/knowledge-chain?'+new URLSearchParams({id:root.id,spell:spell.id}))).json();
+  const rule=chain.edges.find(e=>e.relation==='exception_to'&&e.change?.field==='prone.self_end');expect(rule).toBeTruthy();
+  const path=[root.id,spell.id,rule.target_id];
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',chain_spell:spell.id,chain_path:JSON.stringify(path)}));
+  await expect(page.locator('.chain-step')).toContainText('自行结束倒地 → 否');
+  await expect(page.locator('.chain-step')).toContainText('法术结束');
+  await page.locator('.chain-step [data-chain-effect=effect_6]').click();
+  await expect(page.locator('[data-effect=effect_6]')).toBeFocused();
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(root.id);
 });

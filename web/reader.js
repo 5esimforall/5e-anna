@@ -563,7 +563,7 @@
   $('#book-search-form').onsubmit = event => { event.preventDefault(); if (metadata) search($('#book-search').value); };
   $('#book-search-prev').onclick = () => search(searchQuery,Math.max(1,searchPage-1),searchTitleOnly);
   $('#book-search-next').onclick = () => search(searchQuery,Math.min(searchTotalPages,searchPage+1),searchTitleOnly);
-  $('#book-search').oninput = save;
+  $('#book-search').oninput = () => save();
   // Choosing an item closes the menu first; the document click handler then navigates within the scope.
   pathMenu.attach($('#book-path'));
   new ResizeObserver(fitPath).observe($('#book-bar'));
@@ -600,6 +600,8 @@
   });
   $('.skip-link').onclick = event => { event.preventDefault(); flow?.focus(); };
   for (const selector of ['#book-tree-scroll','#panel-outline','#panel-search']) $(selector).addEventListener('scroll',scheduleSave,{passive:true});
+  // Reload snapshots history before pagehide, so flush pending scroll state before navigation starts.
+  window.addEventListener('beforeunload',capturePosition);
   window.addEventListener('pagehide',capturePosition);
   document.addEventListener('visibilitychange', () => { if (document.hidden) capturePosition(); });
   window.addEventListener('popstate', async () => {

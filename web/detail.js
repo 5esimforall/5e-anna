@@ -161,7 +161,7 @@ const layoutOf=id=>api('/api/entry-layout?id='+encodeURIComponent(id)).catch(()=
 async function openEntry(id,update=true,tab='body',fromResult=false) {
   const gen=++detailGeneration,content=$('#detail-content');
   if(fromResult&&!currentReaderId)lastResultEntry=id;
-  if(update){if(id!==currentReaderId){params.delete('chain_spell');params.delete('chain_path');}params.set('entry',id);if(tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate();}
+  if(update){if(id!==currentReaderId){params.delete('chain_spell');params.delete('chain_path');params.delete('chain_effect');}params.set('entry',id);if(tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate();}
   if(fromResult)lastResultEntry=id;
   const wasOpen=$('#detail').open;
   currentReaderId=id;currentEntry=null;detailTab=tab;updatePageChrome();
@@ -174,10 +174,10 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   updateReaderNavigation();
   const layout=layoutOf(id);
   try {
-    const e=await api('/api/entry?id='+encodeURIComponent(id)+(params.has('chain_spell')?'&chain_spell='+encodeURIComponent(params.get('chain_spell')):'')+(params.has('chain_path')?'&chain_path='+encodeURIComponent(params.get('chain_path')):''));if(gen!==detailGeneration)return;
+    const e=await api('/api/entry?id='+encodeURIComponent(id)+(params.has('chain_spell')?'&chain_spell='+encodeURIComponent(params.get('chain_spell')):'')+(params.has('chain_path')?'&chain_path='+encodeURIComponent(params.get('chain_path')):'')+(params.has('chain_effect')?'&chain_effect='+encodeURIComponent(params.get('chain_effect')):''));if(gen!==detailGeneration)return;
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
-    currentEntry=e;renderDetail(tab);content.scrollTop=0;
+    currentEntry=e;renderDetail(tab);content.scrollTop=0;if(tab==='chain'&&e.rule_chain?.reading?.effect_id)focusChainLocation(e.rule_chain);
   } catch(e) {
     if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
@@ -260,7 +260,7 @@ function closeEntry({update=true,restoreFocus=true}={}) {
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();
-  if(update&&params.has('entry')){params.delete('entry');params.delete('tab');params.delete('chain_spell');params.delete('chain_path');historyUpdate(true);}
+  if(update&&params.has('entry')){params.delete('entry');params.delete('tab');params.delete('chain_spell');params.delete('chain_path');params.delete('chain_effect');historyUpdate(true);}
   saveUiState();
 }
 
@@ -308,7 +308,12 @@ async function inspectChainSpell(id,from){
   if(chain.options.some(o=>o.spell_ids.includes(id)))return navigateChain(null,id);
   const path=annaKnowledge.pathTo(chain,id,from);if(path)return navigateChain(path);
 }
-async function navigateChain(path,spell=currentEntry?.rule_chain?.selected_spell_id){
+function focusChainLocation(chain){
+  const r=chain.reading;
+  const target=r.effect_id?document.querySelector(`.knowledge-record[data-subject="${CSS.escape(r.focus_id)}"] [data-effect="${CSS.escape(r.effect_id)}"]`):$('.chain-path [aria-current="step"]');
+  target?.focus({preventScroll:true});target?.scrollIntoView({block:r.effect_id?'start':'nearest'});
+}
+async function navigateChain(path,spell=currentEntry?.rule_chain?.selected_spell_id,effectId=null){
   const entry=currentEntry,gen=++chainGeneration;if(!entry||detailTab!=='chain')return;
   if(path&&entry.rule_chain.options.some(o=>o.spell_ids.includes(path.at(-1))))spell=path.at(-1);
   const panel=$('#detail-panel');panel.setAttribute('aria-busy','true');
@@ -317,14 +322,15 @@ async function navigateChain(path,spell=currentEntry?.rule_chain?.selected_spell
     const query=new URLSearchParams({id:entry.id});
     if(spell)query.set('spell',spell);
     if(path)query.set('path',JSON.stringify(path));
+    if(effectId)query.set('effect',effectId);
     const chain=await api('/api/knowledge-chain?'+query);
     if(!active())return;
     entry.rule_chain=chain;
     if(chain.selected_spell_id)params.set('chain_spell',chain.selected_spell_id);else params.delete('chain_spell');
     params.set('chain_path',JSON.stringify(chain.reading.path));params.set('tab','chain');
+    if(chain.reading.effect_id)params.set('chain_effect',chain.reading.effect_id);else params.delete('chain_effect');
     historyUpdate();renderDetail('chain');
-    const target=$('.chain-path [aria-current="step"]');
-    target?.focus({preventScroll:true});target?.scrollIntoView({block:'nearest'});saveUiState();
+    focusChainLocation(chain);saveUiState();
   }catch(error){if(active()){const message=document.createElement('p');message.setAttribute('role','alert');message.textContent=annaKnowledge.labels.error+': '+error.message;panel.append(message);}}
   finally{if(gen===chainGeneration&&currentEntry===entry)$('#detail-panel')?.removeAttribute('aria-busy');}
 }

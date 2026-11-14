@@ -127,8 +127,28 @@ class WebTests(unittest.TestCase):
         self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],value)
         for effect in ('missing','effect_0'):
             self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({**args,'effect':effect}))[0],400)
-        for field in ('effect','damage_type','delivery','timing'):
+        for field in ('effect','damage_type','delivery','timing','save_ability','trigger','end_trigger','access_condition','casting_target'):
             self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({field:'invalid'})}))[0],400)
+
+    def test_scoped_acquisition_and_second_save_survive_public_consumers(self):
+        query_args={'access_condition':'class_level','casting_target':'self','resource':'slot_free'}
+        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(query_args),'versions':'each'}))
+        self.assertEqual(status,200);rows=json.loads(raw)['rows']
+        self.assertTrue(any(e['name_en']=='Otherworldly Leap' for e in rows))
+        effect_query={'effect':'condition','save_ability':'感知','timing':'repeat','trigger':'save_result','spell':'睡眠术'}
+        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(effect_query),'versions':'each'}))
+        self.assertEqual(status,200);root=next(e['id'] for e in json.loads(raw)['rows'] if e['name_zh']=='智者')
+        spell=next(e['id'] for e in query(self.db,{'q':['睡眠术'],'versions':['each']})['rows'] if e['ruleset']=='5r')
+        args={'id':root,'spell':spell,'effect':'effect_5'}
+        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
+        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='spell_effect' and r['subject_id']==spell)
+        self.assertEqual(effects[4]['when']['effect_id'],'effect_4');self.assertEqual(effects[3]['repeat_of']['effect_id'],'effect_2')
+        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
+        status,_,raw=self.request('/api/entry?'+urlencode({'id':root,'chain_spell':spell,'chain_effect':'effect_5'}))
+        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],chain)
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(effect_query)}));self.assertEqual(status,200)
+        counts={row['value']:row['count'] for row in json.loads(raw)['groups']['save_ability']}
+        self.assertGreater(counts['感知'],0);self.assertEqual(counts['体质'],0)
 
     def test_invalid_query(self):
         for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:

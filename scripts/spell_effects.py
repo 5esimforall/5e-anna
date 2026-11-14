@@ -14,8 +14,8 @@ def reference(kind, **criteria):
     return {'kind':kind,**criteria}
 
 
-def outcome(kind, result, scope='initial'):
-    return {'kind':kind+'_result','result':result,'scope':scope}
+def outcome(kind, result, scope='initial', **criteria):
+    return {'kind':kind+'_result','result':result,'scope':scope,**criteria}
 
 
 def turn(subject,phase,relative):
@@ -53,16 +53,20 @@ def parse_effect_clause(clause, ev):
         kind='ranged_spell' if '远程' in clause else 'melee_spell'
         emit('attack_roll',attack_type=kind,target=target_ref())
     else:
-        m=re.fullmatch(r'(?:若命中，则|命中(?:时[，,]|则))(?:该)?目标(?:将)?(?:受到|受)(\d+d\d+)点?('+DAMAGE+r')伤害(.*)。',clause)
+        m=re.fullmatch(r'(?:若命中，则|命中(?:时[，,]|则))(?:该)?目标(?:将)?(?:受到|受)(\d+d\d+)(?:点|的)?('+DAMAGE+r')伤害(.*)。',clause)
         if m:
             hit=outcome('attack','hit');nodes.append(damage(m[1],m[2],hit));tail=m[3]
             if tail:
                 speed=re.fullmatch(r'(?:，且其速度将被减少(\d+)尺，直到你的下一回合开始为止|，并且在你的下一回合开始前速度减少(\d+)尺)',tail)
                 status=re.fullmatch(r'且陷入(.+?)状态，持续至你的下一回合结束',tail)
                 blocked=re.fullmatch(r'，并且直至你下一回合的?结束前都无法恢复生命值',tail)
+                save=re.fullmatch(r'且必须进行一次('+ABILITY+r')豁免，豁免失败则目标陷入(.+?)，该\2效应持续至你的下一回合结束',tail)
                 if speed:emit('modifier',field='speed',operation='subtract',quantity={'kind':'constant','value':int(speed[1] or speed[2]),'unit':'foot'},when=deepcopy(hit),ends=turn('caster','start','next'),target=target_ref())
                 elif status:emit('condition',condition=status[1],when=deepcopy(hit),ends=turn('caster','end','next'),target=target_ref())
                 elif blocked:emit('restriction',field='healing.allowed',value=False,when=deepcopy(hit),ends=turn('caster','end','next'),target=target_ref())
+                elif save:
+                    emit('saving_throw',ability=save[1],check_role='initial',when=deepcopy(hit),target=target_ref())
+                    emit('condition',condition=save[2],when=outcome('save','failure',selector='same_clause',ability=save[1]),ends=turn('caster','end','next'),target=target_ref())
                 else:return None
         else:
             return parse_save_or_duration(clause,ev)
@@ -72,6 +76,8 @@ def parse_effect_clause(clause, ev):
 def parse_save_or_duration(clause,ev):
     nodes=[]
     def emit(kind,**fields):nodes.append({'kind':kind,**fields})
+    scoped=parse_scoped_checks(clause,ev)
+    if scoped is not None:return scoped
     m=re.fullmatch(r'处于(\d+)尺(锥状|球状|立方)区域内的生物必须进行一次('+ABILITY+r')豁免。',clause)
     if m:
         emit('targets',selection={'kind':'area','shape':{'锥状':'cone','球状':'sphere','立方':'cube'}[m[2]],'size':int(m[1]),'unit':'foot','members':'creature'})
@@ -127,6 +133,49 @@ def parse_save_or_duration(clause,ev):
     elif (m:=re.fullmatch(r'在你下个回合结束前，对目标发动的下一次攻击检定具有优势。',clause)):
         emit('modifier',field='attack_roll',operation='advantage',applies='next_attack_against_target',when=outcome('attack','hit'),
              ends=turn('caster','end','next'),uses=1,target=target_ref())
+    else:return None
+    return [{**n,'evidence':ev} for n in nodes]
+
+
+def parse_scoped_checks(clause,ev):
+    """Local outcomes, anaphoric repeats and ordinal checks retain their own scope."""
+    nodes=[]
+    def emit(kind,**fields):nodes.append({'kind':kind,**fields})
+    m=re.fullmatch(r'指定施法距离内一个你能看见的(类人生物|生物)。',clause)
+    if m:emit('targets',selection={'kind':'humanoid' if m[1]=='类人生物' else 'creature','count':1,'visible':True,'within':'spell_range'})
+    elif (m:=re.fullmatch(r'该目标必须进行一次('+ABILITY+r')豁免，豁免失败则其在法术持续时间内陷入(.+?)(?:状态)?。',clause)):
+        emit('saving_throw',ability=m[1],check_role='initial',target=target_ref())
+        emit('condition',condition=m[2],when=outcome('save','failure',selector='same_clause',ability=m[1]),ends={'kind':'spell_ends'},target=target_ref())
+    elif (m:=re.fullmatch(r'目标在其每回合结束时可以(?:再进行一次('+ABILITY+r')豁免|重新进行这次豁免)，豁免成功则终止其身上该法术的效应。',clause)):
+        repeat=reference('check_ref',scope='initial',**({'ability':m[1]} if m[1] else {'selector':'previous_check'}))
+        emit('saving_throw',ability=m[1],**({'ability_source':'repeat_of'} if not m[1] else {}),check_role='repeat',
+             repeat_of=repeat,target=target_ref(),when={'all':[outcome('save','failure',**({'ability':m[1]} if m[1] else {'selector':'previous_check'})),
+                 {'kind':'spell_active'},turn('target','end','each')]})
+        emit('end_spell',scope='target',target=target_ref(),when=outcome('save','success','repeat',selector='same_clause'))
+    elif (m:=re.fullmatch(r'以施法距离内一点为源点，(\d+)尺半径球状区域内每个你选择的生物都必须成功通过一次('+ABILITY+r')豁免否则直到其下个回合结束陷入(.+?)状态。',clause)):
+        emit('targets',selection={'kind':'area','shape':'sphere','size':int(m[1]),'measure':'radius','unit':'foot','members':'creature','chosen_by':'caster','within':'spell_range'})
+        emit('saving_throw',ability=m[2],check_role='initial',occurrence=1,target=target_ref())
+        emit('condition',condition=m[3],when=outcome('save','failure',selector='same_clause'),ends=turn('target','end','next'),target=target_ref())
+    elif re.fullmatch(r'在其下个回合结束时，它必须重复此豁免。',clause):
+        emit('saving_throw',ability=None,ability_source='repeat_of',check_role='repeat',occurrence=2,
+             repeat_of=reference('check_ref',scope='initial',selector='previous_check'),target=target_ref(),
+             when={'all':[outcome('save','failure',selector='previous_check'),turn('target','end','next')]})
+    elif (m:=re.fullmatch(r'如果目标第('+NUMBER+r')次豁免失败，目标在持续时间内陷入(.+?)状态。',clause)):
+        occurrence=number(m[1])
+        if occurrence<1:return None
+        emit('condition',condition=m[2],when=outcome('save','failure','initial' if occurrence==1 else 'repeat',occurrence=occurrence),ends={'kind':'spell_ends'},target=target_ref())
+    elif (m:=re.fullmatch(r'若目标受到伤害或其(\d+)尺内有人用一个动作将其摇醒，目标身上的法术结束。',clause)):
+        emit('end_spell',scope='target',target=target_ref(),when={'any':[{'kind':'damage_received','subject':'target'},
+            {'kind':'wake_action','subject':'other','distance':{'maximum':int(m[1]),'unit':'foot'},'action':'action'}]})
+    elif (m:=re.fullmatch(r'不需要睡眠的生物（例如.+?）或免疫(.+?)状态的生物自动成功通过对抗此法术的豁免。',clause)):
+        emit('save_override',applies_to={'kind':'spell_saves'},result='success',when={'any':[
+            {'not':{'kind':'requires_sleep','subject':'target'}},{'kind':'condition_immunity','subject':'target','condition':m[1]}]})
+    elif (m:=re.fullmatch(r'(?:使用三环或更高法术位施展该法术时，)?你使用的法术位每比二环高一环，(?:你)?就可以额外指定一个类人(?:生物|作为目标)。',clause)):
+        emit('upcast',threshold=2,per_slot_level=1,effect={'kind':'additional_targets','count':1,'target_kind':'humanoid'})
+    elif (m:=re.fullmatch(r'指定目标时，每个目标生物必须身处其他目标(\d+)尺范围内。',clause)):
+        emit('target_constraint',target=target_ref(),constraint={'kind':'pairwise_distance','maximum':int(m[1]),'unit':'foot'})
+    elif (m:=re.fullmatch(r'(?:该次|这次)豁免具有(优势|劣势)。',clause)):
+        emit('check_modifier',check=reference('check_ref',scope='any',selector='previous_check'),modifier='advantage' if m[1]=='优势' else 'disadvantage')
     else:return None
     return [{**n,'evidence':ev} for n in nodes]
 

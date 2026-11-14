@@ -15,7 +15,7 @@ from html_extract import key
 from review_store import (DEFAULT_DECISIONS, canonical, digest, lifecycle, load_events,
                           append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS)
 from paths import PROJECT
-from rule_conditions import validate_conditions
+from rule_conditions import validate_conditions, condition_terms, conjunction
 from spell_effects import parse_spell
 from effect_queries import QUERY_VALUES as EFFECT_QUERY_VALUES, build_effect_index, audit_effect_index
 
@@ -28,6 +28,8 @@ QUERY_VALUES = {
     'resource': ('slot_free', 'spell_slot', 'not_stated'),
     'recovery': ('long_rest', 'short_rest', 'short_or_long_rest', 'not_stated'),
     'selection': ('fixed', 'choice'),
+    'access_condition': ('level','class_level','ability_score','class','campaign','requirement','item_state'),
+    'casting_target': ('self','not_stated'),
     **EFFECT_QUERY_VALUES,
 }
 
@@ -52,7 +54,7 @@ class Context:
             if e['type']=='spell':
                 for n in aliases(e):
                     if len(n)>1: self.spell_names[n].add(e['id'])
-        self.name_pattern = re.compile('|'.join(re.escape(n) for n in sorted(self.spell_names,key=lambda n:(-len(n),n)))) if self.spell_names else None
+        self.name_pattern = re.compile('|'.join(re.escape(n) for n in sorted(self.spell_names,key=lambda n:(-len(n),n))),re.IGNORECASE) if self.spell_names else None
 
     def resolve(self, entry, name, kind):
         return self.resolver.resolve(name, kind, entry['page_path'], entry['title_end'],
@@ -141,9 +143,20 @@ def rule_links(entry, value, context):
     """Every rule dependency names the local slot it governs; exceptions stay scoped."""
     links=[]
     def add(label, relation, scope, ev, *, change=None, when=None, ends=None):
+        # A target restriction governs spell targets, not range or a magic item's
+        # unrelated "special purpose". Keep both evidenced English lookup names;
+        # singular/plural chapter and glossary definitions still compete.
+        lookup_names=['Target','Targets'] if label=='目标' else [label]
+        lookups=[{'name':name,'resolution':context.resolve(entry,name,'concept')} for name in lookup_names]
+        if len(lookups)==1:resolution=lookups[0]['resolution']
+        else:
+            applicable=[x['resolution'] for x in lookups if x['resolution']['status'] in {'resolved','ambiguous'}]
+            candidates=sorted({tid for r in applicable or [x['resolution'] for x in lookups] for tid in r['targets']})
+            resolution={'targets':candidates,'status':('resolved' if len(candidates)==1 else 'ambiguous') if applicable else 'review' if candidates else 'unresolved',
+                        'reason':'rule_lookup_names','resolution_evidence':{'lookups':lookups}}
         links.append({'id':'rule_'+str(len(links)+1),'relation':relation,'scope':scope,
             'change':change,'when':when,'ends':ends,'target':{'kind':'entry','name':label,
-            'resolution':context.resolve(entry,label,'concept'),'evidence':ev}})
+            'lookup_names':lookup_names,'resolution':resolution,'evidence':ev}})
     for field,label in [('action','施法时间'),('range','施法距离'),('components','法术成分'),('duration','持续时间')]:
         if field in value.get('casting',{}):add(label,'uses_rule',{'kind':'casting_field','field':field},value['casting'][field]['evidence'])
     if value.get('casting',{}).get('duration',{}).get('concentration'):
@@ -151,11 +164,23 @@ def rule_links(entry, value, context):
     for grant in value.get('grants',[]):
         for branch in grant['branches']:
             scope={'kind':'usage_branch','grant_id':grant['id'],'branch_id':branch['id']}
+            when=conjunction({'kind':'branch_selected','grant_id':grant['id'],'branch_id':branch['id']},
+                             (value.get('activation') or {}).get('expression'),grant.get('when'),branch.get('when'))
             if branch['resource']['kind']=='spell_slot':
                 free=branch['resource'].get('consumed') is False
                 add('法术位','exception_to' if free else 'uses_rule',scope,branch['evidence'][0],
                     change={'field':'spell_slot.consumed','value':False} if free else None,
-                    when={'kind':'branch_selected','grant_id':grant['id'],'branch_id':branch['id']})
+                    when=when)
+            if branch.get('target'):
+                add('目标','exception_to',scope,branch['evidence'][0],when=when,
+                    change={'field':'casting.target','value':branch['target']['kind']})
+            if branch.get('components'):
+                add('法术成分','exception_to',scope,branch['evidence'][0],when=when,
+                    change={'field':'components.waived','value':branch['components']['waived']})
+            if branch.get('action'):add('动作','uses_rule',scope,branch['evidence'][0],when=when)
+            for term in condition_terms(when):
+                if term.get('kind')=='item_state' and term['state']=='attuned':
+                    add('同调','uses_rule',scope,(value.get('activation') or {}).get('evidence',branch['evidence'][0]),when=when)
             if branch.get('recovery',{}).get('event')=='long_rest':add('长休','uses_rule',scope,branch['evidence'][-1])
     for effect in value.get('effects',[]):
         scope={'kind':'effect','effect_id':effect['id']}
@@ -171,9 +196,16 @@ def rule_links(entry, value, context):
             change={k:effect[k] for k in ('field','operation','quantity','value','applies','uses') if k in effect}
             add(label,'exception_to',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'),change=change)
             if effect.get('operation')=='advantage':add('优势','uses_rule',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'))
-        if effect['kind']=='check_modifier':add('优势','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect['kind']=='check_modifier':
+            add('豁免检定','exception_to',scope,effect['evidence'],when=effect.get('when'),
+                change={'field':'saving_throw.modifier','value':effect['modifier'],'check':effect['check']})
+            add('优势' if effect['modifier']=='advantage' else '劣势','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        if effect['kind']=='save_override':
+            add('豁免检定','exception_to',scope,effect['evidence'],when=effect['when'],
+                change={'field':'saving_throw.result','value':effect['result'],'applies_to':effect['applies_to']})
+        if effect['kind']=='target_constraint':
+            add('目标','exception_to',scope,effect['evidence'],change={'field':'casting.targets','value':effect['constraint']})
         if effect['kind']=='end_spell':
-            from rule_conditions import condition_terms
             for condition in condition_terms(effect['when']):
                 if condition.get('kind')=='cover':add('全身掩护','uses_rule',scope,effect['evidence'],when=condition)
                 if condition.get('kind')=='outside_spell_range':add('施法距离','uses_rule',scope,effect['evidence'],when=condition)
@@ -185,6 +217,11 @@ def rule_links(entry, value, context):
 
 
 def record_for(entry, kind, value, context):
+    pre=value.get('prerequisites',{})
+    for term in condition_terms(pre.get('expression')):
+        if term.get('kind')=='requirement':
+            term['target']={'kind':'entry','name':term['name'],'resolution':context.resolve(entry,term['name'],term['entry_type']),
+                            'evidence':pre['evidence']}
     value['rules']=rule_links(entry,value,context)
     dependencies=set()
     for t in walk_targets(value): dependencies.update(t['resolution']['targets'])
@@ -194,7 +231,8 @@ def record_for(entry, kind, value, context):
             dependencies.update(g['target']['options'])
     # Bind every competing name, including currently inapplicable editions: a change
     # to generation/type/source must reopen an approved target selection.
-    for t in walk_targets(value):dependencies.update(context.resolver.names.get(key(t.get('name','')),()))
+    for t in walk_targets(value):
+        for name in [t.get('name',''),*t.get('lookup_names',[])]:dependencies.update(context.resolver.names.get(key(name),()))
     gaps=value.get('unparsed',[])
     unresolved=any(t['resolution']['status']!='resolved' for k,v in value.items() if k!='rules' for t in walk_targets(v))
     unfinished=value.get('prerequisites',{}).get('status')=='unparsed' or kind=='spell_access' and not value.get('grants') or kind=='spell_effect' and not value.get('effects') or any(g['mode']=='selection' or g['target']['kind']=='choice' and not g['target'].get('options') for g in value.get('grants',[]))
@@ -316,11 +354,20 @@ def branches(context, effective):
             else:spells=context.choice_options(context.entries[subject],target,restrictions)
             for branch in grant['branches']:
                 resource=branch['resource'];resource_kind='slot_free' if resource.get('consumed') is False else 'spell_slot' if resource.get('consumed') is True else 'not_stated'
+                conditions=[]
+                pre=access['value']['prerequisites']
+                if pre.get('expression'):conditions.append({'scope':{'kind':'acquisition','subject_id':subject},'expression':pre['expression'],'evidence':pre['evidence']})
+                activation=access['value'].get('activation')
+                if activation:conditions.append({'scope':{'kind':'provider','subject_id':subject},**activation})
+                for owner,scope in [(grant,{'kind':'grant','grant_id':grant['id']}),(branch,{'kind':'usage_branch','grant_id':grant['id'],'branch_id':branch['id']})]:
+                    if owner.get('when'):conditions.append({'scope':scope,'expression':owner['when'],'evidence':owner['evidence'][0]})
                 for spell_id in spells:
                     data={'root_id':root,'subject_id':subject,'knowledge_id':access['id'], 'grant_id':grant['id'],'branch_id':branch['id'],
                         'spell_id':spell_id,'mode':grant['mode'],'resource':resource_kind,'recovery':branch.get('recovery',{}).get('event','not_stated'),
                         'selection':'fixed' if target['kind']=='entry' else 'choice','acquisition':acquisition,'constraints':restrictions,
-                        'grant':{**grant,'target':{k:v for k,v in target.items() if k!='options'}},'branch':branch}
+                        'grant':{**grant,'target':{k:v for k,v in target.items() if k!='options'}},'branch':branch,
+                        'conditions':conditions,'condition_kinds':sorted({t['kind'] for c in conditions for t in condition_terms(c['expression']) if 'kind' in t}),
+                        'casting_target':branch.get('target',{}).get('kind','not_stated')}
                     data['id']='casting_'+digest([root,subject,grant['id'],branch['id'],spell_id])[:24]
                     yield data
 
@@ -420,8 +467,12 @@ def casting_query(raw):
 def casting_condition(raw, alias='e'):
     query=casting_query(raw);clauses=[];values=[];effects=[];effect_values=[]
     for k,v in query.items():
-        if k in EFFECT_QUERY_VALUES:effects.append('ef.'+k+'=?');effect_values.append(v);continue
+        if k in EFFECT_QUERY_VALUES:
+            effects.append('EXISTS(SELECT 1 FROM json_each(ef.data,\'$.'+k+'s\') WHERE value=?)' if k in {'trigger','end_trigger'} else 'ef.'+k+'=?')
+            effect_values.append(v);continue
         if k=='spell':clauses.append('EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
+        elif k=='access_condition':clauses.append("EXISTS(SELECT 1 FROM json_each(c.data,'$.condition_kinds') WHERE value=?)")
+        elif k=='casting_target':clauses.append("json_extract(c.data,'$.casting_target')=?")
         else:clauses.append('c.'+k+'=?')
         values.append(v)
     if effects:

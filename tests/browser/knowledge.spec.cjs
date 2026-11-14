@@ -167,3 +167,67 @@ test('repeated-save links and timed exceptions return to the exact effect withou
   await expect(page.locator('[data-effect=effect_6]')).toBeFocused();
   expect(new URL(page.url()).searchParams.get('entry')).toBe(root.id);
 });
+
+test('acquisition, equipment and self-target conditions remain scoped through reading and reload',async({page,request})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(anna);await ready(page);
+  await page.locator('#toggle-filters').click();await page.locator('#casting-filters summary').click();
+  for(const [field,value] of Object.entries({access_condition:'class_level',casting_target:'self',resource:'slot_free'}))await page.locator(`[data-casting=${field}]`).selectOption(value);
+  await page.locator('[data-casting-apply]').click();await ready(page);
+  await page.locator('#results .entry-name').filter({hasText:'超凡跳跃'}).click();
+  await page.getByRole('tab',{name:'规则链',exact:true}).click();
+  await page.locator('[data-chain-spell]').first().click();
+  await expect(page.locator('.chain-step')).toContainText('取得资格');
+  await expect(page.locator('.chain-step')).toContainText('魔契师 等级 ≥ 2');
+  await expect(page.locator('.chain-branch').first()).toContainText('自身');
+  const casting=JSON.parse(new URL(page.url()).searchParams.get('casting'));
+  expect(casting.access_condition).toBe('class_level');
+  await page.reload();await expect(page.locator('.chain-step')).toContainText('魔契师 等级 ≥ 2');
+  const ring=await corpusEntry(request,'跳跃戒指');
+  await page.goto(anna+'/?'+new URLSearchParams({entry:ring.id,tab:'chain'}));
+  await page.locator('[data-chain-spell]').first().click();
+  await expect(page.locator('.chain-step')).toContainText('与此物品同调');
+  await expect(page.locator('.chain-step')).toContainText('穿戴此物品');
+  await expect(page.locator('.chain-step')).toContainText('仅自身');
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  expect(exported.chain.options[0].conditions.map(c=>c.scope.kind)).toEqual(['provider','usage_branch']);
+  expect(exported.chain.options[0].casting_target).toBe('self');
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('tab',{name:'规则链',exact:true}).focus();await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab',{name:/关系/})).toHaveAttribute('aria-selected','true');
+  await page.keyboard.press('ArrowRight');await expect(page.locator('.chain-step')).toContainText('穿戴此物品');
+  await page.setViewportSize({width:1280,height:800});expect(errors).toEqual([]);
+});
+
+test('second-save outcomes keep the ordinal, supplied ability and exception while following local links',async({page,request})=>{
+  const root=await corpusEntry(request,'智者'),spell=await corpusEntry(request,'睡眠术');
+  const casting={effect:'condition',save_ability:'感知',timing:'repeat',trigger:'save_result',spell:'睡眠术'};
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',chain_spell:spell.id,casting:JSON.stringify(casting)}));
+  await expect(page.locator('[data-effect=effect_5]')).toContainText('第 2 次豁免');
+  await expect(page.locator('[data-effect=effect_7]')).toContainText('不满足 (目标需要睡眠)');
+  await page.locator('[data-effect=effect_5] [data-chain-effect=effect_4]').click();
+  await expect(page.locator('[data-effect=effect_4]')).toBeFocused();
+  await expect(page.locator('[data-effect=effect_4]')).toContainText('感知');
+  await expect(page.locator('[data-effect=effect_4]')).toContainText('属性沿检定引用取得');
+  await page.locator('[data-effect=effect_4] [data-chain-effect=effect_2]').click();
+  await expect(page.locator('[data-effect=effect_2]')).toBeFocused();
+  await page.goBack();await expect(page).toHaveURL(/chain_effect=effect_4/);
+  await page.reload();await expect(page.locator('[data-effect=effect_4]')).toBeFocused();
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  expect(exported.chain.reading.effect_id).toBe('effect_4');expect(exported.chain.reading.root_id).toBe(root.id);
+  const exception=exported.chain.edges.find(e=>e.relation==='exception_to'&&e.change?.field==='saving_throw.result');expect(exception).toBeTruthy();
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',chain_spell:spell.id,chain_path:JSON.stringify([...exported.chain.reading.path,exception.target_id])}));
+  await expect(page.locator('.chain-step')).toContainText('对抗此法术的全部豁免');
+  await page.locator('.chain-step [data-chain-effect=effect_7]').click();
+  await expect(page.locator('[data-effect=effect_7]')).toBeFocused();
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(root.id);
+});
+
+test('rule-chain conditions and reference labels have matching Chinese and English shapes',()=>{
+  const vm=require('node:vm'),fs=require('node:fs'),source=fs.readFileSync('web/knowledge.js','utf8');
+  const labels=lang=>{const context=vm.createContext({window:{},annaKit:{esc:String},document:{documentElement:{lang}}});vm.runInContext(source,context);return JSON.parse(vm.runInContext('JSON.stringify(window.annaKnowledge.labels)',context));};
+  const shape=value=>value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,shape(v)])):typeof value;
+  const zh=labels('zh'),en=labels('en');expect(shape(zh)).toEqual(shape(en));
+  for(const key of ['access_condition','casting_target','save_ability','trigger','end_trigger'])expect(Object.keys(zh[key])).toEqual(Object.keys(en[key]));
+  expect(en.allSpellSaves).toBe('All saves against this spell');
+});

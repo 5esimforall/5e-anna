@@ -6,15 +6,14 @@ clauses remain evidence-bearing gaps; an explicit exception never becomes a defa
 from __future__ import annotations
 from copy import deepcopy
 import re
-from rule_conditions import prerequisite_expression
+from rule_conditions import prerequisite_expression, item_condition, CLASSES
 
 ABILITIES = ('力量', '敏捷', '体质', '智力', '感知', '魅力')
-CLASSES = ('吟游诗人', '牧师', '德鲁伊', '圣武士', '游侠', '术士', '法师', '魔契师', '奇械师')
 SCHOOLS = ('防护', '咒法', '预言', '惑控', '塑能', '幻术', '死灵', '变化')
 DIGITS = {'零': 0, '一': 1, '两': 2, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
 NUMBER = r'(?:\d+|[零一两二三四五六七八九十])'
 RELEVANT = re.compile(r'法术|戏法|施法|施展|习得|准备着|长休|短休|充能|仅限|仅当|只有|必须|否则|条件|如果|若')
-GRANT = re.compile(r'(?:你[^。；]{0,45}(?:习得|学会|知晓|始终准备|可以[^。；]{0,30}施展)|选择[^。；]{0,30}(?:法术|戏法))')
+GRANT = re.compile(r'(?:你[^。；]{0,45}(?:习得|学会|知晓|始终准备|(?:可以|能)[^。；]{0,30}施展)|选择[^。；]{0,30}(?:法术|戏法))')
 
 
 def number(text):
@@ -47,10 +46,18 @@ def quantity_expression(raw):
 
 
 def parse_prerequisites(entry, text):
-    match=re.search(r'(?:先决|先决条件|前提|前置条件)[：:]([^）)\n]+)',text[entry['title_end']:entry['end']])
+    match=re.search(r'(?:先决条件|先决|前提|前置条件)[：:]',text[entry['title_end']:entry['end']])
     if not match:return {'status':'not_stated'}
-    a=entry['title_end']+match.start();b=entry['title_end']+match.end()
-    raw=match[1].strip();expression=prerequisite_expression(raw)
+    a=entry['title_end']+match.start();begin=entry['title_end']+match.end();b=begin;depth=0
+    while b<entry['end']:
+        char=text[b]
+        if char in '\n。':break
+        if char in '（(':depth+=1
+        elif char in '）)':
+            if not depth:break
+            depth-=1
+        b+=1
+    raw=text[begin:b].strip();expression=prerequisite_expression(raw) if not depth else None
     return {'status':'parsed' if expression else 'unparsed','expression':expression,
             'evidence':evidence(entry['page_path'],text,a,b)}
 
@@ -79,6 +86,10 @@ def supported_access_clause(clause, mentions):
         r'你始终准备着你选择的这道法术与SPELL。',
         r'你(?:习得|学会|知晓)SPELL。',
         r'你始终准备着SPELL。',
+        r'你(?:可以|能)(?:随意)?(?:对自身)?(?:无需消耗法术位地)?施展SPELL(?:，且无需消耗法术位和材料成分)?。',
+        r'你可以(?:从中|用它)施展(?:法术)?SPELL。',
+        r'你可以(?:从中|用其)施展(?:法术)?SPELL(?:，但(?:只能以自身为目标|目标只能为自身))?。',
+        r'你可以用一个动作对自身施展法术SPELL，次数不限。',
         r'你可以在不消耗法术位的情况下施展这些法术各一次。',
         r'当你以此法施展某个法术后，你不能再次以此法施展该法术，直至你完成一次长休。',
         r'你也可以消耗合适的法术位来施展这些法术。',
@@ -106,15 +117,36 @@ def parse_access(entry, text, spell_mentions):
     body = text[start:end]
     if not GRANT.search(re.sub(r'\s+', '', body)): return None
     grants = []; active = []; contexts = {}; ability = None; modifiers = []; gaps = []; handled = []
-    prerequisites = parse_prerequisites(entry, text)
+    prerequisites = parse_prerequisites(entry, text);activation=None
     def mark(ev):
         if ev not in handled: handled.append(ev)
     def grant(target, mode, ev):
         g = {'id': 'grant_'+str(len(grants)+1), 'mode': mode, 'target': target, 'branches': [], 'evidence': [ev]}
         grants.append(g); return g
+    # A prerequisite is a separate acquisition statement, not a prefix of the first
+    # grant sentence. Preserve its full nested expression and exact evidence.
+    if prerequisites.get('evidence'):
+        pre_start=prerequisites['evidence']['span'][0]
+        pre_end=prerequisites['evidence']['span'][1]
+        line_end=text.find('\n',pre_end,end)
+        prefix=re.sub(r'\s+','',text[start:pre_start])
+        suffix=text[pre_end:line_end if line_end>=0 else end].strip()
+        if prefix in {'','通用专长（','通用专长('} and suffix in {'','）',')'}:
+            start=line_end+1 if line_end>=0 else pre_end
+    if entry['type']=='magic_item':
+        header=re.match(r'\s*(?:奇物|戒指|魔杖|法杖|权杖)[，,](?:普通|非普通|珍稀|极珍稀|传说)(（需同调）)?[ \t]*\n',text[start:end])
+        if header:
+            if header[1]:activation={'expression':{'kind':'item_state','state':'attuned','subject':'source_item'},
+                                    'evidence':evidence(path,text,start+header.start(1),start+header.end(1))}
+            start+=header.end()
     for a, b, clause in sentences(text, start, end):
         ev = evidence(path, text, a, b)
         mentions = [m for m in spell_mentions if a <= m['evidence']['span'][0] < b]
+        when=None
+        frame=re.fullmatch(r'(?:(?:当|在)?(.+?)时|(?:在)?(.+?)期间)，(你.+)',clause)
+        if frame and entry['type']=='magic_item':
+            when=item_condition(frame[1] or frame[2])
+            if when:clause=frame[3]
         # Formatting labels are structure, not a statement. Their explanatory text follows.
         if not re.search(r'你|可以|能够|习得|始终', clause) and re.fullmatch(r'[\u3400-\u9fff\d]+[A-Za-z][A-Za-z\d \-]*[。]?', re.sub(r'\s+', '', text[a:b])):
             continue
@@ -162,18 +194,23 @@ def parse_access(entry, text, spell_mentions):
         elif mode and active and re.search(r'选择的|这道法术|该法术', clause):
             for g in active:
                 if g['mode']=='selection': g['mode']=mode; g['evidence'].append(ev); found=True
-        if mentions and re.search(r'你可以[^。]{0,35}施展', clause) and not mode:
+        if mentions and re.search(r'你(?:可以|能)[^。]{0,35}施展', clause) and not mode:
             active = [grant(deepcopy(m), 'cast', ev) for m in mentions]; found=True
         # A named mention alone is not a grant, nor is prose describing how another caster acts.
-        casting = bool(re.search(r'你(?:也)?(?:能够|可以)|依靠这个专长', clause) and '施展' in clause)
+        casting = bool(re.search(r'你(?:也)?(?:能够|可以|能)|依靠这个专长', clause) and '施展' in clause)
         free = bool(re.search(r'(?:不|无需)消耗法术位', clause))
         slots = bool(not free and re.search(r'(?:消耗|使用|以你拥有的).*法术位.*施展', clause))
         once = bool(re.search(r'(?:各)?一次', clause))
-        if active and casting and (free or slots or once):
+        if active and casting and (free or slots or once or mentions):
             resource = {'kind': 'spell_slot', 'consumed': not free} if free or slots else {'kind': 'not_stated'}
             branch = {'id': 'branch_'+str(len(active[0]['branches'])+1), 'resource': resource, 'evidence': [ev]}
             if slots: resource.update(count=1, level='appropriate' if re.search(r'合适|对应', clause) else 'available')
             if '最低环阶' in clause: branch['cast_level']={'kind':'spell_level'}
+            if when:branch['when']=deepcopy(when)
+            if re.search(r'对自身|只能以自身为目标|目标只能为自身',clause):branch['target']={'kind':'self'}
+            if '无需消耗法术位和材料成分' in clause:branch['components']={'waived':['M']}
+            if re.search(r'随意|次数不限',clause):branch['frequency']='at_will'
+            if '用一个动作' in clause:branch['action']='action'
             if once: branch['uses']={'quantity': {'kind': 'constant', 'value': 1}, 'per': 'spell' if re.search(r'各|每道', clause) else 'grant'}
             m = re.search(r'次数等于([^，。]+)', clause)
             if m and (expr := quantity_expression(m[1])): branch['uses']={'quantity':expr,'per':'grant'}
@@ -206,6 +243,9 @@ def parse_access(entry, text, spell_mentions):
         if re.search(r'多次选择本专长', clause) and '不同的法术列表' in clause:
             modifiers.append({'kind':'repeatable','constraint':'different_class_list','evidence':ev});found=True
         if found:
+            if when and not casting:
+                for g in active:
+                    if ev in g['evidence']:g['when']=deepcopy(when)
             mark(ev)
             if not supported_access_clause(clause, mentions):gaps.append({'reason':'partially_parsed_clause','evidence':ev})
         elif RELEVANT.search(clause): gaps.append({'reason':'unsupported_clause','evidence':ev})
@@ -213,4 +253,4 @@ def parse_access(entry, text, spell_mentions):
         if ability: g['ability']=deepcopy(ability)
         if not g['branches']:
             g['branches']=[{'id':'branch_1','resource':{'kind':'not_stated'},'evidence':g['evidence']}]
-    return {'grants':grants,'contexts':contexts,'prerequisites':prerequisites,'modifiers':modifiers,'unparsed':gaps,'evidence':handled}
+    return {'grants':grants,'contexts':contexts,'prerequisites':prerequisites,'activation':activation,'modifiers':modifiers,'unparsed':gaps,'evidence':handled}

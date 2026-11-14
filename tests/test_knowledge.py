@@ -42,7 +42,7 @@ class KnowledgeTests(unittest.TestCase):
         source={'id':'phb','name':'核心','ruleset_hint':'5r','reference_role':'core_rules','evidence':[]}
         self.db.execute('INSERT INTO sources VALUES(?,?)',('phb',canonical(source)))
         entries=[]
-        for eid,body,name,english,kind in [('feat',self.feature,'示例','Example','feat'),('spell',self.spell,'测试法术','Test Spell','spell'),('other',self.other,'无关','Other','section'),*self.rules]:
+        for eid,body,name,english,kind in [('feat',self.feature,'示例','Example',getattr(self,'feature_type','feat')),('spell',self.spell,'测试法术','Test Spell','spell'),('other',self.other,'无关','Other','section'),*self.rules]:
             entry={'id':eid,'entity_id':eid,'name':name+' '+english,'name_zh':name,'name_en':english,'type':kind,'ruleset':'5r',
                    'page_path':eid+'.htm','start':0,'title_end':body.find('\n')+1,'end':len(body),'source_ids':['phb'],
                    'fields':{},'anchors':[],'is_primary':True}
@@ -212,6 +212,109 @@ class KnowledgeTests(unittest.TestCase):
         self.rebuild()
         self.db.execute("UPDATE spell_effect_index SET data=json_set(data,'$.statement.kind','damage')")
         self.assertIn('spell_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
+
+    def test_nested_acquisition_is_queryable_and_links_to_evidenced_prerequisites(self):
+        self.feature='示例 Example\n先决：魔契师等级2+且（智力或感知13+或必需专长）\n你习得测试法术。'
+        self.rules=[('required','必需 Required\n规定。','必需','Required','feat')];self.rebuild()
+        self.assertEqual(self.effective()['status'],'resolved')
+        option=chain(self.db,'feat')['options'][0]
+        self.assertEqual(option['condition_kinds'],['ability_score','class_level','requirement'])
+        self.assertEqual(option['conditions'][0]['scope'],{'kind':'acquisition','subject_id':'feat'})
+        expression=option['conditions'][0]['expression']
+        self.assertEqual(expression['all'][1]['any'][1]['target']['resolution']['targets'],['required'])
+        viewed=chain(self.db,'feat',reading_path=['feat','required'])
+        relation=viewed['reading']['steps'][0]['relations'][0]
+        self.assertEqual(relation['relation'],'requires_option');self.assertEqual(relation['scope']['expression'],expression)
+        self.accept();self.rules[0]=('required','必需 Required\n规定已经修订。','必需','Required','feat');self.rebuild()
+        self.assertEqual(self.effective()['review_status'],'stale');self.assertFalse(chain(self.db,'feat')['options'])
+
+    def test_unknown_or_ambiguous_named_requirement_is_not_a_qualified_option(self):
+        self.feature='示例 Example\n先决：等级4+且必需专长\n你习得测试法术。';self.rebuild()
+        self.assertEqual(self.effective()['status'],'partial');self.assertFalse(chain(self.db,'feat')['options'])
+        self.rules=[(eid,'必需 Required\n规定。','必需','Required','feat') for eid in ('r1','r2')];self.rebuild()
+        pre=self.effective()['value']['prerequisites']['expression']['all'][1]
+        self.assertEqual(pre['target']['resolution']['status'],'ambiguous')
+        self.assertEqual(set(pre['target']['resolution']['targets']),{'r1','r2'})
+        self.assertFalse(chain(self.db,'feat')['options'])
+        self.assertEqual(chain(self.db,'feat',reading_path=['feat','r1'])['reading']['steps'][0]['relations'][0]['target_status'],'ambiguous')
+
+    def test_source_activation_branch_condition_and_target_do_not_leak(self):
+        self.feature_type='magic_item'
+        self.feature=('示例 Example\n戒指，非普通（需同调）\n当你持握此物品时，你可以从中施展测试法术，但只能以自身为目标。'
+                      '你也可以使用你拥有的任意法术位来施展该法术。')
+        self.rules=[('range','目标 Targets\n定义。','目标','Targets','rule')];self.rebuild()
+        result=chain(self.db,'feat','spell');self.assertEqual(self.effective()['status'],'resolved')
+        options={o['resource']:o for o in result['options']}
+        self.assertEqual([c['scope']['kind'] for c in options['not_stated']['conditions']],['provider','usage_branch'])
+        self.assertEqual([c['scope']['kind'] for c in options['spell_slot']['conditions']],['provider'])
+        self.assertEqual([c['target'] for c in result['reading']['steps'][0]['relations'][0]['scope']['usage']],['self','not_stated'])
+        reverse=chain(self.db,'spell',reading_path=['spell','feat'])['reading']['steps'][0]['relations'][0]
+        self.assertEqual(reverse['scope']['usage'],result['reading']['steps'][0]['relations'][0]['scope']['usage'])
+        def roots(query):
+            sql,values=casting_condition(query)
+            return {r[0] for r in self.db.execute('SELECT e.id FROM entries e WHERE '+sql,values)}
+        self.assertEqual(roots({'access_condition':'item_state','casting_target':'self','resource':'not_stated'}),{'feat'})
+        self.assertEqual(roots({'casting_target':'self','resource':'spell_slot'}),set())
+        exception=chain(self.db,'feat',reading_path=['feat','range'])['reading']['steps'][0]['relations'][0]
+        self.assertEqual(exception['change'],{'field':'casting.target','value':'self'})
+        self.assertEqual([c.get('state') for c in exception['when']['all']], [None,'attuned','held'])
+        self.assertEqual(result['bindings'][0]['conditions'],options['not_stated']['conditions'])
+
+    def test_save_ability_trigger_and_end_filters_never_mix_local_effects(self):
+        from test_rule_scopes import TARGET,SAVE,REPEAT
+        self.spell='测试法术 Test Spell\n'+TARGET+SAVE+SAVE.replace('感知','体质').replace('麻痹','中毒')+REPEAT
+        self.rebuild()
+        def roots(query):
+            sql,values=casting_condition(query)
+            return {r[0] for r in self.db.execute('SELECT e.id FROM entries e WHERE '+sql,values)}
+        self.assertEqual(roots({'effect':'condition','save_ability':'感知','trigger':'save_result','end_trigger':'spell_ends'}),{'feat'})
+        self.assertEqual(roots({'effect':'saving_throw','save_ability':'体质','timing':'repeat','trigger':'turn'}),{'feat'})
+        self.assertEqual(roots({'save_ability':'感知','timing':'repeat'}),set())
+        self.assertEqual(roots({'effect':'condition','trigger':'turn'}),set())
+        self.assertEqual(roots({'effect':'condition','save_ability':'体质','end_trigger':'turn'}),set())
+        exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]
+        record=next(r for r in exported if r['kind']=='spell_effect')
+        for effect in record['value']['effects']:
+            self.assertEqual(effect['evidence']['raw'],self.spell[slice(*effect['evidence']['span'])])
+        focused=chain(self.db,'feat','spell',effect_id='effect_6')
+        self.assertEqual(focused['reading']['effect_id'],'effect_6')
+        self.assertEqual(record['value']['effects'][5]['repeat_of']['effect_id'],'effect_4')
+
+    def test_target_rule_uses_lookup_names_without_selecting_between_valid_definitions(self):
+        self.feature='示例 Example\n你能对自身无需消耗法术位地施展测试法术。'
+        self.rules=[('purpose','目标 Special Purpose\n智能物品的目的。','目标','Special Purpose','rule')];self.rebuild()
+        link=next(r for r in self.effective()['value']['rules'] if r['change'] and r['change']['field']=='casting.target')
+        self.assertEqual(link['target']['resolution']['status'],'unresolved')
+        self.assertNotIn('purpose',link['target']['resolution']['targets'])
+        self.rules += [(name,'目标 '+english+'\n法术目标。','目标',english,'rule') for name,english in [('chapter','Targets'),('glossary','Target')]]
+        self.rebuild()
+        link=next(r for r in self.effective()['value']['rules'] if r['change'] and r['change']['field']=='casting.target')
+        self.assertEqual(link['target']['resolution']['status'],'ambiguous')
+        self.assertEqual(link['target']['resolution']['targets'],['chapter','glossary'])
+        for target in ('chapter','glossary'):
+            edge=chain(self.db,'feat',reading_path=['feat',target])['reading']['steps'][0]['relations'][0]
+            self.assertEqual(edge['status'],'ambiguous');self.assertEqual(edge['scope']['branch_id'],'branch_1')
+
+    def test_save_exceptions_keep_their_check_or_whole_spell_scope(self):
+        from test_rule_scopes import SLEEP
+        self.spell='测试法术 Test Spell\n'+SLEEP+'该次豁免具有劣势。'
+        self.rules=[('save','豁免检定 Saving Throws\n定义。','豁免检定','Saving Throws','rule')];self.rebuild()
+        result=chain(self.db,'feat','spell',['feat','spell','save'])
+        changes=[r for r in result['reading']['steps'][-1]['relations'] if r['relation']=='exception_to']
+        whole=next(r for r in changes if r['change']['field']=='saving_throw.result')
+        local=next(r for r in changes if r['change']['field']=='saving_throw.modifier')
+        self.assertEqual(whole['change']['applies_to'],{'kind':'spell_saves'})
+        self.assertIn('not',whole['when']['any'][0])
+        self.assertEqual(local['change']['check']['effect_id'],'effect_4')
+        reverse=chain(self.db,'save',reading_path=['save','spell'])['reading']['steps'][0]['relations']
+        self.assertEqual({r['scope']['effect_id'] for r in reverse},{whole['scope']['effect_id'],local['scope']['effect_id']})
+
+    def test_case_insensitive_bilingual_spelling_is_one_resolved_mention(self):
+        self.feature='示例 Example\n你习得测试法术test spell。';self.rebuild()
+        grants=self.effective()['value']['grants'];self.assertEqual(len(grants),1)
+        self.assertEqual(grants[0]['target']['evidence']['raw'],'测试法术test spell')
+        self.assertEqual(grants[0]['target']['resolution']['targets'],['spell'])
+        self.assertEqual(self.effective()['status'],'resolved')
 
     def test_exports_and_evidence_are_exact(self):
         exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]

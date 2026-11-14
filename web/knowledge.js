@@ -51,8 +51,14 @@ window.annaKnowledge=(()=>{
   };
   const extended={
     zh:{
-      fields:{effect:'效果种类',damage_type:'伤害类型',delivery:'效应依据',timing:'效应时序'},
-      effect:{targets:'选定目标',attack_roll:'攻击检定',damage:'造成伤害',modifier:'数值或检定修正',restriction:'限制',behavior:'行为',check_modifier:'特定检定修正',end_spell:'结束法术',level_scale:'等级成长',ignite:'点燃'},
+      fields:{effect:'效果种类',damage_type:'伤害类型',delivery:'效应依据',timing:'效应时序',save_ability:'本效果的豁免属性',trigger:'适用条件涉及',end_trigger:'结束条件涉及',access_condition:'获取或启用条件涉及',casting_target:'本分支施法目标'},
+      save_ability:{力量:'力量',敏捷:'敏捷',体质:'体质',智力:'智力',感知:'感知',魅力:'魅力',not_stated:'本效果未明示'},
+      trigger:{attack_result:'攻击结果',save_result:'豁免结果',turn:'回合时点',damage_received:'受到伤害',wake_action:'动作唤醒',outside_spell_range:'超出施法距离',cover:'掩护',action_spent:'使用动作',requires_sleep:'睡眠需求',condition_immunity:'状态免疫'},
+      end_trigger:{turn:'回合时点',spell_ends:'法术结束',damage_from:'施法者或同伴造成伤害'},
+      access_condition:{level:'角色等级',class_level:'职业等级',ability_score:'属性值',class:'职业',campaign:'战役',requirement:'具名选项',item_state:'物品状态'},casting_target:{self:'仅自身',not_stated:'本分支未限定'},
+      item_state:{held:'持握此物品',worn:'穿戴此物品',carried:'携带此物品',attuned:'与此物品同调'},
+      requires_option:'前置选项',atWill:'次数不限',waived:'免除成分',disadvantageName:'劣势',allSpellSaves:'对抗此法术的全部豁免',requiresSleep:'目标需要睡眠',immuneTo:'目标免疫',wakeAction:'其他生物用动作唤醒目标，距离至多',ordinalCheck:'第 {n} 次豁免',inheritedAbility:'属性沿检定引用取得',chosenByCaster:'由施法者选择区域内生物',radius:'半径',pairwise:'各目标相互距离至多',acquisition:'取得资格',activation:'启用条件',scopeConditions:'沿此路径保留的限定',
+      effect:{targets:'选定目标',attack_roll:'攻击检定',damage:'造成伤害',modifier:'数值或检定修正',restriction:'限制',behavior:'行为',check_modifier:'特定检定修正',end_spell:'结束法术',level_scale:'等级成长',ignite:'点燃',save_override:'豁免结果例外',target_constraint:'目标范围限制'},
       damage_type:{acid:'强酸',cold:'寒冷',fire:'火焰',force:'力场',lightning:'闪电',necrotic:'暗蚀',poison:'毒素',psychic:'心灵',radiant:'光耀',thunder:'雷鸣',bludgeoning:'钝击',piercing:'穿刺',slashing:'挥砍'},
       delivery:{attack_roll:'攻击检定',saving_throw:'豁免检定',automatic:'直接生效，不再攻击',not_stated:'未归类'},
       timing:{immediate:'初次效应',ongoing:'后续回合施用',repeat:'重复豁免',not_stated:'未归类'},
@@ -60,15 +66,21 @@ window.annaKnowledge=(()=>{
       property:{object:'物件',flammable:'可燃',worn:'被着装',carried:'被携带'},
       shape:{cone:'锥状',sphere:'球状',cube:'立方'},actor:{caster:'施法者',target:'目标'},
       phase:{start:'开始',end:'结束',during:'期间'},relative:{next:'下一回合',each:'每回合',subsequent:'后续各回合'},
-      mechanic:{speed:'速度',attack_roll:'攻击检定','healing.allowed':'允许恢复生命值','prone.self_end':'自行结束倒地','spell_slot.consumed':'法术位消耗'},
+      mechanic:{speed:'速度',attack_roll:'攻击检定','healing.allowed':'允许恢复生命值','prone.self_end':'自行结束倒地','spell_slot.consumed':'法术位消耗','casting.target':'施法目标','casting.targets':'目标间距','components.waived':'免除成分','saving_throw.modifier':'特定豁免修正','saving_throw.result':'豁免结果'},
       hit:'命中',miss:'未命中',spellActive:'法术仍生效',takesDamage:'受到伤害',outsideRange:'目标超出施法距离',totalCover:'目标相对施法者处于全身掩护',otherAction:'施法者用动作做其他事情',canLaugh:'目标能够发笑',withinArea:'位于区域',
       referencedQuantity:'引用数量',localLinks:'沿效果关系阅读',targetDefinition:'目标定义',initial:'初次',repeatCheck:'重复',attackOutcome:'首击命中要求',independentAttack:'无论首击是否命中',unresolvedAttack:'原文未明确后续伤害与首击的条件关系',
       ongoingCost:'每次后续施用',bonusAction:'附赠动作',standardAction:'动作',oncePerTurn:'每回合一次',subtract:'减少',yes:'是',no:'否',laugh:'不受控制地狂笑',endAll:'结束法术',endTarget:'结束目标身上的效应',nextAttack:'对目标的下一次攻击',
       sameEffect:'效果条件必须命中同一法术中的同一效果；后续自动伤害不借用初次攻击的命中条件。'
     },
     en:{
-      fields:{effect:'Effect kind',damage_type:'Damage type',delivery:'Effect delivery',timing:'Effect timing'},
-      effect:{targets:'Target selection',attack_roll:'Attack roll',damage:'Deal damage',modifier:'Modifier',restriction:'Restriction',behavior:'Behavior',check_modifier:'Specific check modifier',end_spell:'End spell',level_scale:'Level scaling',ignite:'Ignite'},
+      fields:{effect:'Effect kind',damage_type:'Damage type',delivery:'Effect delivery',timing:'Effect timing',save_ability:'Save ability for this effect',trigger:'Applicability mentions',end_trigger:'Ending condition mentions',access_condition:'Access condition mentions',casting_target:'Branch casting target'},
+      save_ability:{力量:'Strength',敏捷:'Dexterity',体质:'Constitution',智力:'Intelligence',感知:'Wisdom',魅力:'Charisma',not_stated:'Not stated for this effect'},
+      trigger:{attack_result:'Attack result',save_result:'Save result',turn:'Turn timing',damage_received:'Damage received',wake_action:'Wake action',outside_spell_range:'Beyond spell range',cover:'Cover',action_spent:'Action spent',requires_sleep:'Sleep requirement',condition_immunity:'Condition immunity'},
+      end_trigger:{turn:'Turn timing',spell_ends:'Spell ends',damage_from:'Damage from caster or allies'},
+      access_condition:{level:'Character level',class_level:'Class level',ability_score:'Ability score',class:'Class',campaign:'Campaign',requirement:'Named option',item_state:'Item state'},casting_target:{self:'Self only',not_stated:'Not restricted by this branch'},
+      item_state:{held:'Holding this item',worn:'Wearing this item',carried:'Carrying this item',attuned:'Attuned to this item'},
+      requires_option:'Prerequisite option',atWill:'At will',waived:'Waived components',disadvantageName:'Disadvantage',allSpellSaves:'All saves against this spell',requiresSleep:'Target needs sleep',immuneTo:'Target is immune to',wakeAction:'Another creature uses an action to wake the target, within',ordinalCheck:'Save number {n}',inheritedAbility:'Ability supplied by the referenced check',chosenByCaster:'Caster chooses creatures in the area',radius:'Radius',pairwise:'Maximum distance between each pair of targets',acquisition:'Acquisition eligibility',activation:'Activation condition',scopeConditions:'Limitations retained along this path',
+      effect:{targets:'Target selection',attack_roll:'Attack roll',damage:'Deal damage',modifier:'Modifier',restriction:'Restriction',behavior:'Behavior',check_modifier:'Specific check modifier',end_spell:'End spell',level_scale:'Level scaling',ignite:'Ignite',save_override:'Save result override',target_constraint:'Target constraint'},
       damage_type:{acid:'Acid',cold:'Cold',fire:'Fire',force:'Force',lightning:'Lightning',necrotic:'Necrotic',poison:'Poison',psychic:'Psychic',radiant:'Radiant',thunder:'Thunder',bludgeoning:'Bludgeoning',piercing:'Piercing',slashing:'Slashing'},
       delivery:{attack_roll:'Attack roll',saving_throw:'Saving throw',automatic:'Automatic, no further attack',not_stated:'Not classified'},
       timing:{immediate:'Initial effect',ongoing:'Use on later turns',repeat:'Repeated save',not_stated:'Not classified'},
@@ -76,7 +88,7 @@ window.annaKnowledge=(()=>{
       property:{object:'Object',flammable:'Flammable',worn:'Worn',carried:'Carried'},
       shape:{cone:'Cone',sphere:'Sphere',cube:'Cube'},actor:{caster:'Caster',target:'Target'},
       phase:{start:'Start',end:'End',during:'During'},relative:{next:'Next turn',each:'Each turn',subsequent:'Subsequent turns'},
-      mechanic:{speed:'Speed',attack_roll:'Attack roll','healing.allowed':'Healing allowed','prone.self_end':'End own prone condition','spell_slot.consumed':'Spell slot consumed'},
+      mechanic:{speed:'Speed',attack_roll:'Attack roll','healing.allowed':'Healing allowed','prone.self_end':'End own prone condition','spell_slot.consumed':'Spell slot consumed','casting.target':'Casting target','casting.targets':'Target spacing','components.waived':'Waived components','saving_throw.modifier':'Specific save modifier','saving_throw.result':'Save result'},
       hit:'Hit',miss:'Miss',spellActive:'Spell remains active',takesDamage:'Takes damage',outsideRange:'Target is beyond spell range',totalCover:'Target has total cover from caster',otherAction:'Caster spends the action on something else',canLaugh:'Target can laugh',withinArea:'Within area',
       referencedQuantity:'Referenced quantity',localLinks:'Follow effect relationships',targetDefinition:'Target definition',initial:'Initial',repeatCheck:'Repeated',attackOutcome:'Initial hit requirement',independentAttack:'Regardless of the initial attack result',unresolvedAttack:'Source does not state how ongoing damage depends on the initial hit',
       ongoingCost:'Each later use',bonusAction:'Bonus action',standardAction:'Action',oncePerTurn:'Once per turn',subtract:'Subtract',yes:'Yes',no:'No',laugh:'Laugh uncontrollably',endAll:'End the spell',endTarget:'End the effect on this target',nextAttack:'Next attack against this target',
@@ -116,6 +128,14 @@ window.annaKnowledge=(()=>{
     if(!c)return l.notStated;
     if(c.all||c.any){const terms=c.all||c.any;return (c.all?l.all:l.anyOf)+' ('+terms.map(condition).join(' · ')+')';}
     if(c.not)return l.not+' ('+condition(c.not)+')';
+    if(c.kind==='class_level')return c.class+' '+l.level+' ≥ '+c.minimum;
+    if(c.kind==='class')return c.value;
+    if(c.kind==='campaign')return l.access_condition.campaign+' · '+c.name;
+    if(c.kind==='requirement')return c.name+(c.qualifier?' ('+c.qualifier+')':'');
+    if(c.kind==='item_state')return l.item_state[c.state];
+    if(c.kind==='requires_sleep')return l.requiresSleep;
+    if(c.kind==='condition_immunity')return l.immuneTo+' '+c.condition;
+    if(c.kind==='wake_action')return l.wakeAction+' '+c.distance.maximum+' '+l.foot;
     if(c.kind==='level')return l.level+' ≥ '+c.minimum;
     if(c.kind==='ability_score')return c.ability+' ≥ '+c.minimum;
     if(c.kind==='attack_result')return (c.effect_id||l.notParsed)+' · '+l[c.result];
@@ -128,7 +148,7 @@ window.annaKnowledge=(()=>{
     if(c.kind==='cover')return l.totalCover;
     if(c.kind==='action_spent')return l.otherAction;
     if(c.kind==='within_area')return l.withinArea+' '+(c.area.effect_id||l.notParsed);
-    if(c.kind==='save_result')return l.save+' '+(c.effect_id||l.notParsed)+' · '+l[c.result];
+    if(c.kind==='save_result')return l.save+' '+(c.effect_id||l.notParsed)+' · '+l[c.result]+(c.occurrence?' · '+l.ordinalCheck.replace('{n}',c.occurrence):'');
     if(c.kind==='condition')return l.conditionActive+' '+c.value+' ('+(c.effect_id||l.notParsed)+')';
     if(c.kind==='combat_with')return l.combat;
     if(c.kind==='spell_ends')return l.spellEnds;
@@ -136,32 +156,42 @@ window.annaKnowledge=(()=>{
     if(c.kind==='branch_selected')return l.branchSelected+' · '+c.grant_id+' / '+c.branch_id;
     return l.notParsed;
   }
+  function conditionView(c,nodes,from){
+    if(c?.all||c?.any)return esc(c.all?l.all:l.anyOf)+' ('+(c.all||c.any).map(term=>conditionView(term,nodes,from)).join(' · ')+')';
+    if(c?.not)return esc(l.not)+' ('+conditionView(c.not,nodes,from)+')';
+    if(c?.kind==='requirement'&&c.target)return target(c.target,nodes,from)+(c.qualifier?' ('+esc(c.qualifier)+')':'');
+    return esc(condition(c));
+  }
   function scopeText(scope){
     if(scope.kind==='usage_branch')return scope.grant_id+' / '+scope.branch_id;
     if(scope.kind==='effect')return scope.effect_id;
     if(scope.kind==='casting_field')return l[scope.field]||scope.field;
+    if(scope.kind==='acquisition'&&scope.expression)return condition(scope.expression);
     if(scope.kind==='acquisition')return scope.constraints.class_list?l.list+': '+scope.constraints.class_list.join(' / '):l.notStated;
     if(scope.grant_id)return scope.grant_id+(scope.constraints?.class_list?' · '+l.list+': '+scope.constraints.class_list.join(' / '):'');
     return Object.values(scope).flat().join(' / ')||l.notStated;
   }
   function branch(b,grantId){
     const resource=b.resource,kind=resource.consumed===false?'slot_free':resource.consumed===true?'spell_slot':'not_stated';
-    return `<section class="chain-branch" data-branch="${esc(grantId+'/'+b.id)}"><h5>${esc(l.alternative)} <small>${esc(grantId+' / '+b.id)}</small></h5><dl class="detail-fields"><dt>${esc(l.fields.resource)}</dt><dd>${esc(l.resource[kind])}</dd>${resource.level?`<dt>${esc(l.slotLevel)}</dt><dd>${esc(l[resource.level]||resource.level)}</dd>`:''}${b.cast_level?`<dt>${esc(l.level)}</dt><dd>${esc(l[b.cast_level.kind])}</dd>`:''}<dt>${esc(l.uses)}</dt><dd>${b.uses?esc(expression(b.uses.quantity)+' · '+(b.uses.per==='spell'?l.perSpell:l.perGrant)):esc(l.notStated)}</dd><dt>${esc(l.fields.recovery)}</dt><dd>${esc(l.recovery[b.recovery?.event||'not_stated'])}</dd></dl>${b.evidence.map(sourceLink).join('')}</section>`;
+    return `<section class="chain-branch" data-branch="${esc(grantId+'/'+b.id)}"><h5>${esc(l.alternative)} <small>${esc(grantId+' / '+b.id)}</small></h5><dl class="detail-fields"><dt>${esc(l.fields.resource)}</dt><dd>${esc(l.resource[kind])}</dd>${resource.level?`<dt>${esc(l.slotLevel)}</dt><dd>${esc(l[resource.level]||resource.level)}</dd>`:''}${b.cast_level?`<dt>${esc(l.level)}</dt><dd>${esc(l[b.cast_level.kind])}</dd>`:''}<dt>${esc(l.uses)}</dt><dd>${b.uses?esc(expression(b.uses.quantity)+' · '+(b.uses.per==='spell'?l.perSpell:l.perGrant)):esc(l.notStated)}</dd><dt>${esc(l.fields.recovery)}</dt><dd>${esc(l.recovery[b.recovery?.event||'not_stated'])}</dd></dl>${b.frequency?`<p>${esc(l.atWill)}</p>`:''}${b.action?`<p>${esc(l.action)}：${esc(l.standardAction)}</p>`:''}${b.when?`<p>${esc(l.activation)}：${esc(condition(b.when))}</p>`:''}${b.target?`<p>${esc(l.target)}：${esc(targetDescription(b.target))}</p>`:''}${b.components?`<p>${esc(l.waived)}：${esc(b.components.waived.join(' / '))}</p>`:''}${b.evidence.map(sourceLink).join('')}</section>`;
   }
   function targetDescription(t){
     if(!t)return l.notStated;
     if(t.kind==='target_ref')return l.targetDefinition+' '+(t.effect_id||l.notParsed);
-    if(t.kind==='area')return t.size+' '+l.foot+' '+l.shape[t.shape]+' · '+l.creature;
+    if(t.kind==='area')return (t.measure==='radius'?l.radius+' ':'')+t.size+' '+l.foot+' '+l.shape[t.shape]+' · '+(t.chosen_by==='caster'?l.chosenByCaster:l.creature);
     if(t.kind==='choice')return t.count+' · '+t.choices.map(k=>l[k]||l.property[k]||k).join(' / ');
     return [t.count,t.kind?l[t.kind]||t.kind:'',t.visible?l.visible:'',t.within==='spell_range'?l.range:''].filter(Boolean).join(' · ');
   }
   function changeText(c){
     const value=c.operation==='subtract'?l.subtract+' '+expression(c.quantity):c.operation==='advantage'?l.advantageName:
-      typeof c.value==='boolean'?l[c.value?'yes':'no']:String(c.value??l.notStated);
-    return (l.mechanic[c.field]||c.field)+' → '+value+(c.applies==='next_attack_against_target'?' · '+l.nextAttack:'');
+      typeof c.value==='boolean'?l[c.value?'yes':'no']:c.value?.kind==='pairwise_distance'?l.pairwise+' '+c.value.maximum+' '+l.foot:Array.isArray(c.value)?c.value.join(' / '):c.value==='self'?l.self:c.value==='advantage'?l.advantageName:c.value==='disadvantage'?l.disadvantageName:l[c.value]||String(c.value??l.notStated);
+    return (l.mechanic[c.field]||c.field)+' → '+value+(c.applies==='next_attack_against_target'?' · '+l.nextAttack:'')+(c.check?' · '+(c.check.effect_id||l.notParsed):'')+(c.applies_to?.kind==='spell_saves'?' · '+l.allSpellSaves:'');
   }
   const localLink=(subject,id,label)=>`<button type="button" class="link-button" data-chain-effect="${esc(id)}" data-chain-subject="${esc(subject)}">${esc(label||id)}</button>`;
-  function scopeView(scope,subject){return scope.kind==='effect'&&subject?localLink(subject,scope.effect_id):esc(scopeText(scope));}
+  function scopeView(scope,subject){
+    const base=scope.kind==='effect'&&subject?localLink(subject,scope.effect_id):esc(scopeText(scope));
+    return base+(scope.usage||[]).map(u=>`<span class="chain-scope-conditions"><strong>${esc(u.branch_id)}</strong>${u.target!=='not_stated'?` · ${esc(l.casting_target[u.target])}`:''}${u.conditions.map(c=>`<br>${esc(c.scope.kind==='acquisition'?l.acquisition:l.activation)}：${esc(condition(c.expression))}`).join('')}</span>`).join('');
+  }
   function effect(e,subject){
     let text='';
     if(e.kind==='targets')text=targetDescription(e.selection);
@@ -169,13 +199,15 @@ window.annaKnowledge=(()=>{
     if(e.kind==='damage')text=expression(e.quantity)+' · '+l.damage_type[e.damage_type]+' · '+targetDescription(e.target);
     if(e.kind==='modifier'||e.kind==='restriction')text=changeText(e);
     if(e.kind==='behavior')text=l.laugh;
-    if(e.kind==='check_modifier')text=(e.check.effect_id||l.notParsed)+' → '+l.advantageName;
+    if(e.kind==='check_modifier')text=(e.check.effect_id||l.notParsed)+' → '+(e.modifier==='advantage'?l.advantageName:l.disadvantageName);
     if(e.kind==='end_spell')text=e.scope==='target'?l.endTarget:l.endAll;
+    if(e.kind==='save_override')text=l.allSpellSaves+' → '+l[e.result];
+    if(e.kind==='target_constraint')text=l.pairwise+' '+e.constraint.maximum+' '+l.foot;
     if(e.kind==='ignite')text=l.effect.ignite;
     if(e.kind==='level_scale')text=e.levels.map(x=>l.level+' '+x.level+' → '+expression(x.quantity)).join(' · ');
     if(e.kind==='teleport')text=`${l.self} → ${l.max} ${e.destination.distance.maximum} ${l.foot} · ${l.visible} · ${l.unoccupied}`;
     if(e.kind==='healing')text=`${l.touch} · ${e.target?.count||1} ${l.creature} → ${expression(e.quantity)}`;
-    if(e.kind==='saving_throw')text=targetDescription(e.target)+' → '+e.ability+' · '+(e.check_role==='repeat'?l.repeatCheck:l.initial);
+    if(e.kind==='saving_throw')text=targetDescription(e.target)+' → '+(e.ability||l.notParsed)+' · '+(e.check_role==='repeat'?l.repeatCheck:l.initial)+(e.occurrence?' · '+l.ordinalCheck.replace('{n}',e.occurrence):'')+(e.ability_source?' · '+l.inheritedAbility:'');
     if(e.kind==='condition')text=e.condition;
     if(e.kind==='attitude')text=l.friendly;
     if(e.kind==='awareness')text=l.aware;
@@ -189,14 +221,15 @@ window.annaKnowledge=(()=>{
     if(r.kind==='feat_access')body=`<p>${target(v.target,nodes,r.subject_id)}</p>${v.constraints.class_list?`<p>${esc(l.list)}：${esc(v.constraints.class_list.join(' / '))}</p>`:''}${sourceLink(v.target.evidence)}`;
     if(r.kind==='spell_access'){
       const pre=v.prerequisites;
-      body=(pre?.status!=='not_stated'?`<p>${esc(l.prerequisites)}：${esc(pre?.expression?condition(pre.expression):l.notParsed)}</p>${pre?.evidence?sourceLink(pre.evidence):''}`:'');
+      body=(pre?.status!=='not_stated'?`<p>${esc(l.prerequisites)}：${pre?.expression?conditionView(pre.expression,nodes,r.subject_id):esc(l.notParsed)}</p>${pre?.evidence?sourceLink(pre.evidence):''}`:'');
+      if(v.activation)body+=`<p>${esc(l.activation)}：${esc(condition(v.activation.expression))}</p>${sourceLink(v.activation.evidence)}`;
       body+=v.grants.map(g=>{
         const t=g.target,edges=chain.edges.filter(e=>e.source_id===r.subject_id&&e.scope.grant_id===g.id&&['eligible_spell','grants_spell'].includes(e.relation)&&e.status==='resolved');
         const allowed=[...new Set(edges.map(e=>e.target_id).filter(Boolean))],c=t.constraints||{};
         const heading=t.kind==='entry'?target(t,nodes,r.subject_id):`${esc(l.choose)} ${t.count} ${esc(l.count)} · ${esc(l.notAll)}`;
         const domain=t.kind==='choice'?`<p class="muted">${esc(l.levels)}：${esc((c.levels||[]).map(n=>n===0?l.cantrip:n).join(' / '))}${c.schools?' · '+esc(l.schools+'：'+c.schools.join(' / ')):''}${c.class_list?' · '+esc(l.list+'：'+(edges[0]?.scope.constraints?.class_list||c.class_list.values).join(' / ')):''}</p>`:'';
         const choices=allowed.length?`<details class="chain-choices" ${t.kind==='entry'?'open':''}><summary>${esc(t.kind==='entry'?l.inspectSpell:l.options)} (${allowed.length})</summary><ul>${allowed.map(id=>`<li><button type="button" class="link-button" data-chain-spell="${esc(id)}" data-chain-from="${esc(r.subject_id)}" ${id===chain.selected_spell_id?'aria-current="true"':''}>${esc(nodes.get(id)?.name||id)}</button></li>`).join('')}</ul></details>`:'';
-        return `<article class="chain-grant" data-grant="${esc(g.id)}"><h4>${badge(l.mode[g.mode]||l.notParsed)} ${heading} <small>${esc(g.id)}</small></h4>${domain}<p>${esc(l.ability)}：${esc(ability(g.ability,v.contexts))}</p>${g.evidence.map(sourceLink).join('')}${choices}<h4>${esc(l.branches)}</h4><div class="chain-branches">${g.branches.map(b=>branch(b,g.id)).join('')}</div></article>`;
+        return `<article class="chain-grant" data-grant="${esc(g.id)}"><h4>${badge(l.mode[g.mode]||l.notParsed)} ${heading} <small>${esc(g.id)}</small></h4>${domain}${g.when?`<p>${esc(l.activation)}：${esc(condition(g.when))}</p>`:''}<p>${esc(l.ability)}：${esc(ability(g.ability,v.contexts))}</p>${g.evidence.map(sourceLink).join('')}${choices}<h4>${esc(l.branches)}</h4><div class="chain-branches">${g.branches.map(b=>branch(b,g.id)).join('')}</div></article>`;
       }).join('');
       if(v.modifiers.length)body+=`<h4>${esc(l.modifiers)}</h4>${v.modifiers.map(m=>`<p>${esc(m.kind==='replace_choice'?l.gainLevel:l.repeat)}</p>${sourceLink(m.evidence)}`).join('')}`;
     }

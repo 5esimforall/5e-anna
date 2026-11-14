@@ -1,6 +1,7 @@
 """A bounded reading path over existing definitions, with scoped relationship evidence."""
 import json
 from collections import defaultdict
+from rule_conditions import condition_terms
 
 
 def records_for(db, subject):
@@ -42,6 +43,8 @@ def path_value(raw):
 
 def outgoing(db, subject, scoped_options):
     edges=[]
+    def usage(option):
+        return {'branch_id':option['branch_id'],'conditions':option['conditions'],'target':option['casting_target']}
     def target_edges(record, target, relation, scope, ev):
         resolution=target['resolution']
         status=resolution['status'] if record['status']=='resolved' else record['status']
@@ -52,17 +55,22 @@ def outgoing(db, subject, scoped_options):
         value=record['value']
         if record['kind']=='feat_access':target_edges(record,value['target'],'grants_feat',{'kind':'acquisition','constraints':value['constraints']},value['target']['evidence'])
         if record['kind']=='spell_access':
+            pre=value['prerequisites']
+            for term in condition_terms(pre.get('expression')):
+                if term.get('target'):
+                    target_edges(record,term['target'],'requires_option',{'kind':'acquisition','constraints':{},'expression':pre['expression']},pre['evidence'])
             options=scoped_options.get(subject)
             if options is None:options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(subject,))]
-            seen=set()
+            seen={}
             for option in options:
                 for tid in option.get('spell_ids',[option.get('spell_id')]):
                     token=(option['grant_id'],tid)
-                    if token in seen:continue
-                    seen.add(token)
-                    edges.append({'source_id':subject,'target_id':tid,'relation':'eligible_spell' if option['selection']=='choice' else 'grants_spell',
+                    if token in seen:
+                        seen[token]['scope']['usage'].append(usage(option));continue
+                    edge={'source_id':subject,'target_id':tid,'relation':'eligible_spell' if option['selection']=='choice' else 'grants_spell',
                         'status':'resolved','record_id':record['id'],'review_status':record['review_status'],
-                        'scope':{'kind':'grant','grant_id':option['grant_id'],'constraints':option['constraints']},'evidence':option['grant']['evidence'][0]})
+                        'scope':{'kind':'grant','grant_id':option['grant_id'],'constraints':option['constraints'],'usage':[usage(option)]},'evidence':option['grant']['evidence'][0]}
+                    seen[token]=edge;edges.append(edge)
             # Unresolved fixed grants remain inspectable, but never assert an effective option.
             for grant in value['grants']:
                 if grant['target']['kind']=='entry' and (record['status']!='resolved' or grant['target']['resolution']['status']!='resolved'):
@@ -73,7 +81,9 @@ def outgoing(db, subject, scoped_options):
         edge=json.loads(raw);edge.update(source_id=subject,target_id=edge['source_id'],relation='modified_by');edges.append(edge)
     for root,raw in db.execute('SELECT DISTINCT root_id,data FROM casting_options WHERE spell_id=?',(subject,)):
         option=json.loads(raw)
-        if not any(e['relation']=='provided_by' and e['target_id']==root for e in edges):
+        prior=next((e for e in edges if e['relation']=='provided_by' and e['target_id']==root and e['scope']['grant_id']==option['grant_id']),None)
+        if prior:prior['scope']['usage'].append(usage(option))
+        else:
             acquisition=[]
             for rid in option['acquisition']:
                 record=json.loads(db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()[0])
@@ -81,7 +91,7 @@ def outgoing(db, subject, scoped_options):
                                     'constraints':record['value']['constraints'],'evidence':record['value']['target']['evidence']})
             edges.append({'source_id':subject,'target_id':root,'relation':'provided_by','status':'resolved',
                 'record_id':option['knowledge_id'],'acquisition':acquisition,
-                'scope':{'kind':'grant','grant_id':option['grant_id'],'constraints':option['constraints']},'evidence':option['grant']['evidence'][0]})
+                'scope':{'kind':'grant','grant_id':option['grant_id'],'constraints':option['constraints'],'usage':[usage(option)]},'evidence':option['grant']['evidence'][0]})
     return edges
 
 
@@ -149,6 +159,7 @@ def reading(db, root, chain, raw_path=None, effect_id=None):
     else:spell_id=chain['selected_spell_id'];options=chain['options']
     chain['bindings']=[{'subject_id':o['subject_id'],'grant_id':o['grant_id'],'branch_id':o['branch_id'],
         'spell_id':spell_id,'variable':'spellcasting','value':o['grant'].get('ability'),
+        'conditions':o['conditions'],'casting_target':o['casting_target'],
         'status':'described' if o['grant'].get('ability') else 'not_stated',
         'evidence':o['grant'].get('ability',{}).get('evidence')}
         for o in options if spell_id and spell_id in o.get('spell_ids',[o.get('spell_id')])]

@@ -600,6 +600,7 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 /* A chain keeps its question root visible as the reader follows evidence. */
 .chain-path{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;padding:.7rem 0;border-bottom:1px solid var(--anna-line)}
 .chain-path [aria-current="step"]{font-weight:700;text-decoration:underline;text-underline-offset:.2em}
+.chain-scope-conditions{display:block;margin-block-start:.35rem}
 .chain-step{border-inline-start:3px solid var(--anna-brand);padding-inline-start:.8rem}
 .chain-effect small,.chain-grant h4 small,.chain-branch h5 small{font-weight:400;opacity:.65}
 

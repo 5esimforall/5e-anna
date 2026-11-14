@@ -368,3 +368,51 @@ test('nonspell reaction follows its triggering event and governing rule through 
   await expect(stella.locator('[data-effect=effect_2]')).toBeFocused();await stella.close();
   expect(errors).toEqual([]);
 });
+
+test('lineage table exposes bounded choices, levels, replacement and separate usage',async({page,request})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const elf=await corpusEntry(request,'精灵');
+  await page.goto(anna+'/?'+new URLSearchParams({entry:elf.id,tab:'chain'}));
+  const record=page.locator(`.knowledge-record[data-subject="${elf.id}"]`);
+  await expect(record.locator('.chain-grant')).toHaveCount(9);
+  const misty=record.locator('[data-grant=grant_2_5]');
+  await expect(misty).toContainText('高等精灵');await expect(misty).toContainText('等级 ≥ 5');
+  await expect(misty.locator('.chain-branches > *')).toHaveCount(2);
+  await expect(record).toContainText('长休时，可将此戏法替换');await expect(record).toContainText('本段整理范围：表格施法授予');
+  await page.setViewportSize({width:390,height:844});
+  await misty.locator('[data-chain-spell]').focus();await page.keyboard.press('Enter');
+  await expect(page.locator('.chain-path button')).toHaveCount(2);
+  await expect(page.locator('.chain-step')).toContainText('等级 ≥ 5');
+  await expect(page.locator('.chain-step')).toContainText('高等精灵');
+  await expect(page.locator('.chain-path [aria-current=step]')).toBeFocused();
+  await page.screenshot({path:'output/playwright/level-lineage-mobile.png'});
+  const overflow=await page.locator('#detail-content').evaluate(el=>el.scrollWidth>el.clientWidth+1);expect(overflow).toBe(false);
+  await page.setViewportSize({width:1280,height:800});expect(errors).toEqual([]);
+});
+
+test('subclass table acquisition survives reading, reload, history, export and Stella',async({page,request})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const domain=await corpusEntry(request,'生命领域'),spell=await corpusEntry(request,'群体疗伤术');
+  const result=await (await request.get(anna+'/api/knowledge-chain?'+new URLSearchParams({id:domain.id,spell:spell.id}))).json();
+  const route=result.reading.path;expect(route).toHaveLength(3);
+  await page.goto(anna+'/?'+new URLSearchParams({q:'生命领域',entry:domain.id,tab:'chain'}));
+  const feature=page.locator(`.knowledge-record[data-subject="${domain.id}"] [data-chain-entry="${route[1]}"]`).first();
+  await feature.focus();await page.keyboard.press('Enter');await expect(page.locator('.chain-path button')).toHaveCount(2);
+  await expect(page.locator('.chain-step')).toContainText('授予能力');await expect(page.locator('.chain-step')).toContainText('牧师 等级 ≥ 3');
+  const grant=page.locator(`.knowledge-record[data-subject="${route[1]}"] [data-grant=grant_10]`);
+  await grant.locator('[data-chain-spell]').click();await expect(page.locator('.chain-path button')).toHaveCount(3);
+  await expect(page.locator('.chain-step')).toContainText('牧师 等级 ≥ 9');await expect(page.locator('.chain-step')).toContainText('牧师 等级 ≥ 3');
+  await page.reload();await expect(page.locator('.chain-path [aria-current=step]')).toHaveAttribute('data-chain-path',JSON.stringify(route));
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  expect(exported.chain.reading.path).toEqual(route);expect(exported.chain.bindings[0].conditions[0].scope.subject_id).toBe(domain.id);
+  await page.locator('.chain-path button').first().click();await expect(page.locator('.chain-path button')).toHaveCount(1);
+  await page.goBack();await expect(page.locator('.chain-path button')).toHaveCount(3);
+  await page.goForward();await expect(page.locator('.chain-path button')).toHaveCount(1);await page.goBack();
+  await expect(page.locator('.chain-path button')).toHaveCount(3);
+  const popup=page.waitForEvent('popup');await page.locator('.chain-source > summary').click();await page.locator('.chain-source > a').click();
+  const stella=await popup;await expect(stella.locator('#book-main')).toHaveAttribute('aria-busy','false');
+  await stella.locator('.companion-more').click();
+  const resume=stella.locator('#companion-menu').getByRole('group',{name:'最近'}).getByRole('menuitem').filter({hasText:'生命领域'});
+  await expect(resume).toHaveAttribute('href',/chain_path=/);await resume.click();
+  await expect(stella.locator('.chain-path button')).toHaveCount(3);await stella.close();expect(errors).toEqual([]);
+});

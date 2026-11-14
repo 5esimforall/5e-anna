@@ -55,7 +55,7 @@ def outgoing(db, subject, scoped_options):
         value=record['value']
         if record['kind']=='grant':
             for grant in value['grants']:
-                if grant['entry_type']=='feat':target_edges(record,grant['target'],'grants_feat',{'kind':'acquisition','constraints':grant['constraints']},grant['target']['evidence'])
+                if grant['entry_type']!='spell':target_edges(record,grant['target'],'grants_feat' if grant['entry_type']=='feat' else 'grants_feature',{'kind':'acquisition','constraints':grant['constraints'],'expression':grant.get('when')},grant['target']['evidence'])
             pre=value['prerequisites']
             for term in condition_terms(pre.get('expression')):
                 if term.get('target'):
@@ -83,17 +83,18 @@ def outgoing(db, subject, scoped_options):
         edge=json.loads(raw);edge.update(source_id=subject,target_id=edge['source_id'],relation='modified_by');edges.append(edge)
     for root,raw in db.execute('SELECT DISTINCT root_id,data FROM casting_options WHERE spell_id=?',(subject,)):
         option=json.loads(raw)
-        prior=next((e for e in edges if e['relation']=='provided_by' and e['target_id']==root and e['scope']['grant_id']==option['grant_id']),None)
+        prior=next((e for e in edges if e['relation']=='provided_by' and e['target_id']==root and e['scope']['grant_id']==option['grant_id'] and e.get('acquisition_steps')==option['acquisition_steps'] and e['record_id']==option['knowledge_id']),None)
         if prior:prior['scope']['usage'].append(usage(option))
         else:
             acquisition=[]
-            for rid in option['acquisition']:
+            for step in option['acquisition_steps']:
+                rid=step['knowledge_id']
                 record=json.loads(db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()[0])
-                grant=next(g for g in record['value']['grants'] if g['entry_type']=='feat')
+                grant=next(g for g in record['value']['grants'] if g['id']==step['grant_id'])
                 acquisition.append({'record_id':rid,'subject_id':record['subject_id'],'review_status':record['review_status'],
                                     'constraints':grant['constraints'],'evidence':grant['target']['evidence']})
             edges.append({'source_id':subject,'target_id':root,'relation':'provided_by','status':'resolved',
-                'record_id':option['knowledge_id'],'acquisition':acquisition,
+                'record_id':option['knowledge_id'],'acquisition':acquisition,'acquisition_steps':option['acquisition_steps'],
                 'scope':{'kind':'grant','grant_id':option['grant_id'],'constraints':option['constraints'],'usage':[usage(option)]},'evidence':option['grant']['evidence'][0]})
     return edges
 
@@ -114,15 +115,22 @@ def reading(db, root, chain, raw_path=None, effect_id=None):
     scoped=defaultdict(list)
     for record in records_for(db,root):
         for grant in record['value'].get('grants',[]):
-            if grant['entry_type']=='feat':
+            if grant['entry_type']!='spell':
                 for tid in grant['target']['resolution']['targets']:scoped[tid]=[]
-    for option in chain['options']:scoped[option['subject_id']].append(option)
+    for option in chain['options']:
+        route=[root]+[s['target_id'] for s in option['acquisition_steps']]
+        # Keep only the acquisition route inspected by this path. A later rule or
+        # reverse-link step does not change the provider's inherited conditions.
+        overlap=min(len(route),len(path))
+        if route[:overlap]==path[:overlap]:scoped[option['subject_id']].append(option)
+        else:scoped.setdefault(option['subject_id'],[])
+
     edge_cache={}
     def edges(sid):
         if sid not in edge_cache:
             for record in records_for(db,sid):
                 for grant in record['value'].get('grants',[]):
-                    if grant['entry_type']!='feat':continue
+                    if grant['entry_type']=='spell':continue
                     options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(sid,))]
                     for tid in grant['target']['resolution']['targets']:
                         if tid not in scoped:scoped[tid]=[o for o in options if o['subject_id']==tid]

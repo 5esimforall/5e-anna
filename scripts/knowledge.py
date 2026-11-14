@@ -10,6 +10,7 @@ import re
 import sqlite3
 
 from casting_extract import parse_access, GRANT
+from level_grants import parse_table_access, feature_access
 from rule_values import evidence
 from rule_model import SCHEMA, KINDS, rule_value, validate_structure
 from concepts import Resolver, aliases
@@ -29,7 +30,7 @@ QUERY_VALUES = {
     'resource': ('slot_free', 'spell_slot', 'not_stated'),
     'recovery': ('long_rest', 'short_rest', 'short_or_long_rest', 'not_stated'),
     'selection': ('fixed', 'choice'),
-    'access_condition': ('level','class_level','ability_score','class','campaign','requirement','item_state'),
+    'access_condition': ('level','class_level','ability_score','class','campaign','requirement','item_state','option_selected'),
     'casting_target': ('self','not_stated'),
     **EFFECT_QUERY_VALUES,
 }
@@ -48,6 +49,9 @@ class Context:
     def __init__(self, db):
         self.entries = {e['id']: e for raw, in db.execute('SELECT data FROM entries') for e in [json.loads(raw)]}
         self.pages = dict(db.execute('SELECT path,text FROM pages'))
+        present={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        self.tables=[json.loads(r[0]) for r in db.execute('SELECT data FROM raw_tables')] if 'raw_tables' in present else []
+        self.class_links=[{'subject_id':r[0],'object_id':r[1],'evidence':json.loads(r[2])} for r in db.execute("SELECT subject_id,object_id,evidence FROM relations WHERE predicate='belongs_to_class' ORDER BY subject_id,object_id,evidence")] if 'relations' in present else []
         self.sources = [json.loads(raw) for raw, in db.execute('SELECT data FROM sources')]
         self.source_by_id = {s['id']: s for s in self.sources}
         self.resolver = Resolver(list(self.entries.values()), self.sources)
@@ -57,6 +61,17 @@ class Context:
                 for n in aliases(e):
                     if len(n)>1: self.spell_names[n].add(e['id'])
         self.name_pattern = re.compile('|'.join(re.escape(n) for n in sorted(self.spell_names,key=lambda n:(-len(n),n))),re.IGNORECASE) if self.spell_names else None
+
+    def class_owner(self, entry):
+        ids=set();seen=set();current=entry
+        while current and current['id'] not in seen:
+            seen.add(current['id'])
+            if current['type']=='class':ids.add(current['id'])
+            ids.update(r['object_id'] for r in self.class_links if r['subject_id']==current['id'])
+            current=self.entries.get(current.get('parent_id'))
+        if len(ids)!=1:return None
+        owner=self.entries.get(next(iter(ids)))
+        return owner if owner and owner['type']=='class' and owner['ruleset']==entry['ruleset'] and owner['name_zh'] in CLASSES else None
 
     def resolve(self, entry, name, kind):
         return self.resolver.resolve(name, kind, entry['page_path'], entry['title_end'],
@@ -104,21 +119,35 @@ class Context:
         entry=self.entries[record['subject_id']]
         ids=set(record.get('dependencies',[]))
         ids.add(entry['id'])
+        if any(t.get('owner_id') for t in nested_values(record['value'])):
+            parent=self.entries.get(entry.get('parent_id'));seen=set()
+            while parent and parent['id'] not in seen:
+                seen.add(parent['id']);ids.add(parent['id']);parent=self.entries.get(parent.get('parent_id'))
         def definition(e):
             return {k:e.get(k) for k in ('id','name','name_en','name_zh','type','ruleset','source_ids','parent_id','fields','page_path','start','title_end','end')} | {
                 'body_sha256':digest(self.pages[e['page_path']][e['start']:e['end']])}
         source_ids={s for i in ids if i in self.entries for s in self.entries[i]['source_ids']}
         return {'schema':SCHEMA,'record':record,
             'definitions':{i:definition(self.entries[i]) if i in self.entries else None for i in sorted(ids)},
+            'class_ownership':[r for r in self.class_links if r['subject_id'] in ids],
             'sources':{s:{k:self.source_by_id.get(s,{}).get(k) for k in ('name','ruleset_hint','reference_role','origin','archived')} for s in sorted(source_ids)}}
 
 
 def walk_targets(value):
     if isinstance(value,dict):
         if 'resolution' in value:yield value
-        for v in value.values():yield from walk_targets(v)
+        for k,v in value.items():
+            if k!='resolution_evidence':yield from walk_targets(v)
     elif isinstance(value,list):
         for v in value:yield from walk_targets(v)
+
+
+def nested_values(value):
+    if isinstance(value,dict):
+        yield value
+        for item in value.values():yield from nested_values(item)
+    elif isinstance(value,list):
+        for item in value:yield from nested_values(item)
 
 
 def validate_record(record, context):
@@ -135,15 +164,18 @@ def validate_record(record, context):
             for v in value:walk(v)
     walk(record)
     validate_conditions(record)
-    for term in condition_terms(record['value'].get('prerequisites',{}).get('expression')):
-        if not term.get('owner_id'):continue
-        owner=context.entries.get(context.entries[record['subject_id']].get('parent_id'));seen=set()
-        while owner and owner['type']!='class' and owner['id'] not in seen:
-            seen.add(owner['id']);owner=context.entries.get(owner.get('parent_id'))
-        if not owner or owner['type']!='class' or owner['id']!=term['owner_id'] or owner['name_zh']!=term.get('class'):
+    for term in nested_values(record['value']):
+        if term.get('kind')!='class_level' or not term.get('owner_id'):continue
+        owner=context.class_owner(context.entries[record['subject_id']])
+        if not owner or owner['id']!=term['owner_id'] or owner['name_zh']!=term.get('class'):
             raise ValueError('Class-level requirement disagrees with its source owner')
         if type(term.get('minimum')) is not int or term['minimum']<1:
             raise ValueError('Invalid class-level requirement')
+    for grant in record['value'].get('grants',[]):
+        target=grant['target']
+        if target['kind']=='entry' and target['resolution']['status']=='resolved':
+            if any(context.entries.get(tid,{}).get('type')!=grant['entry_type'] for tid in target['resolution']['targets']):
+                raise ValueError('Grant target has the wrong definition type')
     for target in walk_targets(record['value']):
         r=target['resolution']
         if r['status']=='resolved' and len(r['targets'])!=1:raise ValueError('Resolved target must be unique')
@@ -250,10 +282,10 @@ def record_for(entry, kind, value, context):
             term['target']={'kind':'entry','name':term['name'],'resolution':context.resolve(entry,term['name'],term['entry_type']),
                             'evidence':pre['evidence']}
     value['rules']=rule_links(entry,value,context)
-    dependencies={t['owner_id'] for t in condition_terms(pre.get('expression')) if t.get('owner_id')}
+    dependencies={t['owner_id'] for t in nested_values(value) if t.get('owner_id')}
     for t in walk_targets(value): dependencies.update(t['resolution']['targets'])
-    for g in value.get('grants',[]):
-        if g['target']['kind']=='choice':
+    for g in [*value.get('grants',[]),*value.get('modifiers',[])]:
+        if g.get('target',{}).get('kind')=='choice':
             g['target']['options']=context.choice_options(entry,g['target'])
             dependencies.update(g['target']['options'])
     # Bind every competing name, including currently inapplicable editions: a change
@@ -262,7 +294,10 @@ def record_for(entry, kind, value, context):
         for name in [t.get('name',''),*t.get('lookup_names',[])]:dependencies.update(context.resolver.names.get(key(name),()))
     gaps=value.get('unparsed',[])
     unresolved=any(t['resolution']['status']!='resolved' for k,v in value.items() if k!='rules' for t in walk_targets(v))
-    unfinished=value.get('prerequisites',{}).get('status')=='unparsed' or kind=='grant' and not value.get('grants') or kind=='procedure' and not value.get('effects') or any(g['mode']=='selection' or g['target']['kind']=='choice' and not g['target'].get('options') for g in value.get('grants',[]))
+    choices=[g['target'] for g in [*value.get('grants',[]),*value.get('modifiers',[])] if g.get('target',{}).get('kind')=='choice']
+    unfinished=(value.get('prerequisites',{}).get('status')=='unparsed'
+        or kind=='grant' and not value.get('grants') or kind=='procedure' and not value.get('effects')
+        or any(g['mode']=='selection' for g in value.get('grants',[])) or any(not t.get('options') for t in choices))
     record={'id':'knowledge_'+digest([entry['id'],kind])[:24], 'schema':SCHEMA,
         'subject_id':entry['id'],'kind':kind,'ruleset':entry['ruleset'],
         'evidence':evidence(entry['page_path'],context.pages[entry['page_path']],entry['start'],entry['end']),
@@ -317,14 +352,14 @@ def discover(context):
         if entry['type']=='spell':
             records.append(record_for(entry,'procedure',parse_spell(entry,text),context))
         if entry['type'] in ACCESS_TYPES:
-            value=parse_access(entry,text,context.mentions(entry)) if GRANT.search(re.sub(r'\s+','',text[entry['title_end']:entry['end']])) else None
+            value=parse_table_access(entry,context)
+            if value is None:value=parse_access(entry,text,context.mentions(entry)) if GRANT.search(re.sub(r'\s+','',text[entry['title_end']:entry['end']])) else None
             if value:records.append(record_for(entry,'grant',value,context))
-            owner=context.entries.get(entry.get('parent_id'))
-            seen=set()
-            while owner and owner['type']!='class' and owner['id'] not in seen:
-                seen.add(owner['id']);owner=context.entries.get(owner.get('parent_id'))
-            procedure=parse_feature(entry,text,owner if owner and owner['type']=='class' else None)
+            procedure=parse_feature(entry,text,context.class_owner(entry))
             if procedure:records.append(record_for(entry,'procedure',procedure,context))
+        if entry['type']=='subclass':
+            value=feature_access(entry,context)
+            if value:records.append(record_for(entry,'grant',value,context))
         if entry['type']=='background':
             value=feat_access(entry,context)
             if value:records.append(record_for(entry,'grant',value,context))
@@ -369,48 +404,50 @@ def replay(records, events, context):
 
 
 def branches(context, effective):
-    by_subject=defaultdict(dict)
-    for record in effective:by_subject[record['subject_id']][record['kind']]=record
-    def usable(record):return record and record['status']=='resolved'
-    for root, kinds in list(by_subject.items()):
-        acquisition=[];subject=root;restrictions={};visited=set()
-        while True:
-            record=by_subject.get(subject,{}).get('grant')
-            if not usable(record):break
-            feat_grants=[g for g in record['value']['grants'] if g['entry_type']=='feat']
-            if len(feat_grants)!=1:break
-            grant=feat_grants[0];target=grant['target']['resolution']
-            if target['status']!='resolved':break
-            acquisition.append(record['id']);restrictions.update(grant['constraints'])
-            subject=target['targets'][0]
-            if subject in visited:break
-            visited.add(subject)
-        access=by_subject.get(subject,{}).get('grant')
-        if not usable(access):continue
+    by_subject={r['subject_id']:r for r in effective if r['kind']=='grant'}
+    def conditions(record,grant=None,branch=None):
+        value=record['value'];subject=record['subject_id'];out=[]
+        for part,scope in [(value['prerequisites'],'acquisition'),(value.get('activation'),'provider')]:
+            if part and part.get('expression'):out.append({'scope':{'kind':scope,'subject_id':subject},'expression':part['expression'],'evidence':part['evidence']})
+        for part,kind in [(grant,'grant'),(branch,'usage_branch')]:
+            if part and part.get('when'):out.append({'scope':{'kind':kind,'subject_id':subject,'grant_id':grant['id'],**({'branch_id':branch['id']} if kind=='usage_branch' else {})},'expression':part['when'],'evidence':part['evidence'][0]})
+        return out
+    def walk(root,subject,steps,inherited,restrictions,visited):
+        access=by_subject.get(subject)
+        if subject in visited or not access or access['status']!='resolved':return
+        visited=visited|{subject}
         for grant in access['value']['grants']:
-            if grant['entry_type']!='spell' or grant['mode']=='selection':continue
             target=grant['target']
-            if target['kind']=='entry':
-                spells=target['resolution']['targets'] if target['resolution']['status']=='resolved' else []
-            else:spells=context.choice_options(context.entries[subject],target,restrictions)
+            if grant['entry_type']!='spell':
+                if target['kind']!='entry' or target['resolution']['status']!='resolved':continue
+                limited=deepcopy(restrictions)
+                for name,values in grant.get('constraints',{}).items():
+                    limited[name]=[v for v in values if v in limited[name]] if name in limited else values
+                if any(not values for values in limited.values()):continue
+                tid=target['resolution']['targets'][0]
+                for branch in grant['branches'] or [None]:
+                    step={'subject_id':subject,'target_id':tid,'knowledge_id':access['id'],'grant_id':grant['id'],
+                          'branch_id':branch['id'] if branch else None,'evidence':grant['evidence'][0]}
+                    yield from walk(root,tid,steps+[step],inherited+conditions(access,grant,branch),limited,visited)
+                continue
+            if grant['mode']=='selection':continue
+            spells=target['resolution']['targets'] if target['kind']=='entry' and target['resolution']['status']=='resolved' else []
+            if target['kind']=='choice':spells=context.choice_options(context.entries[subject],target,restrictions)
             for branch in grant['branches']:
                 resource=branch['resource'];resource_kind='slot_free' if resource.get('consumed') is False else 'spell_slot' if resource.get('consumed') is True else 'not_stated'
-                conditions=[]
-                pre=access['value']['prerequisites']
-                if pre.get('expression'):conditions.append({'scope':{'kind':'acquisition','subject_id':subject},'expression':pre['expression'],'evidence':pre['evidence']})
-                activation=access['value'].get('activation')
-                if activation:conditions.append({'scope':{'kind':'provider','subject_id':subject},**activation})
-                for owner,scope in [(grant,{'kind':'grant','grant_id':grant['id']}),(branch,{'kind':'usage_branch','grant_id':grant['id'],'branch_id':branch['id']})]:
-                    if owner.get('when'):conditions.append({'scope':scope,'expression':owner['when'],'evidence':owner['evidence'][0]})
+                constrained=inherited+conditions(access,grant,branch)
                 for spell_id in spells:
-                    data={'root_id':root,'subject_id':subject,'knowledge_id':access['id'], 'grant_id':grant['id'],'branch_id':branch['id'],
+                    data={'root_id':root,'subject_id':subject,'knowledge_id':access['id'],'grant_id':grant['id'],'branch_id':branch['id'],
                         'spell_id':spell_id,'mode':grant['mode'],'resource':resource_kind,'recovery':branch.get('recovery',{}).get('event','not_stated'),
-                        'selection':'fixed' if target['kind']=='entry' else 'choice','acquisition':acquisition,'constraints':restrictions,
-                        'grant':{**grant,'target':{k:v for k,v in target.items() if k!='options'}},'branch':branch,
-                        'conditions':conditions,'condition_kinds':sorted({t['kind'] for c in conditions for t in condition_terms(c['expression']) if 'kind' in t}),
+                        'selection':'fixed' if target['kind']=='entry' else 'choice','acquisition':[s['knowledge_id'] for s in steps],
+                        'acquisition_steps':steps,'constraints':restrictions,'grant':{**grant,'target':{k:v for k,v in target.items() if k!='options'}},'branch':branch,
+                        'conditions':constrained,'condition_kinds':sorted({t['kind'] for c in constrained for t in condition_terms(c['expression']) if 'kind' in t}),
                         'casting_target':branch.get('target',{}).get('kind','not_stated')}
-                    data['id']='casting_'+digest([root,subject,grant['id'],branch['id'],spell_id])[:24]
+                    identity=[root,subject,grant['id'],branch['id'],spell_id]
+                    if steps:identity.append([[s[k] for k in ('subject_id','grant_id','branch_id','target_id')] for s in steps])
+                    data['id']='casting_'+digest(identity)[:24]
                     yield data
+    for root in by_subject:yield from walk(root,root,[],[],{},set())
 
 
 def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
@@ -549,10 +586,11 @@ def chain(db, entry_id, spell_id=None, reading_path=None, effect_id=None):
     # Group identical grants and branches; choice domains do not duplicate the whole UI.
     grouped={}
     for raw, in db.execute('SELECT data FROM casting_options WHERE root_id=? ORDER BY subject_id,id',(entry_id,)):
-        option=json.loads(raw);key_=(option['subject_id'],option['grant_id'],option['branch_id'])
+        option=json.loads(raw);key_=(option['subject_id'],option['grant_id'],option['branch_id'],canonical(option['acquisition_steps']))
         if key_ not in grouped:grouped[key_]={k:v for k,v in option.items() if k not in {'id','spell_id'}}|{'spell_ids':[]}
         grouped[key_]['spell_ids'].append(option['spell_id']);subject_ids.add(option['subject_id'])
     options=list(grouped.values())
+    subject_ids.update(s['subject_id'] for o in options for s in o['acquisition_steps'])
     available={i for o in options for i in o['spell_ids']}
     fixed={i for o in options if o['selection']=='fixed' for i in o['spell_ids']}
     if spell_id is not None and spell_id not in available:raise ValueError('Spell is not an effective option of this chain')
@@ -578,9 +616,8 @@ def chain(db, entry_id, spell_id=None, reading_path=None, effect_id=None):
         if r:nodes.append(dict(zip(('id','name','type','ruleset','page_path','start','end'),r)))
     incoming=[{'entry_id':r[0],'name':r[1],'ruleset':r[2]} for r in db.execute('SELECT DISTINCT e.id,e.name,e.ruleset FROM casting_options c JOIN entries e ON e.id=c.root_id WHERE c.spell_id=? ORDER BY e.name,e.id',(entry_id,))]
     if reading_path is None and spell_id:
-        providers={o['subject_id'] for o in options if spell_id in o['spell_ids']}
-        if len(providers)==1:
-            provider=next(iter(providers));reading_path=[entry_id]+([provider] if provider!=entry_id else [])+[spell_id]
+        paths={tuple([entry_id]+[s['target_id'] for s in o['acquisition_steps']]+[spell_id]) for o in options if spell_id in o['spell_ids']}
+        if len(paths)==1:reading_path=list(next(iter(paths)))
     from chain_reading import reading
     return reading(db,entry_id,{'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected},reading_path,effect_id)
 

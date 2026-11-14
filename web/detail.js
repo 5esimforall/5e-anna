@@ -305,8 +305,9 @@ function renderReview(record, labels) {
 let chainGeneration=0;
 async function inspectChainSpell(id,from){
   const chain=currentEntry?.rule_chain;if(!chain)return;
-  if(chain.options.some(o=>o.spell_ids.includes(id)))return navigateChain(null,id);
-  const path=annaKnowledge.pathTo(chain,id,from);if(path)return navigateChain(path);
+  const path=annaKnowledge.pathTo(chain,id,from);
+  if(chain.options.some(o=>o.spell_ids.includes(id)))return navigateChain(path,id);
+  if(path)return navigateChain(path);
 }
 function focusChainLocation(chain,{scroll=true}={}){
   const r=chain.reading;

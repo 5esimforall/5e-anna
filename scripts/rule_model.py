@@ -73,7 +73,7 @@ def validate_structure(record):
     if len({g['id'] for g in grants}) != len(grants):
         raise ValueError('Duplicate grant identity')
     for grant in grants:
-        if grant.get('entry_type') not in {'spell', 'feat'}:
+        if grant.get('entry_type') not in {'spell', 'feat', 'class_feature'}:
             raise ValueError('Invalid grant target type')
         if grant['mode'] not in ({'known', 'prepared', 'cast', 'list', 'selection'} if grant['entry_type'] == 'spell' else {'gain'}):
             raise ValueError('Invalid grant mode')
@@ -81,6 +81,17 @@ def validate_structure(record):
             raise ValueError('Duplicate usage branch identity')
         for branch in grant['branches']:
             validate_usage(branch)
+    for statement in [*grants,*value['modifiers']]:
+        for term in condition_terms(statement.get('when')):
+            if term.get('kind')=='option_selected':
+                context=value['contexts'].get(term.get('context_id'),{})
+                options=[o for o in context.get('options',[]) if o['id']==term.get('option_id')]
+                if context.get('kind')!='choose_one' or len(options)!=1 or term.get('name')!=options[0]['name']:
+                    raise ValueError('Invalid local grant choice')
+    for modifier in value['modifiers']:
+        if modifier.get('kind')=='replace_choice' and modifier.get('trigger')=='long_rest':
+            if modifier.get('grant_id') not in {g['id'] for g in grants} or modifier.get('target',{}).get('kind')!='choice' or modifier.get('count')!=1:
+                raise ValueError('Invalid table spell replacement')
     for effect in value['effects']:
         if effect.get('kind') not in EFFECT_KINDS:
             raise ValueError('Unsupported effect kind')

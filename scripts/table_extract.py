@@ -20,6 +20,47 @@ DEFINITION_KINDS={'技能':'skill','属性':'ability'}
 DEFINITION_FIELDS={'skill':{'属性':'ability'}}
 
 
+def table_grid(table):
+    """Map HTML cells to a rectangular grid without losing their source identity.
+
+    A carried rowspan still points at its original physical cell. Missing cells,
+    overlapping spans and spans escaping the table are errors, not fill-forward
+    values. Consumers decide which merged layouts have a supported meaning.
+    """
+    rows=table['rows'];grid=[{} for _ in rows]
+    if not rows:raise ValueError('Empty rule table')
+    for ri,row in enumerate(rows):
+        count=len(row['cells'])
+        if not count or any(len(row.get(k,[]))!=count for k in ('cell_spans','rowspan','colspan')):
+            raise ValueError('Missing rule table cell geometry')
+        column=0
+        for ci,raw in enumerate(row['cells']):
+            while column in grid[ri]:column+=1
+            sizes=[]
+            for field in ('rowspan','colspan'):
+                value=row[field][ci]
+                if not isinstance(value,str) or not re.fullmatch(r'[1-9]\d*',value):
+                    raise ValueError('Invalid rule table span')
+                sizes.append(int(value))
+            height,width=sizes
+            if ri+height>len(rows) or width>100 or column+width>100:
+                raise ValueError('Rule table span escapes its bounds')
+            span=row['cell_spans'][ci]
+            if not isinstance(span,(list,tuple)) or len(span)!=2 or any(type(n) is not int for n in span) or not table['start']<=span[0]<=span[1]<=table['end']:
+                raise ValueError('Invalid rule table cell range')
+            cell={'row':ri,'cell':ci,'column':column,'rowspan':height,'colspan':width,
+                  'text':raw,'span':list(row['cell_spans'][ci])}
+            for r in range(ri,ri+height):
+                for col in range(column,column+width):
+                    if col in grid[r]:raise ValueError('Overlapping rule table cells')
+                    grid[r][col]=cell
+            column+=width
+    width=len(grid[0])
+    if not width or any(set(row)!=set(range(width)) for row in grid):
+        raise ValueError('Ragged rule table')
+    return [[row[col] for col in range(width)] for row in grid]
+
+
 def definition_rows(doc,table):
     """Entries for the rows of a definition table, or [] when the table is not one."""
     rows=table['rows'];headers=[re.sub(r'\s+','',h) for h in rows[0]['cells']]
@@ -50,7 +91,7 @@ def extract_tables(doc, candidates):
     for ti,t in enumerate(doc.tables()):
         rows=t['rows'];a,b=t['span']
         tables.append({'id':'tbl_'+digest(doc.path,ti),'page_path':doc.path,'start':a,'end':b,
-            'headers':rows[0]['cells'],'rows':[{k:r[k] for k in ('cells','span','rowspan','colspan')} for r in rows],
+            'headers':rows[0]['cells'],'rows':[{k:r[k] for k in ('cells','cell_spans','span','rowspan','colspan')} for r in rows],
             'layout_warning':any(any(x!='1' for x in r['rowspan']+r['colspan']) for r in rows)})
         defined=definition_rows(doc,t)
         if defined:

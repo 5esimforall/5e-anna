@@ -74,6 +74,26 @@ class WebTests(unittest.TestCase):
             if not m['target_id']:
                 self.assertEqual([c['id'] for c in m['candidate_entries']],m['candidates'])
                 self.assertTrue(all(c['name'] for c in m['candidate_entries']))
+    def test_table_grant_query_facets_exclusion_and_inherited_export(self):
+        condition={'spell':'迷踪步','mode':'prepared','resource':'slot_free','recovery':'long_rest','access_condition':'option_selected'}
+        params={'casting':[json.dumps(condition)],'versions':['each']}
+        rows=query(self.db,params)['rows'];elf=next(e for e in rows if e['name_zh']=='精灵' and e['ruleset']=='5r')
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
+        self.assertEqual(status,200);groups=json.loads(raw)['groups']
+        self.assertEqual(next(v['count'] for v in groups['access_condition'] if v['value']=='option_selected'),len(rows))
+        excluded=query(self.db,{'q':['精灵'],'not_casting':[json.dumps(condition)],'versions':['each']})
+        self.assertNotIn(elf['id'],{e['id'] for e in excluded['rows']})
+        wrong={**condition,'resource':'spell_slot'};self.assertFalse(query(self.db,{'casting':[json.dumps(wrong)]})['rows'])
+        domain=self.db.execute("SELECT id FROM entries WHERE name_en='Life Domain' AND type='subclass' AND ruleset='5r'").fetchone()[0]
+        spell=self.db.execute("SELECT id FROM entries WHERE name_en='Mass Cure Wounds' AND type='spell' AND ruleset='5r' AND page_path LIKE '%玩家手册2024%'").fetchone()[0]
+        args={'id':domain,'spell':spell};status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200)
+        value=json.loads(raw);self.assertEqual(len(value['reading']['path']),3)
+        self.assertEqual(value['reading']['path'][0],domain);self.assertEqual(value['reading']['path'][-1],spell)
+        self.assertEqual(value['bindings'][0]['conditions'][0]['scope']['subject_id'],domain)
+        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],value)
+        status,_,raw=self.request('/api/entry?'+urlencode({'id':domain,'chain_spell':spell}));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],value)
+        fake_path=json.dumps([domain,spell]);self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({**args,'path':fake_path}))[0],400)
+
     def test_casting_chain_query_export_and_invalid_selection(self):
         condition=json.dumps({'mode':'prepared','resource':'slot_free','recovery':'long_rest','spell':'疗伤术'},ensure_ascii=False)
         rows=query(self.db,{'casting':[condition],'versions':['each']})['rows']

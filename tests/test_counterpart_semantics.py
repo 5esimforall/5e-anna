@@ -10,12 +10,11 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from counterpart_semantics import (ReportContext, background_comparisons, build_report, compare_case, level_gate,
+from anna.compare.semantics import (ReportContext, background_comparisons, build_report, compare_case, level_gate,
                                   normalize_external, pointer_get, render_markdown)
-from counterparts import load_records
-from html_extract import key
-from paths import FIVETOOLS, PROJECT, WEB
+from anna.compare.catalog import load_records
+from anna.source.html import key
+from anna.paths import FIVETOOLS, PROJECT, WEB
 
 
 def record(kind='feat', source='PHB', **kwargs):
@@ -341,7 +340,7 @@ class ReportFixtureTests(unittest.TestCase):
             build_report(self.db, self.external, self.source)
 
     def test_cli_reads_existing_db_only_and_rejects_output_in_mirrors(self):
-        cmd = [sys.executable, str(PROJECT/'scripts/counterpart_semantics.py'), '--db', str(self.dbfile),
+        cmd = [sys.executable, '-m', 'anna.compare.semantics', '--db', str(self.dbfile),
                '--source', str(self.source), '--5etools', str(self.external), '--output', str(self.root/'report')]
         before = self.dbfile.read_bytes()
         run = subprocess.run(cmd, capture_output=True, text=True)

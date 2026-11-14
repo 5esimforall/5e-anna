@@ -25,11 +25,11 @@
 | `make status` | 查看原文、5etools-cn 版本与搜索索引状态 |
 | `make clean` | 删除共享原文镜像及搜索缓存（影响其他引用方）；不删除分析数据 |
 
-命令清单集中在本页；不带目标运行 `make` 只输出本页位置。
+命令清单集中在本页；不带目标运行 `make` 只输出本页位置。下文的 `python -m anna.…` 模块命令在 anna 仓库根目录运行；应用代码不再通过 `scripts/` 路径启动。
 
-默认原文位于 anna 同级的 `5echm-web/`。`WEB_DIR=/绝对路径/镜像` 可指定其他位置，也支持相对路径（相对于执行 make 的目录）。两层 Makefile 之间传递绝对路径，避免切换工作目录后指向另一处。直接运行脚本也可通过环境变量 `WEB_DIR` 配置原文；`build.py --source` 可进一步覆盖该默认值。
+默认原文位于 anna 同级的 `5echm-web/`。`WEB_DIR=/绝对路径/镜像` 可指定其他位置，也支持相对路径（相对于执行 make 的目录）。两层 Makefile 之间传递绝对路径，避免切换工作目录后指向另一处。直接运行脚本也可通过环境变量 `WEB_DIR` 配置原文；`python -m anna.catalog.build --source` 可进一步覆盖该默认值。
 
-[来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `build.py` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
+[来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `python -m anna.catalog.build` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
 
 构建、盘点和索引时，缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像与搜索索引，之后运行 `make build` 才更新数据库和链接版。`make clean` 会影响所有引用共享镜像的冒险项目，请谨慎使用；它不删除 5etools-cn 镜像。
 
@@ -54,10 +54,10 @@ make check
 # 当前数据库须为全量构建，原文与对照镜像须匹配该数据库
 make baseline BASELINE=baselines/next
 # 校验全部内容对象；按需恢复查询库和索引
-.venv/bin/python scripts/migration.py verify baselines/next
-.venv/bin/python scripts/migration.py materialize baselines/next
+.venv/bin/python -m anna.snapshots.workflow verify baselines/next
+.venv/bin/python -m anna.snapshots.workflow materialize baselines/next
 # 比较不可变候选与捕获时的活动基准，得到稳定的差异编号
-.venv/bin/python scripts/migration.py assess baselines/next --output .cache/next-assessment.json
+.venv/bin/python -m anna.snapshots.workflow assess baselines/next --output .cache/next-assessment.json
 ```
 
 快照保存全部知识、观察、证据、候选、缺口、审核结果和完整审核日志，包括尚未重放的追加事件。重复 SQL 字段由记录还原，有效结果相对原始观察保存差量；未能无损归约的字段原样保留。查询投影从冻结的有效知识生成，不重新解析原文或重放审核。恢复时校验每张表的全部行值；历史投影生成器无法复现时拒绝恢复，不以新结果替换旧数据。
@@ -69,12 +69,12 @@ make baseline BASELINE=baselines/next
 查看 assessment 中的每项差异，用 `issue_…` 编号记录处置。`--evidence` 可以是父／子快照的基准身份或其中的内容对象哈希；编号和依据必须真实存在：
 
 ```sh
-.venv/bin/python scripts/migration.py dispose baselines/next \
+.venv/bin/python -m anna.snapshots.workflow dispose baselines/next \
   --issue issue_实际编号 --action accept_change \
   --reviewer 维护者 --reason '核对后接受这一修订，说明依据' \
   --evidence baseline_实际身份
 # 全部差异有处置记录后才能启用；没有差异也必须显式操作
-.venv/bin/python scripts/migration.py activate baselines/next \
+.venv/bin/python -m anna.snapshots.workflow activate baselines/next \
   --reviewer 维护者 --reason '已核对本次快照及全部差异处置'
 ```
 
@@ -86,10 +86,10 @@ make baseline BASELINE=baselines/next
 
 ```sh
 # 重建导出；输出目录必须不存在。行序和排版可规范化，历史附件字节不变
-.venv/bin/python scripts/migration.py export baselines/next --output .cache/next-exports
+.venv/bin/python -m anna.snapshots.workflow export baselines/next --output .cache/next-exports
 # 恢复冻结的原文或外部对照，不覆盖正在使用的镜像
-.venv/bin/python scripts/migration.py export baselines/next --group source_files --output .cache/next-source
-.venv/bin/python scripts/migration.py export baselines/next --group counterpart_files --output .cache/next-counterparts
+.venv/bin/python -m anna.snapshots.workflow export baselines/next --group source_files --output .cache/next-source
+.venv/bin/python -m anna.snapshots.workflow export baselines/next --group counterpart_files --output .cache/next-counterparts
 # 全量构建自动核对活动基准；独立核对也可指定 BASELINE=baselines/名称
 make build
 make migration
@@ -99,9 +99,9 @@ make migration
 
 报告仍是迁移预览：位置对应不改写条目标识，依赖核验不自动沿用旧批准。歧义、缺失、上下文变化和拆分合并保留待核；已有失效、否决和撤回照常保留。普通构建的预览不能替代对已冻结候选的启用评估。
 
-`build.py --baseline 基准目录 --output 生成目录` 可核对其他输出；部分扫描和开发输出默认不使用项目基准。`--no-migration` 显式跳过核对，不构成验收。独立比较使用 `migration.py compare --baseline 基准目录 --database 数据库 --output 报告目录`。
+`python -m anna.catalog.build --baseline 基准目录 --output 生成目录` 可核对其他输出；部分扫描和开发输出默认不使用项目基准。`--no-migration` 显式跳过核对，不构成验收。独立比较使用 `python -m anna.snapshots.workflow compare --baseline 基准目录 --database 数据库 --output 报告目录`。
 
-第一份结构 1 完整存档只读兼容，用 `migration.py convert 旧基准目录 --output 新目录` 无损转换；转换仍需经过评估与显式启用。旧存档暂作独立回退备份，确认紧凑快照及其异地备份可恢复后再决定清理；新捕获不再写结构 1。
+第一份结构 1 完整存档只读兼容，用 `python -m anna.snapshots.workflow convert 旧基准目录 --output 新目录` 无损转换；转换仍需经过评估与显式启用。旧存档暂作独立回退备份，确认紧凑快照及其异地备份可恢复后再决定清理；新捕获不再写结构 1。
 
 ## 阅读服务与正文生成
 
@@ -117,7 +117,7 @@ make upper
 
 默认打开条目查询 [anna](http://127.0.0.1:8000/) 或不全书阅读器 [stella](http://127.0.0.1:8000/read)。查询、阅读和 `/book/` 正文资源由同一个 HTTP 服务提供，`Ctrl-C` 或终止信号停止服务。启动会校验原文、数据库和生成文件的哈希，发现快照不一致、文件缺失或改动即拒绝启动，并提示重新构建。`make up` 不下载或更新原文，也不自动重建数据。
 
-开发时用 `make upper` 启动同一服务。构建先发布数据库、再发布链接版清单，服务在清单变化并稳定后校验数据库、原文快照与全部产物，再一次性切换到新快照；构建发布新数据库后、换包完成前，查询、搜索和 `/book/` 正文返回 409，完成后恢复，不混用新旧数据。校验失败时保持 409 并给出原因，直到下一次成功构建。`make upper` 同样不下载、不更新原文，也不自动重建；修改 `scripts/` 下的 Python 代码仍需重启，修改 `web/` 前端文件刷新即可。
+开发时用 `make upper` 启动同一服务。构建先发布数据库、再发布链接版清单，服务在清单变化并稳定后校验数据库、原文快照与全部产物，再一次性切换到新快照；构建发布新数据库后、换包完成前，查询、搜索和 `/book/` 正文返回 409，完成后恢复，不混用新旧数据。校验失败时保持 409 并给出原因，直到下一次成功构建。`make upper` 同样不下载、不更新原文，也不自动重建；修改 `anna/` 下的 Python 代码仍需重启，修改 `web/` 前端文件刷新即可。包内实现参与构建指纹；目录迁移或提取实现变化后，执行审核写入前需重新 `make build`，不沿用旧实现指纹。
 
 阅读界面由 anna 提供，上游仓库只提供内容输入。生成目录不包含上游 WebHelp 入口；`/book/` 下的根路径、`index.htm`、`indexh.htm` 及 `webhelp*.htm` 均不提供阅读界面。使用 `make up` 或 `make upper` 启动。
 
@@ -183,16 +183,16 @@ make upper
 
 ```sh
 # 列出普通正文中的待核引用；也可使用 --signal explicit / index / format / table
-.venv/bin/python scripts/review.py list --signal plain --status review --limit 10
+.venv/bin/python -m anna.review.commands list --signal plain --status review --limit 10
 
 # 从查询结果取 id，从 candidates 或 anna 条目详情取目标 ID
-.venv/bin/python scripts/review.py inspect 引用ID --target 目标条目ID
+.venv/bin/python -m anna.review.commands inspect 引用ID --target 目标条目ID
 ```
 
 `inspect` 展示原文上下文、机器候选、所选目标、依赖依据及 `basis_sha256`。核对后用这次查看得到的指纹保存，避免把旧页面上的结论应用到已变化的数据库：
 
 ```sh
-.venv/bin/python scripts/review.py confirm 引用ID \
+.venv/bin/python -m anna.review.commands confirm 引用ID \
   --target 目标条目ID --basis 查看得到的basis_sha256 \
   --reviewer 审核者 --reason '说明此处引用该定义的原文与上下文依据'
 make build
@@ -212,7 +212,7 @@ anna 详情的“概念线索”保留原始观察，“有效引用”展示重
 若确认此处不是规则引用，先不带 `--target` 运行 `inspect 引用ID`，再使用该指纹：
 
 ```sh
-.venv/bin/python scripts/review.py non-reference 引用ID \
+.venv/bin/python -m anna.review.commands non-reference 引用ID \
   --basis 查看得到的basis_sha256 --reviewer 审核者 --reason '说明此处的非规则语境'
 make build
 ```
@@ -220,7 +220,7 @@ make build
 保存返回 `review_…` 事件 ID。撤销时保留旧记录，追加撤销事件，并在重建后恢复当前自动结果；不会自动恢复更早、已被替代的人工决策：
 
 ```sh
-.venv/bin/python scripts/review.py revoke 审核事件ID \
+.venv/bin/python -m anna.review.commands revoke 审核事件ID \
   --reviewer 审核者 --reason '说明撤销原因'
 make build
 ```
@@ -232,8 +232,8 @@ make build
 查询页顶部的“引用审核工作台”进入 `/review`；条目“有效引用”中的“候选搜索”可携带具体引用进入。工作台只读，显示引用上下文、候选正文摘录、匹配理由、版本／类型警告与缺失定义队列。无结果只表示本次搜索未找到候选，不能据此判为非引用。
 
 ```sh
-.venv/bin/python scripts/review.py candidates 引用ID
-.venv/bin/python scripts/review.py candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
+.venv/bin/python -m anna.review.commands candidates 引用ID
+.venv/bin/python -m anna.review.commands candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
 ```
 
 搜索复用名称归一化与已提取别名，结合原路径、同文件名、锚点、来源和规则代际排序；`--type`、`--ruleset`、`--source 来源ID` 可进一步筛选。所有匹配理由会返回，冲突候选不会被偷偷批准或合并。搜索不会改变自动解析结果或生成链接。命中合适目标后，仍须执行 `inspect --target` 并逐处 `confirm`。
@@ -241,11 +241,11 @@ make build
 经核对确实缺少合适的独立定义时，先按缺失定义模式核对，再登记：
 
 ```sh
-.venv/bin/python scripts/review.py inspect 引用ID --missing-definition
-.venv/bin/python scripts/review.py missing-definition 引用ID \
+.venv/bin/python -m anna.review.commands inspect 引用ID --missing-definition
+.venv/bin/python -m anna.review.commands missing-definition 引用ID \
   --basis 查看得到的basis_sha256 --reviewer 审核者 --reason '说明核对范围、缺少的定义及现有候选为何不适用'
 make build
-.venv/bin/python scripts/review.py missing --status open
+.venv/bin/python -m anna.review.commands missing --status open
 ```
 
 可在两步中使用一致的 `--query` 保存特定搜索条件；默认空条件执行名称／原定位的全库结构搜索。登记保存全部检索命中的 ID 及其定义依赖，展示快照保留前 20 项、总数与页码；搜索版本或候选变化后重新待核，不静默沿用“缺失”的判断。登记与引用确认共用追加日志、批次、撤销和发布检查，不生成虚构条目，也不把具名角色合并到通用数据卡。
@@ -278,7 +278,7 @@ make build
 ```
 
 ```sh
-.venv/bin/python scripts/review.py batch 审核批次.json
+.venv/bin/python -m anna.review.commands batch 审核批次.json
 make build
 ```
 
@@ -295,16 +295,16 @@ make build
 引用变动、拆分或移动时不会自动迁移批准。系统在旧范围与同页相同文本范围查找受影响的新引用并阻止其新增跳转，直到重核或撤销旧决策；保守匹配可能覆盖额外范围。原文消失时仍保留 `missing` 决策及待核记录。目标内容、候选集合或来源依据变化也会使原决策失效，即使机器仍能得到唯一目标，也先显示重新待核。
 
 ```sh
-.venv/bin/python scripts/review.py decisions --status stale
-.venv/bin/python scripts/review.py decisions --status missing
-.venv/bin/python scripts/review.py decisions --status conflict
+.venv/bin/python -m anna.review.commands decisions --status stale
+.venv/bin/python -m anna.review.commands decisions --status missing
+.venv/bin/python -m anna.review.commands decisions --status conflict
 ```
 
 重放结果保存于 `review_decisions` 表及 `data/extracted/review_decisions.jsonl`；失效、消失和冲突同步进入 `review_queue`。`reference_coverage.json` 汇总有效语义、审核和点击层状态。只读 API 提供 `/api/references`（支持 `id`、`path`、`signal`、`status`、`review_status`、`limit`、`offset`）及 `/api/review-decisions`（支持 `status`、`limit`、`offset`）。
 
 审核日志尚未重放时，`make linked` 和新启动的 `make up` 会拒绝使用旧审核快照；已经运行的查询仍展示其构建快照，`/api/meta` 的 `review_snapshot.pending_rebuild` 提示有待重建输入。构建替换数据库或链接版后，运行中的服务拒绝继续混用产物，必须重启。
 
-需要隔离试验时，`review.py --db 数据库路径 --decisions 审核日志路径 …` 与 `build.py --decisions 审核日志路径 --output 输出目录` 可使用独立输入输出。链接版从数据库保存的审核快照读取对应日志路径。不要把实验批准写入正式审核日志，也不要把构建后的数据库作为审核结论的唯一保存位置。
+需要隔离试验时，`python -m anna.review.commands --db 数据库路径 --decisions 审核日志路径 …` 与 `python -m anna.catalog.build --decisions 审核日志路径 --output 输出目录` 可使用独立输入输出。链接版从数据库保存的审核快照读取对应日志路径。不要把实验批准写入正式审核日志，也不要把构建后的数据库作为审核结论的唯一保存位置。
 
 ## 概念发现与覆盖核对
 
@@ -369,9 +369,9 @@ make build
 条目对应之后，可以继续核对法术、等级、选择域、施法属性和资源表达。在 anna 目录运行：
 
 ```sh
-.venv/bin/python scripts/counterpart_semantics.py
+.venv/bin/python -m anna.compare.semantics
 # 指定既有数据库、两个只读镜像和报告输出前缀
-.venv/bin/python scripts/counterpart_semantics.py \
+.venv/bin/python -m anna.compare.semantics \
   --db data/extracted/catalog.sqlite --source ../5echm-web \
   --5etools ../5etools-cn --output output/counterpart-semantics
 ```
@@ -403,10 +403,10 @@ make check
 网页查询（Python 标准库，仅本机、只读），在 anna 目录运行：
 
 ```sh
-python3 scripts/serve.py
+make up
 ```
 
-打开 [查询页](http://127.0.0.1:8000/)。在条件栏输入名称即可查询；按 Enter 把搜索留作标签后可继续输入下一个。每个条件和搜索都是独立的标签，标签之间以“∧”连接，表示都要满足；点击标签文字切换为“不是／不含”，即排除这些取值或词，筛选区的“排除”按钮切换整个字段。下拉的第二项“正文包含”改在条目原文中查找。输入“法术”“塑能”“PHB”“坐骑”等文字时，下拉建议对应的类型、字段取值、来源或预设，选择即加入条件。“筛选”中的第一个字段是条目类型，与其他字段同样操作；所选类型决定表格的列与筛选字段。法术按环阶、学派、职业、施法时间及特性筛选；生物按 CR 范围、体型、类型及传奇动作筛选；物品按稀有度、类别及同调筛选；技能按所用属性筛选，并按力量到魅力的顺序排列，2014 与 2024 的同名属性和技能叠放为版本。环境危害按类型“环境危害”查询，包括名称旁标注【危害】的术语、2024 城主指南标有危害度的危害物，以及“危害物”“环境灾害”“环境影响”等类别下在正文中应用了具体规则（DC、骰子、优势劣势、状态等）的条目；类别导言与查表页保持未分类段落。字段未选即不限制，点击取值即加入；同组多选取并集、组间取交集，支持清除与反选。每个取值旁的数字是选中后的结果数。表头可切换升降序；环阶、CR、稀有度按实际顺序排序，缺失或冲突数值置后。来源可多选；查询、排序与版本显示方式保存在地址栏。结果随滚动每批加载 150 行，底部也可点击“继续加载”；刷新或前进后退恢复已加载的行数和位置。结果底栏的“导出 CSV”导出全部匹配行及所选类型的属性。`Ctrl-C` 停止，`--port` 改端口。该脚本只提供查询，不含阅读器与正文资源；完整查询与阅读使用 `make up`。
+打开 [查询页](http://127.0.0.1:8000/)。在条件栏输入名称即可查询；按 Enter 把搜索留作标签后可继续输入下一个。每个条件和搜索都是独立的标签，标签之间以“∧”连接，表示都要满足；点击标签文字切换为“不是／不含”，即排除这些取值或词，筛选区的“排除”按钮切换整个字段。下拉的第二项“正文包含”改在条目原文中查找。输入“法术”“塑能”“PHB”“坐骑”等文字时，下拉建议对应的类型、字段取值、来源或预设，选择即加入条件。“筛选”中的第一个字段是条目类型，与其他字段同样操作；所选类型决定表格的列与筛选字段。法术按环阶、学派、职业、施法时间及特性筛选；生物按 CR 范围、体型、类型及传奇动作筛选；物品按稀有度、类别及同调筛选；技能按所用属性筛选，并按力量到魅力的顺序排列，2014 与 2024 的同名属性和技能叠放为版本。环境危害按类型“环境危害”查询，包括名称旁标注【危害】的术语、2024 城主指南标有危害度的危害物，以及“危害物”“环境灾害”“环境影响”等类别下在正文中应用了具体规则（DC、骰子、优势劣势、状态等）的条目；类别导言与查表页保持未分类段落。字段未选即不限制，点击取值即加入；同组多选取并集、组间取交集，支持清除与反选。每个取值旁的数字是选中后的结果数。表头可切换升降序；环阶、CR、稀有度按实际顺序排序，缺失或冲突数值置后。来源可多选；查询、排序与版本显示方式保存在地址栏。结果随滚动每批加载 150 行，底部也可点击“继续加载”；刷新或前进后退恢复已加载的行数和位置。结果底栏的“导出 CSV”导出全部匹配行及所选类型的属性。`Ctrl-C` 停止；用 `ANNA_PORT` 配置查询与阅读共用的端口。
 
 筛选区默认收起，已选条件（类型在最前）以标签显示在条件栏中，可逐个移除；“清空”去掉全部条件；点击“筛选”展开常用条件，“更多筛选条件”展开其余领域条件，来源与审核条件单独展开。展开状态在本标签页刷新和前进后退时保留。切换类型或条件时，旧结果变淡，直到新结果到达。结果表固定表头与名称列，其他属性可横向滚动，中文与英文名称同时保留；法术的成分与仪式／专注以字形条显示，导出仍逐项保留。手机宽度（640px 及以下）结果以列表显示。在某些类型中搜索时，结果栏显示其他类型中的匹配数；结果为空时，空状态列出去掉后能得到结果的条件。名称搜索没有结果、但原文还有未分类段落满足同一组条件时，空状态显示匹配数量；点击后以“包含未分类段落”重查。正文搜索不触发该提示，未分类段落仍只通过名称搜索的补查入口进入结果。
 
@@ -427,15 +427,15 @@ python3 scripts/serve.py
 全量重建（只读镜像）：
 
 ```sh
-/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/build.py
+/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m anna.catalog.build
 ```
 
 查询（无需第三方库）：
 
 ```sh
-python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type feat --source PHB24
-python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --view 魔法武器 --ruleset 5r
-python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --field school=塑能
+python3 -m anna.catalog.query --type feat --source PHB24
+python3 -m anna.catalog.query --view 魔法武器 --ruleset 5r
+python3 -m anna.catalog.query --type spell --field school=塑能
 ```
 
 `--show 版本ID` 查看正文、证据和关系；`--stats` 查看覆盖与异常统计。来源多选取并集，其余条件取交集。
@@ -453,7 +453,7 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 结构审计（只读数据库，校验所有 CSV／SQL 视图一致性）：
 
 ```sh
-/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/audit.py
+/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m anna.catalog.audit
 ```
 
 可用 `--baseline /绝对路径/旧版catalog.sqlite --output /报告目录` 生成逐条增删及分类／字段差异。审计不等于全库人工核验；未支持表格和无法唯一关联的动物保留在审核队列。
@@ -483,17 +483,17 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 核对模式显示记录 ID、结构化结果及检查入口。浏览器保持只读；审核通过命令行追加到现有独立决策日志：
 
 ```sh
-.venv/bin/python scripts/knowledge.py list --kind grant --status resolved --limit 10
-.venv/bin/python scripts/knowledge.py inspect 记录ID
-.venv/bin/python scripts/knowledge.py accept 记录ID \
+.venv/bin/python -m anna.knowledge.repository list --kind grant --status resolved --limit 10
+.venv/bin/python -m anna.knowledge.repository inspect 记录ID
+.venv/bin/python -m anna.knowledge.repository accept 记录ID \
   --basis 查看所得basis_sha256 --reviewer 审核者 --reason '说明原文依据'
 # 否决用 reject；替代旧决策加 --supersedes 旧审核事件ID
-.venv/bin/python scripts/knowledge.py revoke 审核事件ID \
+.venv/bin/python -m anna.knowledge.repository revoke 审核事件ID \
   --reviewer 审核者 --reason '说明撤销原因'
 make build
 ```
 
-`accept` 表示核准当前记录，不补写缺失语义，也不消除目标歧义。原文或候选变化后，依据失效的记录不继续进入有效选项；重新检查后才能替代旧决定。无需审核即可只读检查：`knowledge.py chain 条目ID`。
+`accept` 表示核准当前记录，不补写缺失语义，也不消除目标歧义。原文或候选变化后，依据失效的记录不继续进入有效选项；重新检查后才能替代旧决定。无需审核即可只读检查：`python -m anna.knowledge.repository chain 条目ID`。
 
 HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/api/knowledge-inspect?id=记录ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；指定时必须属于起点条目的有效选项，否则返回 400。
 
@@ -509,9 +509,9 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/ap
 
 “本效果的动作成本”与效果条件绑定。例如 `{"query_subject":"entry","effect":"healing"}` 可一起检索法术治疗和回气；再添加 `"use_action":"bonus_action"` 可筛出使用附赠动作的治疗过程，`{"query_subject":"entry","effect":"modifier","use_action":"reaction"}` 可检索直觉闪避的减伤。`use_action` 可选 `action`、`bonus_action`、`reaction`、`timed` 或 `not_stated`。重复豁免不消耗初次施法动作；未明示动作不能当成无需动作。既有分享链接和最近查询沿用 `casting` 参数及 `/api/casting-facets` 路径，内部共用规则效果索引，不分设非施法查询逻辑。
 
-知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方应按结构版本读取 `value.grants`、`value.parameters` 和 `value.effects`，不再读取结构 1 的独立背景目标或 `value.casting`。重建后，旧结构的审核决策保留原事件并重新待核；运行 `knowledge.py list` 找到当前主体的记录，再 `inspect` 核对，以 `--supersedes 旧决策ID` 保存新审核，或撤销旧决策。迁移不会新增人工批准。
+知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方应按结构版本读取 `value.grants`、`value.parameters` 和 `value.effects`，不再读取结构 1 的独立背景目标或 `value.casting`。重建后，旧结构的审核决策保留原事件并重新待核；运行 `python -m anna.knowledge.repository list` 找到当前主体的记录，再 `inspect` 核对，以 `--supersedes 旧决策ID` 保存新审核，或撤销旧决策。迁移不会新增人工批准。
 
-构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`audit.py --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)，实际检查证据见[施法链验证](tests/casting-chain-validation.md)。
+构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)，实际检查证据见[施法链验证](tests/casting-chain-validation.md)。
 
 ## Datalog 通则与原文溯源
 
@@ -526,11 +526,11 @@ souffle --version
 # 先有与镜像一致的 catalog.sqlite；已有全量构建可直接使用
 make datalog
 # 选择一个场景，另存产物；不覆盖默认完整报告
-.venv/bin/python scripts/datalog.py build --case critical.paralyzed \
+.venv/bin/python -m anna.datalog.runtime build --case critical.paralyzed \
   --output .cache/datalog-critical
 # 查询稳定子句身份或从原文反查子句、事实与证明
-.venv/bin/python scripts/datalog.py inspect --rule condition.close.critical
-.venv/bin/python scripts/datalog.py inspect --source-id condition.paralyzed
+.venv/bin/python -m anna.datalog.runtime inspect --rule condition.close.critical
+.venv/bin/python -m anna.datalog.runtime inspect --source-id condition.paralyzed
 ```
 
 `make datalog` 不拉取镜像、不重建查询库，也不修改原文。默认产物在 `data/extracted/datalog/`，包括可直接打开的 `report.html`、`source-map.json`、`results.json`、`explanations.json` 和 `manifest.json`。运行 `make up` 后，报告里的证据链接会打开 Anna 的精确范围，原文链接会打开 Stella。`ANNA_PORT` 同时配置 make 命令写入的链接端口；直接运行脚本可用 `--base-url` 指定服务地址，`--lang en` 生成英文报告界面。

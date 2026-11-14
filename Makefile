@@ -37,7 +37,7 @@ update: clone
 	@git -C "$(WEB_PATH)" log -1 --format='source updated to %h  %ad  %s' --date=iso
 	@git -C "$(5ETOOLS_PATH)" pull --ff-only
 	@git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn updated to %h  %ad  %s' --date=iso
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.search --rebuild
 
 status:
 	@if [ -d "$(WEB_PATH)/.git" ] || [ -f "$(WEB_PATH)/.git" ]; then \
@@ -63,7 +63,7 @@ status:
 	fi
 
 index: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/book_search.py --rebuild
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.search --rebuild
 
 clean:
 	@if [ -e "$(WEB_PATH)" ]; then \
@@ -76,18 +76,18 @@ clean:
 	@echo "Deleted $(WEB_PATH) and the search cache; run make clone to download again"
 
 build: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/build.py --5etools "$(5ETOOLS_PATH)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build --5etools "$(5ETOOLS_PATH)"
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
 
 baseline:
 	@test -n "$(BASELINE)" || { echo 'Specify a new bundle path: make baseline BASELINE=baselines/name' >&2; exit 1; }
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/migration.py capture --5etools "$(5ETOOLS_PATH)" --output "$(BASELINE)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.snapshots.workflow capture --5etools "$(5ETOOLS_PATH)" --output "$(BASELINE)"
 
 migration:
-	@"$(PYTHON)" scripts/migration.py compare $(if $(BASELINE),--baseline "$(BASELINE)",)
+	@"$(PYTHON)" -m anna.snapshots.workflow compare $(if $(BASELINE),--baseline "$(BASELINE)",)
 
 inventory: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/inventory.py
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.inventory
 
 test: test-unit test-browser
 
@@ -95,21 +95,21 @@ test-unit:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m unittest discover -s tests
 
 audit:
-	@"$(PYTHON)" scripts/audit.py
+	@"$(PYTHON)" -m anna.catalog.audit
 
 datalog:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/datalog.py build --base-url "http://127.0.0.1:$(ANNA_PORT)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.datalog.runtime build --base-url "http://127.0.0.1:$(ANNA_PORT)"
 
 check: test audit
 
 linked:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/linked_book.py
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --port "$(ANNA_PORT)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)"
 
 upper:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/up.py --port "$(ANNA_PORT)" --watch
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch
 
 # Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:

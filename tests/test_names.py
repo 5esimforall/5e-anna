@@ -1,11 +1,9 @@
 """Structural name parsing, independent of particular publications or item names."""
 from pathlib import Path
-import sys
 import unittest
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from html_extract import compact,parse_name,split_name
-from concepts import aliases
+from anna.source.html import compact,parse_name,split_name
+from anna.catalog.concepts import aliases
 
 
 class NameTests(unittest.TestCase):
@@ -135,8 +133,8 @@ class NameTests(unittest.TestCase):
         self.assertEqual(entry['name'],'示例（Example Blade）')
 
     def test_build_records_name_evidence_without_merging_source_entries(self):
-        from build import Build,parse_one
-        from paths import WEB
+        from anna.catalog.build import Build,parse_one
+        from anna.paths import WEB
         build=Build(WEB)
         for path in ('topics/荒洲探险家指南/荒洲宝藏/宝藏.html','topics/荒洲探险家指南/荒洲宝藏/荒洲的魔法物品.htm'):
             build.consume(parse_one(build.parse_job(path)))
@@ -149,7 +147,7 @@ class NameTests(unittest.TestCase):
         self.assertEqual(wrapped['name'],'冥河之剑 (Acheron blade)')
 
     def test_multilingual_qualifiers_do_not_remove_feature_boundaries(self):
-        from html_extract import Document
+        from anna.source.html import Document
         doc=Document('topics/职业/示例.htm','<p><b>1级：测试 Example</b><br>说明。<br>'
                      '<b>子能力 Subfeature (花费：1d6)</b><br>能力正文。</p>')
         try:
@@ -158,7 +156,7 @@ class NameTests(unittest.TestCase):
         finally:doc.close()
 
     def test_uncertain_name_does_not_erase_an_existing_structural_heading(self):
-        from html_extract import Document
+        from anna.source.html import Document
         raw='<p><font color="#800000"><strong>3级："示例 Examples</strong><strong>"</strong></font>'
         raw+='<br>说明。<br><strong>子能力 Subfeature。</strong>正文。</p>'
         doc=Document('topics/职业/示例.htm',raw)

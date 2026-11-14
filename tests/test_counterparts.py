@@ -2,15 +2,13 @@
 import csv
 import json
 import sqlite3
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-import counterparts
-from counterparts import align_sources, build_counterparts, compare, load_records
-from audit import audit_counterparts
+import anna.compare.catalog as counterparts
+from anna.compare.catalog import align_sources, build_counterparts, compare, load_records
+from anna.catalog.audit import audit_counterparts
 
 
 class SkillValueTests(unittest.TestCase):

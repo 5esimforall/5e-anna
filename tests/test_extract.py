@@ -1,15 +1,13 @@
-import sys
 from pathlib import Path
 import unittest
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from html_extract import Document,resolve_link,split_name,key
-from entry_types import printed_type,hazard_member,NO_TOC_PLACE
-from build import Build,parse_one,normalize_value,observation_fields
-from source_extract import SourceRegistry
-from table_extract import extract_tables
+from anna.source.html import Document,resolve_link,split_name,key
+from anna.catalog.types import printed_type,hazard_member,NO_TOC_PLACE
+from anna.catalog.build import Build,parse_one,normalize_value,observation_fields
+from anna.source.registry import SourceRegistry
+from anna.source.tables import extract_tables
 
-from paths import WEB
+from anna.paths import WEB
 
 class StructureTests(unittest.TestCase):
     def test_omitted_td(self):
@@ -358,7 +356,7 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual(len(codes),len(set(codes)))
 
     def test_folder_sources_read_the_catalog_like_toc_labels(self):
-        from build import page_role
+        from anna.catalog.build import page_role
         registry=SourceRegistry(WEB)
         paths=sorted(p.relative_to(WEB).as_posix() for p in (WEB/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
         registry.register_orphans([p for p in paths if page_role(p)=='document'])
@@ -382,7 +380,7 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual(sum(s['name']=='憎恶魔窟' for s in registry.sources.values()),1)
 
     def test_source_labels_are_the_shortest_unique_evidence(self):
-        from source_extract import source_labels
+        from anna.source.registry import source_labels
         def src(name,own=(),collection=()):return {'name':name,'abbreviations':list(own),'collection_abbreviations':list(collection)}
         labels=source_labels({'a':src('甲书',['AB','ABC'],['X']),'b':src('合集 / 第二卷',[],['X']),'c':src('其他/新X',[],['X']),
             'd':src('模组 / 冰谷：少女雾凇'),'e':src('模组 / 深城：龙金之劫'),'f':src('模组 / 深城：疯法师地城'),
@@ -395,7 +393,7 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual(len(set(labels.values())),len(labels))
 
     def test_printed_layout_marks_one_rule_generation(self):
-        from html_extract import printed_generation
+        from anna.source.html import printed_generation
         old='僵尸 中型亡灵 护甲等级 8 生命值 22 力量 敏捷 体质 智力 感知 魅力 13 (+1) 6 (-2) 16 (+3) 3 (-4) 6 (-2) 5 (-3)'
         new='僵尸 中型亡灵 AC 8 先攻 -2 (8) HP 15 调整 豁免 力量 13 +1 +1'
         self.assertEqual(printed_generation('creature',old)[0],'5e')
@@ -409,7 +407,7 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertIsNone(printed_generation('magic_item','施法时间：动作'))
 
     def test_sources_without_a_catalog_generation_take_their_printed_layout(self):
-        from build import Build
+        from anna.catalog.build import Build
         build=Build(WEB)
         pages=['topics/模组/湮灭之墓/生物/三花株.htm','topics/模组/湮灭之墓/生物/僵尸.htm','topics/玩家手册2024/法术详述/6环.htm']
         for path in pages:build.consume(parse_one(build.parse_job(path)))

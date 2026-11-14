@@ -1,13 +1,11 @@
 """Source release evidence is independent of the build snapshot and rules edition."""
 from pathlib import Path
-import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from reader import build_navigation, source_release, content_file, strip_reader_scripts, WINCHM_NAVIGATION
-from html_extract import Document
-from linked_book import text_slice
+from anna.server.reader import build_navigation, source_release, content_file, strip_reader_scripts, WINCHM_NAVIGATION
+from anna.source.html import Document
+from anna.server.linked_book import text_slice
 
 
 class SourceReleaseTests(unittest.TestCase):

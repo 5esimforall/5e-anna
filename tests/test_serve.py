@@ -4,16 +4,14 @@ import io
 import json
 import sqlite3
 import struct
-import sys
 import threading
 import unittest
 from contextlib import closing
 from http.client import HTTPConnection
 from pathlib import Path
 from urllib.parse import urlencode
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from serve import DB, Handler, ThreadingHTTPServer, connect, query, detail, meta, csv_export, facets
-import browse
+from anna.server.query import DB, Handler, ThreadingHTTPServer, connect, query, detail, meta, csv_export, facets
+import anna.catalog.views as browse
 
 @unittest.skipUnless(DB.exists(),'Build the dataset first')
 class WebTests(unittest.TestCase):

@@ -2,13 +2,11 @@
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from casting_extract import parse_access
-from rule_values import evidence, quantity_expression
-from spell_effects import parse_spell
-from knowledge import Context, record_for, branches, casting_condition, casting_query
+from anna.knowledge.casting import parse_access
+from anna.knowledge.values import evidence, quantity_expression
+from anna.knowledge.spells import parse_spell
+from anna.knowledge.repository import Context, record_for, branches, casting_condition, casting_query
 
 
 def feature(body):
@@ -134,7 +132,7 @@ class EffectTests(unittest.TestCase):
             self.assertIn('unresolved_effect_condition',[g['reason'] for g in result['unparsed']])
 
     def test_local_condition_references_and_rule_scopes_are_validated(self):
-        from rule_conditions import validate_conditions
+        from anna.knowledge.conditions import validate_conditions
         from copy import deepcopy
         value={'effects':[{'id':'s','kind':'saving_throw'},{'id':'c','kind':'condition',
             'when':{'kind':'save_result','effect_id':'s'},'ends':{'not':{'any':[{'kind':'save_result','result':'success','effect_id':'s'}]}}}],
@@ -193,7 +191,7 @@ class CorpusCastingTests(unittest.TestCase):
             self.assertEqual([x['kind'] for x in value['effects']],case['kinds']);self.assertFalse(value['unparsed'])
 
     def test_background_constraints_survive_the_complete_chain(self):
-        from knowledge import chain
+        from anna.knowledge.repository import chain
         cases=json.loads((Path(__file__).parent/'fixtures/casting-chains.json').read_text())
         for case in cases['acquisition']:
             root=next(e for e in self.context.entries.values() if e['name_zh']==case['name'] and e['page_path']==case['path'])

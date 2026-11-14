@@ -3,17 +3,15 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import tempfile
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from html_extract import Document
-from table_extract import extract_tables, table_grid
-from level_grants import parse_table_access, feature_access
-from knowledge import Context, record_for, branches, replay, binding, chain, build_knowledge, casting_condition, audit_knowledge
-from review_store import digest, canonical
-from rule_conditions import condition_terms
-from rule_model import rule_value
+from anna.source.html import Document
+from anna.source.tables import extract_tables, table_grid
+from anna.knowledge.levels import parse_table_access, feature_access
+from anna.knowledge.repository import Context, record_for, branches, replay, binding, chain, build_knowledge, casting_condition, audit_knowledge
+from anna.serialization import digest, canonical
+from anna.knowledge.conditions import condition_terms
+from anna.knowledge.model import rule_value
 
 POLICY=('从星裔表格中选择其一。你获得该血系的1级好处。'
         '当你到达3级和5级时，你分别习得一道表格上更高级的法术；你时刻准备着这道习得的法术，且可以不消耗法术位施展此法术一次，当你完成一次长休时，你重获施展该道法术的能力。'

@@ -1,13 +1,11 @@
 """Entry typing: declared evidence, recognizer precedence, and the printed evidence a decision overrules."""
 import json
 import sqlite3
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from html_extract import Candidate
-from entry_types import RECOGNIZERS, RULE_EVIDENCE, PRINTED, INFERRED, UNTYPED, classify, evidence_status, refine_page_types, type_conflicts
+from anna.source.html import Candidate
+from anna.catalog.types import RECOGNIZERS, RULE_EVIDENCE, PRINTED, INFERRED, UNTYPED, classify, evidence_status, refine_page_types, type_conflicts
 
 SPELL_FIELDS='\n施法时间：1 动作\n施法距离：60 尺\n法术成分：V、S\n持续时间：立即\n'
 CLASS_LAYOUT='\n核心特质\n生命骰：每战士等级 1d10\n'

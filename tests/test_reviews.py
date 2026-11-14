@@ -2,18 +2,16 @@
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]/'scripts'))
-from concepts import build_concepts
-from html_extract import Document
-from linked_book import build_book, fingerprint, MARKER
-from references import build_references, query_references, query_decisions, query_missing_definitions
-from review_search import search_candidates
-from review import inspect, save, save_batch, revoke
-from review_store import append_event, load_events, locked, pipeline_hash, extraction_hash, require_current
+from anna.catalog.concepts import build_concepts
+from anna.source.html import Document
+from anna.server.linked_book import build_book, fingerprint, MARKER
+from anna.catalog.references import build_references, query_references, query_decisions, query_missing_definitions
+from anna.review.search import search_candidates
+from anna.review.commands import inspect, save, save_batch, revoke
+from anna.review.store import append_event, load_events, locked, pipeline_hash, extraction_hash, require_current
 
 
 class ReviewTests(unittest.TestCase):

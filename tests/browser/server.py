@@ -11,12 +11,12 @@ import threading
 from urllib.parse import unquote, urlsplit
 
 PROJECT=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(PROJECT/'scripts'))
-from html_extract import Document
-from linked_book import BOOK,inject,text_slice
-from paths import WEB
-import up
-import book_search as search
+sys.path.insert(0,str(PROJECT))
+from anna.source.html import Document
+from anna.server.linked_book import BOOK,inject,text_slice
+from anna.paths import WEB
+import anna.server.app as up
+import anna.source.search as search
 
 PORT=int(os.environ.get('ANNA_E2E_PORT','18380'))
 DB=Path(os.environ.get('ANNA_E2E_DB',up.serve.DB)).resolve()

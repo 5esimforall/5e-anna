@@ -1,12 +1,10 @@
 """Classification audit: untyped pages, mechanic signals in untyped sections, title labels and type conflicts."""
 import json
 import sqlite3
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from audit import classification_gaps, gap_report, type_conflict_report, conflict_report
+from anna.catalog.audit import classification_gaps, gap_report, type_conflict_report, conflict_report
 
 REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 
@@ -14,7 +12,7 @@ REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class PlainProvenanceTests(unittest.TestCase):
     """A resolved plain reference keeps the cue that made it a rules use, located against the name."""
     def errors(self,syntax,a=10,b=12):
-        from audit import audit_concepts
+        from anna.catalog.audit import audit_concepts
         db=sqlite3.connect(':memory:')
         db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT);
             CREATE TABLE concepts(definition_id TEXT,data TEXT);CREATE TABLE metadata(key TEXT,value TEXT);
@@ -198,7 +196,7 @@ if __name__=='__main__':unittest.main()
 class TableProvenanceTests(unittest.TestCase):
     """A table reference keeps the cell that listed it and the enclosing table range."""
     def errors(self,table,role='mention'):
-        from audit import audit_concepts
+        from anna.catalog.audit import audit_concepts
         db=sqlite3.connect(':memory:')
         db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT);
             CREATE TABLE concepts(definition_id TEXT,data TEXT);CREATE TABLE metadata(key TEXT,value TEXT);

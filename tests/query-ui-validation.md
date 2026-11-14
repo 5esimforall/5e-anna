@@ -163,7 +163,7 @@
 
 ### 2026-11-07 原文排版与字段批注验证
 
-- 第三阶段改版：新增 `/api/entry-layout` 与 `scripts/entry_layout.py`，阅读栏“正文”显示原文页面在条目范围内的排版，并以提取偏移标出字段证据与已解析引用；批注在宽阅读栏排在页边，窄阅读栏列在正文之后。原文缺失或与快照不一致时保留提取文本并说明原因。
+- 第三阶段改版：新增 `/api/entry-layout` 与 `anna/server/layout.py`，阅读栏“正文”显示原文页面在条目范围内的排版，并以提取偏移标出字段证据与已解析引用；批注在宽阅读栏排在页边，窄阅读栏列在正文之后。原文缺失或与快照不一致时保留提取文本并说明原因。
 - 真实页面解析耗时约 8ms（以太化所在页面）至 60ms（最大页面）；成年红龙的属性表、豁免表与 `colspan` 保留，替代原先的“调整豁免调整豁免”平铺文本。
 - 新增 7 项排版单元测试、1 项接口测试和 2 项浏览器回归，未改动既有检查。`make check` 通过 144 项单元测试、41 项浏览器回归及数据审计，日志位于 `output/redesign/p3-check.log`。
 - 实机 MCP 浏览器检查：1440×900 下成年红龙数据卡的表格排版；1100×820 模态阅读层中以太化的页边批注，悬停“学派”高亮“七环 咒法”；375×812 深色下数据卡表格、引用按钮与阅读层不横向溢出。三个阶段结束后关闭临时服务 `serve.py --port 8131` 并恢复视口。
@@ -250,7 +250,7 @@
 
 ### 2026-11-12 类型识别器注册表
 
-- 分类逻辑从 `html_extract.py` 与 `build.py` 移入 `scripts/entry_types.py`：44 个识别器按声明顺序判定，36 种分类规则各自声明证据强度，`build.py` 不再自行选择分类窗口或列举原文明示规则。职业页主条目读整页的条件合并为 `CLASS_PATH` 一处，候选标注（职业特性区、选项池）随之移入。
+- 分类逻辑从 `html_extract.py` 与 `build.py` 移入 `anna/catalog/types.py`：44 个识别器按声明顺序判定，36 种分类规则各自声明证据强度，`build.py` 不再自行选择分类窗口或列举原文明示规则。职业页主条目读整页的条件合并为 `CLASS_PATH` 一处，候选标注（职业特性区、选项池）随之移入。
 - 在 0acad81 的同一原文上分别构建到独立目录，逐条比较：条目 ID、类型、分类规则、分类依据、字段完全一致，事实 214,480、关系 28,641、审核队列 2,793、概念观察 477,324 条数量不变；条目数据只新增 `type_conflicts`。单进程构建 40.84 秒 → 40.85 秒。
 - 53 条条目带类型冲突。可确认的误分类线索：瓦尔达的秘密尖塔“铁血英雄”3 条与 PHB 2014“知己知彼”被判为生物（数据卡字段先于专长描述行、职业能力等级陈述命中），DMG“艾恩石”被判为生物，6 个背景页（粹丽学生、背景-假面人、巫光雇工等）与艾奎兹玄的“知识贩子”公司职位页未分类。其余为合理出现的相同版式：职业核心特质同样列出技能与工具熟练（6 条），魔战士新法术正文的“在 N 级”（12 条），数据卡内的“动作”段落等。
 - 新增单元测试 11 项（合成夹具 10 项、实库不变量 1 项）：识别器声明、未声明或不一致规则的拒绝、判定顺序与保留的原文证据、上下文证据不计冲突、索引多类别、职业页窗口、结构标题与命名表格、审计冲突汇总与旧库兼容；实库检查每个条目的分类依据与声明一致、冲突只含另一类型的原文明示证据。完整单元测试 222 项、浏览器回归 149 项、`make audit` 通过，日志为 `output/build-entry-types.log`、`output/check-entry-types.log`。本次未改查询界面，浏览器回归只确认重建后的数据未破坏现有行为。
@@ -270,20 +270,20 @@
 - 重建结果：属性 12 条、技能 36 条（每个规则代际 6／18），2014 属性检定规则 6 条；5etools-cn 对照 36/36 唯一对应，所用属性无分歧，另有 18 对 2014→2024 重印线索。数据库 `状态动作规则` 视图含其中 48 条。
 - 夹具测试新增 12 项：技能小标题与拒绝样例（无英文名的“其他力量检定”、不用检定写法的“载重”、括号里不是自身名称的“被动察觉”、他项属性写法、护甲标题下的“隐匿”）、定义表与用法表（无英文名的属性检定示例、混入无英文名行的表格）、属性标题配对与拒绝样例、检定写法各部分的种类、解析器作用域回归、5etools-cn 属性取值、技能表 schema、服务端查询与筛选、审计的引用证据位置。语料回归在两版玩家手册各一页上核对 6 项属性、18 项技能及其所用属性。浏览器回归新增“技能表按属性读、叠放两代际”。
 - 完整单元测试 251 项（跳过 1 项）、浏览器回归 150 项（`ANNA_E2E_PORT=18397`）、`make audit` 通过；日志为 `output/build-ability-check.log`、`output/unit-ability-check.log`、`output/browser-ability-check.log`、`output/audit-ability-check.log`（工作树 `ability-check-rules` 内，c1c6b7e 上重建）。
-- 实机观察（内置浏览器，8032 端口上的 `scripts/up.py`，重建后的数据）：`?type=skill` 标题“技能”，显示 18 行 · 36 个版本，列为名称、属性、来源、规则版本，首行运动、属性为力量；打开运动可见 PHB24 2024 与 PHB 2014 两个版本，版本对照 2、不同字段 0；Esc 关闭后焦点回到运动行，地址去掉 `entry`。375px 视口下 `f_ability=感知` 为 5 行 · 10 个版本（医药、察觉、求生、洞悉、驯兽），页面宽度 375 无横向滚动。检查后恢复桌面视口。
+- 实机观察（内置浏览器，8032 端口上的 `anna/server/app.py`，重建后的数据）：`?type=skill` 标题“技能”，显示 18 行 · 36 个版本，列为名称、属性、来源、规则版本，首行运动、属性为力量；打开运动可见 PHB24 2024 与 PHB 2014 两个版本，版本对照 2、不同字段 0；Esc 关闭后焦点回到运动行，地址去掉 `entry`。375px 视口下 `f_ability=感知` 为 5 行 · 10 个版本（医药、察觉、求生、洞悉、驯兽），页面宽度 375 无横向滚动。检查后恢复桌面视口。
 
 常规工作仍使用 `make check`。需要保留现有运行数据时，在项目根目录使用独立输出：
 
 ```sh
-.venv/bin/python scripts/build.py --output output/playwright/visual-data/extracted
-.venv/bin/python scripts/linked_book.py \
+.venv/bin/python -m anna.catalog.build --output output/playwright/visual-data/extracted
+.venv/bin/python -m anna.server.linked_book \
   --db output/playwright/visual-data/extracted/catalog.sqlite \
   --output output/playwright/visual-data/book
 make test-unit
 ANNA_E2E_DB="$PWD/output/playwright/visual-data/extracted/catalog.sqlite" \
 ANNA_E2E_BOOK="$PWD/output/playwright/visual-data/book" \
   npm run test:browser
-.venv/bin/python scripts/audit.py \
+.venv/bin/python -m anna.catalog.audit \
   --db output/playwright/visual-data/extracted/catalog.sqlite
 ```
 

@@ -4,14 +4,13 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import tempfile
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from knowledge import (build_knowledge, chain, Context, inspect, save, casting_condition,
+from anna.knowledge.repository import (build_knowledge, chain, Context, inspect, save, casting_condition,
                        validate_record, record_for, parse_access, branches)
-from review import revoke
-from review_store import load_events, append_event, locked, extraction_hash, canonical
+from anna.review.commands import revoke
+from anna.serialization import canonical
+from anna.review.store import load_events, append_event, locked, extraction_hash
 
 
 class KnowledgeTests(unittest.TestCase):
@@ -122,7 +121,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertFalse(chain(self.db,'feat')['options'])
 
     def test_audit_detects_export_and_projection_corruption(self):
-        from knowledge import audit_knowledge, knowledge_diff
+        from anna.knowledge.repository import audit_knowledge, knowledge_diff
         self.assertEqual(audit_knowledge(self.db,self.root)['errors'],[])
         self.assertEqual(knowledge_diff(self.db,self.db),[])
         self.db.execute("UPDATE knowledge_rule_links SET relation='wrong'")
@@ -205,7 +204,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(state['review_status'],'stale')
 
     def test_effect_index_audit_checks_scalar_fields_and_payload(self):
-        from knowledge import audit_knowledge
+        from anna.knowledge.repository import audit_knowledge
         self.assertEqual(audit_knowledge(self.db,self.root)['errors'],[])
         self.db.execute("UPDATE rule_effect_index SET delivery='automatic'")
         self.assertIn('rule_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
@@ -318,7 +317,7 @@ class KnowledgeTests(unittest.TestCase):
 
     def test_cumulative_queries_follow_the_same_sequence_target_and_usage_branch(self):
         from test_check_sequences import STONE
-        from effect_queries import audit_effect_index
+        from anna.knowledge.effects import audit_effect_index
         self.spell='测试法术 Test Spell\n'+STONE
         self.rules=[('save','豁免检定 Saving Throws\n定义。','豁免检定','Saving Throws','rule'),
                     ('duration','持续时间 Duration\n定义。','持续时间','Duration','rule'),
@@ -357,7 +356,7 @@ class KnowledgeTests(unittest.TestCase):
 
     def test_threshold_result_and_count_are_correlated_inside_one_predicate(self):
         from test_check_sequences import STONE
-        from effect_queries import build_effect_index
+        from anna.knowledge.effects import build_effect_index
         self.spell='测试法术 Test Spell\n'+STONE;self.rebuild()
         record=json.loads(self.db.execute("SELECT data FROM effective_knowledge WHERE subject_id='spell'").fetchone()[0])
         outcome=record['value']['effects'][7]

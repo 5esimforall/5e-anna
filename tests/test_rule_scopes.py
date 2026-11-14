@@ -1,13 +1,11 @@
 """Acquisition expressions and local check scope, including deliberate ambiguities."""
 from copy import deepcopy
 from pathlib import Path
-import sys
 import sqlite3
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from casting_extract import parse_access
-from rule_conditions import prerequisite_expression, bind_effects, validate_conditions
-from spell_effects import parse_spell
+from anna.knowledge.casting import parse_access
+from anna.knowledge.conditions import prerequisite_expression, bind_effects, validate_conditions
+from anna.knowledge.spells import parse_spell
 from test_casting import feature, mention
 
 TARGET='指定施法距离内一个你能看见的类人生物。'
@@ -75,7 +73,7 @@ class AcquisitionScopeTests(unittest.TestCase):
 
 class CheckScopeTests(unittest.TestCase):
     def test_a_hit_triggers_a_save_without_changing_the_save_mechanism(self):
-        from effect_queries import effect_rows
+        from anna.knowledge.effects import effect_rows
         body=('一道恶心的浅绿射线朝施法距离内一个生物射去。你对目标进行一次远程法术攻击。'
               '若命中，则目标受到2d8的毒素伤害且必须进行一次体质豁免，豁免失败则目标陷入中毒，该中毒效应持续至你的下一回合结束。')
         value=spell(body);self.assertFalse(value['unparsed'])
@@ -147,7 +145,7 @@ DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class CorpusScopeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from knowledge import Context
+        from anna.knowledge.repository import Context
         cls.db=sqlite3.connect(DB.resolve().as_uri()+'?mode=ro',uri=True);cls.context=Context(cls.db)
     @classmethod
     def tearDownClass(cls):cls.db.close()
@@ -157,7 +155,7 @@ class CorpusScopeTests(unittest.TestCase):
         self.assertEqual(len(entries),1,(name,generation,prefix));return entries[0]
 
     def test_equipment_and_class_acquisition_remain_distinct_along_the_path(self):
-        from knowledge import chain,record_for
+        from anna.knowledge.repository import chain,record_for
         cases=[('Boots of Levitation','5e','topics/城主指南/',True,'worn'),
                ('Ring of Jumping','5r','topics/城主指南2024/',True,'worn'),
                ('Ring of Water Walking','5r','topics/城主指南2024/',False,'worn'),
@@ -188,7 +186,7 @@ class CorpusScopeTests(unittest.TestCase):
         self.assertEqual(values[0]['components'],{'waived':['M']});self.assertNotIn('components',values[1])
 
     def test_expansion_named_prerequisite_retains_its_parenthetical_choice(self):
-        from knowledge import record_for
+        from anna.knowledge.repository import record_for
         entry=self.entry('Adept of the Black Robes','5e','topics/龙枪：龙后之影/')
         value=parse_access(entry,self.context.pages[entry['page_path']],self.context.mentions(entry))
         record=record_for(entry,'grant',value,self.context)
@@ -212,7 +210,7 @@ class CorpusScopeTests(unittest.TestCase):
             self.assertEqual(parse_spell(renamed,self.context.pages[entry['page_path']]),value)
 
     def test_background_reaches_ordinal_save_and_explicit_exception(self):
-        from knowledge import chain,casting_condition
+        from anna.knowledge.repository import chain,casting_condition
         entry=self.entry('Sleep','5r','topics/玩家手册2024/')
         root=next(e for e in self.context.entries.values() if e['name_zh']=='智者' and e['ruleset']=='5r')
         result=chain(self.db,root['id'],entry['id'],effect_id='effect_5')

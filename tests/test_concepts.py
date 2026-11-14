@@ -2,14 +2,12 @@ import json
 from pathlib import Path
 import re
 import sqlite3
-import sys
 import tempfile
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from concepts import Resolver,check_notation,format_kind,build_concepts,plain_syntax,style_profile,table_cell_names,term_scanner
-from html_extract import Document
-from entry_types import NO_TOC_PLACE
-from build import Build,parse_one
+from anna.catalog.concepts import Resolver,check_notation,format_kind,build_concepts,plain_syntax,style_profile,table_cell_names,term_scanner
+from anna.source.html import Document
+from anna.catalog.types import NO_TOC_PLACE
+from anna.catalog.build import Build,parse_one
 
 def entry(eid,name,path='topics/book/rules.htm',ruleset='5r',kind='rule',source='book'):
     return dict(id=eid,entity_id=eid,name=name,name_zh=name,name_en='',type=kind,page_path=path,ruleset=ruleset,source_ids=[source],start=0,title_end=0,end=100,anchors=[eid],is_primary=True)
@@ -38,7 +36,7 @@ class ConceptTests(unittest.TestCase):
         doc.close()
 
     def test_core_rule_children_keep_parent_generation_and_source_evidence(self):
-        from paths import WEB
+        from anna.paths import WEB
         build=Build(WEB)
         for path,ruleset,body in [
             ('topics/玩家手册/战斗/掩护.htm','5e','+2'),
@@ -232,7 +230,7 @@ class ConceptTests(unittest.TestCase):
                 self.assertTrue(cell[0]<=row['start']<row['end']<=cell[1])
                 self.assertEqual(row['evidence']['table']['headers'],['等级','职业特性'])
             self.assertFalse(any(r['text'] in {'子职特性','隐藏招式'} for r in rows))
-            from audit import audit_concepts
+            from anna.catalog.audit import audit_concepts
             self.assertEqual(audit_concepts(db,root)['errors'],[])
             doc.close();db.close()
 
@@ -249,7 +247,7 @@ class ConceptTests(unittest.TestCase):
         r=Resolver([a,context]);r.indexed.add('a')
         self.assertEqual(r.resolve('专注','concept',context['page_path'])['reason'],'core_registry')
     def test_style_profile_requires_complete_documented_selectors(self):
-        from paths import WEB
+        from anna.paths import WEB
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);(root/'topics').mkdir()
             self.assertIsNone(style_profile(root))
@@ -261,7 +259,7 @@ class ConceptTests(unittest.TestCase):
     def test_registry_outcomes_and_plain_mentions(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);(root/'topics/book').mkdir(parents=True)
-            from paths import WEB
+            from anna.paths import WEB
             (root/'topics/style.css').write_bytes((WEB/'topics/style.css').read_bytes())
             raws={'topics/book/rules.htm':'<h3 id="a">专注 Concentration</h3><p>定义</p>',
                   'topics/book/text.htm':'<link rel="stylesheet" href="../style.css"><body><p><u>专注</u>与未标记的专注；中文Concentration 与 XConcentration 和 ConcentrationX；<u>未知</u></p></body>',
@@ -279,7 +277,7 @@ class ConceptTests(unittest.TestCase):
             marked=next(r for r in rows if r['signal']=='format' and r['text']=='专注');self.assertEqual(marked['target_id'],'a')
             plain=next(r for r in rows if r['signal']=='plain' and r['text']=='专注');self.assertEqual(plain['status'],'review');self.assertIsNone(plain['target_id'])
             self.assertEqual([r['text'] for r in rows if r['signal']=='plain' and r['text'].lower()=='concentration'],['Concentration']);self.assertEqual(plain['candidates'],['a']);self.assertEqual(pages[plain['path']]['text'][plain['start']:plain['end']],'专注')
-            from audit import audit_concepts
+            from anna.catalog.audit import audit_concepts
             self.assertEqual(audit_concepts(db,root)['errors'],[])
             db.execute("UPDATE concept_observations SET target_id='a' WHERE status='review'")
             self.assertTrue(any('unresolved target' in e for e in audit_concepts(db,root)['errors']))
@@ -287,7 +285,7 @@ class ConceptTests(unittest.TestCase):
             self.assertIn('concept_observations.jsonl: IDs mismatch',audit_concepts(db,root)['errors'])
             db.close()
     def test_roles_evidence_unknown_format_and_navigation_outside_quick_directory(self):
-        from paths import WEB
+        from anna.paths import WEB
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);(root/'topics/book').mkdir(parents=True)
             (root/'topics/style.css').write_bytes((WEB/'topics/style.css').read_bytes())
@@ -322,7 +320,7 @@ class ConceptTests(unittest.TestCase):
             self.assertGreater(len(report['gaps']['marked_without_target']),0)
             self.assertFalse(db.execute('PRAGMA foreign_key_check').fetchall());db.close()
     def test_mastery_is_rule_not_unclassified(self):
-        from paths import WEB
+        from anna.paths import WEB
         path='topics/玩家手册2024/装备/精通词条.htm'
         result=parse_one((str(WEB),path,[],path,NO_TOC_PLACE,False))
         self.assertEqual(next(c for c in result['candidates'] if c['name'].startswith('横扫'))['type'],'rule')

@@ -12,10 +12,9 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-import up
-from up import validate_bundle,create_server
-from linked_book import build_book
+import anna.server.app as up
+from anna.server.app import validate_bundle,create_server
+from anna.server.linked_book import build_book
 import test_linked_book as fixtures
 
 class ServerTests(unittest.TestCase):
@@ -99,7 +98,7 @@ class ServerTests(unittest.TestCase):
 
     def test_obsolete_port_arguments_are_rejected(self):
         for argument in ('--anna-port', '--book-port'):
-            result=subprocess.run([sys.executable, 'scripts/up.py', argument, '0'],capture_output=True,text=True)
+            result=subprocess.run([sys.executable, '-m', 'anna.server.app', argument, '0'],capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0)
             self.assertIn('unrecognized arguments',result.stderr)
 
@@ -108,10 +107,10 @@ class ServerTests(unittest.TestCase):
             with self.subTest(signal=sig), tempfile.TemporaryDirectory() as td:
                 root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
                 build_book(source,db,book)
-                code="import sys; from pathlib import Path; import up; up.search.CACHE=Path(sys.argv.pop(1)); up.main()"
-                script=Path(__file__).resolve().parents[1]/'scripts'
+                code="import sys; from pathlib import Path; import anna.server.app as up; up.search.CACHE=Path(sys.argv.pop(1)); up.main()"
+                project=Path(__file__).resolve().parents[1]
                 with (root/'log').open('w+') as log:
-                    process=subprocess.Popen([sys.executable,'-c',code,str(root/'search.pkl'),'--source',str(source),'--db',str(db),'--book',str(book),'--port','0'],cwd=script,stdout=log,stderr=log)
+                    process=subprocess.Popen([sys.executable,'-c',code,str(root/'search.pkl'),'--source',str(source),'--db',str(db),'--book',str(book),'--port','0'],cwd=project,stdout=log,stderr=log)
                     try:
                         deadline=time.monotonic()+10
                         output=''

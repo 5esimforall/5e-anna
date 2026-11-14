@@ -7,15 +7,13 @@ import json
 from pathlib import Path
 import shutil
 import sqlite3
-import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-import datalog as d
-from datalog_sources import DatalogError, bind_sources, locate, read_json, within
-from html_extract import Document
-from datalog_report import render_report
+import anna.datalog.runtime as d
+from anna.datalog.sources import DatalogError, bind_sources, locate, read_json, within
+from anna.source.html import Document
+from anna.datalog.report import render_report
 
 LIBRARY = Path(__file__).resolve().parents[1] / 'rules/core'
 
@@ -105,7 +103,7 @@ class ContractTests(unittest.TestCase):
                 with d.output_directory(root, (target,)):pass
 
     def test_report_escapes_content_and_has_localized_navigation(self):
-        labels=read_json(d.PROJECT/'scripts/datalog_report_labels.json')
+        labels=read_json(d.PROJECT/'anna/datalog/labels.json')
         mapping={'rules':{},'sources':{},'fact_origins':{}}
         for lang in ('zh','en'):
             report=render_report({'counts':{},'snapshot':'<script>alert(1)</script>'},mapping,{},[],{},labels[lang],lang)

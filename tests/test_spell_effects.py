@@ -3,11 +3,9 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from spell_effects import parse_spell
-from rule_conditions import condition_terms, validate_conditions
+from anna.knowledge.spells import parse_spell
+from anna.knowledge.conditions import condition_terms, validate_conditions
 
 TARGET='一道蓝白色的冰冷光束朝施法距离内的一名生物射去。'
 ATTACK='对目标进行一次远程法术攻击。'
@@ -112,12 +110,12 @@ class EffectGrammarTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'type'):validate_conditions({'value':bad})
 
     def test_shared_attribute_threshold_needs_an_explicit_or(self):
-        from rule_conditions import prerequisite_expression
+        from anna.knowledge.conditions import prerequisite_expression
         self.assertEqual([c['ability'] for c in prerequisite_expression('智力、感知或魅力13+')['any']],['智力','感知','魅力'])
         self.assertIsNone(prerequisite_expression('智力、感知13+'))
 
     def test_repeated_check_outcomes_keep_repeat_timing_in_query_projection(self):
-        from effect_queries import effect_rows
+        from anna.knowledge.effects import effect_rows
         record={'id':'record','subject_id':'spell','kind':'procedure','status':'resolved',
                 'review_status':'unreviewed','value':parse(LAUGHTER)}
         rows=list(effect_rows([record]))
@@ -132,7 +130,7 @@ DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class CorpusEffectTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from knowledge import Context
+        from anna.knowledge.repository import Context
         cls.db=sqlite3.connect(DB.resolve().as_uri()+'?mode=ro',uri=True);cls.context=Context(cls.db)
     @classmethod
     def tearDownClass(cls):cls.db.close()
@@ -147,7 +145,7 @@ class CorpusEffectTests(unittest.TestCase):
                 self.assertEqual(parse_spell(renamed,self.context.pages[e['page_path']]),value)
 
     def test_acquisition_reaches_ongoing_use_and_scoped_exception(self):
-        from knowledge import chain,casting_condition
+        from anna.knowledge.repository import chain,casting_condition
         root=next(e for e in self.context.entries.values() if e['name_zh']=='智者' and e['ruleset']=='5r')
         witch=next(e for e in self.context.entries.values() if e.get('name_en')=='Witch Bolt' and e['ruleset']=='5r' and e['type']=='spell')
         result=chain(self.db,root['id'],witch['id']);record=next(r for r in result['records'] if r['subject_id']==witch['id'] and r['kind']=='procedure')

@@ -9,8 +9,7 @@ from unittest.mock import patch
 
 PROJECT = Path(__file__).resolve().parents[1]
 WORKSPACE = PROJECT.parent
-sys.path.insert(0, str(PROJECT / 'scripts'))
-import book_search as search
+import anna.source.search as search
 
 
 class WorkflowTests(unittest.TestCase):
@@ -59,15 +58,15 @@ class WorkflowTests(unittest.TestCase):
             result = self.make(WORKSPACE, '-n', command, 'WEB_DIR=custom mirror', 'ANNA_PORT=8123')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(f'WEB_DIR="{WORKSPACE / "custom mirror"}"', result.stdout)
-            self.assertIn('scripts/up.py', result.stdout)
+            self.assertIn('-m anna.server.app', result.stdout)
             self.assertIn('--port "8123"', result.stdout)
             self.assertNotIn('git pull', result.stdout)
             self.assertEqual('--watch' in result.stdout, command == 'upper')
 
     def test_paths_independent_of_cwd_and_environment_override(self):
-        code = 'import paths, build, inventory, book_search; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == inventory.WEB == book_search.WEB'
+        code = 'import anna.paths as paths, anna.catalog.build as build, anna.source.inventory as inventory, anna.source.search as book_search; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == inventory.WEB == book_search.WEB'
         with tempfile.TemporaryDirectory() as td:
-            env = dict(os.environ, PYTHONPATH=str(PROJECT / 'scripts'))
+            env = dict(os.environ, PYTHONPATH=str(PROJECT))
             env.pop('WEB_DIR', None)
             result = subprocess.run([sys.executable, '-c', code], cwd=td, env=env,
                                     text=True, capture_output=True, check=True)
@@ -149,11 +148,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('--rebuild', result.stdout)
 
     def test_removed_commands_are_gone(self):
-        # The query-only server is scripts/serve.py; make up is the single run entry.
-        for command in ('serve','open','anna'):
+        # make up is the sole HTTP service entry; the query module has no standalone server.
+        for command in ('serve','open'):
             result=self.make(PROJECT,'-n',command)
             self.assertNotEqual(result.returncode,0)
         self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())
+        self.assertEqual({p.name for p in (PROJECT/'scripts').glob('*.py')},{'build_icons.py'})
+        from anna.server import query
+        self.assertFalse(hasattr(query,'main'))
 
 
 class SearchCacheTests(unittest.TestCase):

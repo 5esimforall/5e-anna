@@ -4,15 +4,13 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from migration import knowledge_dependencies, report, review_dependencies
-from migration_baseline import activate, active, capture, connect, verify, materialize, decisions_path, objects
-from source_correspondence import Correspondence, UnmappedEvidence
-from review_store import canonical, digest
+from anna.snapshots.workflow import knowledge_dependencies, report, review_dependencies
+from anna.snapshots.baseline import activate, active, capture, connect, verify, materialize, decisions_path, objects
+from anna.snapshots.correspondence import Correspondence, UnmappedEvidence
+from anna.serialization import canonical, digest
 
 
 class Catalog:
@@ -197,7 +195,7 @@ class MigrationTests(unittest.TestCase):
         self.assertNotIn('old-table', alignment.ids)
 
     def test_valid_review_is_previewed_but_stale_review_is_not_revived(self):
-        from knowledge import Context, binding
+        from anna.knowledge.repository import Context, binding
         old = self.catalog('old')
         new = self.catalog('new', path='topics/moved.htm', suffix='-new')
         basis = Context(old.db).basis(old.record)
@@ -257,7 +255,7 @@ class CompactSnapshotTests(unittest.TestCase):
         self.assertEqual(active(pointer), second.resolve())
 
     def test_gate_rejects_uncovered_and_accepts_evidenced_disposition(self):
-        from migration_gate import assess, dispose, dispositions, read_journal
+        from anna.snapshots.gate import assess, dispose, dispositions, read_journal
         c, baseline, pointer = self.bootstrap()
         c.db.execute("UPDATE facts SET value='changed observation'"); c.db.commit()
         candidate = self.candidate(c)
@@ -279,7 +277,7 @@ class CompactSnapshotTests(unittest.TestCase):
         self.assertEqual(c.log.read_bytes(), b'')
 
     def test_stale_assessment_parent_race_and_bootstrap_bypass_are_rejected(self):
-        from migration_gate import assess, append_event
+        from anna.snapshots.gate import assess, append_event
         c, baseline, pointer = self.bootstrap()
         a = self.candidate(c, 'a'); b = self.candidate(c, 'b')
         with self.assertRaisesRegex(ValueError, 'Bootstrap'):
@@ -310,7 +308,7 @@ class CompactSnapshotTests(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT * FROM ' + name).fetchall(), c.db.execute('SELECT * FROM ' + name).fetchall())
 
     def test_parent_review_history_cannot_be_dropped_before_capture(self):
-        from knowledge import Context, binding
+        from anna.knowledge.repository import Context, binding
         c = self.catalog('old')
         basis = Context(c.db).basis(c.record)
         event = {'schema': 1, 'id': 'historical', 'created_at': 'now', 'operation': 'knowledge_accept',
@@ -335,7 +333,7 @@ class CompactSnapshotTests(unittest.TestCase):
         self.assertEqual(checks[0]['status'], 'unchanged')
 
     def test_projection_encoding_is_retained_and_changed_recipe_fails_closed(self):
-        from chain_reading import build_rule_index
+        from anna.knowledge.reading import build_rule_index
         from unittest.mock import patch
         c = self.catalog('old')
         c.db.execute('CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY,subject_id TEXT,kind TEXT,status TEXT,review_status TEXT,data TEXT)')
@@ -349,12 +347,12 @@ class CompactSnapshotTests(unittest.TestCase):
         self.assertIn('encoding_overrides', verify(root)['tables']['knowledge_rule_links'])
         with closing(connect(materialize(root, self.root / 'cache'))) as db:
             self.assertEqual(db.execute('SELECT * FROM knowledge_rule_links').fetchall(), c.db.execute('SELECT * FROM knowledge_rule_links').fetchall())
-        with patch('snapshot_store.projection_rows', return_value=iter(())):
+        with patch('anna.snapshots.storage.projection_rows', return_value=iter(())):
             with self.assertRaisesRegex(ValueError, 'Restored table mismatch'):
                 materialize(root, self.root / 'changed-recipe-cache')
 
     def test_exports_only_discard_proven_duplicates(self):
-        from migration_baseline import export_snapshot
+        from anna.snapshots.baseline import export_snapshot
         c = self.catalog('old')
         (c.database.parent / 'entries.jsonl').write_text(canonical(c.entry) + '\n')
         (c.database.parent / 'retired.jsonl').write_text('{"historical":"unresolved"}\n')

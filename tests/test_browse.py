@@ -3,11 +3,9 @@ import json
 import re
 from pathlib import Path
 import sqlite3
-import sys
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-import browse
-from serve import DB,connect,query,csv_export,detail,facets
+import anna.catalog.views as browse
+from anna.server.query import DB,connect,query,csv_export,detail,facets
 
 class NormalizeTests(unittest.TestCase):
     def test_level_alias(self):
@@ -60,7 +58,7 @@ class NormalizeTests(unittest.TestCase):
         names=['10级：甲','2级：乙','1 平方码丝绸','１级：全角','Ｂeta','alpha']
         self.assertEqual(sorted(names,key=browse.name_key),['1 平方码丝绸','１级：全角','2级：乙','10级：甲','alpha','Ｂeta'])
         self.assertIsNone(browse.name_key(''))
-        from serve import TYPES
+        from anna.server.query import TYPES
         # Every entry type has a place in the reading order, so mixed results never fall back to code order.
         self.assertEqual(set(browse.TYPE_ORDER),set(TYPES))
         self.assertEqual(browse.schema_for([])['default_sort'],'type')

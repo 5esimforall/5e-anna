@@ -19,3 +19,24 @@ make up      # 在 8000 启动查询与阅读，Ctrl-C 停止
 - 镜像缺失时自动下载。已有镜像不会在启动或构建时更新：先运行 `make update` 拉取原文，再运行 `make build` 重建数据。
 - 对照镜像位于同级的 `5etools-cn/`，取自 [5etools-cn](https://github.com/tjliqy/5etools-cn)，只检出 `data/`。构建时用它核对条目身份、字段与重印关系，结论只作旁证，见[来源对照](USAGE.md#来源对照5etools-cn)；它与原文一同由 `make clone` 下载、`make update` 更新。
 - `Makefile` 是工作流程的唯一实现。上层 DnD 目录的 `Makefile` 只转调本项目，同一组命令在两层都可使用。
+
+## 源码组织
+
+Python 实现集中在 `anna/`，用包导入表达依赖；`scripts/` 只保存离线开发维护工具。这样规则机制、来源适配与服务代码可以被测试和其他模块复用，不必把脚本目录加入 `sys.path`。
+
+| 位置 | 职责 |
+| --- | --- |
+| `anna/source/` | 原文解码、HTML 与表格结构、来源名录、盘点及全文搜索 |
+| `anna/catalog/` | 条目分类与构建、概念和引用、查询视图、命令行查询及审计 |
+| `anna/knowledge/` | 规则陈述模型、条件与数值、施法／特性／等级提取、有效知识与沿链阅读 |
+| `anna/review/` | 审核日志、候选检索与审核命令 |
+| `anna/compare/` | 5etools 对照与规则链语义核对 |
+| `anna/snapshots/` | 紧凑快照、恢复、来源对应、迁移比较及启用门禁 |
+| `anna/datalog/` | Soufflé 调用、来源绑定、证明与报告；本地化资源随报告模块维护 |
+| `anna/server/` | 统一 HTTP 服务、查询处理、阅读模型、原文排版与链接版生成 |
+| `anna/paths.py`、`anna/serialization.py` | 项目路径、确定性序列化与导出格式 |
+| `rules/` | 有证据的规则库、关系 schema 和场景数据；与执行机制分开 |
+| `scripts/` | 品牌图标等离线维护脚本，不承载应用入口或领域模块 |
+| `web/`、`tests/` | 前端资源与项目测试 |
+
+日常入口仍是 Makefile。需要直接传递参数时，在仓库根目录用 `python -m anna.…` 运行对应命令，具体示例见 [USAGE.md](USAGE.md)。旧 `scripts/*.py` 应用入口已移除，不保留转发层；HTTP 服务只有 `make up`／`make upper` 对应的统一服务入口。命令行查询仍保留独立的只读数据分析用途。

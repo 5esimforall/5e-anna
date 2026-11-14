@@ -2,12 +2,10 @@
 from copy import deepcopy
 from pathlib import Path
 import sqlite3
-import sys
 import unittest
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from spell_effects import parse_spell
-from rule_conditions import validate_conditions, local_references
-from effect_queries import effect_rows
+from anna.knowledge.spells import parse_spell
+from anna.knowledge.conditions import validate_conditions, local_references
+from anna.knowledge.effects import effect_rows
 from test_casting import feature
 
 STONE=('你尝试将施法距离内一名你可见的生物变为石头。目标必须进行一次体质豁免。'
@@ -114,7 +112,7 @@ DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class CorpusSequenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from knowledge import Context
+        from anna.knowledge.repository import Context
         cls.db=sqlite3.connect(DB.resolve().as_uri()+'?mode=ro',uri=True);cls.ctx=Context(cls.db)
     @classmethod
     def tearDownClass(cls):cls.db.close()
@@ -132,7 +130,7 @@ class CorpusSequenceTests(unittest.TestCase):
             self.assertEqual(parse_spell({**e,'name':'Renamed','name_en':'Renamed','name_zh':'改名'},body),value)
 
     def test_cumulative_spell_keeps_local_rules_and_unknown_legacy_clauses(self):
-        from knowledge import record_for
+        from anna.knowledge.repository import record_for
         for generation in ('5e','5r'):
             e=next(e for e in self.ctx.entries.values() if e.get('name_en')=='Flesh to Stone' and e['ruleset']==generation)
             v=parse_spell(e,self.ctx.pages[e['page_path']]);r=record_for(e,'procedure',v,self.ctx)

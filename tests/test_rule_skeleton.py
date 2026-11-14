@@ -3,16 +3,15 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sqlite3
-import sys
 import unittest
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
-from feature_effects import parse_feature
-from rule_model import SCHEMA, rule_value, validate_structure
-from rule_conditions import validate_conditions
-from rule_values import quantity_expression
-from knowledge import Context, record_for, chain, casting_condition, inspect, save, audit_knowledge, validate_record
-from review_store import canonical, digest, append_event, load_events, review_record_id
-from review import revoke
+from anna.knowledge.features import parse_feature
+from anna.knowledge.model import SCHEMA, rule_value, validate_structure
+from anna.knowledge.conditions import validate_conditions
+from anna.knowledge.values import quantity_expression
+from anna.knowledge.repository import Context, record_for, chain, casting_condition, inspect, save, audit_knowledge, validate_record
+from anna.serialization import canonical, digest
+from anna.review.store import append_event, load_events, review_record_id
+from anna.review.commands import revoke
 import test_knowledge
 
 HEAL = '你可以在自己回合内用一个附赠动作恢复生命值，其总值为1d10＋你的战士职业等级。'

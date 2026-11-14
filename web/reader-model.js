@@ -40,8 +40,6 @@ const annaReaderModel = (() => {
     return value && Number.isFinite(value.x) && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0;
   }
   function remembered(value, snapshot, model) {
-    // Normalize the previous per-document position once; subsequent saves use version 2.
-    if (value?.version === 1) value = {...value,version:2,root:value.node || model.pageNodes.get(value.page)?.[0]?.id || ''};
     if (value?.version !== 2 || value.snapshot !== snapshot || typeof value.page !== 'string' ||
         !value.page.startsWith('topics/') || value.page.split('/').some(p => p === '..' || p === '.') ||
         typeof value.root !== 'string' || typeof value.node !== 'string' || !validPosition(value.position)) return null;

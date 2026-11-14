@@ -27,7 +27,7 @@ class PackageLayoutTests(unittest.TestCase):
                     if isinstance(node,ast.ImportFrom) and node.level==0:
                         self.assertNotIn(node.module,{'build','paths','review_store','html_extract','serve'})
         self.assertEqual(output.getvalue(),'')
-        self.assertEqual(sorted(p.name for p in (PROJECT/'scripts').glob('*.py')),['build_icons.py'])
+        self.assertEqual(sorted(p.name for p in (PROJECT/'scripts').glob('*.py')),['build_icons.py','clean.py'])
 
     def test_module_commands_expose_help(self):
         commands=('catalog.build','catalog.audit','catalog.query','source.search',
@@ -40,6 +40,14 @@ class PackageLayoutTests(unittest.TestCase):
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertIn('usage:',result.stdout)
                 self.assertNotIn('RuntimeWarning',result.stderr)
+
+    def test_retired_snapshot_conversion_command_is_unavailable(self):
+        result=subprocess.run([sys.executable,'-m','anna.snapshots.workflow','convert','unused'],
+                              cwd=PROJECT,text=True,capture_output=True)
+        self.assertEqual(result.returncode,2)
+        self.assertIn('invalid choice',result.stderr)
+        from anna.snapshots import baseline
+        self.assertFalse(hasattr(baseline,'convert'))
 
     def test_fingerprints_follow_package_not_maintenance_scripts(self):
         self.assertIn('source/pages.py',store.EXTRACTION_MODULES)

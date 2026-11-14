@@ -16,7 +16,7 @@ from anna.knowledge.model import SCHEMA, KINDS, rule_value, validate_structure
 from anna.catalog.concepts import Resolver, aliases
 from anna.source.html import key
 from anna.serialization import canonical, digest
-from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events, append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS, review_record_id
+from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events, append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS
 from anna.paths import PROJECT
 from anna.knowledge.conditions import ABILITIES, CLASSES, validate_conditions, condition_terms, conjunction
 from anna.knowledge.spells import parse_spell
@@ -374,14 +374,13 @@ def replay(records, events, context):
     states=lifecycle(events);results={};claims=defaultdict(list);by_id={r['id']:r for r in records}
     for event in events:
         if not is_knowledge(event):continue
-        rid=review_record_id(event);record=by_id.get(rid)
+        rid=event['binding']['knowledge_id'];record=by_id.get(rid)
         result={'event':event,'status':states[event['id']], 'knowledge_id':rid}
         if states[event['id']]=='active':
             current=context.basis(record) if record else None
             valid=record is not None and event['binding']==binding(record) and event['basis_sha256']==digest(current)
             result.update(status='applied' if valid else 'stale' if record else 'missing',
                           basis_sha256=digest(current) if current else None)
-            if rid!=event['binding']['knowledge_id']:result['reason']='knowledge_schema_changed'
             if record:claims[rid].append((event,valid))
         results[event['id']]=result
     effective=[]
@@ -396,7 +395,7 @@ def replay(records, events, context):
             if not valid:row.update(status='review',review_status='stale')
             elif e['operation']=='knowledge_reject':row.update(status='rejected',review_status='applied')
             else:row['review_status']='applied'
-        elif any(review_record_id(e)==record['id'] and states[e['id']]=='revoked' for e in events if is_knowledge(e)):
+        elif any(e['binding']['knowledge_id']==record['id'] and states[e['id']]=='revoked' for e in events if is_knowledge(e)):
             row['review_status']='revoked'
         row['decision_ids']=[e['id'] for e,_ in choices]
         effective.append(row)
@@ -637,7 +636,7 @@ def save(db,path,rid,operation,expected_basis,reviewer,reason,supersedes=None):
         require_appendable(db,path);view=inspect(db,rid)
         if view['basis_sha256']!=expected_basis:raise ValueError('Knowledge basis changed; inspect again')
         events,log_hash=load_events(path);states=lifecycle(events)
-        active=[e['id'] for e in events if is_knowledge(e) and review_record_id(e)==rid and states[e['id']]=='active']
+        active=[e['id'] for e in events if is_knowledge(e) and e['binding']['knowledge_id']==rid and states[e['id']]=='active']
         if active!=([supersedes] if supersedes else []):raise ValueError('Supersede the active decision or revoke competing decisions')
         return append_event(path,{'operation':operation,'binding':binding(view['observation']),
             'basis':view['basis'],'basis_sha256':expected_basis,'reviewer':reviewer.strip(),'reason':reason.strip(),'supersedes':supersedes},log_hash)

@@ -10,7 +10,7 @@ from anna.knowledge.conditions import validate_conditions
 from anna.knowledge.values import quantity_expression
 from anna.knowledge.repository import Context, record_for, chain, casting_condition, inspect, save, audit_knowledge, validate_record
 from anna.serialization import canonical, digest
-from anna.review.store import append_event, load_events, review_record_id
+from anna.review.store import append_event, load_events
 from anna.review.commands import revoke
 import test_knowledge
 
@@ -88,18 +88,6 @@ class SkeletonSyntaxTests(unittest.TestCase):
         broken={'schema':SCHEMA,'kind':'procedure','value':{**value,'casting':{}}}
         with self.assertRaisesRegex(ValueError,'common rule'):validate_structure(broken)
 
-    def test_legacy_migration_only_maps_verified_schema_one_identities(self):
-        for previous,current in [('spell_access','grant'),('feat_access','grant'),('spell_effect','procedure')]:
-            with self.subTest(previous=previous):
-                old_id='knowledge_'+digest(['owner',previous])[:24]
-                event={'basis':{'schema':1},'binding':{'subject_id':'owner','kind':previous,'knowledge_id':old_id}}
-                self.assertEqual(review_record_id(event),'knowledge_'+digest(['owner',current])[:24])
-                wrong_subject=deepcopy(event);wrong_subject['binding']['subject_id']='other'
-                self.assertEqual(review_record_id(wrong_subject),old_id)
-                wrong_id=deepcopy(event);wrong_id['binding']['knowledge_id']='unrelated'
-                self.assertEqual(review_record_id(wrong_id),'unrelated')
-                wrong_schema=deepcopy(event);wrong_schema['basis']['schema']=2
-                self.assertEqual(review_record_id(wrong_schema),old_id)
 
 
 class SkeletonConsumerTests(unittest.TestCase):
@@ -191,29 +179,20 @@ class SkeletonConsumerTests(unittest.TestCase):
         self.assertEqual(self.procedure('dodge')['status'],'partial')
         self.assertFalse(self.ids({'query_subject':'entry','effect':'modifier'}))
 
-    def test_legacy_review_is_reopened_not_dropped_or_silently_reapproved(self):
-        row=self.procedure('spell');rid=row['id']
+
+    def test_old_knowledge_basis_is_rejected_without_appending_or_remapping(self):
+        row=self.procedure('spell')
         old_id='knowledge_'+digest(['spell','spell_effect'])[:24]
         basis={'schema':1,'record':{'id':old_id,'kind':'spell_effect','schema':1},'definitions':{},'sources':{}}
+        before=self.fx.log.read_bytes() if self.fx.log.exists() else b''
         _,version=load_events(self.fx.log)
-        old=append_event(self.fx.log,{'operation':'knowledge_accept','binding':{'knowledge_id':old_id,
-            'subject_id':'spell','kind':'spell_effect',**row['evidence']},'basis':basis,'basis_sha256':digest(basis),
-            'reviewer':'fixture','reason':'v1 approval','supersedes':None},version)
+        with self.assertRaisesRegex(ValueError,'Unsupported review basis schema'):
+            append_event(self.fx.log,{'operation':'knowledge_accept','binding':{'knowledge_id':old_id,
+                'subject_id':'spell','kind':'spell_effect',**row['evidence']},'basis':basis,'basis_sha256':digest(basis),
+                'reviewer':'fixture','reason':'retired approval'},version)
+        self.assertEqual(self.fx.log.read_bytes() if self.fx.log.exists() else b'',before)
         self.fx.rebuild()
-        self.assertEqual(self.procedure('spell')['review_status'],'stale')
-        decision=json.loads(self.fx.db.execute('SELECT data FROM knowledge_decisions WHERE id=?',(old['id'],)).fetchone()[0])
-        self.assertEqual(decision['knowledge_id'],rid)
-        self.assertEqual(decision['reason'],'knowledge_schema_changed')
-        self.assertEqual(decision['event']['binding']['knowledge_id'],old_id)
-        self.assertFalse(self.ids({'query_subject':'spell','effect':'healing'}))
-        current=inspect(self.fx.db,rid)
-        replacement=save(self.fx.db,self.fx.log,rid,'knowledge_accept',current['basis_sha256'],'fixture','v2 rechecked',old['id'])
-        self.fx.rebuild()
-        self.assertEqual(self.procedure('spell')['review_status'],'applied')
-        self.assertEqual(self.ids({'query_subject':'spell','effect':'healing'}),{'spell'})
-        self.assertEqual(len(load_events(self.fx.log)[0]),2)
-        revoke(self.fx.log,replacement['id'],'fixture','undo');self.fx.rebuild()
-        self.assertEqual(self.procedure('spell')['review_status'],'revoked')
+        self.assertEqual(self.procedure('spell')['review_status'],'unreviewed')
 
 
 DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'

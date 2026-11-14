@@ -839,7 +839,7 @@ async function init(){
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');
     // Category views became type filters; an old view link opens on all entries with its other conditions.
-    params.delete('view');readTerms();
+    readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:(params.get('tab')==='chain'?'chain':'body'));

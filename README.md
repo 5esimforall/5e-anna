@@ -18,7 +18,7 @@ make up      # 在 8000 启动查询与阅读，Ctrl-C 停止
 - 原文镜像位于同级的 `5echm-web/`，是独立的 Git 仓库，也供其他冒险项目引用；anna 只读取，不修改其内容。
 - 镜像缺失时自动下载。已有镜像不会在启动或构建时更新：先运行 `make update` 拉取原文，再运行 `make build` 重建数据。
 - 对照镜像位于同级的 `5etools-cn/`，取自 [5etools-cn](https://github.com/tjliqy/5etools-cn)，只检出 `data/`。构建时用它核对条目身份、字段与重印关系，结论只作旁证，见[来源对照](USAGE.md#来源对照5etools-cn)；它与原文一同由 `make clone` 下载、`make update` 更新。
-- `Makefile` 是工作流程的唯一实现。上层 DnD 目录的 `Makefile` 只转调本项目，同一组命令在两层都可使用。
+- `Makefile` 是工作流程的唯一实现。上层 DnD 目录的 `Makefile` 只转调本项目，上层提供常用命令入口，完整命令在本项目中执行。
 
 ## 源码组织
 
@@ -36,7 +36,7 @@ Python 实现集中在 `anna/`，用包导入表达依赖；`scripts/` 只保存
 | `anna/server/` | 统一 HTTP 服务、查询处理、阅读模型、原文排版与链接版生成 |
 | `anna/paths.py`、`anna/serialization.py` | 项目路径、确定性序列化与导出格式 |
 | `rules/` | 有证据的规则库、关系 schema 和场景数据；与执行机制分开 |
-| `scripts/` | 品牌图标等离线维护脚本，不承载应用入口或领域模块 |
+| `scripts/` | 图标导出、生成产物清理等离线维护脚本，不承载应用入口或领域模块 |
 | `web/`、`tests/` | 前端资源与项目测试 |
 
 日常入口仍是 Makefile。需要直接传递参数时，在仓库根目录用 `python -m anna.…` 运行对应命令，具体示例见 [USAGE.md](USAGE.md)。旧 `scripts/*.py` 应用入口已移除，不保留转发层；HTTP 服务只有 `make up`／`make upper` 对应的统一服务入口。命令行查询仍保留独立的只读数据分析用途。

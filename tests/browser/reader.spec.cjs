@@ -280,7 +280,7 @@ test('source reference navigation has one history entry and restores scroll on b
 });
 
 // Stella's places live in the shared workspace, newest first.
-const workspaceKey='anna.workspace', legacyKey='anna.bookPosition';
+const workspaceKey='anna.workspace';
 async function latestPlace(page){return page.evaluate(key=>JSON.parse(localStorage.getItem(key))?.book[0],workspaceKey);}
 test('closing and reopening the reader resumes its page, directory entry and scroll',async({page,context})=>{
   const path='topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm';
@@ -327,23 +327,17 @@ test('invalid, outdated or foreign remembered places fall back to the default pa
   }
 });
 
-test('the single saved position of earlier versions becomes the first remembered place once',async({page})=>{
+test('retired single-position storage is ignored and version one positions are rejected',async({page})=>{
   await page.goto(anna);
-  const path='topics/玩家手册2024/法术详述/1环.htm';
-  const legacy={version:1,snapshot:meta.snapshot,page:path,node:'',position:{x:0,y:900}};
-  for(const value of ['{',JSON.stringify({...legacy,snapshot:'old'}),JSON.stringify({...legacy,version:3}),JSON.stringify({...legacy,position:{x:0,y:-1}})]){
-    await page.evaluate(({key,value})=>{localStorage.clear();localStorage.setItem(key,value);},{key:legacyKey,value});
-    await visit(page);
-    expect(content(page).url()).toContain(encodeURI(meta.default_page));
-    expect(await page.evaluate(key=>localStorage.getItem(key),legacyKey)).toBeNull();
-    await page.goto(anna);
-  }
-  await page.evaluate(({key,value})=>{localStorage.clear();localStorage.setItem(key,value);},{key:legacyKey,value:JSON.stringify(legacy)});
+  const value={version:1,snapshot:meta.snapshot,page:'topics/玩家手册2024/法术详述/1环.htm',node:'',position:{x:0,y:900}};
+  const raw=JSON.stringify(value);
+  await page.evaluate(raw=>localStorage.setItem('anna.bookPosition',raw),raw);
   await visit(page);
-  expect(new URL(page.url()).searchParams.get('page')).toBe(path);
-  await expect.poll(()=>readingPosition(page)).toBe(900);
-  expect(await page.evaluate(key=>localStorage.getItem(key),legacyKey)).toBeNull();
-  expect((await latestPlace(page)).page).toBe(path);
+  expect(content(page).url()).toContain(encodeURI(meta.default_page));
+  await expect.poll(()=>readingPosition(page)).toBe(0);
+  expect(await page.evaluate(()=>localStorage.getItem('anna.bookPosition'))).toBe(raw);
+  const model=require('../../web/reader-model.js');
+  expect(model.remembered(value,meta.snapshot,model.index(meta.nodes))).toBeNull();
 });
 
 test('failed navigation does not replace the last successfully read position',async({page,context})=>{

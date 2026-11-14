@@ -13,7 +13,7 @@ BASELINE ?=
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status index clean build baseline migration inventory test audit check up upper linked test-unit test-browser browser-setup datalog
+.PHONY: usage clone update status index clean build baseline migration inventory test audit check up upper linked test-unit test-browser browser-setup datalog icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -66,16 +66,12 @@ index: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.search --rebuild
 
 clean:
-	@if [ -e "$(WEB_PATH)" ]; then \
-		if [ "$(WEB_PATH)" = "$(CURDIR)" ] || [ "$(WEB_PATH)" = "$(abspath ..)" ] || [ ! -d "$(WEB_PATH)/.git" ] || [ ! -d "$(WEB_PATH)/topics" ]; then \
-			echo "Refusing to delete: target must be a standalone source Git mirror" >&2; exit 1; \
-		fi; \
-		rm -rf -- "$(WEB_PATH)" || exit 1; \
-	fi
-	@rm -f .cache/5echm-search.pkl
-	@echo "Deleted $(WEB_PATH) and the search cache; run make clone to download again"
+	@python3 scripts/clean.py
 
-build: clone
+icons:
+	@"$(PYTHON)" scripts/build_icons.py
+
+build: clone icons
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build --5etools "$(5ETOOLS_PATH)"
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
 

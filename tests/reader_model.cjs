@@ -22,5 +22,5 @@ for(const change of [{version:3},{snapshot:'old'},{root:'a'},{node:'other_alias'
   {position:{x:0,y:-1}},{position:{x:0,y:NaN}},{position:{x:Infinity,y:0}},{position:{x:0,y:'900'}},{node:null}])
   assert.equal(model.remembered({...valid,...change},'snapshot',index),null,JSON.stringify(change));
 const old={version:1,snapshot:'snapshot',page:'topics/b.htm',node:'alias',position:{x:0,y:900}};
-assert.deepEqual(model.remembered(old,'snapshot',index),{...old,version:2,root:'alias'});
+assert.equal(model.remembered(old,'snapshot',index),null);
 console.log('reader scope and position model passed');

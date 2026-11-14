@@ -59,8 +59,6 @@ def assess(root, output=None):
     from anna.snapshots.workflow import report
     root = Path(root).resolve()
     manifest = verify(root)
-    if manifest['schema'] != SCHEMA:
-        raise ValueError('Legacy archives are read-only; convert before activation')
     parent = parent_path(root, manifest)
     old = verify(parent) if parent else None
     if old and old['id'] != manifest['parent']['id']:
@@ -98,19 +96,19 @@ def assess(root, output=None):
                     if previous.get(name) != current.get(name):
                         add(group, {'name': name, 'before': previous.get(name), 'after': current.get(name)})
         for group in ('source_files', 'counterpart_files'):
-            previous = {n: r['sha256'] if isinstance(r, dict) else r for n, r in old[group].items()}
+            previous = {n: r['sha256'] for n, r in old[group].items()}
             current = {n: r['sha256'] for n, r in manifest[group].items()}
             for name in sorted(previous.keys() | current.keys()):
                 if previous.get(name) != current.get(name):
                     add(group, {'path': name, 'before': previous.get(name), 'after': current.get(name)})
         # Export duplication can disappear only with a proven all-values recipe.
-        before_exports = {n: v['original_sha256'] if isinstance(v, dict) else v for n, v in old['exports'].items()}
+        before_exports = {n: v['original_sha256'] for n, v in old['exports'].items()}
         after_exports = {n: v['original_sha256'] for n, v in manifest['exports'].items()}
         for name in sorted(before_exports.keys() | after_exports.keys()):
             if before_exports.get(name) != after_exports.get(name):
                 add('export_artifact', {'path': name, 'before': before_exports.get(name), 'after': after_exports.get(name)})
         # Saved pending events and non-database history cannot hide behind projection equality.
-        before_log = old['review_log']['sha256'] if old['schema'] == SCHEMA else old['files']['decisions.jsonl']['sha256']
+        before_log = old['review_log']['sha256']
         if before_log != manifest['review_log']['sha256']:
             add('review_log', {'before': before_log, 'after': manifest['review_log']['sha256']})
     result = {'schema': 1, 'policy': POLICY, 'parent_id': old['id'] if old else None,
@@ -124,10 +122,7 @@ def assess(root, output=None):
 def evidence_ids(root):
     manifest = verify(root)
     result = {manifest['id']}
-    if manifest['schema'] == SCHEMA:
-        result.update(r['sha256'] for r in object_refs(manifest))
-    else:
-        result.update(r['sha256'] for r in manifest['files'].values())
+    result.update(r['sha256'] for r in object_refs(manifest))
     return result
 
 
@@ -179,8 +174,6 @@ def promote(root, pointer, *, reviewer, reason, bootstrap=False):
     # Keep the compare-and-swap and the disposition check in one locked interval.
     with locked(pointer.parent / '.promotion.lock'), locked(root / '.dispositions.lock'):
         manifest = verify(root)
-        if manifest['schema'] != SCHEMA:
-            raise ValueError('Legacy archives are read-only; convert before activation')
         current = active(pointer)
         journal = pointer.parent / 'promotions.jsonl'
         history = read_journal(journal)

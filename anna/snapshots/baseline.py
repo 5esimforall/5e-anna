@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import sqlite3
 import tempfile
-import zipfile
 
 from anna.snapshots.storage import Objects, export_bytes, export_recipe, restore_tables, save_tables
 
@@ -85,24 +84,14 @@ def object_refs(manifest):
 def verify(root):
     root = Path(root).resolve()
     manifest = json.loads((root / 'manifest.json').read_text())
-    if manifest.get('schema') not in {1, SCHEMA} or manifest.get('id') != 'baseline_' + digest({k: v for k, v in manifest.items() if k != 'id'}):
+    if manifest.get('schema') != SCHEMA or manifest.get('id') != 'baseline_' + digest({k: v for k, v in manifest.items() if k != 'id'}):
         raise ValueError('Baseline manifest is invalid or changed')
-    if manifest['schema'] == 1:
-        # Read-only compatibility for the first full archive; never write or promote it.
-        required = {'catalog.sqlite', 'decisions.jsonl', 'source.zip', 'exports.zip'}
-        if not required <= manifest['files'].keys():
-            raise ValueError('Legacy baseline is missing required artifacts')
-        for name, info in manifest['files'].items():
-            p = safe_file(root, name)
-            if not p.is_file() or p.stat().st_size != info['bytes'] or fingerprint(p) != info['sha256']:
-                raise ValueError('Baseline artifact is missing or changed: ' + name)
-    else:
-        store = objects(root)
-        seen = set()
-        for ref in object_refs(manifest):
-            if (ref['sha256'], ref['bytes']) not in seen:
-                store.get(ref)
-                seen.add((ref['sha256'], ref['bytes']))
+    store = objects(root)
+    seen = set()
+    for ref in object_refs(manifest):
+        if (ref['sha256'], ref['bytes']) not in seen:
+            store.get(ref)
+            seen.add((ref['sha256'], ref['bytes']))
     return manifest
 
 
@@ -111,7 +100,7 @@ def active(pointer=ACTIVE):
     if not pointer.exists():
         return None
     value = json.loads(pointer.read_text())
-    if value.get('schema') not in {1, SCHEMA}:
+    if value.get('schema') != SCHEMA:
         raise ValueError('Unknown active baseline pointer schema')
     root = (pointer.parent / value['path']).resolve()
     if verify(root)['id'] != value['id']:
@@ -149,7 +138,7 @@ def save_snapshot(db, output, source_files, counterpart_files, review_log, expor
         descriptors = tables(db)
         built = snapshot(db)
         events = [json.loads(line) for line in review_log.splitlines() if line.strip()]
-        prefix = review_log[:built['bytes']] if 'bytes' in built else b''.join(review_log.splitlines(keepends=True)[:built['events']])
+        prefix = review_log[:built['bytes']]
         if sha256(prefix).hexdigest() != built['sha256'] or len(events) < built['events']:
             raise ValueError('Decision log is not an append-only extension of the dataset snapshot')
         manifest = {'schema': SCHEMA, 'created_at': datetime.now(timezone.utc).isoformat(),
@@ -255,32 +244,9 @@ def capture(database, output, source, decisions, counterparts=None, *, pointer=A
                                  {'kind': 'capture', 'database_sha256': fingerprint(frozen), 'storage_codec': 1, 'projection_recipe': 1})
 
 
-def convert(legacy, output):
-    legacy, output = Path(legacy).resolve(), Path(output).resolve()
-    manifest = verify(legacy)
-    if manifest['schema'] != 1:
-        raise ValueError('Conversion accepts only the read-only legacy archive')
-    with closing(connect(legacy / 'catalog.sqlite')) as db, zipfile.ZipFile(legacy / 'source.zip') as source, zipfile.ZipFile(legacy / 'exports.zip') as exports:
-        def archive_inputs(archive, hashes):
-            for name, h in sorted(hashes.items()):
-                raw = archive.read(name)
-                if sha256(raw).hexdigest() != h:
-                    raise ValueError('Legacy input manifest mismatch: ' + name)
-                yield name, raw
-        def external_inputs():
-            if manifest['counterpart_files']:
-                with zipfile.ZipFile(legacy / 'counterparts.zip') as external:
-                    yield from archive_inputs(external, manifest['counterpart_files'])
-        return save_snapshot(db, output, archive_inputs(source, manifest['source_files']), external_inputs(),
-                             (legacy / 'decisions.jsonl').read_bytes(), archive_inputs(exports, manifest['exports']), legacy,
-                             {'kind': 'legacy_conversion', 'legacy_id': manifest['id'], 'storage_codec': 1, 'projection_recipe': 1})
-
-
 def materialize(root, cache=None):
     root = Path(root).resolve()
     manifest = verify(root)
-    if manifest['schema'] == 1:
-        return root / 'catalog.sqlite'
     cache = Path(cache) if cache else PROJECT / '.cache/baselines'
     folder = cache / manifest['id']; folder.mkdir(parents=True, exist_ok=True)
     database, receipt = folder / 'catalog.sqlite', folder / 'catalog.json'
@@ -304,8 +270,6 @@ def materialize(root, cache=None):
 def decisions_path(root, cache=None):
     root = Path(root).resolve()
     manifest = verify(root)
-    if manifest['schema'] == 1:
-        return root / 'decisions.jsonl'
     cache = Path(cache) if cache else PROJECT / '.cache/baselines'
     folder = cache / manifest['id']; folder.mkdir(parents=True, exist_ok=True)
     path = folder / 'decisions.jsonl'

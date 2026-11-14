@@ -99,10 +99,7 @@ class ReviewContext:
 
 
 def basis_changes(before, after):
-    """Machine-readable old/new dependencies; legacy approvals require explicit re-review."""
-    if before.get('schema') != after.get('schema'):
-        return [{'path': ['schema'], 'kind': 'changed', 'before': before.get('schema', 1),
-                 'after': after.get('schema'), 'reason': 'dependency_schema_changed'}]
+    """Machine-readable changes between dependency evidence."""
     changes = []
     def walk(old, new, path):
         if old == new: return

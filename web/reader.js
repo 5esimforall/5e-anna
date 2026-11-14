@@ -68,16 +68,6 @@
     if (!metadata || !page || loading || !flow?.active || flow.active.status !== 'ready') return;
     rememberPlace(scope.root, page.path, nodeId, position);
   }
-  // Earlier versions kept one saved position; the first visit makes it the first remembered place and drops it.
-  const legacyPositionKey = 'anna.bookPosition';
-  function importLegacyPosition() {
-    const raw = stored.get(legacyPositionKey);
-    if (raw === null) return;
-    stored.set(legacyPositionKey, null);
-    let value = null;
-    try { value = annaReaderModel.remembered(JSON.parse(raw), metadata.snapshot, model); } catch { value = null; }
-    if (value && !annaWorkspace.read(metadata.snapshot).book.length) rememberPlace(value.root, value.page, value.node, value.position);
-  }
   // The definition you arrive at, and then the one you read, is the topic Anna can look up.
   let topicId = '';
   function followTopic() {
@@ -628,7 +618,6 @@
       flow.markLinks(linkMarks);
       $('#book-version').hidden = !metadata.source_release;
       $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
-      importLegacyPosition();
       annaCompanions.mount({page:'book', snapshot:metadata.snapshot});
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
       const params = new URL(location.href).searchParams;

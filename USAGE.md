@@ -2,7 +2,7 @@
 
 ## 统一命令
 
-在 `5e-anna` 或上层 DnD 目录运行以下命令；上层只转调 anna，不维护另一套实现。
+以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 只转调其已列出的常用命令，不维护另一套实现；`baseline`、`migration`、`datalog` 和 `icons` 在本项目中执行。
 
 | 命令 | 用途 |
 | --- | --- |
@@ -13,6 +13,7 @@
 | `make migration` | 用已选基准核对当前全部数据、来源对应和依赖；有待处理差异时返回退出码 2 |
 | `make up` | 启动单端口查询、阅读与正文资源服务 |
 | `make upper` | 开发用：同上，重建完成后自动校验并换包 |
+| `make icons` | 从原始人物图生成界面图标 |
 | `make linked` | 由现有数据库生成链接版，并校验原文快照 |
 | `make inventory` | 盘点原文页面与目录 |
 | `make test` | 运行单元测试和浏览器回归（需先构建数据） |
@@ -23,7 +24,7 @@
 | `make check` | 运行测试与审计 |
 | `make update` | 显式拉取原文与 5etools-cn 更新并重建搜索索引；之后运行 `make build` 更新数据 |
 | `make status` | 查看原文、5etools-cn 版本与搜索索引状态 |
-| `make clean` | 删除共享原文镜像及搜索缓存（影响其他引用方）；不删除分析数据 |
+| `make clean` | 删除本地生成数据、缓存、报告、图标和依赖环境；保留源码、独立输入与共享镜像 |
 
 命令清单集中在本页；不带目标运行 `make` 只输出本页位置。下文的 `python -m anna.…` 模块命令在 anna 仓库根目录运行；应用代码不再通过 `scripts/` 路径启动。
 
@@ -31,7 +32,7 @@
 
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `python -m anna.catalog.build` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
 
-构建、盘点和索引时，缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像与搜索索引，之后运行 `make build` 才更新数据库和链接版。`make clean` 会影响所有引用共享镜像的冒险项目，请谨慎使用；它不删除 5etools-cn 镜像。
+构建、盘点和索引时，缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像与搜索索引，之后运行 `make build` 才更新数据库和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
 原文搜索缓存位于 anna 的 `.cache/`，按原文路径、目录与 HTML 内容指纹校验，同一 Git 提交内的内容变化也会使缓存失效；分析数据仍位于 `data/`，两者均不入库。默认优先使用 anna 的 `.venv/bin/python`，未创建时使用 `python3`；可用 `PYTHON=/绝对路径/解释器` 覆盖。`ANNA_PORT` 配置查询、阅读与正文资源共用的端口，仅本机访问。
 
@@ -45,6 +46,12 @@ make build
 make browser-setup
 make check
 ```
+
+## 清理与重建
+
+清理前停止正在运行的 anna 服务，然后执行 `make clean`。命令直接删除 `data/`、`output/`、`.cache/`、`.venv/`、`node_modules/`、中断构建目录、Python 缓存和由人物原图导出的界面图标，不备份，也不遍历指向项目外的符号链接。`assets/branding/` 原图、`rules/` 规则库和 `reviews/` 现行审核输入保留。历史比较数据按需整体删除 `baselines/`；普通清理不会删除尚在使用的比较基准。
+
+清理后按上节重新安装依赖，执行 `make build` 恢复图标、查询库与链接版；`make datalog` 恢复溯源报告，`make index` 恢复全文索引。只有运行浏览器测试才需要 `make browser-setup`。生成文件和历史测试报告不提交 Git。
 
 ## 整理基准与迁移核对
 
@@ -62,7 +69,7 @@ make baseline BASELINE=baselines/next
 
 快照保存全部知识、观察、证据、候选、缺口、审核结果和完整审核日志，包括尚未重放的追加事件。重复 SQL 字段由记录还原，有效结果相对原始观察保存差量；未能无损归约的字段原样保留。查询投影从冻结的有效知识生成，不重新解析原文或重放审核。恢复时校验每张表的全部行值；历史投影生成器无法复现时拒绝恢复，不以新结果替换旧数据。
 
-清单、`objects/` 下的确定性 gzip 内容对象、处置日志和启用日志均应提交版本管理。多个版本共享未变化的对象，备份时保存整个 `baselines/`，不能只备份某份清单。SQLite、索引和缓存可以删除后重建。原文、格式／目录输入及外部对照按原始字节保存；输入不匹配数据库时拒绝捕获。导出逐值核对能够重建后才省去副本；无法证明可重建的历史产物保留为附件，包括旧格式中独有的未决内容。
+`baselines/` 是按需创建的本地比较数据，不纳入 Git；源码、规则库与现行审核输入才是版本管理的重建依据。多个快照共享 `objects/` 内容对象，删除历史比较数据时应一并删除清单、对象、处置日志、启用日志和活动指针。SQLite、索引和缓存可以删除后重建。原文、格式／目录输入及外部对照按原始字节保存；输入不匹配数据库时拒绝捕获。导出逐值核对能够重建后才省去副本；无法证明可重建的历史产物保留为附件。
 
 ### 处置与启用
 
@@ -80,7 +87,7 @@ make baseline BASELINE=baselines/next
 
 `accept_change` 接受有依据的变化；`retain_unresolved` 明确保留待核原因，启用日志继续列出这些处置，不将其解释为知识批准。一次处置可重复提供 `--issue` 和 `--evidence`。处置日志追加保存，重复、冲突、失效评估、缺失依据或未覆盖差异均阻止启用。修订候选时另存新快照，不修改旧清单或删除处置历史。
 
-启用时重新计算评估，并在锁内检查父基准仍是当前活动基准；其他维护者已经启用新版本时，旧候选必须重新捕获和核对。首次建立且没有活动基准或启用历史时，才允许 `activate … --bootstrap`。启用历史与指针不一致会拒绝操作，需从备份核对恢复，不提供跳过检查的强制选项。
+启用时重新计算评估，并在锁内检查父基准仍是当前活动基准；其他维护者已经启用新版本时，旧候选必须重新捕获和核对。首次建立且没有活动基准或启用历史时，才允许 `activate … --bootstrap`。启用历史与指针不一致会拒绝操作，需核对清单与日志；废弃整套历史时一并删除活动指针。
 
 ### 恢复与日常核对
 
@@ -101,7 +108,6 @@ make migration
 
 `python -m anna.catalog.build --baseline 基准目录 --output 生成目录` 可核对其他输出；部分扫描和开发输出默认不使用项目基准。`--no-migration` 显式跳过核对，不构成验收。独立比较使用 `python -m anna.snapshots.workflow compare --baseline 基准目录 --database 数据库 --output 报告目录`。
 
-第一份结构 1 完整存档只读兼容，用 `python -m anna.snapshots.workflow convert 旧基准目录 --output 新目录` 无损转换；转换仍需经过评估与显式启用。旧存档暂作独立回退备份，确认紧凑快照及其异地备份可恢复后再决定清理；新捕获不再写结构 1。
 
 ## 阅读服务与正文生成
 
@@ -157,7 +163,7 @@ make upper
 
 生成结果中的 `anna-manifest.json` 记录输入、输出哈希与条目定位，`anna-reader.json` 保存目录、页面及其条目列表；`anna-report.json` 记录定义数量、可点击定义、引用解析及待核清单。原文空页或缺失内容范围的记录无法生成可靠的可点击定位，定义路由会明确报错，不跳到同名的其他记录。正文范围为空但标题仍可定位的记录也单独列入报告，供提取侧核对。
 
-格式标记依据页面实际引用的样式表解析，不按显示颜色推断类型。普通正文须有规则用语和来源依据才自动关联核心规则；其他词面匹配、未知格式、混合标记、示例语境和未确认的跨来源关系保留待核。逐处审核也可以确认普通正文的目标。适用范围见[概念发现与覆盖核对](#概念发现与覆盖核对)，验证结果见[链接版验证记录](tests/linked-book-validation.md)。
+格式标记依据页面实际引用的样式表解析，不按显示颜色推断类型。普通正文须有规则用语和来源依据才自动关联核心规则；其他词面匹配、未知格式、混合标记、示例语境和未确认的跨来源关系保留待核。逐处审核也可以确认普通正文的目标。适用范围见[概念发现与覆盖核对](#概念发现与覆盖核对)。
 
 ## 中英文名称与括号结构
 
@@ -332,7 +338,7 @@ make build
 
 `concept_coverage.json` 的 `format_marks` 统计原始格式标记，`outcomes.format` 统计逐个引用片段，两者在拆分后不再相等。没有可点击内容的空格式标记与真实的未关联高亮分开统计。阻塞原因记录的是当前解析阶段的结果，不是永久定性：解除一种阻塞后仍可能遇到版本或目标问题，不将新增可识别格式数视为新增正确链接数，各类阻塞数量也不能相加作为预计新增链接数。示例中的具体提及同样逐处判断，虚构人物不妨碍其中的真实法术或动作拥有引用目标。
 
-上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。各轮的实机样本与回归结果见[链接版验证记录](tests/linked-book-validation.md)。
+上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。回归样例由 `tests/browser/links.spec.cjs` 覆盖。
 
 未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性、导出 ID 和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make linked` 会拒绝沿用过期的概念发现依据。
 
@@ -380,7 +386,7 @@ make build
 
 每个维度分别列出一致、结构化值分歧、anna 尚未表达、外部字段不足、外部结构暂不支持或对应范围待核。JSON 保留双方值、原文码点范围、外部 JSON Pointer、输入文件哈希、解析和审核状态。部分解析记录的局部一致不能计作整条链已支持；名称相同但范围未确认时只列候选。数据结构和比较边界见 [MODEL](MODEL.md#规则链语义对照报告)。
 
-更新外部镜像后，报告会拒绝沿用旧数据库的对应位置；先重建，再重新运行命令。所用不全书页面变动、证据范围损坏或生成期间输入变化同样会报错。报告只校验实际引用的原文文件；不替代全库构建校验。`--output` 是文件名前缀，产生 `.json` 与 `.md`，不可指向输入镜像内；这些本地含原文的报告不纳入版本控制，也不自动发布。当前样例发现与实际验证见[语义对照验证记录](tests/counterpart-semantics-validation.md)。
+更新外部镜像后，报告会拒绝沿用旧数据库的对应位置；先重建，再重新运行命令。所用不全书页面变动、证据范围损坏或生成期间输入变化同样会报错。报告只校验实际引用的原文文件；不替代全库构建校验。`--output` 是文件名前缀，产生 `.json` 与 `.md`，不可指向输入镜像内；这些本地含原文的报告不纳入版本控制，也不自动发布。对应契约由 `tests/test_counterpart_semantics.py` 验证。
 
 ## 自动化验证
 
@@ -396,7 +402,7 @@ make check
 
 测试涵盖定义／引用跳转、阅读器刷新恢复、键盘焦点、滚动、窗口变窄和表格节点搬移。排版测试在同一 Chromium、视口和原文快照下同时渲染原版与链接版，对比可见文字、元素几何位置和截图像素，不以人工接受的历史截图作为基准。法术页、装备表、怪物数据卡和引用表分别在 1280px／390px 宽度检查页首与中段。
 
-报告保存到 `output/playwright/report/index.html`；截图、失败差异图和失败 trace 保存到 `output/playwright/results/`，均不入库。浏览器异常、定位绑定失败或任一像素差异都会令测试失败。可以用 `npm run test:browser:report` 查看报告。测试覆盖与实际运行记录见[链接版验证记录](tests/linked-book-validation.md)及[查询界面验证](tests/query-ui-validation.md)。
+报告保存到 `output/playwright/report/index.html`；截图、失败差异图和失败 trace 保存到 `output/playwright/results/`，均不入库。浏览器异常、定位绑定失败或任一像素差异都会令测试失败。可以用 `npm run test:browser:report` 查看报告。浏览器用例位于 `tests/browser/`。
 
 ## 查询与分析
 
@@ -422,7 +428,7 @@ make up
 
 “坐骑”列出带用途证据的生物数据卡；“动物购置”另列价格、载重和用途，通过详情中的“使用数据卡／购置条目”双向关联。购置条目不冒充数据卡，不将价格复制到怪物属性，也不跨版本合并。表列坐骑用途标为上下文推得；宠物／役畜不自动当作坐骑。
 
-本轮覆盖、分类变化和遗留待核项见[提取审计](data/extracted/audit.md)。
+当前构建的覆盖、分类变化和待核项见[提取审计](data/extracted/audit.md)。
 
 全量重建（只读镜像）：
 
@@ -509,9 +515,9 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/ap
 
 “本效果的动作成本”与效果条件绑定。例如 `{"query_subject":"entry","effect":"healing"}` 可一起检索法术治疗和回气；再添加 `"use_action":"bonus_action"` 可筛出使用附赠动作的治疗过程，`{"query_subject":"entry","effect":"modifier","use_action":"reaction"}` 可检索直觉闪避的减伤。`use_action` 可选 `action`、`bonus_action`、`reaction`、`timed` 或 `not_stated`。重复豁免不消耗初次施法动作；未明示动作不能当成无需动作。既有分享链接和最近查询沿用 `casting` 参数及 `/api/casting-facets` 路径，内部共用规则效果索引，不分设非施法查询逻辑。
 
-知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方应按结构版本读取 `value.grants`、`value.parameters` 和 `value.effects`，不再读取结构 1 的独立背景目标或 `value.casting`。重建后，旧结构的审核决策保留原事件并重新待核；运行 `python -m anna.knowledge.repository list` 找到当前主体的记录，再 `inspect` 核对，以 `--supersedes 旧决策ID` 保存新审核，或撤销旧决策。迁移不会新增人工批准。
+知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方读取 `value.grants`、`value.parameters` 和 `value.effects`。审核依赖依据只接受结构 2，事件封装仍使用独立的事件版本 1；不转换旧记录身份或旧批准。
 
-构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)，实际检查证据见[施法链验证](tests/casting-chain-validation.md)。
+构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)。
 
 ## Datalog 通则与原文溯源
 

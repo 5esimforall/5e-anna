@@ -16,21 +16,6 @@ DEFAULT_DECISIONS = PROJECT / 'reviews/decisions.jsonl'
 KNOWLEDGE_OPERATIONS = {'knowledge_accept', 'knowledge_reject'}
 
 
-def review_record_id(event):
-    """Locate schema-1 decisions for reopening, never convert their approval.
-
-    This read-only migration is needed while historical logs contain v1 events.
-    New writes use v2 identities; original bindings and evidence remain untouched.
-    """
-    bound=event['binding'];kind=bound['kind']
-    previous={'spell_access':'grant','feat_access':'grant','spell_effect':'procedure'}
-    if event.get('basis',{}).get('schema')==1 and kind in previous:
-        old_id='knowledge_'+digest([bound['subject_id'],kind])[:24]
-        if bound['knowledge_id']==old_id:
-            return 'knowledge_'+digest([bound['subject_id'],previous[kind]])[:24]
-    return bound['knowledge_id']
-
-
 def pipeline_hash():
     return sha256(b''.join(p.read_bytes() for p in sorted((PROJECT/'anna').rglob('*.py')))).hexdigest()
 
@@ -56,7 +41,7 @@ def require_appendable(db, path):
     saved = snapshot(db)
     raw = Path(path).read_bytes() if Path(path).exists() else b''
     events, _ = load_events(path)
-    prefix = raw[:saved['bytes']] if 'bytes' in saved else b''.join(raw.splitlines(keepends=True)[:saved['events']])
+    prefix = raw[:saved['bytes']]
     if len(events) < saved['events'] or sha256(prefix).hexdigest() != saved['sha256']:
         raise ValueError('Review log is not an append-only extension of the build snapshot; rebuild')
     summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
@@ -90,11 +75,13 @@ def load_events(path=DEFAULT_DECISIONS):
                 span = binding.get('span')
                 if not isinstance(span, list) or len(span)!=2 or not all(type(n) is int for n in span) or not 0<=span[0]<span[1]:
                     raise ValueError('Invalid knowledge evidence range')
-                if not isinstance(event.get('basis'), dict) or event.get('basis_sha256') != digest(event['basis']):
+                if not isinstance(event.get('basis'), dict) or event['basis'].get('schema') != 2:
+                    raise ValueError('Unsupported review basis schema')
+                if event.get('basis_sha256') != digest(event['basis']):
                     raise ValueError('Knowledge basis fingerprint mismatch')
                 if event.get('supersedes'):
                     previous = known.get(event['supersedes'])
-                    if not previous or previous['operation'] not in KNOWLEDGE_OPERATIONS or review_record_id(previous) != review_record_id(event):
+                    if not previous or previous['operation'] not in KNOWLEDGE_OPERATIONS or previous['binding']['knowledge_id'] != binding['knowledge_id']:
                         raise ValueError('Superseded decision must concern the same knowledge record')
             else:
                 binding = event['binding']
@@ -103,7 +90,9 @@ def load_events(path=DEFAULT_DECISIONS):
                 if not (isinstance(binding['start'], int) and isinstance(binding['end'], int)
                         and 0 <= binding['start'] < binding['end'] and binding['text'].strip()):
                     raise ValueError('无效审核范围')
-                if not isinstance(event.get('basis'), dict) or event.get('basis_sha256') != digest(event['basis']):
+                if not isinstance(event.get('basis'), dict) or event['basis'].get('schema') != 2:
+                    raise ValueError('Unsupported review basis schema')
+                if event.get('basis_sha256') != digest(event['basis']):
                     raise ValueError('审核依据指纹不符')
                 target = event.get('target_id')
                 if event['operation'] == 'confirm' and (not isinstance(target, str) or not target):

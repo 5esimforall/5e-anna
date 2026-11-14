@@ -100,6 +100,19 @@ class MigrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             active(pointer)
 
+    def test_retired_snapshot_and_pointer_versions_are_rejected(self):
+        bundle=self.capture(self.catalog('source'))
+        original=verify(bundle)
+        pointer=self.root/'active.json'
+        pointer.write_text(canonical({'schema':1,'path':'baseline','id':original['id']}))
+        with self.assertRaisesRegex(ValueError,'pointer schema'):active(pointer)
+        manifest={**original,'schema':1}
+        manifest['id']='baseline_'+digest({k:v for k,v in manifest.items() if k!='id'})
+        (bundle/'manifest.json').write_text(canonical(manifest))
+        for action in (verify,materialize,decisions_path):
+            with self.subTest(action=action.__name__), self.assertRaisesRegex(ValueError,'manifest'):
+                action(bundle)
+
     def test_changed_source_and_partial_dataset_cannot_be_frozen(self):
         c = self.catalog('old')
         (c.source / c.path).write_text('different')

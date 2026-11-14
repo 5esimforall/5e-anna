@@ -18,3 +18,11 @@ output/
 # Local advisory locks; review decisions themselves are versioned inputs.
 /reviews/*.lock
 /reviews/.review-*
+
+# Disposable local comparison snapshots and generated brand icons
+/baselines/
+/web/anna-logo.png
+/web/stella-logo.png
+/web/favicon*.png
+/web/favicon.ico
+/web/stella-favicon.ico

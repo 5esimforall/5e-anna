@@ -9,7 +9,7 @@ from pathlib import Path
 import tempfile
 
 from anna.snapshots.baseline import (activate, active, capture, connect, fingerprint,
-                                metadata, quote, tables, verify, materialize, decisions_path, convert, export_snapshot)
+                                metadata, quote, tables, verify, materialize, decisions_path, export_snapshot)
 from anna.paths import PROJECT, WEB, FIVETOOLS
 from anna.serialization import canonical, digest
 from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events
@@ -161,7 +161,7 @@ def review_results(db):
 def review_dependencies(before, after, alignment, saved_log, current_log, knowledge_checks=None):
     from anna.knowledge.repository import Context
     from anna.catalog.references import ReviewContext
-    from anna.review.store import KNOWLEDGE_OPERATIONS, review_record_id
+    from anna.review.store import KNOWLEDGE_OPERATIONS
     old_events, _ = load_events(saved_log)
     events, _ = load_events(current_log)
     by_id = {e['id']: e for e in events}
@@ -187,11 +187,11 @@ def review_dependencies(before, after, alignment, saved_log, current_log, knowle
             try:
                 binding = event['binding']
                 if event['operation'] in KNOWLEDGE_OPERATIONS:
-                    check = checked_knowledge.get(review_record_id(event))
+                    check = checked_knowledge.get(event['binding']['knowledge_id'])
                     if not check or check['status'] not in {'unchanged', 'relocated'}:
                         raise UnmappedEvidence('knowledge_dependencies_require_review')
                     knowledge_context = knowledge_context or Context(after)
-                    rid = alignment.ids.get(review_record_id(event), review_record_id(event))
+                    rid = alignment.ids.get(event['binding']['knowledge_id'], event['binding']['knowledge_id'])
                     found = after.execute('SELECT data FROM rule_knowledge WHERE id=?', (rid,)).fetchone()
                     if not found:
                         raise UnmappedEvidence('knowledge_unmapped')
@@ -318,9 +318,6 @@ def main():
     select.add_argument('--reviewer', required=True)
     select.add_argument('--reason', required=True)
     select.add_argument('--bootstrap', action='store_true')
-    conversion = commands.add_parser('convert', help='losslessly convert a read-only legacy archive')
-    conversion.add_argument('baseline', type=Path)
-    conversion.add_argument('--output', type=Path, required=True)
     restore = commands.add_parser('materialize', help='rebuild or verify a disposable query cache')
     restore.add_argument('baseline', type=Path)
     export = commands.add_parser('export', help='regenerate exports or restore frozen source inputs')
@@ -350,8 +347,6 @@ def main():
         print(canonical({'baseline_id': verify(args.baseline)['id'], 'status': 'verified'}))
     elif args.command == 'activate':
         print(canonical(activate(args.baseline, reviewer=args.reviewer, reason=args.reason, bootstrap=args.bootstrap)))
-    elif args.command == 'convert':
-        print(canonical({'baseline_id': convert(args.baseline, args.output)['id']}))
     elif args.command == 'materialize':
         print(canonical({'database': str(materialize(args.baseline))}))
     elif args.command == 'export':

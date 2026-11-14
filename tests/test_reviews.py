@@ -30,6 +30,20 @@ class ReviewTests(unittest.TestCase):
         self.db = None
         self.rebuild()
 
+    def test_old_or_missing_dependency_schema_is_rejected_without_rewriting(self):
+        from anna.serialization import digest
+        event=self.confirm()
+        before=self.log.read_bytes()
+        for schema in (None, 1, 99):
+            basis={**event['basis']}
+            if schema is None:basis.pop('schema')
+            else:basis['schema']=schema
+            pending={k:v for k,v in event.items() if k not in {'id','schema','created_at'}}
+            pending.update(basis=basis,basis_sha256=digest(basis))
+            with self.assertRaisesRegex(ValueError,'Unsupported review basis schema'):
+                append_event(self.log,pending,load_events(self.log)[1])
+            self.assertEqual(self.log.read_bytes(),before)
+
     def tearDown(self):
         if self.db: self.db.close()
         self.temp.cleanup()

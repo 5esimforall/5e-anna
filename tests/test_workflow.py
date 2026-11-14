@@ -124,11 +124,10 @@ class WorkflowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             sentinel = Path(td) / 'keep'
             sentinel.write_text('keep')
-            for command in ('clone', 'clean'):
-                result = self.make(PROJECT, command, f'WEB_DIR={td}')
-                self.assertNotEqual(result.returncode, 0)
-                self.assertIn('Refusing to delete' if command == 'clean' else 'Source has no topics directory', result.stderr)
-                self.assertEqual(sentinel.read_text(), 'keep')
+            result = self.make(PROJECT, 'clone', f'WEB_DIR={td}')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('Source has no topics directory', result.stderr)
+            self.assertEqual(sentinel.read_text(), 'keep')
             # An existing 5etools-cn location without data/ is not replaced either.
             web = Path(td) / 'mirror'
             (web / 'topics').mkdir(parents=True)
@@ -153,7 +152,7 @@ class WorkflowTests(unittest.TestCase):
             result=self.make(PROJECT,'-n',command)
             self.assertNotEqual(result.returncode,0)
         self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())
-        self.assertEqual({p.name for p in (PROJECT/'scripts').glob('*.py')},{'build_icons.py'})
+        self.assertEqual({p.name for p in (PROJECT/'scripts').glob('*.py')},{'build_icons.py','clean.py'})
         from anna.server import query
         self.assertFalse(hasattr(query,'main'))
 

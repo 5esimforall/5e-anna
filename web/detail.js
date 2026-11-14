@@ -295,7 +295,6 @@ function renderReview(record, labels) {
     <h3>${esc(l.title)} (${changes.length})</h3>
     ${changes.map(c=>`<section class="fact"><strong>${esc(l.fields[c.path[0]]||c.path[0])}</strong>
       <div><code>${esc(c.path.slice(1).join(' / '))}</code> · ${esc(l[c.kind]||c.kind)}</div>
-      ${c.reason?`<p>${esc(l[c.reason]||c.reason)}</p>`:''}
       <details><summary>${esc(l.values)}</summary><dl><dt>${esc(l.before)}</dt><dd><pre class="body-text">${esc(pretty(c.before))}</pre></dd><dt>${esc(l.after)}</dt><dd><pre class="body-text">${esc(pretty(c.after))}</pre></dd></dl></details>
     </section>`).join('')}
     <details><summary>${esc(labels.evidence)}</summary><pre class="body-text">${esc(pretty(result))}</pre></details>

@@ -84,6 +84,19 @@ class ServerTests(unittest.TestCase):
             m,_=build_book(source,db,book);self.assertEqual(validate_bundle(source,db,book),m)
             (book/'topics/style.css').write_text('changed')
             with self.assertRaisesRegex(ValueError,'modified'):validate_bundle(source,db,book)
+    def test_busy_port_keeps_the_bind_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
+            m,_=build_book(source,db,book)
+            server=create_server(db,book,m,0)
+            try:
+                # A failed bind must report the port, not a half-initialised server.
+                with self.assertRaises(OSError) as caught:
+                    create_server(db,book,m,server.server_port)
+                self.assertIn('Address already in use',str(caught.exception))
+            finally:
+                server.server_close()
+
     def test_obsolete_port_arguments_are_rejected(self):
         for argument in ('--anna-port', '--book-port'):
             result=subprocess.run([sys.executable, 'scripts/up.py', argument, '0'],capture_output=True,text=True)

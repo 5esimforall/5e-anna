@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Serve anna, its reader and source resources on one local port."""
 import argparse
+import errno
 from http.server import ThreadingHTTPServer
 import mimetypes
 import shutil
@@ -87,7 +88,8 @@ class AnnaServer(ThreadingHTTPServer):
     """Owns the bundle requests serve; in watch mode one thread swaps it after a rebuild."""
 
     def __init__(self, address, handler, bundle, watch=False):
-        super().__init__(address, handler)
+        # A failed bind closes the socket through server_close(), so the reload state must exist
+        # before the socket is created; otherwise the bind error is masked by an AttributeError.
         self.bundle = bundle
         self.source = bundle.source
         self.watch = watch
@@ -96,6 +98,7 @@ class AnnaServer(ThreadingHTTPServer):
         self.reload_error = None
         self.reload_attempt = None
         self.watch_thread = None
+        super().__init__(address, handler)
         if watch:
             self.watch_thread = threading.Thread(target=self.watch_loop, daemon=True)
             self.watch_thread.start()
@@ -321,7 +324,11 @@ def main():
         while not stop.wait(.5):
             if not thread.is_alive():
                 raise RuntimeError('Server exited unexpectedly')
-    except (OSError, ValueError, RuntimeError) as exc:
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            parser.exit(1, f'Port {args.port} is already in use; stop the service using it or set ANNA_PORT.\n')
+        parser.exit(1, str(exc) + '\n')
+    except (ValueError, RuntimeError) as exc:
         parser.exit(1, str(exc) + '\n')
     finally:
         if thread and thread.is_alive():

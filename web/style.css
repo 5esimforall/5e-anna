@@ -435,9 +435,10 @@ mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--a
 .layout-notice { margin: 16px 0 0; font-size: var(--anna-type-ui); }
 /* Notes move to the margin only when the text beside them still keeps about 32 characters a line. */
 @container reader (min-width: 680px) {
-  /* The text column is as wide as its widest content (the prose measure or a wide table), so the notes stay beside the words. */
-  .layout-reading.with-notes { grid-template-columns: minmax(0,max-content) 172px; justify-content: start; gap: 22px; align-items: start; }
-  .field-notes { position: sticky; top: calc(var(--anna-reader-tabs) - 4px); flex-direction: column; gap: 6px; margin: 4px 0 0; padding: 0; border-top: 0; }
+  /* The text column is as wide as its widest content (the prose measure or a wide table), so the notes stay beside the words.
+     The margin takes the rest of the reader and sets its notes in up to three columns, so a long list of notes stays about as short as the text. */
+  .layout-reading.with-notes { grid-template-columns: minmax(0,max-content) minmax(172px,1fr); gap: 22px; align-items: start; }
+  .field-notes { position: sticky; top: calc(var(--anna-reader-tabs) - 4px); display: grid; grid-template-columns: repeat(auto-fill,minmax(max(150px,calc((100% - 32px) / 3)),1fr)); gap: 6px 16px; margin: 4px 0 0; padding: 0; border-top: 0; }
   .field-note { width: 100%; border-width: 0 0 0 2px; border-radius: 0; padding: 2px 0 2px 9px; flex-direction: column; gap: 0; }
   .field-note.inferred { border-left-style: dashed; }
 }

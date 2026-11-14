@@ -657,6 +657,12 @@ test('reader shows the original layout with field notes tied to their words and 
   await expect(note).toContainText('学派');await expect(note).toContainText('咒法');
   // A wide reader sets the notes in the margin beside the text.
   const n=await note.boundingBox(),box=await layout.boundingBox();expect(n.x).toBeGreaterThanOrEqual(box.x+box.width);
+  // The margin takes the rest of the reader, and a margin wide enough for two notes sets them side by side.
+  const notes=page.locator('#detail-panel .field-notes'),reading=page.locator('#detail-panel .layout-reading');
+  const margin=await notes.boundingBox(),grid=await reading.boundingBox();expect(Math.abs(margin.x+margin.width-grid.x-grid.width)).toBeLessThan(1);
+  await page.locator('#reader-full').click();await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','true');
+  expect(await notes.evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBeGreaterThan(1);
+  await page.locator('#reader-full').click();await expect(page.locator('#reader-full')).toHaveAttribute('aria-pressed','false');
   await note.hover();await expect(mark).toHaveClass(/lit/);
   await page.mouse.move(0,0);await expect(mark).not.toHaveClass(/lit/);
   await note.focus();await expect(mark).toHaveClass(/lit/);

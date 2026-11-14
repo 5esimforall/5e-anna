@@ -692,7 +692,12 @@ window.addEventListener('popstate',async e=>{
   quietTopic=false;
   if(gen!==navigationGeneration)return;
   restoreUiState(state);
-  if(currentReaderId)($('#tab-'+detailTab)||$('#close-detail')).focus({preventScroll:true});
+  if(currentReaderId){
+    // A named local effect is the reading position. Keep its focus without
+    // replacing the scroll offset just restored from this history entry.
+    const focused=detailTab==='chain'&&currentEntry?.rule_chain?.reading?.effect_id&&focusChainLocation(currentEntry.rule_chain,{scroll:false});
+    if(!focused)($('#tab-'+detailTab)||$('#close-detail')).focus({preventScroll:true});
+  }
   else if(state?.lastResultEntry)focusResult();
   restoringUi=false;saveUiState();
 });

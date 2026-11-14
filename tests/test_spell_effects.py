@@ -118,7 +118,7 @@ class EffectGrammarTests(unittest.TestCase):
 
     def test_repeated_check_outcomes_keep_repeat_timing_in_query_projection(self):
         from effect_queries import effect_rows
-        record={'id':'record','subject_id':'spell','kind':'spell_effect','status':'resolved',
+        record={'id':'record','subject_id':'spell','kind':'procedure','status':'resolved',
                 'review_status':'unreviewed','value':parse(LAUGHTER)}
         rows=list(effect_rows([record]))
         repeat=[r for r in rows if r['timing']=='repeat']
@@ -150,7 +150,7 @@ class CorpusEffectTests(unittest.TestCase):
         from knowledge import chain,casting_condition
         root=next(e for e in self.context.entries.values() if e['name_zh']=='智者' and e['ruleset']=='5r')
         witch=next(e for e in self.context.entries.values() if e.get('name_en')=='Witch Bolt' and e['ruleset']=='5r' and e['type']=='spell')
-        result=chain(self.db,root['id'],witch['id']);record=next(r for r in result['records'] if r['subject_id']==witch['id'] and r['kind']=='spell_effect')
+        result=chain(self.db,root['id'],witch['id']);record=next(r for r in result['records'] if r['subject_id']==witch['id'] and r['kind']=='procedure')
         self.assertEqual(record['status'],'resolved')
         query,values=casting_condition({'effect':'damage','damage_type':'lightning','delivery':'automatic','timing':'ongoing'})
         self.assertTrue(self.db.execute('SELECT 1 FROM entries e WHERE e.id=? AND '+query,[root['id'],*values]).fetchone())

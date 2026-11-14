@@ -308,10 +308,11 @@ async function inspectChainSpell(id,from){
   if(chain.options.some(o=>o.spell_ids.includes(id)))return navigateChain(null,id);
   const path=annaKnowledge.pathTo(chain,id,from);if(path)return navigateChain(path);
 }
-function focusChainLocation(chain){
+function focusChainLocation(chain,{scroll=true}={}){
   const r=chain.reading;
   const target=r.effect_id?document.querySelector(`.knowledge-record[data-subject="${CSS.escape(r.focus_id)}"] [data-effect="${CSS.escape(r.effect_id)}"]`):$('.chain-path [aria-current="step"]');
-  target?.focus({preventScroll:true});target?.scrollIntoView({block:r.effect_id?'start':'nearest'});
+  target?.focus({preventScroll:true});if(scroll)target?.scrollIntoView({block:r.effect_id?'start':'nearest'});
+  return !!target;
 }
 async function navigateChain(path,spell=currentEntry?.rule_chain?.selected_spell_id,effectId=null){
   const entry=currentEntry,gen=++chainGeneration;if(!entry||detailTab!=='chain')return;

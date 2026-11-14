@@ -7,42 +7,12 @@ from __future__ import annotations
 from copy import deepcopy
 import re
 from rule_conditions import prerequisite_expression, item_condition, CLASSES
+from rule_values import ABILITIES, NUMBER, number, evidence, sentences, quantity_expression
+from rule_model import rule_value
 
-ABILITIES = ('力量', '敏捷', '体质', '智力', '感知', '魅力')
 SCHOOLS = ('防护', '咒法', '预言', '惑控', '塑能', '幻术', '死灵', '变化')
-DIGITS = {'零': 0, '一': 1, '两': 2, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10}
-NUMBER = r'(?:\d+|[零一两二三四五六七八九十])'
 RELEVANT = re.compile(r'法术|戏法|施法|施展|习得|准备着|长休|短休|充能|仅限|仅当|只有|必须|否则|条件|如果|若')
 GRANT = re.compile(r'(?:你[^。；]{0,45}(?:习得|学会|知晓|始终准备|(?:可以|能)[^。；]{0,30}施展)|选择[^。；]{0,30}(?:法术|戏法))')
-
-
-def number(text):
-    return int(text) if text.isdigit() else DIGITS.get(text)
-
-
-def evidence(path, text, start, end):
-    return {'path': path, 'span': [start, end], 'raw': text[start:end]}
-
-
-def sentences(text, start, end):
-    for m in re.finditer(r'[^。！？]+[。！？]?', text[start:end]):
-        a, b = start+m.start(), start+m.end()
-        while a < b and text[a].isspace(): a += 1
-        while b > a and text[b-1].isspace(): b -= 1
-        if a < b: yield a, b, re.sub(r'\s+', '', text[a:b])
-
-
-def quantity_expression(raw):
-    """A small quantity language with explicit operands, not an evaluated score."""
-    raw = re.sub(r'\s+', '', raw)
-    m = re.fullmatch(r'(\d+)d(\d+)(?:\+你的?施法属性调整值)?', raw)
-    if m:
-        dice = {'kind': 'dice', 'count': int(m[1]), 'sides': int(m[2])}
-        return {'kind': 'sum', 'terms': [dice, {'kind': 'modifier', 'ability': 'spellcasting'}]} if '+' in raw else dice
-    m = re.fullmatch(r'(?:你的?)?('+'|'.join(ABILITIES)+r')调整值(?:[（(]至少('+NUMBER+r')次?[）)])?', raw)
-    if m: return {'kind': 'modifier', 'ability': m[1], **({'minimum': number(m[2])} if m[2] else {})}
-    n = number(raw)
-    return {'kind': 'constant', 'value': n} if n is not None else None
 
 
 def parse_prerequisites(entry, text):
@@ -121,7 +91,7 @@ def parse_access(entry, text, spell_mentions):
     def mark(ev):
         if ev not in handled: handled.append(ev)
     def grant(target, mode, ev):
-        g = {'id': 'grant_'+str(len(grants)+1), 'mode': mode, 'target': target, 'branches': [], 'evidence': [ev]}
+        g = {'id': 'grant_'+str(len(grants)+1), 'mode': mode, 'entry_type':'spell', 'target': target, 'branches': [], 'evidence': [ev]}
         grants.append(g); return g
     # A prerequisite is a separate acquisition statement, not a prefix of the first
     # grant sentence. Preserve its full nested expression and exact evidence.
@@ -253,4 +223,4 @@ def parse_access(entry, text, spell_mentions):
         if ability: g['ability']=deepcopy(ability)
         if not g['branches']:
             g['branches']=[{'id':'branch_1','resource':{'kind':'not_stated'},'evidence':g['evidence']}]
-    return {'grants':grants,'contexts':contexts,'prerequisites':prerequisites,'activation':activation,'modifiers':modifiers,'unparsed':gaps,'evidence':handled}
+    return rule_value(grants=grants, contexts=contexts, prerequisites=prerequisites, activation=activation, modifiers=modifiers, unparsed=gaps, evidence=handled)

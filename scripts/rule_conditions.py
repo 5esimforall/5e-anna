@@ -2,7 +2,7 @@
 import re
 
 ABILITIES=('力量','敏捷','体质','智力','感知','魅力')
-CLASSES=('吟游诗人','牧师','德鲁伊','圣武士','游侠','术士','法师','魔契师','奇械师')
+CLASSES=('野蛮人','战士','武僧','游荡者','吟游诗人','牧师','德鲁伊','圣武士','游侠','术士','法师','魔契师','奇械师')
 
 
 def reference(kind, **criteria):return {'kind':kind,**criteria}
@@ -257,7 +257,7 @@ def validate_conditions(record):
         scope=rule['scope']
         if scope['kind']=='effect' and scope['effect_id'] not in by_id:raise ValueError('Rule scope refers to a missing effect')
         if scope['kind']=='usage_branch' and (scope['grant_id'],scope['branch_id']) not in branches:raise ValueError('Rule scope refers to a missing usage branch')
-        if scope['kind']=='casting_field' and scope['field'] not in value.get('casting',{}):raise ValueError('Rule scope refers to a missing casting field')
+        if scope['kind']=='parameter' and scope['field'] not in value.get('parameters',{}):raise ValueError('Rule scope refers to a missing rule parameter')
         when=rule.get('when');check(when);check(rule.get('ends'));check(rule.get('change'))
         for term in condition_terms(when):
             if term.get('kind')=='branch_selected' and (term['grant_id'],term['branch_id'])!=(scope.get('grant_id'),scope.get('branch_id')):

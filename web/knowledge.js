@@ -4,12 +4,12 @@
 window.annaKnowledge=(()=>{
   const {esc}=annaKit;
   const labels={
-    zh:{path:'阅读路径',overview:'返回问题起点',step:'本步关系',provided_by:'获取途径',modified_by:'被这些能力修改',grants_feat:'授予专长',grants_spell:'固定授予',eligible_spell:'允许选择',coverage:'各环节的整理状态',content:'本段内容',dependencies:'通则目标',unresolvedRules:'仍有未确定的通则目标',scopeLabel:'适用范围',change:'修改字段',when:'适用条件',all:'同时满足',anyOf:'满足任一',not:'不满足',save:'豁免',failure:'失败',success:'成功',conditionActive:'状态生效',combat:'目标正与施法者或其同伴战斗',branchSelected:'使用此分支时',endsWhen:'结束条件',sourceText:'当前条目的原文',binding:'本链的施法属性供给',unknownBinding:'尚未明确施法属性',readingHint:'查看候选只改变阅读位置，不确认关系。路径不判断角色是否满足条件。',title:'规则链',filter:'施法链条件',hint:'这些条件必须命中同一授予、同一法术和同一使用分支。可选法术表示允许选择，不表示全部授予。',any:'不限',apply:'应用施法链条件',clear:'移除施法链条件',spell:'固定或可选法术名称',
+    zh:{path:'阅读路径',overview:'返回问题起点',step:'本步关系',provided_by:'获取途径',modified_by:'被这些能力修改',grants_feat:'授予专长',grants_spell:'固定授予',eligible_spell:'允许选择',coverage:'各环节的整理状态',content:'本段内容',dependencies:'通则目标',unresolvedRules:'仍有未确定的通则目标',scopeLabel:'适用范围',change:'修改字段',when:'适用条件',all:'同时满足',anyOf:'满足任一',not:'不满足',save:'豁免',failure:'失败',success:'成功',conditionActive:'状态生效',combat:'目标正与施法者或其同伴战斗',branchSelected:'使用此分支时',endsWhen:'结束条件',sourceText:'当前条目的原文',binding:'本链的施法属性供给',unknownBinding:'尚未明确施法属性',readingHint:'查看候选只改变阅读位置，不确认关系。路径不判断角色是否满足条件。',title:'规则链',filter:'规则链条件',hint:'这些条件必须命中同一授予、同一法术和同一使用分支。可选法术表示允许选择，不表示全部授予。',any:'不限',apply:'应用规则链条件',clear:'移除规则链条件',spell:'目标条目名称（授予者查询时为法术）',
       fields:{mode:'授予方式',resource:'法术位消耗',recovery:'该分支的恢复条件',selection:'目标方式'},
       mode:{known:'习得',prepared:'始终准备',cast:'允许施展',list:'加入法术列表'},resource:{slot_free:'无需消耗法术位',spell_slot:'消耗法术位',not_stated:'本段未明示'},recovery:{long_rest:'长休',short_rest:'短休',short_or_long_rest:'短休或长休',not_stated:'本分支未明示恢复'},selection:{fixed:'固定法术',choice:'受限选择'},
-      empty:'尚未提取到这条规则链；不代表原文没有相关能力。',scope:'此处整理施法相关规则。尚未解析的限定明确列出，不作为无条件查询结果。',
+      empty:'尚未提取到这条规则链；不代表原文没有相关能力。',scope:'授予、使用条件、判定与效果使用共同规则结构。尚未解析的限定明确列出，不作为无条件查询结果。',
       status:{resolved:'已解析',partial:'部分解析',review:'待核',rejected:'已否决'},review:{unreviewed:'未人工核准',applied:'审核已采用',revoked:'审核已撤销',stale:'依据已变化',conflict:'审核冲突'},
-      kinds:{spell_access:'施法能力',spell_effect:'法术效果',feat_access:'授予专长',definition_role:'定义角色'},
+      kinds:{grant:'授予规则',procedure:'规则过程',definition_role:'定义角色'},
       roles:{glossary:'术语简释',explanation:'正文详解',template:'模板小标题'},
       evidence:'原文证据',reader:'在 Stella 中阅读',export:'导出本条规则链 JSON',raw:'结构化记录与审核依据',unparsed:'未解析的原文',
       branches:'使用分支',uses:'次数',perSpell:'每道法术',perGrant:'本项能力',ability:'施法属性',prerequisites:'前置条件',
@@ -19,19 +19,19 @@ window.annaKnowledge=(()=>{
       modifiers:'选择与替换规则',gainLevel:'获得新等级时，可替换一道同列表、同环阶法术',repeat:'可复选，每次须选择不同的法术列表',
       generalRules:'涉及的通则与例外',uses_rule:'使用通则',exception_to:'修改通则',ambiguous:'目标有歧义',missing:'尚无确定目标',
       incoming:'可固定授予或允许选择此法术的条目',preview:'正在查阅法术',noPreview:'展开可选法术，选择一个查看其效果；此操作只改变阅读位置，不建立角色选择。',
-      action:'施法时间',range:'施法距离',components:'法术成分',duration:'持续时间',
+      action:'使用时间',range:'施法距离',components:'法术成分',duration:'持续时间',
       effect:{teleport:'传送',healing:'恢复生命值',saving_throw:'要求豁免',condition:'施加状态',attitude:'态度变化',awareness:'获知效应',upcast:'升环变化'},
       target:'目标',self:'自身',creature:'生物',humanoid:'类人生物',visible:'可见',unoccupied:'未被占据',touch:'触碰',foot:'尺',
       max:'至多',saveFailure:'豁免失败时',ends:'结束条件',spellEnds:'法术结束',damageEnds:'施法者或其同伴对目标造成伤害',
       advantageName:'优势',advantage:'目标正与施法者或其同伴战斗时，此次豁免具有优势',friendly:'受该状态影响期间，对施法者友好',aware:'法术结束时，目标知道该状态由施法者造成',
       upcast:'法术位每高于 {level} 环一环',additional:'额外目标',spellModifier:'施法属性调整值',modifier:'调整值',minimum:'最低',
       confirmHint:'核对后可用 knowledge.py accept / reject 保存；重建后生效。',loading:'正在读取规则链…',error:'规则链读取失败',retry:'重新读取'},
-    en:{path:'Reading path',overview:'Back to the root question',step:'Relationship at this step',provided_by:'Provided by',modified_by:'Modified by',grants_feat:'Grants feat',grants_spell:'Grants spell',eligible_spell:'Eligible choice',coverage:'Progress by segment',content:'Statement content',dependencies:'Governing targets',unresolvedRules:'Some governing targets remain unresolved',scopeLabel:'Scope',change:'Changed field',when:'Applies when',all:'All of',anyOf:'Any of',not:'Not',save:'Save',failure:'Failure',success:'Success',conditionActive:'Condition active',combat:'Target is in combat with the caster or their allies',branchSelected:'When using this branch',endsWhen:'Ends when',sourceText:'Current definition text',binding:'Spellcasting ability supplied by this chain',unknownBinding:'Spellcasting ability is not established',readingHint:'Inspecting a candidate does not confirm the relationship. The path does not evaluate a character’s eligibility.',title:'Rule chain',filter:'Spell-access conditions',hint:'All conditions must match the same grant, spell and usage branch. Eligible choices are not all granted spells.',any:'Any',apply:'Apply casting conditions',clear:'Remove casting conditions',spell:'Fixed or eligible spell name',
+    en:{path:'Reading path',overview:'Back to the root question',step:'Relationship at this step',provided_by:'Provided by',modified_by:'Modified by',grants_feat:'Grants feat',grants_spell:'Grants spell',eligible_spell:'Eligible choice',coverage:'Progress by segment',content:'Statement content',dependencies:'Governing targets',unresolvedRules:'Some governing targets remain unresolved',scopeLabel:'Scope',change:'Changed field',when:'Applies when',all:'All of',anyOf:'Any of',not:'Not',save:'Save',failure:'Failure',success:'Success',conditionActive:'Condition active',combat:'Target is in combat with the caster or their allies',branchSelected:'When using this branch',endsWhen:'Ends when',sourceText:'Current definition text',binding:'Spellcasting ability supplied by this chain',unknownBinding:'Spellcasting ability is not established',readingHint:'Inspecting a candidate does not confirm the relationship. The path does not evaluate a character’s eligibility.',title:'Rule chain',filter:'Rule-chain conditions',hint:'All conditions must match the same grant, spell and usage branch. Eligible choices are not all granted spells.',any:'Any',apply:'Apply rule conditions',clear:'Remove rule conditions',spell:'Target entry name (spell for provider queries)',
       fields:{mode:'Access',resource:'Spell-slot cost',recovery:'Branch recovery',selection:'Target selection'},
       mode:{known:'Learned',prepared:'Always prepared',cast:'Permission to cast',list:'Added to spell list'},resource:{slot_free:'No spell slot consumed',spell_slot:'Consumes a spell slot',not_stated:'Not stated here'},recovery:{long_rest:'Long rest',short_rest:'Short rest',short_or_long_rest:'Short or long rest',not_stated:'Recovery not stated for this branch'},selection:{fixed:'Fixed spell',choice:'Constrained choice'},
-      empty:'No rule chain extracted yet; this does not establish absence.',scope:'This view describes spell-related rules. Unparsed limitations remain visible and are not treated as unconditional query results.',
+      empty:'No rule chain extracted yet; this does not establish absence.',scope:'Grants, usage, checks and effects share one rule model. Unparsed limitations remain visible and never become unconditional query results.',
       status:{resolved:'Parsed',partial:'Partially parsed',review:'Needs review',rejected:'Rejected'},review:{unreviewed:'Not human-approved',applied:'Review applied',revoked:'Review revoked',stale:'Evidence changed',conflict:'Review conflict'},
-      kinds:{spell_access:'Spell access',spell_effect:'Spell effects',feat_access:'Granted feat',definition_role:'Definition role'},
+      kinds:{grant:'Grant rules',procedure:'Rule procedure',definition_role:'Definition role'},
       roles:{glossary:'Glossary definition',explanation:'Chapter explanation',template:'Template heading'},
       evidence:'Source evidence',reader:'Read in Stella',export:'Export this rule chain as JSON',raw:'Structured record and review basis',unparsed:'Unparsed source clauses',
       branches:'Usage branches',uses:'Uses',perSpell:'Per spell',perGrant:'For this grant',ability:'Spellcasting ability',prerequisites:'Prerequisites',
@@ -41,7 +41,7 @@ window.annaKnowledge=(()=>{
       modifiers:'Choice and replacement rules',gainLevel:'On gaining a level, replace one spell with another of the same list and level',repeat:'Repeatable; choose a different spell list each time',
       generalRules:'Governing rules and exceptions',uses_rule:'Uses rule',exception_to:'Modifies rule',ambiguous:'Ambiguous target',missing:'No confirmed target',
       incoming:'Entries granting or permitting a choice of this spell',preview:'Inspecting spell',noPreview:'Expand the eligible spells and inspect an effect. This changes reading position, not a character’s selection.',
-      action:'Casting time',range:'Range',components:'Components',duration:'Duration',
+      action:'Usage time',range:'Range',components:'Components',duration:'Duration',
       effect:{teleport:'Teleport',healing:'Restore hit points',saving_throw:'Saving throw',condition:'Apply condition',attitude:'Attitude',awareness:'Awareness',upcast:'Higher-level slot'},
       target:'Target',self:'Self',creature:'Creature',humanoid:'Humanoid',visible:'Visible',unoccupied:'Unoccupied',touch:'Touch',foot:'ft',
       max:'Up to',saveFailure:'On a failed save',ends:'Ends when',spellEnds:'Spell ends',damageEnds:'Caster or caster’s allies damage the target',
@@ -64,13 +64,13 @@ window.annaKnowledge=(()=>{
       timing:{immediate:'初次效应',ongoing:'后续回合施用',repeat:'重复豁免',not_stated:'未归类'},
       attack_type:{ranged_spell:'远程法术攻击',melee_spell:'近战法术攻击'},
       property:{object:'物件',flammable:'可燃',worn:'被着装',carried:'被携带'},
-      shape:{cone:'锥状',sphere:'球状',cube:'立方'},actor:{caster:'施法者',target:'目标'},
+      shape:{cone:'锥状',sphere:'球状',cube:'立方'},actor:{caster:'施法者',target:'目标',self:'自身'},
       phase:{start:'开始',end:'结束',during:'期间'},relative:{next:'下一回合',each:'每回合',subsequent:'后续各回合'},
       mechanic:{speed:'速度',attack_roll:'攻击检定','healing.allowed':'允许恢复生命值','prone.self_end':'自行结束倒地','spell_slot.consumed':'法术位消耗','casting.target':'施法目标','casting.targets':'目标间距','components.waived':'免除成分','saving_throw.modifier':'特定豁免修正','saving_throw.result':'豁免结果'},
       hit:'命中',miss:'未命中',spellActive:'法术仍生效',takesDamage:'受到伤害',outsideRange:'目标超出施法距离',totalCover:'目标相对施法者处于全身掩护',otherAction:'施法者用动作做其他事情',canLaugh:'目标能够发笑',withinArea:'位于区域',
       referencedQuantity:'引用数量',localLinks:'沿效果关系阅读',targetDefinition:'目标定义',initial:'初次',repeatCheck:'重复',attackOutcome:'首击命中要求',independentAttack:'无论首击是否命中',unresolvedAttack:'原文未明确后续伤害与首击的条件关系',
       ongoingCost:'每次后续施用',bonusAction:'附赠动作',standardAction:'动作',oncePerTurn:'每回合一次',subtract:'减少',yes:'是',no:'否',laugh:'不受控制地狂笑',endAll:'结束法术',endTarget:'结束目标身上的效应',nextAttack:'对目标的下一次攻击',
-      sameEffect:'效果条件必须命中同一法术中的同一效果；后续自动伤害不借用初次攻击的命中条件。'
+      sameEffect:'效果条件必须命中同一条目中的同一效果；后续自动伤害不借用初次攻击的命中条件。'
     },
     en:{
       fields:{effect:'Effect kind',damage_type:'Damage type',delivery:'Effect delivery',timing:'Effect timing',save_ability:'Save ability for this effect',trigger:'Applicability mentions',end_trigger:'Ending condition mentions',access_condition:'Access condition mentions',casting_target:'Branch casting target'},
@@ -86,30 +86,30 @@ window.annaKnowledge=(()=>{
       timing:{immediate:'Initial effect',ongoing:'Use on later turns',repeat:'Repeated save',not_stated:'Not classified'},
       attack_type:{ranged_spell:'Ranged spell attack',melee_spell:'Melee spell attack'},
       property:{object:'Object',flammable:'Flammable',worn:'Worn',carried:'Carried'},
-      shape:{cone:'Cone',sphere:'Sphere',cube:'Cube'},actor:{caster:'Caster',target:'Target'},
+      shape:{cone:'Cone',sphere:'Sphere',cube:'Cube'},actor:{caster:'Caster',target:'Target',self:'Self'},
       phase:{start:'Start',end:'End',during:'During'},relative:{next:'Next turn',each:'Each turn',subsequent:'Subsequent turns'},
       mechanic:{speed:'Speed',attack_roll:'Attack roll','healing.allowed':'Healing allowed','prone.self_end':'End own prone condition','spell_slot.consumed':'Spell slot consumed','casting.target':'Casting target','casting.targets':'Target spacing','components.waived':'Waived components','saving_throw.modifier':'Specific save modifier','saving_throw.result':'Save result'},
       hit:'Hit',miss:'Miss',spellActive:'Spell remains active',takesDamage:'Takes damage',outsideRange:'Target is beyond spell range',totalCover:'Target has total cover from caster',otherAction:'Caster spends the action on something else',canLaugh:'Target can laugh',withinArea:'Within area',
       referencedQuantity:'Referenced quantity',localLinks:'Follow effect relationships',targetDefinition:'Target definition',initial:'Initial',repeatCheck:'Repeated',attackOutcome:'Initial hit requirement',independentAttack:'Regardless of the initial attack result',unresolvedAttack:'Source does not state how ongoing damage depends on the initial hit',
       ongoingCost:'Each later use',bonusAction:'Bonus action',standardAction:'Action',oncePerTurn:'Once per turn',subtract:'Subtract',yes:'Yes',no:'No',laugh:'Laugh uncontrollably',endAll:'End the spell',endTarget:'End the effect on this target',nextAttack:'Next attack against this target',
-      sameEffect:'Effect conditions must match one effect of the same spell. Ongoing automatic damage does not inherit the initial attack’s hit condition.'
+      sameEffect:'Effect conditions must match one effect of the same entry. Ongoing automatic damage does not inherit the initial attack’s hit condition.'
     }
   };
   const sequences={
-    zh:{query_subject:{provider:'授予者',spell:'法术本身'},defaultSubject:'授予者（默认）',subjectHint:'直接查法术时不使用获取条件；查询授予者时，各条件仍须属于同一使用分支。',unresolvedLinks:'尚未确定的效果引用',candidates:'候选（查看不确认）',referenceRole:{target_ref:'目标集合',attack_result:'攻击结果',save_result:'豁免结果',check_ref:'豁免检定',check_total:'累计阈值',sequence_ref:'检定序列',attack_complete:'攻击结束',event_ref:'前置事件',condition:'状态前提',damage_ref:'伤害效果',quantity_ref:'伤害数量'},fields:{query_subject:'查询对象',target_scope:'本效果的目标范围',cumulative_result:'累计结果'},target_scope:{single:'单个目标',area:'区域内各目标',not_stated:'未归类'},cumulative_result:{success:'成功次数',failure:'失败次数'},
-      effect:{event:'后续事件',check_sequence:'检定序列',sequence_policy:'累计计数规则',duration_override:'持续期限例外',no_effect:'明确不受影响'},
+    zh:{use_action:{action:'动作',bonus_action:'附赠动作',reaction:'反应',timed:'其他时间',not_stated:'本效果未明示'},usageCost:'使用成本',cost:'资源消耗',perFeature:'本项特性',attack_received:'可见攻击者命中自身',multiply:'乘以',floor:'向下取整',roundingUnknown:'本段未明示取整',classLevelValue:'职业等级',query_subject:{provider:'授予者',spell:'法术本身',entry:'条目本身（含非施法能力）'},defaultSubject:'授予者（默认）',subjectHint:'直接查条目时不使用施法获取条件；查询授予者时，各条件仍须属于同一使用分支。',unresolvedLinks:'尚未确定的效果引用',candidates:'候选（查看不确认）',referenceRole:{target_ref:'目标集合',attack_result:'攻击结果',save_result:'豁免结果',check_ref:'豁免检定',check_total:'累计阈值',sequence_ref:'检定序列',attack_complete:'攻击结束',event_ref:'前置事件',condition:'状态前提',damage_ref:'伤害效果',quantity_ref:'伤害数量'},fields:{use_action:'本效果的动作成本',query_subject:'查询对象',target_scope:'本效果的目标范围',cumulative_result:'累计结果'},target_scope:{single:'单个目标',area:'区域内各目标',not_stated:'未归类'},cumulative_result:{success:'成功次数',failure:'失败次数'},
+      effect:{event:'事件',check_sequence:'检定序列',sequence_policy:'累计计数规则',duration_override:'持续期限例外',no_effect:'明确不受影响'},
       cumulativeCount:'累计次数阈值',cumulative:'累计',perTarget:'每个目标分别计数',initialCountUnknown:'原文未明确首次检定是否计入累计',separateTotals:'成功与失败分别累计，无需连续',stopAt:'任一计数达到阈值即停止',
       burst:'爆裂',after:'发生于检定结束之后',includesOrigin:'包含原攻击目标',around:'以目标为中心',stone:'变为石头',concentrationMaximum:'专注维持至法术最大持续时间',magicRemoval:'由下列法术或类似魔法移除',
       removed_by:'由该法术移除',untilRemoved:'持续至被移除',construct:'构装生物',undead:'亡灵生物',flesh:'血肉之躯',noEffect:'不受该效应影响',
       timing:{cumulative:'累计结果'},trigger:{check_total:'累计检定结果',concentration_duration:'专注持续时长',creature_type:'生物类型',event_ref:'前置事件'},end_trigger:{magic_removal:'魔法移除'},
-      mechanic:{'saving_throw.sequence':'豁免序列','effect.duration':'效果期限'}},
-    en:{query_subject:{provider:'Providers',spell:'Spells'},defaultSubject:'Providers (default)',subjectHint:'Direct spell queries omit access conditions. Provider queries retain one usage branch.',unresolvedLinks:'Unresolved effect references',candidates:'Candidates (inspection does not confirm)',referenceRole:{target_ref:'Target group',attack_result:'Attack result',save_result:'Save result',check_ref:'Saving throw',check_total:'Cumulative threshold',sequence_ref:'Check sequence',attack_complete:'Attack completed',event_ref:'Prior event',condition:'Condition prerequisite',damage_ref:'Damage effect',quantity_ref:'Damage quantity'},fields:{query_subject:'Query subject',target_scope:'Target scope for this effect',cumulative_result:'Cumulative result'},target_scope:{single:'Single target',area:'Each target in an area',not_stated:'Not classified'},cumulative_result:{success:'Success count',failure:'Failure count'},
-      effect:{event:'Subsequent event',check_sequence:'Check sequence',sequence_policy:'Counting policy',duration_override:'Duration override',no_effect:'Explicitly unaffected'},
+      mechanic:{damage:'伤害','saving_throw.sequence':'豁免序列','effect.duration':'效果期限'}},
+    en:{use_action:{action:'Action',bonus_action:'Bonus action',reaction:'Reaction',timed:'Other time',not_stated:'Not stated for this effect'},usageCost:'Usage cost',cost:'Resource cost',perFeature:'For this feature',attack_received:'Visible attacker hits self',multiply:'Multiply by',floor:'Round down',roundingUnknown:'Rounding not stated here',classLevelValue:'class level',query_subject:{provider:'Providers',spell:'Spells',entry:'Entries (including non-spell abilities)'},defaultSubject:'Providers (default)',subjectHint:'Direct entry queries omit spell-access conditions. Provider queries retain one usage branch.',unresolvedLinks:'Unresolved effect references',candidates:'Candidates (inspection does not confirm)',referenceRole:{target_ref:'Target group',attack_result:'Attack result',save_result:'Save result',check_ref:'Saving throw',check_total:'Cumulative threshold',sequence_ref:'Check sequence',attack_complete:'Attack completed',event_ref:'Prior event',condition:'Condition prerequisite',damage_ref:'Damage effect',quantity_ref:'Damage quantity'},fields:{use_action:'Action cost for this effect',query_subject:'Query subject',target_scope:'Target scope for this effect',cumulative_result:'Cumulative result'},target_scope:{single:'Single target',area:'Each target in an area',not_stated:'Not classified'},cumulative_result:{success:'Success count',failure:'Failure count'},
+      effect:{event:'Event',check_sequence:'Check sequence',sequence_policy:'Counting policy',duration_override:'Duration override',no_effect:'Explicitly unaffected'},
       cumulativeCount:'Cumulative count threshold',cumulative:'Cumulative',perTarget:'Count separately for each target',initialCountUnknown:'Source does not specify whether the initial check counts',separateTotals:'Track successes and failures separately; not necessarily consecutive',stopAt:'Stop when either count reaches its threshold',
       burst:'Burst',after:'After the check completes',includesOrigin:'Includes the original attack target',around:'Centered on target',stone:'Turns to stone',concentrationMaximum:'Concentration lasts for the spell’s maximum duration',magicRemoval:'Removed by the following spell or similar magic',
       removed_by:'Removed by this spell',untilRemoved:'Until removed',construct:'Construct',undead:'Undead',flesh:'Flesh body',noEffect:'Unaffected by this effect',
       timing:{cumulative:'Cumulative outcome'},trigger:{check_total:'Cumulative check result',concentration_duration:'Concentration duration',creature_type:'Creature type',event_ref:'Prior event'},end_trigger:{magic_removal:'Magical removal'},
-      mechanic:{'saving_throw.sequence':'Save sequence','effect.duration':'Effect duration'}}
+      mechanic:{damage:'Damage','saving_throw.sequence':'Save sequence','effect.duration':'Effect duration'}}
   };
   for(const lang of ['zh','en']){
     for(const [key,value] of Object.entries(sequences[lang])){
@@ -128,6 +128,7 @@ window.annaKnowledge=(()=>{
     if(v.kind==='quantity_ref')return l.referencedQuantity+' '+(v.effect_id||l.notParsed)+' × '+v.factor.numerator+'/'+v.factor.denominator;
     if(v.kind==='dice')return `${v.count}d${v.sides}`;
     if(v.kind==='sum')return v.terms.map(expression).join(' + ');
+    if(v.kind==='class_level')return v.class+' '+l.classLevelValue;
     if(v.kind==='modifier')return `${v.ability==='spellcasting'?l.spellModifier:v.ability+' '+l.modifier}${v.minimum!==undefined?' ('+l.minimum+' '+v.minimum+')':''}`;
     return l.notParsed;
   }
@@ -190,15 +191,18 @@ window.annaKnowledge=(()=>{
   function scopeText(scope){
     if(scope.kind==='usage_branch')return scope.grant_id+' / '+scope.branch_id;
     if(scope.kind==='effect')return scope.effect_id;
-    if(scope.kind==='casting_field')return l[scope.field]||scope.field;
+    if(scope.kind==='parameter')return l[scope.field]||scope.field;
     if(scope.kind==='acquisition'&&scope.expression)return condition(scope.expression);
     if(scope.kind==='acquisition')return scope.constraints.class_list?l.list+': '+scope.constraints.class_list.join(' / '):l.notStated;
     if(scope.grant_id)return scope.grant_id+(scope.constraints?.class_list?' · '+l.list+': '+scope.constraints.class_list.join(' / '):'');
     return Object.values(scope).flat().join(' / ')||l.notStated;
   }
+  function usage(use,caption=l.usageCost){
+    const resource=use.resource,kind=resource?.consumed===false?'slot_free':resource?.consumed===true?'spell_slot':'not_stated';
+    return `<dl class="detail-fields">${resource?`<dt>${esc(resource.kind==='spell_slot'?l.fields.resource:l.cost)}</dt><dd>${esc(l.resource[kind])}</dd>`:''}${resource?.level?`<dt>${esc(l.slotLevel)}</dt><dd>${esc(l[resource.level]||resource.level)}</dd>`:''}${use.uses?`<dt>${esc(l.uses)}</dt><dd>${esc(expression(use.uses.quantity)+' · '+(use.uses.per==='spell'?l.perSpell:use.uses.per==='feature'?l.perFeature:l.perGrant))}</dd>`:''}${use.recovery?`<dt>${esc(l.fields.recovery)}</dt><dd>${esc(l.recovery[use.recovery.event])}</dd>`:''}</dl>${use.action?`<p>${esc(caption)}：${esc(l.use_action[use.action])}</p>`:''}${use.frequency?`<p>${esc(use.frequency==='at_will'?l.atWill:l.oncePerTurn)}</p>`:''}`;
+  }
   function branch(b,grantId){
-    const resource=b.resource,kind=resource.consumed===false?'slot_free':resource.consumed===true?'spell_slot':'not_stated';
-    return `<section class="chain-branch" data-branch="${esc(grantId+'/'+b.id)}"><h5>${esc(l.alternative)} <small>${esc(grantId+' / '+b.id)}</small></h5><dl class="detail-fields"><dt>${esc(l.fields.resource)}</dt><dd>${esc(l.resource[kind])}</dd>${resource.level?`<dt>${esc(l.slotLevel)}</dt><dd>${esc(l[resource.level]||resource.level)}</dd>`:''}${b.cast_level?`<dt>${esc(l.level)}</dt><dd>${esc(l[b.cast_level.kind])}</dd>`:''}<dt>${esc(l.uses)}</dt><dd>${b.uses?esc(expression(b.uses.quantity)+' · '+(b.uses.per==='spell'?l.perSpell:l.perGrant)):esc(l.notStated)}</dd><dt>${esc(l.fields.recovery)}</dt><dd>${esc(l.recovery[b.recovery?.event||'not_stated'])}</dd></dl>${b.frequency?`<p>${esc(l.atWill)}</p>`:''}${b.action?`<p>${esc(l.action)}：${esc(l.standardAction)}</p>`:''}${b.when?`<p>${esc(l.activation)}：${esc(condition(b.when))}</p>`:''}${b.target?`<p>${esc(l.target)}：${esc(targetDescription(b.target))}</p>`:''}${b.components?`<p>${esc(l.waived)}：${esc(b.components.waived.join(' / '))}</p>`:''}${b.evidence.map(sourceLink).join('')}</section>`;
+    return `<section class="chain-branch" data-branch="${esc(grantId+'/'+b.id)}"><h5>${esc(l.alternative)} <small>${esc(grantId+' / '+b.id)}</small></h5>${usage(b)}${!b.uses?`<p>${esc(l.uses)}：${esc(l.notStated)}</p>`:''}${!b.recovery?`<p>${esc(l.fields.recovery)}：${esc(l.recovery.not_stated)}</p>`:''}${b.cast_level?`<p>${esc(l.level)}：${esc(l[b.cast_level.kind])}</p>`:''}${b.when?`<p>${esc(l.activation)}：${esc(condition(b.when))}</p>`:''}${b.target?`<p>${esc(l.target)}：${esc(targetDescription(b.target))}</p>`:''}${b.components?`<p>${esc(l.waived)}：${esc(b.components.waived.join(' / '))}</p>`:''}${b.evidence.map(sourceLink).join('')}</section>`;
   }
   function targetDescription(t){
     if(!t)return l.notStated;
@@ -208,7 +212,7 @@ window.annaKnowledge=(()=>{
     return [t.count,t.kind?l[t.kind]||t.kind:'',t.visible?l.visible:'',t.within==='spell_range'?l.range:''].filter(Boolean).join(' · ');
   }
   function changeText(c){
-    const value=c.operation==='subtract'?l.subtract+' '+expression(c.quantity):c.operation==='advantage'?l.advantageName:
+    const value=c.operation==='multiply'?l.multiply+' '+c.factor.numerator+'/'+c.factor.denominator+' · '+(c.rounding==='floor'?l.floor:l.roundingUnknown):c.operation==='subtract'?l.subtract+' '+expression(c.quantity):c.operation==='advantage'?l.advantageName:
       typeof c.value==='boolean'?l[c.value?'yes':'no']:c.value?.effect_id?c.value.effect_id:c.value?.kind==='pairwise_distance'?l.pairwise+' '+c.value.maximum+' '+l.foot:Array.isArray(c.value)?c.value.join(' / '):c.value==='self'?l.self:c.value==='advantage'?l.advantageName:c.value==='disadvantage'?l.disadvantageName:c.value==='until_removed'?l.untilRemoved:c.value==='end'?l.endAll:l[c.value]||String(c.value??l.notStated);
     return (l.mechanic[c.field]||c.field)+' → '+value+(c.applies==='next_attack_against_target'?' · '+l.nextAttack:'')+(c.check?' · '+(c.check.effect_id||l.notParsed):'')+(c.applies_to?.kind==='spell_saves'?' · '+l.allSpellSaves:c.applies_to?' · '+(c.applies_to.effect_id||l.notParsed):'');
   }
@@ -227,7 +231,7 @@ window.annaKnowledge=(()=>{
     if(e.kind==='check_modifier')text=(e.check.effect_id||l.notParsed)+' → '+(e.modifier==='advantage'?l.advantageName:l.disadvantageName);
     if(e.kind==='end_spell')text=e.scope==='target'?l.endTarget:l.endAll;
     if(e.kind==='save_override')text=(e.applies_to.kind==='spell_saves'?l.allSpellSaves:e.applies_to.effect_id||l.notParsed)+' → '+l[e.result];
-    if(e.kind==='event')text=l[e.event]+' · '+l.after+' '+(e.after.effect_id||l.notParsed);
+    if(e.kind==='event')text=l[e.event]+(e.after?' · '+l.after+' '+(e.after.effect_id||l.notParsed):'');
     if(e.kind==='check_sequence')text=(e.check.effect_id||l.notParsed)+' · '+l.perTarget+' · '+l.initialCountUnknown;
     if(e.kind==='sequence_policy')text=(e.sequence.effect_id||l.notParsed)+' · '+l.separateTotals+' · '+l.stopAt+' ('+l.success+' '+e.stop.success+' / '+l.failure+' '+e.stop.failure+')';
     if(e.kind==='duration_override')text=(e.applies_to.effect_id||l.notParsed)+' → '+l.untilRemoved;
@@ -236,7 +240,7 @@ window.annaKnowledge=(()=>{
     if(e.kind==='ignite')text=l.effect.ignite;
     if(e.kind==='level_scale')text=e.levels.map(x=>l.level+' '+x.level+' → '+expression(x.quantity)).join(' · ');
     if(e.kind==='teleport')text=`${l.self} → ${l.max} ${e.destination.distance.maximum} ${l.foot} · ${l.visible} · ${l.unoccupied}`;
-    if(e.kind==='healing')text=`${l.touch} · ${e.target?.count||1} ${l.creature} → ${expression(e.quantity)}`;
+    if(e.kind==='healing')text=`${e.target?.contact?l.touch+' · ':''}${targetDescription(e.target)} → ${expression(e.quantity)}`;
     if(e.kind==='saving_throw')text=targetDescription(e.target)+' → '+(e.ability||l.notParsed)+' · '+(e.check_role==='repeat'?l.repeatCheck:l.initial)+(e.occurrence?' · '+l.ordinalCheck.replace('{n}',e.occurrence):'')+(e.ability_source?' · '+l.inheritedAbility:'');
     if(e.kind==='condition')text=e.condition+(e.form?' · '+l[e.form]:'');
     if(e.kind==='attitude')text=l.friendly;
@@ -245,17 +249,19 @@ window.annaKnowledge=(()=>{
     const unresolved=(e.links||[]).filter(x=>!x.target_effect_id);
     const candidates=unresolved.length?`<details class="effect-candidates"><summary>${esc(l.unresolvedLinks)} (${unresolved.length})</summary>${unresolved.map(x=>`<p>${esc(l.referenceRole[x.role]||x.role)} · ${esc(l.candidates)}: ${x.candidate_effect_ids.length?x.candidate_effect_ids.map(id=>localLink(subject,id)).join(' · '):esc(l.missing)}</p>`).join('')}</details>`:'';
     const links=(e.links||[]).filter(x=>x.target_effect_id).filter((x,i,a)=>a.findIndex(y=>y.target_effect_id===x.target_effect_id)===i);
-    return `<section class="chain-effect" data-effect="${esc(e.id)}" tabindex="-1"><h4>${esc(l.effect[e.kind]||e.kind)} <small>${esc(e.id)}</small></h4><p>${esc(text)}</p>${e.target&&!['attack_roll','saving_throw','damage'].includes(e.kind)?`<p class="effect-target">${esc(l.target)}：${esc(targetDescription(e.target))}</p>`:''}${e.when?`<p>${esc(l.when)}：${esc(condition(e.when))}</p>`:''}${e.ends?`<p>${esc(l.endsWhen)}：${esc(condition(e.ends))}</p>`:''}${e.use?`<p>${esc(l.ongoingCost)}：${esc(e.use.action==='bonus_action'?l.bonusAction:l.standardAction)} · ${esc(l.oncePerTurn)}</p>`:''}${e.initial_attack_result?`<p>${esc(e.initial_attack_result==='irrelevant'?l.independentAttack:l.unresolvedAttack)}</p>`:''}${(e.modifiers||[]).map(m=>`<p>${esc(l.when)}：${esc(condition(m.when))} → ${esc(m.effect==='advantage'?l.advantageName:m.effect)}</p>`).join('')}${links.length?`<p class="effect-links">${esc(l.localLinks)}：${links.map(x=>localLink(subject,x.target_effect_id)).join(' · ')}</p>`:''}${candidates}${sourceLink(e.evidence)}</section>`;
+    return `<section class="chain-effect" data-effect="${esc(e.id)}" tabindex="-1"><h4>${esc(l.effect[e.kind]||e.kind)} <small>${esc(e.id)}</small></h4><p>${esc(text)}</p>${e.target&&!['attack_roll','saving_throw','damage'].includes(e.kind)?`<p class="effect-target">${esc(l.target)}：${esc(targetDescription(e.target))}</p>`:''}${e.when?`<p>${esc(l.when)}：${esc(condition(e.when))}</p>`:''}${e.ends?`<p>${esc(l.endsWhen)}：${esc(condition(e.ends))}</p>`:''}${e.use?usage(e.use,e.timing==='ongoing'?l.ongoingCost:l.usageCost)+(e.use.evidence||[]).filter(ev=>ev.raw!==e.evidence.raw).map(sourceLink).join(''):''}${e.initial_attack_result?`<p>${esc(e.initial_attack_result==='irrelevant'?l.independentAttack:l.unresolvedAttack)}</p>`:''}${(e.modifiers||[]).map(m=>`<p>${esc(l.when)}：${esc(condition(m.when))} → ${esc(m.effect==='advantage'?l.advantageName:m.effect)}</p>`).join('')}${links.length?`<p class="effect-links">${esc(l.localLinks)}：${links.map(x=>localLink(subject,x.target_effect_id)).join(' · ')}</p>`:''}${candidates}${sourceLink(e.evidence)}</section>`;
   }
   function record(r,chain,nodes,audit){
     const v=r.value,subject=nodes.get(r.subject_id);let body='';
     if(r.kind==='definition_role')body=`<p>${esc(l.roles[v.role]||v.role)}</p>`;
-    if(r.kind==='feat_access')body=`<p>${target(v.target,nodes,r.subject_id)}</p>${v.constraints.class_list?`<p>${esc(l.list)}：${esc(v.constraints.class_list.join(' / '))}</p>`:''}${sourceLink(v.target.evidence)}`;
-    if(r.kind==='spell_access'){
+    if(r.kind!=='definition_role'){
       const pre=v.prerequisites;
       body=(pre?.status!=='not_stated'?`<p>${esc(l.prerequisites)}：${pre?.expression?conditionView(pre.expression,nodes,r.subject_id):esc(l.notParsed)}</p>${pre?.evidence?sourceLink(pre.evidence):''}`:'');
       if(v.activation)body+=`<p>${esc(l.activation)}：${esc(condition(v.activation.expression))}</p>${sourceLink(v.activation.evidence)}`;
+    }
+    if(r.kind==='grant'){
       body+=v.grants.map(g=>{
+        if(g.entry_type==='feat')return `<article class="chain-grant"><h4>${esc(l.grants_feat)}</h4><p>${target(g.target,nodes,r.subject_id)}</p>${g.constraints.class_list?`<p>${esc(l.list)}：${esc(g.constraints.class_list.join(' / '))}</p>`:''}${g.evidence.map(sourceLink).join('')}</article>`;
         const t=g.target,edges=chain.edges.filter(e=>e.source_id===r.subject_id&&e.scope.grant_id===g.id&&['eligible_spell','grants_spell'].includes(e.relation)&&e.status==='resolved');
         const allowed=[...new Set(edges.map(e=>e.target_id).filter(Boolean))],c=t.constraints||{};
         const heading=t.kind==='entry'?target(t,nodes,r.subject_id):`${esc(l.choose)} ${t.count} ${esc(l.count)} · ${esc(l.notAll)}`;
@@ -265,8 +271,8 @@ window.annaKnowledge=(()=>{
       }).join('');
       if(v.modifiers.length)body+=`<h4>${esc(l.modifiers)}</h4>${v.modifiers.map(m=>`<p>${esc(m.kind==='replace_choice'?l.gainLevel:l.repeat)}</p>${sourceLink(m.evidence)}`).join('')}`;
     }
-    if(r.kind==='spell_effect'){
-      body=`<dl class="detail-fields">${['action','range','components','duration'].filter(k=>v.casting[k]).map(k=>[k,v.casting[k]]).map(([k,c])=>`<dt>${esc(l[k]||k)}</dt><dd>${esc(c.raw)}${sourceLink(c.evidence)}</dd>`).join('')}</dl>${v.effects.map(e=>effect(e,r.subject_id)).join('')}`;
+    if(r.kind==='procedure'){
+      body+=`<dl class="detail-fields">${['action','range','components','duration'].filter(k=>v.parameters[k]).map(k=>[k,v.parameters[k]]).map(([k,c])=>`<dt>${esc(l[k]||k)}</dt><dd>${esc(c.raw)}${sourceLink(c.evidence)}</dd>`).join('')}</dl>${v.effects.map(e=>effect(e,r.subject_id)).join('')}`;
     }
     if(v.unparsed?.length)body+=`<details class="chain-gaps"><summary>${esc(l.unparsed)} (${v.unparsed.length})</summary>${v.unparsed.map(g=>sourceLink(g.evidence)).join('')}</details>`;
     if(v.rules?.length)body+=`<details class="chain-rules"><summary>${esc(l.generalRules)}</summary>${v.rules.map(link=>`<p>${esc(l[link.relation])}：${target(link.target,nodes,r.subject_id)}</p><p>${esc(l.scopeLabel)}：${scopeView(link.scope,r.subject_id)}</p>${link.when?`<p>${esc(l.when)}：${esc(condition(link.when))}</p>`:''}${link.ends?`<p>${esc(l.endsWhen)}：${esc(condition(link.ends))}</p>`:''}${link.change?`<p>${esc(l.change)}：${esc(changeText(link.change))}</p>`:''}${sourceLink(link.target.evidence)}`).join('')}</details>`;
@@ -295,7 +301,7 @@ window.annaKnowledge=(()=>{
   }
   function render(entry,audit){
     const c=entry.rule_chain||{records:[],nodes:[],options:[],incoming:[]},nodes=new Map(c.nodes.map(n=>[n.id,n]));
-    return `<div class="rule-chain"><p class="muted">${esc(l.scope)}</p>${readingView(c,nodes)}<a href="/api/knowledge-export?id=${encodeURIComponent(entry.id)}${c.selected_spell_id?'&spell='+encodeURIComponent(c.selected_spell_id):''}${c.reading?'&path='+encodeURIComponent(JSON.stringify(c.reading.path)):''}${c.reading?.effect_id?'&effect='+encodeURIComponent(c.reading.effect_id):''}" download>${esc(l.export)}</a>${c.records.length?[...c.records].sort((a,b)=>(a.subject_id===entry.id?0:a.kind==='spell_access'?1:2)-(b.subject_id===entry.id?0:b.kind==='spell_access'?1:2)).map(r=>record(r,c,nodes,audit)).join(''):`<p>${esc(l.empty)}</p>`}${c.options.some(o=>o.selection==='choice')&&!c.selected_spell_id?`<p>${esc(l.noPreview)}</p>`:''}${c.incoming.length?`<details><summary>${esc(l.incoming)} (${c.incoming.length})</summary>${c.incoming.map(x=>entryLink(x.entry_id,`${x.name} · ${x.ruleset==='5e'?'2014':'2024'}`,entry.id)).join(' ')}</details>`:''}</div>`;
+    return `<div class="rule-chain"><p class="muted">${esc(l.scope)}</p>${readingView(c,nodes)}<a href="/api/knowledge-export?id=${encodeURIComponent(entry.id)}${c.selected_spell_id?'&spell='+encodeURIComponent(c.selected_spell_id):''}${c.reading?'&path='+encodeURIComponent(JSON.stringify(c.reading.path)):''}${c.reading?.effect_id?'&effect='+encodeURIComponent(c.reading.effect_id):''}" download>${esc(l.export)}</a>${c.records.length?[...c.records].sort((a,b)=>(a.subject_id===entry.id?0:a.kind==='grant'?1:2)-(b.subject_id===entry.id?0:b.kind==='grant'?1:2)).map(r=>record(r,c,nodes,audit)).join(''):`<p>${esc(l.empty)}</p>`}${c.options.some(o=>o.selection==='choice')&&!c.selected_spell_id?`<p>${esc(l.noPreview)}</p>`:''}${c.incoming.length?`<details><summary>${esc(l.incoming)} (${c.incoming.length})</summary>${c.incoming.map(x=>entryLink(x.entry_id,`${x.name} · ${x.ruleset==='5e'?'2014':'2024'}`,entry.id)).join(' ')}</details>`:''}</div>`;
   }
   function description(raw){
     try{return l.filter+'：'+Object.entries(JSON.parse(raw)).map(([k,v])=>k==='spell'?l.spell+' '+v:k==='cumulative_count'?l.cumulativeCount+' '+v:l[k]?.[v]||v).join(' · ');}catch{return l.filter;}
@@ -317,7 +323,7 @@ window.annaKnowledge=(()=>{
     }
     function scheduleCounts(){clearTimeout(countTimer);countRequest?.abort();const gen=++generation;if(box.open)countTimer=setTimeout(()=>counts(gen),180);}
     function subjectMode(){
-      const direct=box.querySelector('[data-casting=query_subject]').value==='spell';
+      const direct=box.querySelector('[data-casting=query_subject]').value!=='provider'&&box.querySelector('[data-casting=query_subject]').value!=='';
       for(const key of ['mode','resource','recovery','selection','access_condition','casting_target']){const control=box.querySelector(`[data-casting="${key}"]`);control.disabled=direct;if(direct)control.value='';}
     }
     box.addEventListener('toggle',scheduleCounts);box.addEventListener('change',()=>{subjectMode();scheduleCounts();});

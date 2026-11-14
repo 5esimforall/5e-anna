@@ -1,12 +1,11 @@
 """Evidence-bounded spell clauses, shared across sources and spell identities."""
 from copy import deepcopy
 import re
-from casting_extract import ABILITIES, NUMBER, number, evidence, sentences, quantity_expression
-from rule_conditions import bind_effects, reference, outcome, turn, target_ref
+from rule_values import ABILITIES, NUMBER, number, evidence, sentences, quantity_expression, DAMAGE_TYPES
+from rule_model import rule_value, finish_effects
+from rule_conditions import reference, outcome, turn, target_ref
 from check_sequences import parse_sequence_clause
 
-DAMAGE_TYPES=dict(zip(('强酸','寒冷','火焰','力场','闪电','暗蚀','毒素','心灵','光耀','雷鸣','钝击','穿刺','挥砍'),
-                     ('acid','cold','fire','force','lightning','necrotic','poison','psychic','radiant','thunder','bludgeoning','piercing','slashing')))
 DAMAGE='(?:'+'|'.join(DAMAGE_TYPES)+')'
 ABILITY='(?:'+'|'.join(ABILITIES)+')'
 
@@ -231,12 +230,5 @@ def parse_spell(entry, text):
         gaps.append({'reason':'unsupported_effect','evidence':ev})
     for field,reading in casting.items():
         if reading.get('kind')=='unparsed':gaps.append({'reason':'unsupported_casting_field','field':field,'evidence':reading['evidence']})
-    for effect in effects:
-        a,b=effect['evidence']['span']
-        # Paragraph boundaries are source evidence, not a heuristic choice of the
-        # nearest check. Explicit cross-paragraph references use target identity.
-        pa=text.rfind('\n',last,a)+1;pb=text.find('\n',b,end)
-        effect['paragraph']=evidence(path,text,max(last,pa),pb if pb!=-1 else end)
-        if effect.get('initial_attack_result')=='not_stated':gaps.append({'reason':'unresolved_ongoing_precondition','evidence':effect['evidence']})
-    gaps.extend(bind_effects(effects,gaps))
-    return {'casting':casting,'effects':effects,'descriptions':descriptions,'unparsed':gaps}
+    gaps.extend(finish_effects(effects, gaps, path, text, last, end))
+    return rule_value(parameters=casting, effects=effects, descriptions=descriptions, unparsed=gaps)

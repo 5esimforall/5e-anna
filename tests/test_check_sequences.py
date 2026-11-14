@@ -39,7 +39,7 @@ class SequenceTests(unittest.TestCase):
             self.assertEqual(effect['target']['effect_id'],check['target']['effect_id'])
             self.assertNotEqual(effect['paragraph']['span'],check['paragraph']['span'])
         self.assertEqual(effects[4]['when']['candidate_effect_ids'],[first['id']])
-        rows=list(effect_rows([{'id':'r','kind':'spell_effect','subject_id':'s','status':'resolved','review_status':'unreviewed','value':value}]))
+        rows=list(effect_rows([{'id':'r','kind':'procedure','subject_id':'s','status':'resolved','review_status':'unreviewed','value':value}]))
         self.assertEqual([(r['save_ability'],r['target_scope']) for r in rows if r['effect']=='damage'],[('敏捷','area'),('敏捷','area')])
         bad=deepcopy(value);ref=bad['effects'][4]['when'];ref['effect_id']=second['id'];ref['candidate_effect_ids']=[second['id']]
         with self.assertRaisesRegex(ValueError,'scope'):validate_conditions({'value':bad})
@@ -135,7 +135,7 @@ class CorpusSequenceTests(unittest.TestCase):
         from knowledge import record_for
         for generation in ('5e','5r'):
             e=next(e for e in self.ctx.entries.values() if e.get('name_en')=='Flesh to Stone' and e['ruleset']==generation)
-            v=parse_spell(e,self.ctx.pages[e['page_path']]);r=record_for(e,'spell_effect',v,self.ctx)
+            v=parse_spell(e,self.ctx.pages[e['page_path']]);r=record_for(e,'procedure',v,self.ctx)
             self.assertEqual(r['status'],'resolved' if generation=='5r' else 'partial')
             sequence=next(x for x in v['effects'] if x['kind']=='check_sequence')
             self.assertEqual(sequence['initial_inclusion'],'not_stated')

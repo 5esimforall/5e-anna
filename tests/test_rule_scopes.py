@@ -79,7 +79,7 @@ class CheckScopeTests(unittest.TestCase):
         body=('一道恶心的浅绿射线朝施法距离内一个生物射去。你对目标进行一次远程法术攻击。'
               '若命中，则目标受到2d8的毒素伤害且必须进行一次体质豁免，豁免失败则目标陷入中毒，该中毒效应持续至你的下一回合结束。')
         value=spell(body);self.assertFalse(value['unparsed'])
-        rows=list(effect_rows([{'id':'r','subject_id':'s','kind':'spell_effect','status':'resolved','review_status':'unreviewed','value':value}]))
+        rows=list(effect_rows([{'id':'r','subject_id':'s','kind':'procedure','status':'resolved','review_status':'unreviewed','value':value}]))
         save=next(r for r in rows if r['effect']=='saving_throw');poison=next(r for r in rows if r['effect']=='condition')
         self.assertEqual(save['delivery'],'saving_throw');self.assertEqual(save['triggers'],['attack_result'])
         self.assertEqual(poison['delivery'],'saving_throw');self.assertEqual(poison['triggers'],['save_result'])
@@ -166,7 +166,7 @@ class CorpusScopeTests(unittest.TestCase):
             with self.subTest(name=name,generation=generation):
                 entry=self.entry(name,generation,prefix)
                 value=parse_access(entry,self.context.pages[entry['page_path']],self.context.mentions(entry))
-                self.assertEqual(record_for(entry,'spell_access',value,self.context)['status'],'resolved')
+                self.assertEqual(record_for(entry,'grant',value,self.context)['status'],'resolved')
                 self.assertEqual(bool(value['activation']),attuned)
                 branch=value['grants'][0]['branches'][0];self.assertEqual(branch['target'],{'kind':'self'})
                 self.assertEqual(branch.get('when',{}).get('state'),state)
@@ -191,7 +191,7 @@ class CorpusScopeTests(unittest.TestCase):
         from knowledge import record_for
         entry=self.entry('Adept of the Black Robes','5e','topics/龙枪：龙后之影/')
         value=parse_access(entry,self.context.pages[entry['page_path']],self.context.mentions(entry))
-        record=record_for(entry,'spell_access',value,self.context)
+        record=record_for(entry,'grant',value,self.context)
         pre=record['value']['prerequisites'];self.assertEqual(pre['status'],'parsed')
         requirement=pre['expression']['all'][1]
         self.assertEqual(requirement['name'],'高等术法入门');self.assertEqual(requirement['qualifier'],'努塔瑞')
@@ -216,7 +216,7 @@ class CorpusScopeTests(unittest.TestCase):
         entry=self.entry('Sleep','5r','topics/玩家手册2024/')
         root=next(e for e in self.context.entries.values() if e['name_zh']=='智者' and e['ruleset']=='5r')
         result=chain(self.db,root['id'],entry['id'],effect_id='effect_5')
-        record=next(r for r in result['records'] if r['subject_id']==entry['id'] and r['kind']=='spell_effect')
+        record=next(r for r in result['records'] if r['subject_id']==entry['id'] and r['kind']=='procedure')
         self.assertEqual(record['status'],'resolved');effects=record['value']['effects']
         self.assertEqual(effects[4]['when']['effect_id'],effects[3]['id'])
         self.assertEqual(effects[3]['repeat_of']['effect_id'],effects[1]['id'])

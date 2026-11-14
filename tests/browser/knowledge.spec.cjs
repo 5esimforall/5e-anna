@@ -254,7 +254,8 @@ test('cumulative queries select spells and preserve counts, scope, rule exceptio
   await expect(page.locator('[data-effect=effect_10]')).toContainText('成功与失败分别累计，无需连续');
   await page.locator('[data-effect=effect_7] [data-chain-effect=effect_6]').click();
   await page.locator('[data-effect=effect_6] [data-chain-effect=effect_2]').click();await expect(page.locator('[data-effect=effect_2]')).toBeFocused();
-  await page.goBack();await expect(page).toHaveURL(/chain_effect=effect_6/);await page.reload();await expect(page.locator('[data-effect=effect_6]')).toBeFocused();
+  await page.goBack();await expect(page).toHaveURL(/chain_effect=effect_6/);await expect(page.locator('[data-effect=effect_6]')).toBeFocused();
+  await page.reload();await expect(page.locator('[data-effect=effect_6]')).toBeFocused();
   await expect(page.locator('[data-casting=cumulative_count]')).toHaveValue('3');
   const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
   const root=exported.chain.reading.root_id;expect(exported.chain.reading.effect_id).toBe('effect_6');
@@ -304,9 +305,66 @@ test('ambiguous local candidates remain inspectable without confirming a referen
   const statement={id:'effect_3',kind:'condition',condition:'石化',evidence:ev,
     when:{kind:'save_result',result:'failure',effect_id:null,candidate_effect_ids:['effect_1','effect_2']},
     links:[{field:'when',role:'save_result',target_effect_id:null,candidate_effect_ids:['effect_1','effect_2'],status:'unresolved'}]};
-  const entry={id:'fixture',rule_chain:{options:[],incoming:[],edges:[],nodes:[{id:'fixture',name:'夹具'}],records:[{id:'record',subject_id:'fixture',kind:'spell_effect',status:'partial',review_status:'unreviewed',value:{casting:{},effects:[statement],rules:[],unparsed:[{reason:'unresolved_effect_condition',evidence:ev}]}}]}};
+  const entry={id:'fixture',rule_chain:{options:[],incoming:[],edges:[],nodes:[{id:'fixture',name:'夹具'}],records:[{id:'record',subject_id:'fixture',kind:'procedure',status:'partial',review_status:'unreviewed',value:{parameters:{},prerequisites:{status:'not_stated'},effects:[statement],rules:[],unparsed:[{reason:'unresolved_effect_condition',evidence:ev}]}}]}};
   const before=JSON.stringify(entry),html=context.window.annaKnowledge.render(entry,false);
   expect(html).toContain('effect-candidates');expect(html).toContain('候选（查看不确认）');
   expect(html).toContain('data-chain-effect="effect_1"');expect(html).toContain('data-chain-effect="effect_2"');
   expect(html).toContain('部分解析');expect(JSON.stringify(entry)).toBe(before);
+});
+
+test('common procedure filters include self healing without inventing a spell cost',async({page,request})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto(anna);await ready(page);
+  await page.locator('#toggle-filters').click();await page.locator('#casting-filters summary').click();
+  await page.locator('[data-casting=query_subject]').selectOption('entry');
+  await expect(page.locator('[data-casting=resource]')).toBeDisabled();
+  await page.locator('[data-casting=effect]').selectOption('healing');
+  await page.locator('[data-casting=use_action]').selectOption('bonus_action');
+  await page.locator('[data-casting-apply]').click();await ready(page);
+  await page.locator('#results .entry-name').filter({hasText:'回气'}).click();
+  await page.getByRole('tab',{name:'规则链',exact:true}).click();
+  const healing=page.locator('[data-effect=effect_1]');
+  await expect(healing).toContainText('自身');await expect(healing).toContainText('战士 职业等级');
+  await expect(healing).toContainText('短休或长休');await expect(healing).toContainText('附赠动作');
+  await expect(healing).not.toContainText('法术位');await expect(healing).not.toContainText('触碰');
+  await page.reload();await expect(healing).toContainText('短休或长休');
+  await expect(page.locator('[data-casting=use_action]')).toHaveValue('bonus_action');
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  expect(exported.schema).toBe(2);expect(exported.chain.options).toEqual([]);
+  const record=exported.chain.records.find(r=>r.kind==='procedure');
+  expect(record.value.effects[0].use.recovery.event).toBe('short_or_long_rest');expect(record.value.casting).toBeUndefined();
+  await page.setViewportSize({width:390,height:844});await page.getByRole('tab',{name:'规则链',exact:true}).focus();
+  await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowRight');
+  await expect(page.getByRole('tab',{name:'规则链',exact:true})).toHaveAttribute('aria-selected','true');
+  expect(await page.locator('.rule-chain').evaluate(el=>el.scrollWidth<=el.clientWidth)).toBe(true);
+  await page.screenshot({path:'output/playwright/common-procedure-mobile.png'});await page.setViewportSize({width:1280,height:800});
+  expect(errors).toEqual([]);
+});
+
+test('nonspell reaction follows its triggering event and governing rule through history and Stella',async({page,request})=>{
+  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const root=await corpusEntry(request,'直觉闪避');
+  const query={query_subject:'entry',effect:'modifier',use_action:'reaction'};
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',casting:JSON.stringify(query)}));
+  await expect(page.locator('[data-effect=effect_2]')).toContainText('反应');
+  await expect(page.locator('[data-effect=effect_2]')).toContainText('乘以 1/2');
+  await expect(page.locator('[data-effect=effect_2]')).toContainText('向下取整');
+  await page.locator('[data-effect=effect_2] [data-chain-effect=effect_1]').click();
+  await expect(page.locator('[data-effect=effect_1]')).toBeFocused();
+  await expect(page.locator('[data-effect=effect_1]')).toContainText('可见攻击者命中自身');
+  await page.reload();await expect(page.locator('[data-effect=effect_1]')).toBeFocused();
+  const exported=await (await request.get(anna+await page.locator('.rule-chain > a[download]').getAttribute('href'))).json();
+  const exception=exported.chain.edges.find(e=>e.relation==='exception_to'&&e.target_id);
+  expect(exception.scope.effect_id).toBe('effect_2');expect(exception.change.applies_to.effect_id).toBe('effect_1');
+  await page.goto(anna+'/?'+new URLSearchParams({entry:root.id,tab:'chain',chain_path:JSON.stringify([root.id,exception.target_id])}));
+  await expect(page.locator('.chain-step')).toContainText('乘以 1/2');
+  await page.locator('.chain-step [data-chain-effect=effect_2]').click();await expect(page.locator('[data-effect=effect_2]')).toBeFocused();
+  await page.goBack();await expect(page.locator('.chain-step')).toContainText('乘以 1/2');await page.goForward();
+  await expect(page.locator('[data-effect=effect_2]')).toBeFocused();
+  const popup=page.waitForEvent('popup');await page.locator(`.knowledge-record[data-subject="${root.id}"] > .detail-links a`).click();
+  const stella=await popup;await expect(stella.locator('#book-main')).toHaveAttribute('aria-busy','false');
+  await stella.locator('.companion-more').click();
+  await stella.locator('#companion-menu').getByRole('group',{name:'最近'}).locator('[href*="chain_effect=effect_2"]').click();
+  await expect(stella.locator('[data-effect=effect_2]')).toBeFocused();await stella.close();
+  expect(errors).toEqual([]);
 });

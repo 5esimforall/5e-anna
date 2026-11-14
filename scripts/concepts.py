@@ -238,7 +238,7 @@ class Resolver:
         def result(candidates,reason,status=None):
             ids=sorted(e['id'] for e in candidates)
             result={'targets':ids,'reason':reason,'status':status or ('resolved' if len(ids)==1 else 'ambiguous' if ids else 'unresolved')}
-            if excluded_features:result['resolution_evidence']={'out_of_scope_feature_ids':excluded_features}
+            if excluded_features:result['resolution_evidence']={'out_of_scope_feature_ids':sorted(excluded_features)}
             return result
         local=[d for d in self.local_definitions[path] if d['kind']==kind and key(label) in d['name_keys'] and position is not None and d['scope'][0]<=position<d['scope'][1]]
         if local:

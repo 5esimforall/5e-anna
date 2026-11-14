@@ -23,6 +23,21 @@ def digest(value):
     return sha256(canonical(value).encode()).hexdigest()
 
 
+def review_record_id(event):
+    """Locate schema-1 decisions for reopening, never convert their approval.
+
+    This read-only migration is needed while historical logs contain v1 events.
+    New writes use v2 identities; original bindings and evidence remain untouched.
+    """
+    bound=event['binding'];kind=bound['kind']
+    previous={'spell_access':'grant','feat_access':'grant','spell_effect':'procedure'}
+    if event.get('basis',{}).get('schema')==1 and kind in previous:
+        old_id='knowledge_'+digest([bound['subject_id'],kind])[:24]
+        if bound['knowledge_id']==old_id:
+            return 'knowledge_'+digest([bound['subject_id'],previous[kind]])[:24]
+    return bound['knowledge_id']
+
+
 def pipeline_hash():
     return sha256(b''.join(p.read_bytes() for p in sorted((PROJECT/'scripts').glob('*.py')))).hexdigest()
 
@@ -30,7 +45,7 @@ def pipeline_hash():
 # Bump when the meaning of stored review dependencies changes, not for UI edits.
 REVIEW_SEMANTICS_VERSION = 1
 EXTRACTION_MODULES = ('build.py', 'html_extract.py', 'entry_types.py', 'source_extract.py', 'table_extract.py',
-                      'concepts.py', 'references.py', 'review_store.py', 'review_search.py', 'casting_extract.py', 'knowledge.py', 'rule_conditions.py', 'chain_reading.py', 'spell_effects.py', 'check_sequences.py', 'effect_queries.py')
+                      'concepts.py', 'references.py', 'review_store.py', 'review_search.py', 'casting_extract.py', 'knowledge.py', 'rule_conditions.py', 'chain_reading.py', 'spell_effects.py', 'check_sequences.py', 'effect_queries.py', 'rule_values.py', 'rule_model.py', 'feature_effects.py')
 
 
 def extraction_hash():
@@ -86,7 +101,7 @@ def load_events(path=DEFAULT_DECISIONS):
                     raise ValueError('Knowledge basis fingerprint mismatch')
                 if event.get('supersedes'):
                     previous = known.get(event['supersedes'])
-                    if not previous or previous['operation'] not in KNOWLEDGE_OPERATIONS or previous['binding']['knowledge_id'] != binding['knowledge_id']:
+                    if not previous or previous['operation'] not in KNOWLEDGE_OPERATIONS or review_record_id(previous) != review_record_id(event):
                         raise ValueError('Superseded decision must concern the same knowledge record')
             else:
                 binding = event['binding']

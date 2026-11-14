@@ -5,7 +5,7 @@ sequence; it does not quietly add the initial save to that sequence's count.
 """
 from copy import deepcopy
 import re
-from casting_extract import NUMBER, number, quantity_expression
+from rule_values import NUMBER, number, quantity_expression
 from rule_conditions import ABILITIES, reference, outcome, target_ref, turn
 
 ABILITY='(?:'+'|'.join(ABILITIES)+')'

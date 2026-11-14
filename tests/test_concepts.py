@@ -159,6 +159,20 @@ class ConceptTests(unittest.TestCase):
         self.assertEqual((result['status'],result['targets'],result['reason']),('resolved',['rule'],'same_source'))
         self.assertEqual(result['resolution_evidence'],{'out_of_scope_feature_ids':['feature']})
 
+    def test_out_of_scope_evidence_order_is_stable_for_review_fingerprints(self):
+        rule=entry('rule','专精');context=entry('c','正文','topics/book/feats.htm')
+        features=[{**entry(eid,'专精',path='topics/old/'+eid+'.htm',ruleset='5e',kind='class_feature',source='old'),'parent_id':''}
+                  for eid in ['feature_z','feature_a']]
+        resolver=Resolver([rule,context,*features]);results=[]
+        # Exercise both source-index traversal orders without relying on a
+        # particular process's randomized set iteration.
+        for ids in [['feature_z','rule','feature_a'],['feature_a','feature_z','rule']]:
+            resolver.names['专精']=ids
+            results.append(resolver.resolve('专精','concept',context['page_path'],10))
+        self.assertEqual(results[0],results[1])
+        self.assertEqual(results[0]['resolution_evidence'],{'out_of_scope_feature_ids':['feature_a','feature_z']})
+        self.assertEqual(results[0]['targets'],['rule'])
+
     def test_table_cells_accept_complete_name_lists_only(self):
         scan=term_scanner(['专精','偷袭','盗贼黑话','诗人激励','休憩曲','动作如潮','力量','敏捷','Concentration'])
         for text,expected in [

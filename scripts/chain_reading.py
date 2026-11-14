@@ -53,8 +53,9 @@ def outgoing(db, subject, scoped_options):
                 'record_id':record['id'],'target_status':resolution['status'],'scope':scope,'evidence':ev,'review_status':record['review_status']})
     for record in records_for(db,subject):
         value=record['value']
-        if record['kind']=='feat_access':target_edges(record,value['target'],'grants_feat',{'kind':'acquisition','constraints':value['constraints']},value['target']['evidence'])
-        if record['kind']=='spell_access':
+        if record['kind']=='grant':
+            for grant in value['grants']:
+                if grant['entry_type']=='feat':target_edges(record,grant['target'],'grants_feat',{'kind':'acquisition','constraints':grant['constraints']},grant['target']['evidence'])
             pre=value['prerequisites']
             for term in condition_terms(pre.get('expression')):
                 if term.get('target'):
@@ -63,6 +64,7 @@ def outgoing(db, subject, scoped_options):
             if options is None:options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(subject,))]
             seen={}
             for option in options:
+                if option['subject_id']!=subject:continue
                 for tid in option.get('spell_ids',[option.get('spell_id')]):
                     token=(option['grant_id'],tid)
                     if token in seen:
@@ -73,7 +75,7 @@ def outgoing(db, subject, scoped_options):
                     seen[token]=edge;edges.append(edge)
             # Unresolved fixed grants remain inspectable, but never assert an effective option.
             for grant in value['grants']:
-                if grant['target']['kind']=='entry' and (record['status']!='resolved' or grant['target']['resolution']['status']!='resolved'):
+                if grant['entry_type']=='spell' and grant['target']['kind']=='entry' and (record['status']!='resolved' or grant['target']['resolution']['status']!='resolved'):
                     target_edges(record,grant['target'],'grants_spell',{'kind':'grant','grant_id':grant['id']},grant['evidence'][0])
     for raw, in db.execute('SELECT data FROM knowledge_rule_links WHERE source_id=? ORDER BY id',(subject,)):
         edges.append(json.loads(raw))
@@ -87,8 +89,9 @@ def outgoing(db, subject, scoped_options):
             acquisition=[]
             for rid in option['acquisition']:
                 record=json.loads(db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()[0])
+                grant=next(g for g in record['value']['grants'] if g['entry_type']=='feat')
                 acquisition.append({'record_id':rid,'subject_id':record['subject_id'],'review_status':record['review_status'],
-                                    'constraints':record['value']['constraints'],'evidence':record['value']['target']['evidence']})
+                                    'constraints':grant['constraints'],'evidence':grant['target']['evidence']})
             edges.append({'source_id':subject,'target_id':root,'relation':'provided_by','status':'resolved',
                 'record_id':option['knowledge_id'],'acquisition':acquisition,
                 'scope':{'kind':'grant','grant_id':option['grant_id'],'constraints':option['constraints'],'usage':[usage(option)]},'evidence':option['grant']['evidence'][0]})
@@ -110,16 +113,18 @@ def reading(db, root, chain, raw_path=None, effect_id=None):
     if path[0]!=root:raise ValueError('Reading path must start at its root')
     scoped=defaultdict(list)
     for record in records_for(db,root):
-        if record['kind']=='feat_access':
-            for tid in record['value']['target']['resolution']['targets']:scoped[tid]=[]
+        for grant in record['value'].get('grants',[]):
+            if grant['entry_type']=='feat':
+                for tid in grant['target']['resolution']['targets']:scoped[tid]=[]
     for option in chain['options']:scoped[option['subject_id']].append(option)
     edge_cache={}
     def edges(sid):
         if sid not in edge_cache:
             for record in records_for(db,sid):
-                if record['kind']=='feat_access':
+                for grant in record['value'].get('grants',[]):
+                    if grant['entry_type']!='feat':continue
                     options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(sid,))]
-                    for tid in record['value']['target']['resolution']['targets']:
+                    for tid in grant['target']['resolution']['targets']:
                         if tid not in scoped:scoped[tid]=[o for o in options if o['subject_id']==tid]
             edge_cache[sid]=outgoing(db,sid,scoped)
         return edge_cache[sid]
@@ -142,8 +147,8 @@ def reading(db, root, chain, raw_path=None, effect_id=None):
         if not row:raise ValueError('Reading path target disappeared')
         e=json.loads(row[0]);nodes[eid]={k:e.get(k) for k in ('id','name','type','ruleset','source_ids','page_path','start','end')}
     if effect_id is not None:
-        if not isinstance(effect_id,str) or not any(r['kind']=='spell_effect' and r['subject_id']==path[-1] and any(e['id']==effect_id for e in r['value']['effects']) for r in records.values()):
-            raise ValueError('Effect is not part of the focused spell')
+        if not isinstance(effect_id,str) or not any(r['kind']=='procedure' and r['subject_id']==path[-1] and any(e['id']==effect_id for e in r['value']['effects']) for r in records.values()):
+            raise ValueError('Effect is not part of the focused procedure')
     focus=nodes[path[-1]]
     text=db.execute('SELECT text FROM pages WHERE path=?',(focus['page_path'],)).fetchone()[0]
     chain.update(records=list(records.values()),nodes=list(nodes.values()),edges=all_edges,

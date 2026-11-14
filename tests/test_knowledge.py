@@ -54,7 +54,7 @@ class KnowledgeTests(unittest.TestCase):
         self.db.execute('INSERT INTO metadata VALUES(?,?)',('summary',canonical({'extraction_sha256':extraction_hash()})))
         self.db.execute('INSERT INTO metadata VALUES(?,?)',('review_snapshot',canonical({'path':str(self.log),'sha256':log_hash,'events':len(events),'bytes':self.log.stat().st_size if self.log.exists() else 0})))
         self.db.commit()
-        self.rid=self.db.execute("SELECT id FROM rule_knowledge WHERE subject_id='feat' AND kind='spell_access'").fetchone()[0]
+        self.rid=self.db.execute("SELECT id FROM rule_knowledge WHERE subject_id='feat' AND kind='grant'").fetchone()[0]
 
     def accept(self,operation='knowledge_accept',supersedes=None):
         view=inspect(self.db,self.rid)
@@ -165,7 +165,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(reverse[0]['scope'],exception['scope'])
         extended=chain(self.db,'slots',reading_path=['slots','feat','spell'])
         self.assertEqual(extended['reading']['focus_id'],'spell')
-        self.assertTrue(any(r['kind']=='spell_effect' for r in extended['records']))
+        self.assertTrue(any(r['kind']=='procedure' for r in extended['records']))
         self.assertEqual(extended['bindings'][0]['subject_id'],'feat')
         self.accept('knowledge_reject');self.rebuild()
         with self.assertRaises(ValueError):chain(self.db,'slots',reading_path=['slots','feat'])
@@ -196,7 +196,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(focused['reading']['effect_id'],'effect_4')
         for path,effect in [(['feat'],'effect_4'),(['feat','spell'],'effect_missing')]:
             with self.assertRaises(ValueError):chain(self.db,'feat','spell',path,effect)
-        rid=self.db.execute("SELECT id FROM rule_knowledge WHERE subject_id='spell' AND kind='spell_effect'").fetchone()[0]
+        rid=self.db.execute("SELECT id FROM rule_knowledge WHERE subject_id='spell' AND kind='procedure'").fetchone()[0]
         view=inspect(self.db,rid);save(self.db,self.log,rid,'knowledge_accept',view['basis_sha256'],'fixture','checked ongoing mechanism')
         self.spell=self.spell.replace('2d12','3d12');self.rebuild()
         self.assertFalse(roots({'effect':'damage','timing':'ongoing'}))
@@ -207,11 +207,11 @@ class KnowledgeTests(unittest.TestCase):
     def test_effect_index_audit_checks_scalar_fields_and_payload(self):
         from knowledge import audit_knowledge
         self.assertEqual(audit_knowledge(self.db,self.root)['errors'],[])
-        self.db.execute("UPDATE spell_effect_index SET delivery='automatic'")
-        self.assertIn('spell_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
+        self.db.execute("UPDATE rule_effect_index SET delivery='automatic'")
+        self.assertIn('rule_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
         self.rebuild()
-        self.db.execute("UPDATE spell_effect_index SET data=json_set(data,'$.statement.kind','damage')")
-        self.assertIn('spell_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
+        self.db.execute("UPDATE rule_effect_index SET data=json_set(data,'$.statement.kind','damage')")
+        self.assertIn('rule_effect_index: projection mismatch',audit_knowledge(self.db,self.root)['errors'])
 
     def test_nested_acquisition_is_queryable_and_links_to_evidenced_prerequisites(self):
         self.feature='示例 Example\n先决：魔契师等级2+且（智力或感知13+或必需专长）\n你习得测试法术。'
@@ -273,7 +273,7 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(roots({'effect':'condition','trigger':'turn'}),set())
         self.assertEqual(roots({'effect':'condition','save_ability':'体质','end_trigger':'turn'}),set())
         exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]
-        record=next(r for r in exported if r['kind']=='spell_effect')
+        record=next(r for r in exported if r['kind']=='procedure')
         for effect in record['value']['effects']:
             self.assertEqual(effect['evidence']['raw'],self.spell[slice(*effect['evidence']['span'])])
         focused=chain(self.db,'feat','spell',effect_id='effect_6')
@@ -340,7 +340,7 @@ class KnowledgeTests(unittest.TestCase):
         for count in [0,-1,True,1.5,'3',None,1000001]:
             with self.assertRaisesRegex(ValueError,'count'):casting_condition({'cumulative_count':count})
         read=chain(self.db,'feat','spell',effect_id='effect_9')
-        record=next(r for r in read['records'] if r['kind']=='spell_effect' and r['subject_id']=='spell')
+        record=next(r for r in read['records'] if r['kind']=='procedure' and r['subject_id']=='spell')
         self.assertEqual(read['reading']['effect_id'],'effect_9')
         self.assertEqual(record['value']['effects'][8]['when']['effect_id'],'effect_7')
         removal=chain(self.db,'feat','spell',['feat','spell','restoration'])
@@ -352,7 +352,7 @@ class KnowledgeTests(unittest.TestCase):
         exported=[json.loads(s) for s in (self.root/'effective_knowledge.jsonl').read_text().splitlines()]
         self.assertEqual(next(r for r in exported if r['id']==record['id']),record)
         self.assertEqual(audit_effect_index(self.db,exported),[])
-        self.db.execute("UPDATE spell_effect_index SET target_scope='area' WHERE effect_id='effect_9'")
+        self.db.execute("UPDATE rule_effect_index SET target_scope='area' WHERE effect_id='effect_9'")
         self.assertTrue(audit_effect_index(self.db,exported))
 
     def test_threshold_result_and_count_are_correlated_inside_one_predicate(self):
@@ -364,7 +364,7 @@ class KnowledgeTests(unittest.TestCase):
         success=outcome['when'];outcome['when']={'any':[success,{**success,'result':'failure','count':5}]}
         # Consumer fixture: a single effect with two independent threshold terms.
         # The policy conflicts intentionally stay outside this consumer-only fixture.
-        self.db.execute('DROP TABLE spell_effect_index');build_effect_index(self.db,[record])
+        self.db.execute('DROP TABLE rule_effect_index');build_effect_index(self.db,[record])
         for result,count,wanted in [('success',3,True),('failure',5,True),('success',5,False),('failure',3,False)]:
             sql,args=casting_condition({'effect':'end_spell','cumulative_result':result,'cumulative_count':count})
             self.assertEqual(bool(self.db.execute('SELECT 1 FROM entries e WHERE '+sql,args).fetchone()),wanted)
@@ -383,7 +383,7 @@ class KnowledgeTests(unittest.TestCase):
         self.rebuild();self.spell=self.spell.replace('累计三次','累计四次');self.rebuild()
         effective=json.loads(self.db.execute('SELECT data FROM effective_knowledge WHERE id=?',(record['id'],)).fetchone()[0])
         self.assertEqual(effective['review_status'],'stale')
-        self.assertEqual(self.db.execute("SELECT count(*) FROM spell_effect_index WHERE spell_id='spell'").fetchone()[0],0)
+        self.assertEqual(self.db.execute("SELECT count(*) FROM rule_effect_index WHERE subject_id='spell'").fetchone()[0],0)
         self.assertTrue(chain(self.db,'feat')['options'])
 
     def test_target_scoped_queries_never_pair_the_single_attack_with_area_save_damage(self):

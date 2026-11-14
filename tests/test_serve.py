@@ -141,7 +141,7 @@ class WebTests(unittest.TestCase):
         spell=next(e['id'] for e in query(self.db,{'q':['睡眠术'],'versions':['each']})['rows'] if e['ruleset']=='5r')
         args={'id':root,'spell':spell,'effect':'effect_5'}
         status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
-        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='spell_effect' and r['subject_id']==spell)
+        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='procedure' and r['subject_id']==spell)
         self.assertEqual(effects[4]['when']['effect_id'],'effect_4');self.assertEqual(effects[3]['repeat_of']['effect_id'],'effect_2')
         status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
         status,_,raw=self.request('/api/entry?'+urlencode({'id':root,'chain_spell':spell,'chain_effect':'effect_5'}))
@@ -169,7 +169,7 @@ class WebTests(unittest.TestCase):
         self.assertTrue(all(r['count']==0 for r in groups['resource']))
         args={'id':stone['id'],'effect':'effect_9'}
         status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
-        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='spell_effect' and r['subject_id']==stone['id'])
+        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='procedure' and r['subject_id']==stone['id'])
         self.assertEqual(effects[8]['when']['effect_id'],'effect_7');self.assertEqual(effects[6]['check']['effect_id'],'effect_6')
         self.assertEqual(effects[5]['repeat_of']['effect_id'],'effect_2')
         self.assertEqual(effects[6]['initial_inclusion'],'not_stated')
@@ -198,6 +198,37 @@ class WebTests(unittest.TestCase):
         for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)
         with self.assertRaises(LookupError):detail(self.db,'absent')
+
+    def test_common_rule_queries_read_nonspell_procedures_and_export_the_same_graph(self):
+        condition={'query_subject':'entry','effect':'healing','use_action':'bonus_action'}
+        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(condition),'versions':'each'}))
+        self.assertEqual(status,200);rows=json.loads(raw)['rows']
+        wind=next(e for e in rows if e['id']=='ver_0fd1de793ebd67111e8e6e30')
+        all_healing=query(self.db,{'casting':[json.dumps({'query_subject':'entry','effect':'healing'})]},export=True)['rows']
+        self.assertIn(wind['id'],{e['id'] for e in all_healing})
+        self.assertTrue(any(e['type']=='spell' for e in all_healing))
+        self.assertNotIn('ver_958337258cbdf07fb3fe6c4f',{e['id'] for e in rows})
+        for value in ['reaction','action']:
+            self.assertNotIn(wind['id'],{e['id'] for e in query(self.db,{'casting':[json.dumps({**condition,'use_action':value})]},export=True)['rows']})
+        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
+        self.assertEqual(status,200)
+        counts={r['value']:r['count'] for r in json.loads(raw)['groups']['use_action']}
+        self.assertEqual(counts['bonus_action'],len(rows))
+        excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each']})
+        self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
+        eid='ver_e03ee891694944041e9b1434';args={'id':eid,'effect':'effect_2'}
+        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
+        self.assertEqual(chain['schema'],2);self.assertEqual(chain['options'],[])
+        record=next(r for r in chain['records'] if r['kind']=='procedure')
+        self.assertEqual(record['value']['effects'][1]['applies_to']['effect_id'],'effect_1')
+        self.assertEqual(record['value']['effects'][1]['use']['action'],'reaction')
+        self.assertNotIn('casting',record['value'])
+        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['schema'],2);self.assertEqual(json.loads(raw)['chain'],chain)
+        status,_,raw=self.request('/api/entry?'+urlencode({'id':eid,'chain_effect':'effect_2'}));self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['rule_chain'],chain)
+        for invalid in [{'query_subject':'entry','mode':'known'},{'query_subject':'entry','use_action':'swift'}]:
+            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps(invalid)}))[0],400)
     def test_export_all_not_one_page(self):
         data=query(self.db,{'type':['feat']},export=True)
         output=csv_export(data['rows']).decode('utf-8-sig')

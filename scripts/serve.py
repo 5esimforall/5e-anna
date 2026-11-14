@@ -340,9 +340,9 @@ def casting_facets(db, params):
             # Switching the query subject clears disabled provider controls in
             # the UI. Its preview must count that same transition, not an invalid
             # combination that the selected-value API would correctly reject.
-            if field=='query_subject' and value=='spell':
+            if field=='query_subject' and value in {'spell','entry'}:
                 candidate={k:v for k,v in candidate.items() if k not in knowledge.ACCESS_QUERY_FIELDS}
-            if candidate.get('query_subject')=='spell' and knowledge.ACCESS_QUERY_FIELDS & candidate.keys():count=0
+            if candidate.get('query_subject') in {'spell','entry'} and knowledge.ACCESS_QUERY_FIELDS & candidate.keys():count=0
             else:
                 clause,arguments=knowledge.casting_condition(candidate)
                 count=db.execute('SELECT count(*) FROM entries e'+where+' AND '+clause,values+arguments).fetchone()[0]

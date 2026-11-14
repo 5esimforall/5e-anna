@@ -5,7 +5,8 @@ import sqlite3
 import sys
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
-from casting_extract import parse_access, evidence, quantity_expression
+from casting_extract import parse_access
+from rule_values import evidence, quantity_expression
 from spell_effects import parse_spell
 from knowledge import Context, record_for, branches, casting_condition, casting_query
 
@@ -94,7 +95,7 @@ class EffectTests(unittest.TestCase):
     def test_teleport_preserves_destination_predicates(self):
         body='施法时间：附赠动作\n施法距离：自身\n法术成分：V\n持续时间：立即\n你短暂地被银白的雾气所笼罩，传送到至多30尺内一个你能看见且未占据空间。'
         result=parse_spell(feature(body),body)
-        self.assertEqual(result['casting']['action']['kind'],'bonus_action')
+        self.assertEqual(result['parameters']['action']['kind'],'bonus_action')
         self.assertEqual(result['effects'][0]['destination'],{'distance':{'maximum':30,'unit':'foot'},'visible':True,'unoccupied':True})
         self.assertFalse(result['unparsed'])
         changed=body.replace('未占据空间','仅有一名友军占据的空间')
@@ -216,7 +217,7 @@ class CorpusCastingTests(unittest.TestCase):
             excluded=next(e['id'] for e in self.context.entries.values() if e['name_zh']==case['excluded_spell'] and e['ruleset']==root['ruleset'] and e['type']=='spell')
             with self.assertRaises(ValueError):chain(self.db,root['id'],reading_path=[root['id'],provider,excluded])
             selected=chain(self.db,root['id'],spell)
-            self.assertTrue(any(r['subject_id']==spell and r['kind']=='spell_effect' for r in selected['records']))
+            self.assertTrue(any(r['subject_id']==spell and r['kind']=='procedure' for r in selected['records']))
             with self.assertRaises(ValueError):chain(self.db,root['id'],'nonexistent')
 
 

@@ -9,22 +9,22 @@ from pathlib import Path
 import re
 import sqlite3
 
-from casting_extract import parse_access, evidence, CLASSES, ABILITIES, GRANT
+from casting_extract import parse_access, GRANT
+from rule_values import evidence
+from rule_model import SCHEMA, KINDS, rule_value, validate_structure
 from concepts import Resolver, aliases
 from html_extract import key
 from review_store import (DEFAULT_DECISIONS, canonical, digest, lifecycle, load_events,
-                          append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS)
+                          append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS, review_record_id)
 from paths import PROJECT
-from rule_conditions import validate_conditions, condition_terms, conjunction
+from rule_conditions import ABILITIES, CLASSES, validate_conditions, condition_terms, conjunction
 from spell_effects import parse_spell
 from effect_queries import QUERY_VALUES as EFFECT_QUERY_VALUES, QUERY_PARAMETERS as EFFECT_QUERY_PARAMETERS, build_effect_index, audit_effect_index
 
-SCHEMA = 1
 ACCESS_TYPES = {'feat', 'class_feature', 'species', 'magic_item', 'reward'}
 REVIEW_OPERATIONS = KNOWLEDGE_OPERATIONS
-KINDS = {'spell_access', 'spell_effect', 'feat_access', 'definition_role'}
 QUERY_VALUES = {
-    'query_subject': ('provider','spell'),
+    'query_subject': ('provider','spell','entry'),
     'mode': ('known', 'prepared', 'cast', 'list'),
     'resource': ('slot_free', 'spell_slot', 'not_stated'),
     'recovery': ('long_rest', 'short_rest', 'short_or_long_rest', 'not_stated'),
@@ -123,6 +123,7 @@ def walk_targets(value):
 
 def validate_record(record, context):
     if record['kind'] not in KINDS or record['subject_id'] not in context.entries:raise ValueError('Invalid knowledge subject or kind')
+    validate_structure(record)
     def walk(value):
         if isinstance(value,dict):
             if set(('path','span','raw'))<=value.keys():
@@ -134,6 +135,15 @@ def validate_record(record, context):
             for v in value:walk(v)
     walk(record)
     validate_conditions(record)
+    for term in condition_terms(record['value'].get('prerequisites',{}).get('expression')):
+        if not term.get('owner_id'):continue
+        owner=context.entries.get(context.entries[record['subject_id']].get('parent_id'));seen=set()
+        while owner and owner['type']!='class' and owner['id'] not in seen:
+            seen.add(owner['id']);owner=context.entries.get(owner.get('parent_id'))
+        if not owner or owner['type']!='class' or owner['id']!=term['owner_id'] or owner['name_zh']!=term.get('class'):
+            raise ValueError('Class-level requirement disagrees with its source owner')
+        if type(term.get('minimum')) is not int or term['minimum']<1:
+            raise ValueError('Invalid class-level requirement')
     for target in walk_targets(record['value']):
         r=target['resolution']
         if r['status']=='resolved' and len(r['targets'])!=1:raise ValueError('Resolved target must be unique')
@@ -160,9 +170,9 @@ def rule_links(entry, value, context):
             'change':change,'when':when,'ends':ends,'target':{'kind':'entry','name':label,
             'lookup_names':lookup_names,'resolution':resolution,'evidence':ev}})
     for field,label in [('action','施法时间'),('range','施法距离'),('components','法术成分'),('duration','持续时间')]:
-        if field in value.get('casting',{}):add(label,'uses_rule',{'kind':'casting_field','field':field},value['casting'][field]['evidence'])
-    if value.get('casting',{}).get('duration',{}).get('concentration'):
-        add('专注','uses_rule',{'kind':'casting_field','field':'duration'},value['casting']['duration']['evidence'])
+        if field in value.get('parameters',{}):add('动作' if field=='action' and entry['type']!='spell' else label,'uses_rule',{'kind':'parameter','field':field},value['parameters'][field]['evidence'])
+    if value.get('parameters',{}).get('duration',{}).get('concentration'):
+        add('专注','uses_rule',{'kind':'parameter','field':'duration'},value['parameters']['duration']['evidence'])
     for grant in value.get('grants',[]):
         for branch in grant['branches']:
             scope={'kind':'usage_branch','grant_id':grant['id'],'branch_id':branch['id']}
@@ -186,6 +196,8 @@ def rule_links(entry, value, context):
             if branch.get('recovery',{}).get('event')=='long_rest':add('长休','uses_rule',scope,branch['evidence'][-1])
     for effect in value.get('effects',[]):
         scope={'kind':'effect','effect_id':effect['id']}
+        if effect['kind']=='event' and effect.get('event')=='attack_received':add('攻击检定','uses_rule',scope,effect['evidence'])
+        if effect['kind']=='healing':add('治疗','uses_rule',scope,effect['evidence'],when=effect.get('when'))
         if effect['kind']=='attack_roll':add('攻击检定','uses_rule',scope,effect['evidence'])
         if effect['kind']=='saving_throw':add('豁免检定','uses_rule',scope,effect['evidence'],when=effect.get('when'))
         if effect['kind'] in {'check_sequence','sequence_policy'}:
@@ -193,11 +205,15 @@ def rule_links(entry, value, context):
         if effect['kind']=='damage':
             add('伤害','uses_rule',scope,effect['evidence'],when=effect.get('when'))
             add('伤害掷骰','uses_rule',scope,effect['evidence'],when=effect.get('when'))
-        if effect.get('use'):
-            add('附赠动作' if effect['use']['action']=='bonus_action' else '动作','uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        use=effect.get('use',{})
+        if use.get('action'):
+            add({'bonus_action':'附赠动作','reaction':'反应'}.get(use['action'],'动作'),'uses_rule',scope,effect['evidence'],when=effect.get('when'))
+        recovery=use.get('recovery',{}).get('event')
+        for event,label in [('short_rest','短休'),('long_rest','长休')]:
+            if recovery in {event,'short_or_long_rest'}:add(label,'uses_rule',scope,use.get('evidence',[effect['evidence']])[-1],when=effect.get('when'))
         if effect['kind'] in {'modifier','restriction'}:
-            label={'speed':'速度','attack_roll':'攻击检定','healing.allowed':'治疗','prone.self_end':'倒地'}[effect['field']]
-            change={k:effect[k] for k in ('field','operation','quantity','value','applies','uses') if k in effect}
+            label={'speed':'速度','attack_roll':'攻击检定','healing.allowed':'治疗','prone.self_end':'倒地','damage':'伤害'}[effect['field']]
+            change={k:effect[k] for k in ('field','operation','quantity','value','applies','uses','factor','rounding','applies_to') if k in effect}
             add(label,'exception_to',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'),change=change)
             if effect.get('operation')=='advantage':add('优势','uses_rule',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'))
         if effect['kind']=='check_modifier':
@@ -234,7 +250,7 @@ def record_for(entry, kind, value, context):
             term['target']={'kind':'entry','name':term['name'],'resolution':context.resolve(entry,term['name'],term['entry_type']),
                             'evidence':pre['evidence']}
     value['rules']=rule_links(entry,value,context)
-    dependencies=set()
+    dependencies={t['owner_id'] for t in condition_terms(pre.get('expression')) if t.get('owner_id')}
     for t in walk_targets(value): dependencies.update(t['resolution']['targets'])
     for g in value.get('grants',[]):
         if g['target']['kind']=='choice':
@@ -246,7 +262,7 @@ def record_for(entry, kind, value, context):
         for name in [t.get('name',''),*t.get('lookup_names',[])]:dependencies.update(context.resolver.names.get(key(name),()))
     gaps=value.get('unparsed',[])
     unresolved=any(t['resolution']['status']!='resolved' for k,v in value.items() if k!='rules' for t in walk_targets(v))
-    unfinished=value.get('prerequisites',{}).get('status')=='unparsed' or kind=='spell_access' and not value.get('grants') or kind=='spell_effect' and not value.get('effects') or any(g['mode']=='selection' or g['target']['kind']=='choice' and not g['target'].get('options') for g in value.get('grants',[]))
+    unfinished=value.get('prerequisites',{}).get('status')=='unparsed' or kind=='grant' and not value.get('grants') or kind=='procedure' and not value.get('effects') or any(g['mode']=='selection' or g['target']['kind']=='choice' and not g['target'].get('options') for g in value.get('grants',[]))
     record={'id':'knowledge_'+digest([entry['id'],kind])[:24], 'schema':SCHEMA,
         'subject_id':entry['id'],'kind':kind,'ruleset':entry['ruleset'],
         'evidence':evidence(entry['page_path'],context.pages[entry['page_path']],entry['start'],entry['end']),
@@ -268,8 +284,10 @@ def feat_access(entry, context):
     unknown=[q for q in qualifiers if q not in classes and not re.fullmatch(r'见第[^）]+章',q)]
     ev=evidence(entry['page_path'],text,a,b)
     target={'kind':'entry','name':name,'resolution':context.resolve(entry,name,'feat'),'evidence':ev}
-    return {'target':target,'constraints':{'class_list':classes} if classes else {},
-        'unparsed':[{'reason':'unparsed_grant_qualifier','evidence':ev}] if unknown else []}
+    return rule_value(grants=[{'id':'grant_1','entry_type':'feat','mode':'gain','target':target,
+        'constraints':{'class_list':classes} if classes else {},'branches':[],'evidence':[ev]}],
+        unparsed=[{'reason':'unparsed_grant_qualifier','evidence':ev}] if unknown else [])
+
 
 
 def definition_roles(context):
@@ -291,18 +309,25 @@ def definition_roles(context):
 
 
 def discover(context):
+    from feature_effects import parse_feature
     records=list(definition_roles(context))
-    for e in context.entries.values():
-        if e['end']<=e['start']:continue
-        if e['type']=='spell':
-            records.append(record_for(e,'spell_effect',parse_spell(e,context.pages[e['page_path']]),context))
-        elif e['type'] in ACCESS_TYPES:
-            if not GRANT.search(re.sub(r'\s+','',context.pages[e['page_path']][e['title_end']:e['end']])):continue
-            value=parse_access(e,context.pages[e['page_path']],context.mentions(e))
-            if value:records.append(record_for(e,'spell_access',value,context))
-        elif e['type']=='background':
-            value=feat_access(e,context)
-            if value:records.append(record_for(e,'feat_access',value,context))
+    for entry in context.entries.values():
+        if entry['end']<=entry['start']:continue
+        text=context.pages[entry['page_path']]
+        if entry['type']=='spell':
+            records.append(record_for(entry,'procedure',parse_spell(entry,text),context))
+        if entry['type'] in ACCESS_TYPES:
+            value=parse_access(entry,text,context.mentions(entry)) if GRANT.search(re.sub(r'\s+','',text[entry['title_end']:entry['end']])) else None
+            if value:records.append(record_for(entry,'grant',value,context))
+            owner=context.entries.get(entry.get('parent_id'))
+            seen=set()
+            while owner and owner['type']!='class' and owner['id'] not in seen:
+                seen.add(owner['id']);owner=context.entries.get(owner.get('parent_id'))
+            procedure=parse_feature(entry,text,owner if owner and owner['type']=='class' else None)
+            if procedure:records.append(record_for(entry,'procedure',procedure,context))
+        if entry['type']=='background':
+            value=feat_access(entry,context)
+            if value:records.append(record_for(entry,'grant',value,context))
     return records
 
 
@@ -314,13 +339,14 @@ def replay(records, events, context):
     states=lifecycle(events);results={};claims=defaultdict(list);by_id={r['id']:r for r in records}
     for event in events:
         if not is_knowledge(event):continue
-        rid=event['binding']['knowledge_id'];record=by_id.get(rid)
+        rid=review_record_id(event);record=by_id.get(rid)
         result={'event':event,'status':states[event['id']], 'knowledge_id':rid}
         if states[event['id']]=='active':
             current=context.basis(record) if record else None
             valid=record is not None and event['binding']==binding(record) and event['basis_sha256']==digest(current)
             result.update(status='applied' if valid else 'stale' if record else 'missing',
                           basis_sha256=digest(current) if current else None)
+            if rid!=event['binding']['knowledge_id']:result['reason']='knowledge_schema_changed'
             if record:claims[rid].append((event,valid))
         results[event['id']]=result
     effective=[]
@@ -335,7 +361,7 @@ def replay(records, events, context):
             if not valid:row.update(status='review',review_status='stale')
             elif e['operation']=='knowledge_reject':row.update(status='rejected',review_status='applied')
             else:row['review_status']='applied'
-        elif any(e['binding']['knowledge_id']==record['id'] and states[e['id']]=='revoked' for e in events if is_knowledge(e)):
+        elif any(review_record_id(e)==record['id'] and states[e['id']]=='revoked' for e in events if is_knowledge(e)):
             row['review_status']='revoked'
         row['decision_ids']=[e['id'] for e,_ in choices]
         effective.append(row)
@@ -348,17 +374,21 @@ def branches(context, effective):
     def usable(record):return record and record['status']=='resolved'
     for root, kinds in list(by_subject.items()):
         acquisition=[];subject=root;restrictions={};visited=set()
-        while usable(by_subject.get(subject,{}).get('feat_access')):
-            record=by_subject.get(subject,{})['feat_access'];target=record['value']['target']['resolution']
+        while True:
+            record=by_subject.get(subject,{}).get('grant')
+            if not usable(record):break
+            feat_grants=[g for g in record['value']['grants'] if g['entry_type']=='feat']
+            if len(feat_grants)!=1:break
+            grant=feat_grants[0];target=grant['target']['resolution']
             if target['status']!='resolved':break
-            acquisition.append(record['id']); restrictions.update(record['value']['constraints'])
+            acquisition.append(record['id']);restrictions.update(grant['constraints'])
             subject=target['targets'][0]
             if subject in visited:break
             visited.add(subject)
-        access=by_subject.get(subject,{}).get('spell_access')
+        access=by_subject.get(subject,{}).get('grant')
         if not usable(access):continue
         for grant in access['value']['grants']:
-            if grant['mode']=='selection':continue
+            if grant['entry_type']!='spell' or grant['mode']=='selection':continue
             target=grant['target']
             if target['kind']=='entry':
                 spells=target['resolution']['targets'] if target['resolution']['status']=='resolved' else []
@@ -474,8 +504,8 @@ def casting_query(raw):
         elif k=='cumulative_count':
             if type(v) is not int or not 1<=v<=1000000:raise ValueError('Invalid cumulative count')
         elif v not in QUERY_VALUES[k]:raise ValueError('Invalid casting query value')
-    if query.get('query_subject')=='spell' and ACCESS_QUERY_FIELDS & query.keys():
-        raise ValueError('Spell queries cannot contain provider conditions')
+    if query.get('query_subject') in {'spell','entry'} and ACCESS_QUERY_FIELDS & query.keys():
+        raise ValueError('Direct queries cannot contain provider conditions')
     return query
 
 
@@ -489,7 +519,7 @@ def casting_condition(raw, alias='e'):
         if k in EFFECT_QUERY_VALUES:
             effects.append('EXISTS(SELECT 1 FROM json_each(ef.data,\'$.'+k+'s\') WHERE value=?)' if k in {'trigger','end_trigger'} else 'ef.'+k+'=?')
             effect_values.append(v);continue
-        if k=='spell':clauses.append('instr(lower('+alias+'.name),lower(?))>0' if query.get('query_subject')=='spell' else 'EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
+        if k=='spell':clauses.append('instr(lower('+alias+'.name),lower(?))>0' if query.get('query_subject') in {'spell','entry'} else 'EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
         elif k=='access_condition':clauses.append("EXISTS(SELECT 1 FROM json_each(c.data,'$.condition_kinds') WHERE value=?)")
         elif k=='casting_target':clauses.append("json_extract(c.data,'$.casting_target')=?")
         else:clauses.append('c.'+k+'=?')
@@ -498,9 +528,16 @@ def casting_condition(raw, alias='e'):
         effects.append("EXISTS(SELECT 1 FROM json_each(ef.data,'$.thresholds') th WHERE "+' AND '.join(thresholds)+')')
         effect_values.extend(threshold_values)
     if effects:
-        spell=alias+'.id' if query.get('query_subject')=='spell' else 'c.spell_id'
-        clauses.append('EXISTS(SELECT 1 FROM spell_effect_index ef WHERE ef.spell_id='+spell+' AND '+' AND '.join(effects)+')');values.extend(effect_values)
-    if query.get('query_subject')=='spell':return '('+alias+".type='spell'"+(' AND '+' AND '.join(clauses) if clauses else '')+')',values
+        spell=alias+'.id' if query.get('query_subject') in {'spell','entry'} else 'c.spell_id'
+        clauses.append('EXISTS(SELECT 1 FROM rule_effect_index ef WHERE ef.subject_id='+spell+' AND '+' AND '.join(effects)+')');values.extend(effect_values)
+    if query.get('query_subject') in {'spell','entry'}:
+        direct=[alias+".type='spell'"] if query['query_subject']=='spell' else []
+        direct+=clauses
+        # With no semantic predicate this is a discovery scope, not a claim that
+        # every procedure is complete. Effect predicates still use only valid rows.
+        if query['query_subject']=='entry':
+            direct.append("EXISTS(SELECT 1 FROM effective_knowledge k WHERE k.subject_id="+alias+".id AND k.kind='procedure')")
+        return '('+' AND '.join(direct)+')',values
     if not clauses:return alias+'.id IN(SELECT root_id FROM casting_options)',values
     return alias+'.id IN(SELECT c.root_id FROM casting_options c WHERE '+' AND '.join(clauses)+')',values
 
@@ -563,7 +600,7 @@ def save(db,path,rid,operation,expected_basis,reviewer,reason,supersedes=None):
         require_appendable(db,path);view=inspect(db,rid)
         if view['basis_sha256']!=expected_basis:raise ValueError('Knowledge basis changed; inspect again')
         events,log_hash=load_events(path);states=lifecycle(events)
-        active=[e['id'] for e in events if is_knowledge(e) and e['binding']['knowledge_id']==rid and states[e['id']]=='active']
+        active=[e['id'] for e in events if is_knowledge(e) and review_record_id(e)==rid and states[e['id']]=='active']
         if active!=([supersedes] if supersedes else []):raise ValueError('Supersede the active decision or revoke competing decisions')
         return append_event(path,{'operation':operation,'binding':binding(view['observation']),
             'basis':view['basis'],'basis_sha256':expected_basis,'reviewer':reviewer.strip(),'reason':reason.strip(),'supersedes':supersedes},log_hash)

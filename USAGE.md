@@ -403,7 +403,7 @@ python3 /Users/arctic/Loom/Streamer/DnD/5e-anna/scripts/query.py --type spell --
 核对模式显示记录 ID、结构化结果及检查入口。浏览器保持只读；审核通过命令行追加到现有独立决策日志：
 
 ```sh
-.venv/bin/python scripts/knowledge.py list --kind spell_access --status resolved --limit 10
+.venv/bin/python scripts/knowledge.py list --kind grant --status resolved --limit 10
 .venv/bin/python scripts/knowledge.py inspect 记录ID
 .venv/bin/python scripts/knowledge.py accept 记录ID \
   --basis 查看所得basis_sha256 --reviewer 审核者 --reason '说明原文依据'
@@ -423,8 +423,12 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/ap
 
 效果查询示例为 `{"effect":"damage","damage_type":"lightning","delivery":"automatic","timing":"ongoing"}`。`delivery` 可选 `attack_roll`、`saving_throw`、`automatic` 或 `not_stated`；`timing` 可选 `immediate`、`ongoing`、`repeat`、`cumulative` 或 `not_stated`。攻击判定表示该效果涉及攻击检定，不等于已经命中；重复豁免及依赖其单次结果的效果归入 `repeat`，累计结果归入 `cumulative`。非法字段或取值返回 400。
 
-“查询对象”默认是授予者；选“法术本身”可以直接查法术机制，此时获取条件清空并停用。接口使用 `query_subject: "spell"`；同时提交授予方式、资源或其他获取条件会返回 400。`target_scope` 可选 `single`、`area` 或 `not_stated`，区分本效果的目标范围，不把一个法术的初始攻击与范围伤害混用。
+“查询对象”默认是授予者；选“法术本身”直接查法术机制，选“条目本身（含非施法能力）”查询各类规则过程，此时施法获取条件清空并停用。接口分别使用 `query_subject: "spell"`、`query_subject: "entry"`；同时提交授予方式、资源或其他获取条件会返回 400。`target_scope` 可选 `single`、`area` 或 `not_stated`，区分本效果的目标范围，不把一个法术的初始攻击与范围伤害混用。
 
 累计查询例如 `{"query_subject":"spell","effect":"condition","cumulative_result":"failure","cumulative_count":3,"timing":"cumulative"}`。`cumulative_result` 可选 `success` 或 `failure`；`cumulative_count` 是 1 至 1000000 的 JSON 整数，表示原文阈值，不是角色当前已累积的次数。结果与次数须命中同一个累计谓词。规则链可沿“结果 → 序列 → 重复检定 → 首次检定”查看证据；未明确的首次计入范围及未确定的候选仍显示，查看候选不批准关系。
 
-构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`audit.py --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。范围与验证证据见[施法链验证](tests/casting-chain-validation.md)。
+“本效果的动作成本”与效果条件绑定。例如 `{"query_subject":"entry","effect":"healing"}` 可一起检索法术治疗和回气；再添加 `"use_action":"bonus_action"` 可筛出使用附赠动作的治疗过程，`{"query_subject":"entry","effect":"modifier","use_action":"reaction"}` 可检索直觉闪避的减伤。`use_action` 可选 `action`、`bonus_action`、`reaction`、`timed` 或 `not_stated`。重复豁免不消耗初次施法动作；未明示动作不能当成无需动作。既有分享链接和最近查询沿用 `casting` 参数及 `/api/casting-facets` 路径，内部共用规则效果索引，不分设非施法查询逻辑。
+
+知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。程序消费方应按结构版本读取 `value.grants`、`value.parameters` 和 `value.effects`，不再读取结构 1 的独立背景目标或 `value.casting`。重建后，旧结构的审核决策保留原事件并重新待核；运行 `knowledge.py list` 找到当前主体的记录，再 `inspect` 核对，以 `--supersedes 旧决策ID` 保存新审核，或撤销旧决策。迁移不会新增人工批准。
+
+构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`audit.py --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)，实际检查证据见[施法链验证](tests/casting-chain-validation.md)。

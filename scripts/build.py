@@ -688,7 +688,16 @@ def main():
     ap.add_argument('--5etools',dest='fivetools',type=Path,default=DEFAULT_FIVETOOLS,help='5etools-cn mirror compared with the extracted entries')
     ap.add_argument('--no-counterparts',action='store_true',help='skip the 5etools-cn comparison; the summary records it as skipped')
     ap.add_argument('--workers',type=int,default=min(4,os.cpu_count() or 1));ap.add_argument('--limit',type=int,help='development only; summary explicitly marks partial scans')
+    migration_args=ap.add_mutually_exclusive_group()
+    migration_args.add_argument('--baseline',type=Path,help='immutable baseline bundle for a full migration preview; default output uses baselines/active.json')
+    migration_args.add_argument('--no-migration',action='store_true',help='explicitly skip migration preview (does not establish data continuity)')
     args=ap.parse_args()
+    from migration_baseline import active, verify
+    baseline=args.baseline
+    if not baseline and not args.no_migration and not args.limit and args.output.resolve()==PROJECT/'data/extracted':
+        baseline=active()
+    if baseline:
+        verify(baseline)  # Fail before extraction if the independent baseline was lost or changed.
     fivetools=None if args.no_counterparts else args.fivetools
     if fivetools and not (fivetools/'data').is_dir():
         raise SystemExit(f'5etools-cn mirror missing: {fivetools}; run make clone to download it, or pass --no-counterparts to skip the comparison')
@@ -715,10 +724,26 @@ def main():
         b.validate(paths)
         with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
             require_current(staged_db,args.decisions)
+        migration=None
+        if baseline:
+            from migration import report
+            migration=report(Path(tmp)/'catalog.sqlite',baseline,Path(tmp)/'migration',args.decisions)
+        else:
+            reason=('explicit_skip' if args.no_migration else 'partial_scan' if args.limit
+                    else 'development_output' if args.output.resolve()!=PROJECT/'data/extracted' else 'no_active_baseline')
+            migration={'schema':1,'status':'not_checked','baseline_id':None,'mode':'preview','reason':reason,'approvals_applied':False}
+            report_dir=Path(tmp)/'migration';report_dir.mkdir()
+            (report_dir/'summary.json').write_text(dumps(migration)+'\n')
+            (report_dir/'report.md').write_text('# 整理基准迁移核对\n\n本次未执行迁移核对：`'+reason+'`。旧报告不适用于本次构建。\n')
         if extraction_hash()!=extraction_at_start:
             raise ValueError('Extraction implementation changed during the build; nothing was published. Rebuild.')
+        with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
+            require_current(staged_db,args.decisions)
         publish(Path(tmp),args.output)
     print(json.dumps(summary,ensure_ascii=False,indent=2))
+    if migration:
+        print(json.dumps({'migration':migration['status'],'baseline_id':migration['baseline_id'],
+                          'report':str(args.output/'migration/report.md'),'mode':'preview'},ensure_ascii=False))
 
 
 if __name__=='__main__':main()

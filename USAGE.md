@@ -9,6 +9,8 @@
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
 | `make index` | 重建原文全文搜索索引 |
 | `make build` | 从同一原文快照重建数据库与链接版不全书 |
+| `make baseline BASELINE=baselines/名称` | 保存紧凑、不可覆盖的候选快照；不自动启用 |
+| `make migration` | 用已选基准核对当前全部数据、来源对应和依赖；有待处理差异时返回退出码 2 |
 | `make up` | 启动单端口查询、阅读与正文资源服务 |
 | `make upper` | 开发用：同上，重建完成后自动校验并换包 |
 | `make linked` | 由现有数据库生成链接版，并校验原文快照 |
@@ -42,6 +44,63 @@ make build
 make browser-setup
 make check
 ```
+
+## 整理基准与迁移核对
+
+原文更新和处理机制更替前，先保存已有整理；之后直接与这份数据比较，不另写一套具体规则事实作为预期。`baselines/` 保存不可覆盖的快照和共享内容对象，`data/extracted/` 与 `.cache/baselines/` 是可替换的生成目录。普通构建不创建或启用基准。
+
+```sh
+# 当前数据库须为全量构建，原文与对照镜像须匹配该数据库
+make baseline BASELINE=baselines/next
+# 校验全部内容对象；按需恢复查询库和索引
+.venv/bin/python scripts/migration.py verify baselines/next
+.venv/bin/python scripts/migration.py materialize baselines/next
+# 比较不可变候选与捕获时的活动基准，得到稳定的差异编号
+.venv/bin/python scripts/migration.py assess baselines/next --output .cache/next-assessment.json
+```
+
+快照保存全部知识、观察、证据、候选、缺口、审核结果和完整审核日志，包括尚未重放的追加事件。重复 SQL 字段由记录还原，有效结果相对原始观察保存差量；未能无损归约的字段原样保留。查询投影从冻结的有效知识生成，不重新解析原文或重放审核。恢复时校验每张表的全部行值；历史投影生成器无法复现时拒绝恢复，不以新结果替换旧数据。
+
+清单、`objects/` 下的确定性 gzip 内容对象、处置日志和启用日志均应提交版本管理。多个版本共享未变化的对象，备份时保存整个 `baselines/`，不能只备份某份清单。SQLite、索引和缓存可以删除后重建。原文、格式／目录输入及外部对照按原始字节保存；输入不匹配数据库时拒绝捕获。导出逐值核对能够重建后才省去副本；无法证明可重建的历史产物保留为附件，包括旧格式中独有的未决内容。
+
+### 处置与启用
+
+查看 assessment 中的每项差异，用 `issue_…` 编号记录处置。`--evidence` 可以是父／子快照的基准身份或其中的内容对象哈希；编号和依据必须真实存在：
+
+```sh
+.venv/bin/python scripts/migration.py dispose baselines/next \
+  --issue issue_实际编号 --action accept_change \
+  --reviewer 维护者 --reason '核对后接受这一修订，说明依据' \
+  --evidence baseline_实际身份
+# 全部差异有处置记录后才能启用；没有差异也必须显式操作
+.venv/bin/python scripts/migration.py activate baselines/next \
+  --reviewer 维护者 --reason '已核对本次快照及全部差异处置'
+```
+
+`accept_change` 接受有依据的变化；`retain_unresolved` 明确保留待核原因，启用日志继续列出这些处置，不将其解释为知识批准。一次处置可重复提供 `--issue` 和 `--evidence`。处置日志追加保存，重复、冲突、失效评估、缺失依据或未覆盖差异均阻止启用。修订候选时另存新快照，不修改旧清单或删除处置历史。
+
+启用时重新计算评估，并在锁内检查父基准仍是当前活动基准；其他维护者已经启用新版本时，旧候选必须重新捕获和核对。首次建立且没有活动基准或启用历史时，才允许 `activate … --bootstrap`。启用历史与指针不一致会拒绝操作，需从备份核对恢复，不提供跳过检查的强制选项。
+
+### 恢复与日常核对
+
+```sh
+# 重建导出；输出目录必须不存在。行序和排版可规范化，历史附件字节不变
+.venv/bin/python scripts/migration.py export baselines/next --output .cache/next-exports
+# 恢复冻结的原文或外部对照，不覆盖正在使用的镜像
+.venv/bin/python scripts/migration.py export baselines/next --group source_files --output .cache/next-source
+.venv/bin/python scripts/migration.py export baselines/next --group counterpart_files --output .cache/next-counterparts
+# 全量构建自动核对活动基准；独立核对也可指定 BASELINE=baselines/名称
+make build
+make migration
+```
+
+迁移报告位于 `data/extracted/migration/report.md`。`preserved` 表示全部既有数据接续，允许构建耗时和程序指纹变化；`needs_review` 表示存在内容、结构、去向或审核状态差异，独立比较返回退出码 2；`not_checked` 表示没有执行本次核对，不得沿用旧报告。全表差异、来源对应、知识／审核依赖和证据范围保存在同目录的 JSONL 中，原值可从快照恢复的数据库按表名和主键核对。
+
+报告仍是迁移预览：位置对应不改写条目标识，依赖核验不自动沿用旧批准。歧义、缺失、上下文变化和拆分合并保留待核；已有失效、否决和撤回照常保留。普通构建的预览不能替代对已冻结候选的启用评估。
+
+`build.py --baseline 基准目录 --output 生成目录` 可核对其他输出；部分扫描和开发输出默认不使用项目基准。`--no-migration` 显式跳过核对，不构成验收。独立比较使用 `migration.py compare --baseline 基准目录 --database 数据库 --output 报告目录`。
+
+第一份结构 1 完整存档只读兼容，用 `migration.py convert 旧基准目录 --output 新目录` 无损转换；转换仍需经过评估与显式启用。旧存档暂作独立回退备份，确认紧凑快照及其异地备份可恢复后再决定清理；新捕获不再写结构 1。
 
 ## 阅读服务与正文生成
 

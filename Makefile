@@ -9,10 +9,11 @@ BRANCH ?= pages
 5ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
 5ETOOLS_BRANCH ?= main
 ANNA_PORT ?= 8000
+BASELINE ?=
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status index clean build inventory test audit check up upper linked test-unit test-browser browser-setup
+.PHONY: usage clone update status index clean build baseline migration inventory test audit check up upper linked test-unit test-browser browser-setup
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -77,6 +78,13 @@ clean:
 build: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/build.py --5etools "$(5ETOOLS_PATH)"
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
+
+baseline:
+	@test -n "$(BASELINE)" || { echo 'Specify a new bundle path: make baseline BASELINE=baselines/name' >&2; exit 1; }
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/migration.py capture --5etools "$(5ETOOLS_PATH)" --output "$(BASELINE)"
+
+migration:
+	@"$(PYTHON)" scripts/migration.py compare $(if $(BASELINE),--baseline "$(BASELINE)",)
 
 inventory: clone
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" scripts/inventory.py

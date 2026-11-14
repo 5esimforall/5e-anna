@@ -1,0 +1,34 @@
+{
+  "zh": {
+    "title": "Anna · Datalog 规则溯源",
+    "review": "规则与事实标注待人工审核；原文定位不等同于规则身份审核。",
+    "snapshot": "本次快照",
+    "proof_note": "解释由 Soufflé 实际生成，显示一条推导证明，不枚举所有可能证明。否定条件按当前完整场景的闭世界解释；缺失事实没有正向证据树。",
+    "explanations": "推导解释",
+    "rules": "规则子句",
+    "sources": "原文证据",
+    "scope": "覆盖与输入契约",
+    "evidence": "打开原文证据范围",
+    "reader": "打开 Stella 原文",
+    "quote": "展开原文",
+    "claims": "原文关联的规则事实",
+    "negation": "闭世界缺失测试（表达式见父规则子句）",
+    "constraint": "引擎约束成立（表达式见父规则子句）"
+  },
+  "en": {
+    "title": "Anna · Datalog rule provenance",
+    "review": "Rule and fact annotations await human review; source coordinates do not establish approved rule identity.",
+    "snapshot": "Snapshot",
+    "proof_note": "Soufflé generates one derivation proof, not all possible proofs. Negation uses the complete scenario’s closed world; absent facts have no positive evidence tree.",
+    "explanations": "Explanations",
+    "rules": "Rule clauses",
+    "sources": "Source evidence",
+    "scope": "Coverage and input contract",
+    "evidence": "Open source range",
+    "reader": "Open original in Stella",
+    "quote": "Show original text",
+    "claims": "Source-linked rule facts",
+    "negation": "Closed-world absence test (see parent rule clause)",
+    "constraint": "Engine constraint holds (see parent rule clause)"
+  }
+}

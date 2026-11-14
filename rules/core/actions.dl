@@ -1,0 +1,53 @@
+// @rule initiative.surprise
+HasDisadvantage(E,T) :- Initiative(E,T,1).
+
+// @rule initiative.advantage
+HasAdvantage(E,T) :- Initiative(E,T,_), Test(E,T,A,"check","dex",_,_,_), Effect(E,A,"initiative_advantage").
+
+// @rule initiative.disadvantage
+HasDisadvantage(E,T) :- Initiative(E,T,_), Test(E,T,A,"check","dex",_,_,_), Effect(E,A,"initiative_disadvantage").
+
+// @rule initiative.order
+InitiativeBefore(E,A,B) :- Initiative(E,A,_), Initiative(E,B,_), TestTotal(E,A,X), TestTotal(E,B,Y), X > Y.
+
+// @rule initiative.tie
+InitiativeTie(E,A,B) :- Initiative(E,A,_), Initiative(E,B,_), TestTotal(E,A,X), TestTotal(E,B,X), A < B.
+
+// @rule speed.zero
+Speed(E,A,0) :- BaseSpeed(E,A,_), Effect(E,A,"zero_speed").
+
+// @rule speed.exhaustion
+Speed(E,A,max(0,S-5*L)) :- BaseSpeed(E,A,S), Exhaustion(E,A,L), !Effect(E,A,"zero_speed").
+
+// @rule speed.base
+Speed(E,A,S) :- BaseSpeed(E,A,S), !Exhaustion(E,A,_), !Effect(E,A,"zero_speed").
+
+// @rule turn.action
+Available(E,A,"action") :- Turn(E,A,0,_,_), !Effect(E,A,"no_actions").
+
+// @rule turn.bonus
+Available(E,A,"bonus_action") :- Turn(E,A,_,0,1), !Effect(E,A,"no_actions").
+
+// @rule turn.reaction
+Available(E,A,"reaction") :- ReactionWindow(E,A,0), !Effect(E,A,"no_actions").
+
+// @rule action.options
+AvailableAction(E,A,O) :- Available(E,A,"action"), ActionOption(E,O).
+
+// @rule dash.extra
+DashExtra(E,A,S) :- AvailableAction(E,A,"dash"), Speed(E,A,S).
+
+// @rule movement.cost
+MovementCost(E,I,D*(1+F+C)) :- MoveSegment(E,I,_,D,F,C).
+
+// @rule prone.stand
+StandCost(E,A,S/2) :- ActiveCondition(E,A,"prone"), Speed(E,A,S), S > 0.
+
+// @rule opportunity.available
+OpportunityAttack(E,I,A,B) :- LeavingReach(E,I,A,B,1,1,0,0), Available(E,A,"reaction").
+
+// @rule dodge.attack
+HasDisadvantage(E,T) :- Attack(E,T,A,_,_,_,_), DodgeActive(E,A), DodgeAttackerSeen(E,T,1), Speed(E,A,S), S > 0, !Effect(E,A,"no_actions").
+
+// @rule dodge.save
+HasAdvantage(E,T) :- Test(E,T,A,"save","dex",_,_,_), DodgeActive(E,A), Speed(E,A,S), S > 0, !Effect(E,A,"no_actions").

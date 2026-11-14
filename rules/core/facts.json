@@ -1,0 +1,640 @@
+[
+  {
+    "id": "conditionimplies.0",
+    "relation": "ConditionImplies",
+    "values": [
+      "5r",
+      "paralyzed",
+      "incapacitated"
+    ],
+    "sources": [
+      "condition.paralyzed"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditionimplies.1",
+    "relation": "ConditionImplies",
+    "values": [
+      "5r",
+      "petrified",
+      "incapacitated"
+    ],
+    "sources": [
+      "condition.petrified"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditionimplies.2",
+    "relation": "ConditionImplies",
+    "values": [
+      "5r",
+      "stunned",
+      "incapacitated"
+    ],
+    "sources": [
+      "condition.stunned"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditionimplies.3",
+    "relation": "ConditionImplies",
+    "values": [
+      "5r",
+      "unconscious",
+      "incapacitated"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditionimplies.4",
+    "relation": "ConditionImplies",
+    "values": [
+      "5r",
+      "unconscious",
+      "prone"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.5",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "blinded",
+      "attack_disadvantage"
+    ],
+    "sources": [
+      "condition.blinded"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.6",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "blinded",
+      "attacked_advantage"
+    ],
+    "sources": [
+      "condition.blinded"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.7",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "blinded",
+      "sight_failure"
+    ],
+    "sources": [
+      "condition.blinded"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.8",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "deafened",
+      "hearing_failure"
+    ],
+    "sources": [
+      "condition.deafened"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.9",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "incapacitated",
+      "no_actions"
+    ],
+    "sources": [
+      "condition.incapacitated"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.10",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "incapacitated",
+      "no_concentration"
+    ],
+    "sources": [
+      "condition.incapacitated"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.11",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "incapacitated",
+      "no_speech"
+    ],
+    "sources": [
+      "condition.incapacitated"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.12",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "incapacitated",
+      "initiative_disadvantage"
+    ],
+    "sources": [
+      "condition.incapacitated"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.13",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "invisible",
+      "initiative_advantage"
+    ],
+    "sources": [
+      "condition.invisible"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.14",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "paralyzed",
+      "zero_speed"
+    ],
+    "sources": [
+      "condition.paralyzed"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.15",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "paralyzed",
+      "str_dex_failure"
+    ],
+    "sources": [
+      "condition.paralyzed"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.16",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "paralyzed",
+      "attacked_advantage"
+    ],
+    "sources": [
+      "condition.paralyzed"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.17",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "paralyzed",
+      "close_critical"
+    ],
+    "sources": [
+      "condition.paralyzed"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.18",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "petrified",
+      "zero_speed"
+    ],
+    "sources": [
+      "condition.petrified"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.19",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "petrified",
+      "str_dex_failure"
+    ],
+    "sources": [
+      "condition.petrified"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.20",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "petrified",
+      "attacked_advantage"
+    ],
+    "sources": [
+      "condition.petrified"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.21",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "petrified",
+      "all_resistance"
+    ],
+    "sources": [
+      "condition.petrified"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.22",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "poisoned",
+      "attack_disadvantage"
+    ],
+    "sources": [
+      "condition.poisoned"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.23",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "poisoned",
+      "check_disadvantage"
+    ],
+    "sources": [
+      "condition.poisoned"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.24",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "prone",
+      "attack_disadvantage"
+    ],
+    "sources": [
+      "condition.prone"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.25",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "prone",
+      "prone_target"
+    ],
+    "sources": [
+      "condition.prone"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.26",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "restrained",
+      "zero_speed"
+    ],
+    "sources": [
+      "condition.restrained"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.27",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "restrained",
+      "attack_disadvantage"
+    ],
+    "sources": [
+      "condition.restrained"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.28",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "restrained",
+      "attacked_advantage"
+    ],
+    "sources": [
+      "condition.restrained"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.29",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "restrained",
+      "dex_disadvantage"
+    ],
+    "sources": [
+      "condition.restrained"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.30",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "stunned",
+      "str_dex_failure"
+    ],
+    "sources": [
+      "condition.stunned"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.31",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "stunned",
+      "attacked_advantage"
+    ],
+    "sources": [
+      "condition.stunned"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.32",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "unconscious",
+      "zero_speed"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.33",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "unconscious",
+      "str_dex_failure"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.34",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "unconscious",
+      "attacked_advantage"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.35",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "unconscious",
+      "close_critical"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.36",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "unconscious",
+      "unaware"
+    ],
+    "sources": [
+      "condition.unconscious"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "conditioneffect.37",
+    "relation": "ConditionEffect",
+    "values": [
+      "5r",
+      "grappled",
+      "zero_speed"
+    ],
+    "sources": [
+      "condition.grappled"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.38",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "attack"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.39",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "dash"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.40",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "disengage"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.41",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "dodge"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.42",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "help"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.43",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "hide"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.44",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "influence"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.45",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "magic"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.46",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "ready"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.47",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "search"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.48",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "study"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "actionoption.49",
+    "relation": "ActionOption",
+    "values": [
+      "5r",
+      "utilize"
+    ],
+    "sources": [
+      "actions"
+    ],
+    "review_status": "unreviewed"
+  }
+]

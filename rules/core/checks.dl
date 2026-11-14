@@ -1,0 +1,92 @@
+// @rule ability.modifier
+AbilityModifier(E,A,B,S / 2 - 5) :- AbilityScore(E,A,B,S).
+
+// @rule training.bonus
+ProficiencyBonus(E,A,(R - 1) / 4 + 2) :- Rank(E,A,R).
+
+// @rule roll.advantage
+HasAdvantage(E,T) :- AdvantageCause(E,T,_).
+
+// @rule roll.disadvantage
+HasDisadvantage(E,T) :- DisadvantageCause(E,T,_).
+
+// @rule roll.mode.normal
+RollMode(E,T,"normal") :- Test(E,T,_,_,_,_,_,_), !HasAdvantage(E,T), !HasDisadvantage(E,T).
+
+// @rule roll.mode.cancel
+RollMode(E,T,"normal") :- Test(E,T,_,_,_,_,_,_), HasAdvantage(E,T), HasDisadvantage(E,T).
+
+// @rule roll.mode.higher
+RollMode(E,T,"advantage") :- Test(E,T,_,_,_,_,_,_), HasAdvantage(E,T), !HasDisadvantage(E,T).
+
+// @rule roll.mode.lower
+RollMode(E,T,"disadvantage") :- Test(E,T,_,_,_,_,_,_), !HasAdvantage(E,T), HasDisadvantage(E,T).
+
+// @rule roll.select.normal
+SelectedDie(E,T,A) :- RollMode(E,T,"normal"), Roll(E,T,A,_).
+
+// @rule roll.select.advantage
+SelectedDie(E,T,max(A,B)) :- RollMode(E,T,"advantage"), Roll(E,T,A,B), B > 0.
+
+// @rule roll.select.disadvantage
+SelectedDie(E,T,min(A,B)) :- RollMode(E,T,"disadvantage"), Roll(E,T,A,B), B > 0.
+
+// @rule training.none
+TrainingBonus(E,T,0) :- Test(E,T,_,_,_,_,_,"none").
+
+// @rule training.proficient
+TrainingBonus(E,T,B) :- Test(E,T,A,_,_,_,_,"proficient"), ProficiencyBonus(E,A,B).
+
+// @rule training.expertise
+TrainingBonus(E,T,B * 2) :- Test(E,T,A,_,_,_,_,"expertise"), ProficiencyBonus(E,A,B).
+
+// @rule training.half
+TrainingBonus(E,T,B / 2) :- Test(E,T,A,_,_,_,_,"half"), ProficiencyBonus(E,A,B).
+
+// @rule exhaustion.penalty
+TestPenalty(E,T,L * 2) :- Test(E,T,A,_,_,_,_,_), Exhaustion(E,A,L).
+
+// @rule exhaustion.absent
+TestPenalty(E,T,0) :- Test(E,T,A,_,_,_,_,_), !Exhaustion(E,A,_).
+
+// @rule save.cover
+RollAdjustment(E,T,B) :- Test(E,T,_,"save","dex",_,_,_), CoverBonus(E,T,B).
+
+// @rule other.adjustment.check
+RollAdjustment(E,T,0) :- Test(E,T,_,K,_,_,_,_), K != "save".
+
+// @rule other.adjustment.save
+RollAdjustment(E,T,0) :- Test(E,T,_,"save",A,_,_,_), A != "dex".
+
+// @rule attack.target
+TargetNumber(E,T,AC+B) :- Test(E,T,_,"attack",_,AC,_,_), CoverBonus(E,T,B).
+
+// @rule other.target
+TargetNumber(E,T,DC) :- Test(E,T,_,K,_,DC,_,_), K != "attack".
+
+// @rule test.total
+TestTotal(E,T,D+M+B+C+V-P) :- Test(E,T,A,_,S,_,C,_), SelectedDie(E,T,D), AbilityModifier(E,A,S,M), TrainingBonus(E,T,B), TestPenalty(E,T,P), RollAdjustment(E,T,V).
+
+// @rule attack.natural.one
+Outcome(E,T,"failure") :- Test(E,T,_,"attack",_,_,_,_), SelectedDie(E,T,1), !BlockedAttack(E,T,_), !ForcedMiss(E,T,_).
+
+// @rule attack.natural.twenty
+Outcome(E,T,"success") :- Test(E,T,_,"attack",_,_,_,_), SelectedDie(E,T,20), !BlockedAttack(E,T,_), !ForcedMiss(E,T,_).
+
+// @rule attack.compare.success
+Outcome(E,T,"success") :- Test(E,T,_,"attack",_,_,_,_), SelectedDie(E,T,D), D > 1, D < 20, TestTotal(E,T,N), TargetNumber(E,T,AC), N >= AC, !BlockedAttack(E,T,_), !ForcedMiss(E,T,_).
+
+// @rule test.compare.success
+Outcome(E,T,"success") :- Test(E,T,_,K,_,_,_,_), K != "attack", TestTotal(E,T,N), TargetNumber(E,T,DC), N >= DC, !AutoFailure(E,T,_).
+
+// @rule attack.compare.failure
+Outcome(E,T,"failure") :- Test(E,T,_,"attack",_,_,_,_), SelectedDie(E,T,D), D > 1, D < 20, TestTotal(E,T,N), TargetNumber(E,T,AC), N < AC, !BlockedAttack(E,T,_), !ForcedMiss(E,T,_).
+
+// @rule test.compare.failure
+Outcome(E,T,"failure") :- Test(E,T,_,K,_,_,_,_), K != "attack", TestTotal(E,T,N), TargetNumber(E,T,DC), N < DC, !AutoFailure(E,T,_).
+
+// @rule test.automatic.failure
+Outcome(E,T,"failure") :- AutoFailure(E,T,_).
+
+// @rule passive.score
+PassiveScore(E,A,10+M+5*(V-D)) :- PassivePerception(E,A,M,V,D).

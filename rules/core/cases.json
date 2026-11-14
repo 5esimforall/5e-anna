@@ -1,0 +1,6000 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "ability.table",
+      "description": "属性值1–30，含负调整值与2014/2024隔离",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "1",
+            "str",
+            1
+          ],
+          [
+            "5e",
+            "1",
+            "str",
+            1
+          ],
+          [
+            "5r",
+            "2",
+            "str",
+            2
+          ],
+          [
+            "5e",
+            "2",
+            "str",
+            2
+          ],
+          [
+            "5r",
+            "3",
+            "str",
+            3
+          ],
+          [
+            "5e",
+            "3",
+            "str",
+            3
+          ],
+          [
+            "5r",
+            "4",
+            "str",
+            4
+          ],
+          [
+            "5e",
+            "4",
+            "str",
+            4
+          ],
+          [
+            "5r",
+            "5",
+            "str",
+            5
+          ],
+          [
+            "5e",
+            "5",
+            "str",
+            5
+          ],
+          [
+            "5r",
+            "6",
+            "str",
+            6
+          ],
+          [
+            "5e",
+            "6",
+            "str",
+            6
+          ],
+          [
+            "5r",
+            "7",
+            "str",
+            7
+          ],
+          [
+            "5e",
+            "7",
+            "str",
+            7
+          ],
+          [
+            "5r",
+            "8",
+            "str",
+            8
+          ],
+          [
+            "5e",
+            "8",
+            "str",
+            8
+          ],
+          [
+            "5r",
+            "9",
+            "str",
+            9
+          ],
+          [
+            "5e",
+            "9",
+            "str",
+            9
+          ],
+          [
+            "5r",
+            "10",
+            "str",
+            10
+          ],
+          [
+            "5e",
+            "10",
+            "str",
+            10
+          ],
+          [
+            "5r",
+            "11",
+            "str",
+            11
+          ],
+          [
+            "5e",
+            "11",
+            "str",
+            11
+          ],
+          [
+            "5r",
+            "12",
+            "str",
+            12
+          ],
+          [
+            "5e",
+            "12",
+            "str",
+            12
+          ],
+          [
+            "5r",
+            "13",
+            "str",
+            13
+          ],
+          [
+            "5e",
+            "13",
+            "str",
+            13
+          ],
+          [
+            "5r",
+            "14",
+            "str",
+            14
+          ],
+          [
+            "5e",
+            "14",
+            "str",
+            14
+          ],
+          [
+            "5r",
+            "15",
+            "str",
+            15
+          ],
+          [
+            "5e",
+            "15",
+            "str",
+            15
+          ],
+          [
+            "5r",
+            "16",
+            "str",
+            16
+          ],
+          [
+            "5e",
+            "16",
+            "str",
+            16
+          ],
+          [
+            "5r",
+            "17",
+            "str",
+            17
+          ],
+          [
+            "5e",
+            "17",
+            "str",
+            17
+          ],
+          [
+            "5r",
+            "18",
+            "str",
+            18
+          ],
+          [
+            "5e",
+            "18",
+            "str",
+            18
+          ],
+          [
+            "5r",
+            "19",
+            "str",
+            19
+          ],
+          [
+            "5e",
+            "19",
+            "str",
+            19
+          ],
+          [
+            "5r",
+            "20",
+            "str",
+            20
+          ],
+          [
+            "5e",
+            "20",
+            "str",
+            20
+          ],
+          [
+            "5r",
+            "21",
+            "str",
+            21
+          ],
+          [
+            "5e",
+            "21",
+            "str",
+            21
+          ],
+          [
+            "5r",
+            "22",
+            "str",
+            22
+          ],
+          [
+            "5e",
+            "22",
+            "str",
+            22
+          ],
+          [
+            "5r",
+            "23",
+            "str",
+            23
+          ],
+          [
+            "5e",
+            "23",
+            "str",
+            23
+          ],
+          [
+            "5r",
+            "24",
+            "str",
+            24
+          ],
+          [
+            "5e",
+            "24",
+            "str",
+            24
+          ],
+          [
+            "5r",
+            "25",
+            "str",
+            25
+          ],
+          [
+            "5e",
+            "25",
+            "str",
+            25
+          ],
+          [
+            "5r",
+            "26",
+            "str",
+            26
+          ],
+          [
+            "5e",
+            "26",
+            "str",
+            26
+          ],
+          [
+            "5r",
+            "27",
+            "str",
+            27
+          ],
+          [
+            "5e",
+            "27",
+            "str",
+            27
+          ],
+          [
+            "5r",
+            "28",
+            "str",
+            28
+          ],
+          [
+            "5e",
+            "28",
+            "str",
+            28
+          ],
+          [
+            "5r",
+            "29",
+            "str",
+            29
+          ],
+          [
+            "5e",
+            "29",
+            "str",
+            29
+          ],
+          [
+            "5r",
+            "30",
+            "str",
+            30
+          ],
+          [
+            "5e",
+            "30",
+            "str",
+            30
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "1",
+            "str",
+            -5
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "1",
+            "str",
+            -5
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "2",
+            "str",
+            -4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "2",
+            "str",
+            -4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "3",
+            "str",
+            -4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "3",
+            "str",
+            -4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "4",
+            "str",
+            -3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "4",
+            "str",
+            -3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "5",
+            "str",
+            -3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "5",
+            "str",
+            -3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "6",
+            "str",
+            -2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "6",
+            "str",
+            -2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "7",
+            "str",
+            -2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "7",
+            "str",
+            -2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "8",
+            "str",
+            -1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "8",
+            "str",
+            -1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "9",
+            "str",
+            -1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "9",
+            "str",
+            -1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "10",
+            "str",
+            0
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "10",
+            "str",
+            0
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "11",
+            "str",
+            0
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "11",
+            "str",
+            0
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "12",
+            "str",
+            1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "12",
+            "str",
+            1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "13",
+            "str",
+            1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "13",
+            "str",
+            1
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "14",
+            "str",
+            2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "14",
+            "str",
+            2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "15",
+            "str",
+            2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "15",
+            "str",
+            2
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "16",
+            "str",
+            3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "16",
+            "str",
+            3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "17",
+            "str",
+            3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "17",
+            "str",
+            3
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "18",
+            "str",
+            4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "18",
+            "str",
+            4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "19",
+            "str",
+            4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "19",
+            "str",
+            4
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "20",
+            "str",
+            5
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "20",
+            "str",
+            5
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "21",
+            "str",
+            5
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "21",
+            "str",
+            5
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "22",
+            "str",
+            6
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "22",
+            "str",
+            6
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "23",
+            "str",
+            6
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "23",
+            "str",
+            6
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "24",
+            "str",
+            7
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "24",
+            "str",
+            7
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "25",
+            "str",
+            7
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "25",
+            "str",
+            7
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "26",
+            "str",
+            8
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "26",
+            "str",
+            8
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "27",
+            "str",
+            8
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "27",
+            "str",
+            8
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "28",
+            "str",
+            9
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "28",
+            "str",
+            9
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "29",
+            "str",
+            9
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "29",
+            "str",
+            9
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "30",
+            "str",
+            10
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5e",
+            "30",
+            "str",
+            10
+          ]
+        },
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "1",
+            "str",
+            -5
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "AbilityModifier",
+          "values": [
+            "5r",
+            "1",
+            "str",
+            -5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "proficiency.table",
+      "description": "",
+      "facts": {
+        "Rank": [
+          [
+            "5r",
+            "rank1",
+            1
+          ],
+          [
+            "5r",
+            "rank2",
+            2
+          ],
+          [
+            "5r",
+            "rank3",
+            3
+          ],
+          [
+            "5r",
+            "rank4",
+            4
+          ],
+          [
+            "5r",
+            "rank5",
+            5
+          ],
+          [
+            "5r",
+            "rank6",
+            6
+          ],
+          [
+            "5r",
+            "rank7",
+            7
+          ],
+          [
+            "5r",
+            "rank8",
+            8
+          ],
+          [
+            "5r",
+            "rank9",
+            9
+          ],
+          [
+            "5r",
+            "rank10",
+            10
+          ],
+          [
+            "5r",
+            "rank11",
+            11
+          ],
+          [
+            "5r",
+            "rank12",
+            12
+          ],
+          [
+            "5r",
+            "rank13",
+            13
+          ],
+          [
+            "5r",
+            "rank14",
+            14
+          ],
+          [
+            "5r",
+            "rank15",
+            15
+          ],
+          [
+            "5r",
+            "rank16",
+            16
+          ],
+          [
+            "5r",
+            "rank17",
+            17
+          ],
+          [
+            "5r",
+            "rank18",
+            18
+          ],
+          [
+            "5r",
+            "rank19",
+            19
+          ],
+          [
+            "5r",
+            "rank20",
+            20
+          ],
+          [
+            "5r",
+            "rank21",
+            21
+          ],
+          [
+            "5r",
+            "rank22",
+            22
+          ],
+          [
+            "5r",
+            "rank23",
+            23
+          ],
+          [
+            "5r",
+            "rank24",
+            24
+          ],
+          [
+            "5r",
+            "rank25",
+            25
+          ],
+          [
+            "5r",
+            "rank26",
+            26
+          ],
+          [
+            "5r",
+            "rank27",
+            27
+          ],
+          [
+            "5r",
+            "rank28",
+            28
+          ],
+          [
+            "5r",
+            "rank29",
+            29
+          ],
+          [
+            "5r",
+            "rank30",
+            30
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank1",
+            2
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank2",
+            2
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank3",
+            2
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank4",
+            2
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank5",
+            3
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank6",
+            3
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank7",
+            3
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank8",
+            3
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank9",
+            4
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank10",
+            4
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank11",
+            4
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank12",
+            4
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank13",
+            5
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank14",
+            5
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank15",
+            5
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank16",
+            5
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank17",
+            6
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank18",
+            6
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank19",
+            6
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank20",
+            6
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank21",
+            7
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank22",
+            7
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank23",
+            7
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank24",
+            7
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank25",
+            8
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank26",
+            8
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank27",
+            8
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank28",
+            8
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank29",
+            9
+          ]
+        },
+        {
+          "relation": "ProficiencyBonus",
+          "values": [
+            "5r",
+            "rank30",
+            9
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "equal",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "equal.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "equal",
+            "equal.actor",
+            "check",
+            "dex",
+            12,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "equal",
+            10,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "equal",
+            "success"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "equal",
+            "failure"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "equal",
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "check.twenty",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "check.twenty.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "check.twenty",
+            "check.twenty.actor",
+            "check",
+            "dex",
+            30,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "check.twenty",
+            20,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "check.twenty",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "check.twenty",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "check.twenty",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "check.one",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "check.one.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "check.one",
+            "check.one.actor",
+            "check",
+            "dex",
+            1,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "check.one",
+            1,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "check.one",
+            "success"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "check.one",
+            "failure"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "check.one",
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack.twenty",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "attack.twenty.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "attack.twenty",
+            "attack.twenty.actor",
+            "attack",
+            "dex",
+            100,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "attack.twenty",
+            20,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "attack.twenty",
+            "attack.twenty.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "attack.twenty",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "attack.twenty",
+            "success"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "attack.twenty",
+            "failure"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "attack.twenty",
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack.one",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "attack.one.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "attack.one",
+            "attack.one.actor",
+            "attack",
+            "dex",
+            1,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "attack.one",
+            1,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "attack.one",
+            "attack.one.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "attack.one",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "attack.one",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "attack.one",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "attack.one",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "save.twenty",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "save.twenty.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "save.twenty",
+            "save.twenty.actor",
+            "save",
+            "dex",
+            30,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "save.twenty",
+            20,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "save.twenty",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "save.twenty",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "save.twenty",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "advantage",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "advantage.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "advantage",
+            "advantage.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "advantage",
+            10,
+            18
+          ]
+        ],
+        "AdvantageCause": [
+          [
+            "5r",
+            "advantage",
+            "cause0"
+          ],
+          [
+            "5r",
+            "advantage",
+            "cause1"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "advantage",
+            "advantage"
+          ]
+        },
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "advantage",
+            18
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "advantage",
+            18
+          ]
+        }
+      ]
+    },
+    {
+      "id": "disadvantage",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "disadvantage.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "disadvantage",
+            "disadvantage.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "disadvantage",
+            10,
+            3
+          ]
+        ],
+        "DisadvantageCause": [
+          [
+            "5r",
+            "disadvantage",
+            "cause0"
+          ],
+          [
+            "5r",
+            "disadvantage",
+            "cause1"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "disadvantage",
+            "disadvantage"
+          ]
+        },
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "disadvantage",
+            3
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "disadvantage",
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cancel",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "cancel.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "cancel",
+            "cancel.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "cancel",
+            10,
+            0
+          ]
+        ],
+        "AdvantageCause": [
+          [
+            "5r",
+            "cancel",
+            "cause0"
+          ],
+          [
+            "5r",
+            "cancel",
+            "cause1"
+          ]
+        ],
+        "DisadvantageCause": [
+          [
+            "5r",
+            "cancel",
+            "cause0"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "cancel",
+            "normal"
+          ]
+        },
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "cancel",
+            10
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "cancel",
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "training.proficient",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "training.proficient.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "training.proficient",
+            "training.proficient.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "proficient"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "training.proficient",
+            10,
+            0
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "training.proficient.actor",
+            5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "training.proficient",
+            3
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "training.proficient",
+            15
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "training.proficient",
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "training.expertise",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "training.expertise.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "training.expertise",
+            "training.expertise.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "expertise"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "training.expertise",
+            10,
+            0
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "training.expertise.actor",
+            5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "training.expertise",
+            6
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "training.expertise",
+            18
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "training.expertise",
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "training.half",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "training.half.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "training.half",
+            "training.half.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "half"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "training.half",
+            10,
+            0
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "training.half.actor",
+            5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "training.half",
+            1
+          ]
+        },
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "training.half",
+            13
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "TrainingBonus",
+          "values": [
+            "5r",
+            "training.half",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "exhaustion.check",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "exhaustion.check.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "exhaustion.check",
+            "exhaustion.check.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "proficient"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "exhaustion.check",
+            12,
+            0
+          ]
+        ],
+        "Rank": [
+          [
+            "5r",
+            "exhaustion.check.actor",
+            5
+          ]
+        ],
+        "Exhaustion": [
+          [
+            "5r",
+            "exhaustion.check.actor",
+            2
+          ]
+        ],
+        "BaseSpeed": [
+          [
+            "5r",
+            "exhaustion.check.actor",
+            30
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "exhaustion.check",
+            13
+          ]
+        },
+        {
+          "relation": "Speed",
+          "values": [
+            "5r",
+            "exhaustion.check.actor",
+            20
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "exhaustion.check",
+            13
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cover.1",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "cover.1.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "cover.1",
+            "cover.1.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "cover.1",
+            20,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "cover.1",
+            "cover.1.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "cover.1",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Cover": [
+          [
+            "5r",
+            "cover.1",
+            1
+          ],
+          [
+            "5r",
+            "cover.1",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5r",
+            "cover.1",
+            16
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "cover.1",
+            "success"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "cover.1",
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cover.2",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "cover.2.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "cover.2",
+            "cover.2.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "cover.2",
+            20,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "cover.2",
+            "cover.2.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "cover.2",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Cover": [
+          [
+            "5r",
+            "cover.2",
+            1
+          ],
+          [
+            "5r",
+            "cover.2",
+            2
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5r",
+            "cover.2",
+            19
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "cover.2",
+            "success"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "cover.2",
+            "success"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cover.3",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "cover.3.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "cover.3",
+            "cover.3.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "cover.3",
+            20,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "cover.3",
+            "cover.3.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "cover.3",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Cover": [
+          [
+            "5r",
+            "cover.3",
+            1
+          ],
+          [
+            "5r",
+            "cover.3",
+            3
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TargetNumber",
+          "values": [
+            "5r",
+            "cover.3",
+            14
+          ]
+        },
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "cover.3",
+            "blocked"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "cover.3",
+            "blocked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cover.save",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "cover.save.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "cover.save",
+            "cover.save.actor",
+            "save",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "cover.save",
+            10,
+            0
+          ]
+        ],
+        "Cover": [
+          [
+            "5r",
+            "cover.save",
+            2
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "cover.save",
+            17
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "TestTotal",
+          "values": [
+            "5r",
+            "cover.save",
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "id": "range.long",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "range.long.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "range.long",
+            "range.long.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "range.long",
+            20,
+            4
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "range.long",
+            "range.long.target",
+            100,
+            "ranged",
+            80,
+            200
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "range.long",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "range.long",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "range.long",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "range.out",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "range.out.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "range.out",
+            "range.out.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "range.out",
+            20,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "range.out",
+            "range.out.target",
+            201,
+            "ranged",
+            80,
+            200
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "range.out",
+            1,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "range.out",
+            "blocked"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "range.out",
+            "blocked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "unseen.cancel",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "unseen.cancel.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "unseen.cancel",
+            "unseen.cancel.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "unseen.cancel",
+            10,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "unseen.cancel",
+            "unseen.cancel.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "unseen.cancel",
+            0,
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "unseen.cancel",
+            "normal"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "unseen.cancel",
+            "normal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "wrong.location",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "wrong.location.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "wrong.location",
+            "wrong.location.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "wrong.location",
+            20,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "wrong.location",
+            "wrong.location.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "wrong.location",
+            1,
+            1,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "wrong.location",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "wrong.location",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "wrong.location",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "close.enemy",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "close.enemy.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "close.enemy",
+            "close.enemy.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "close.enemy",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "close.enemy",
+            "close.enemy.target",
+            5,
+            "ranged",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "close.enemy",
+            1,
+            1,
+            1
+          ]
+        ],
+        "CloseEnemy": [
+          [
+            "5r",
+            "close.enemy",
+            1,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "close.enemy",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "close.enemy",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auto.paralyzed",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "auto.paralyzed.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "auto.paralyzed",
+            "auto.paralyzed.actor",
+            "save",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "auto.paralyzed",
+            20,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "auto.paralyzed.actor",
+            "paralyzed"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.paralyzed",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.paralyzed",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.paralyzed",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auto.stunned",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "auto.stunned.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "auto.stunned",
+            "auto.stunned.actor",
+            "save",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "auto.stunned",
+            20,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "auto.stunned.actor",
+            "stunned"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.stunned",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.stunned",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.stunned",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auto.petrified",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "auto.petrified.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "auto.petrified",
+            "auto.petrified.actor",
+            "save",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "auto.petrified",
+            20,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "auto.petrified.actor",
+            "petrified"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.petrified",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.petrified",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.petrified",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "auto.unconscious",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "auto.unconscious.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "auto.unconscious",
+            "auto.unconscious.actor",
+            "save",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "auto.unconscious",
+            20,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "auto.unconscious.actor",
+            "unconscious"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.unconscious",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.unconscious",
+            "success"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "auto.unconscious",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack.poisoned",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "attack.poisoned.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "attack.poisoned",
+            "attack.poisoned.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "attack.poisoned",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "attack.poisoned",
+            "attack.poisoned.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "attack.poisoned",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "attack.poisoned.actor",
+            "poisoned"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.poisoned",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.poisoned",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack.blinded",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "attack.blinded.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "attack.blinded",
+            "attack.blinded.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "attack.blinded",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "attack.blinded",
+            "attack.blinded.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "attack.blinded",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "attack.blinded.actor",
+            "blinded"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.blinded",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.blinded",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack.restrained",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "attack.restrained.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "attack.restrained",
+            "attack.restrained.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "attack.restrained",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "attack.restrained",
+            "attack.restrained.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "attack.restrained",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "attack.restrained.actor",
+            "restrained"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.restrained",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.restrained",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "attack.prone",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "attack.prone.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "attack.prone",
+            "attack.prone.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "attack.prone",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "attack.prone",
+            "attack.prone.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "attack.prone",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "attack.prone.actor",
+            "prone"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.prone",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "attack.prone",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prone.5",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "prone.5.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "prone.5",
+            "prone.5.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "prone.5",
+            10,
+            20
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "prone.5",
+            "prone.5.target",
+            5,
+            "ranged",
+            30,
+            120
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "prone.5",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "prone.5.target",
+            "prone"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "prone.5",
+            "advantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "prone.5",
+            "advantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "prone.10",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "prone.10.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "prone.10",
+            "prone.10.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "prone.10",
+            10,
+            2
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "prone.10",
+            "prone.10.target",
+            10,
+            "ranged",
+            30,
+            120
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "prone.10",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "prone.10.target",
+            "prone"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "prone.10",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "prone.10",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "critical.paralyzed",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "critical.paralyzed.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "critical.paralyzed",
+            "critical.paralyzed.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "critical.paralyzed",
+            12,
+            15
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "critical.paralyzed",
+            "critical.paralyzed.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "critical.paralyzed",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "critical.paralyzed.target",
+            "paralyzed"
+          ]
+        ],
+        "DamageDice": [
+          [
+            "5r",
+            "critical.paralyzed",
+            "weapon",
+            1,
+            8
+          ],
+          [
+            "5r",
+            "critical.paralyzed",
+            "rider",
+            2,
+            6
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CriticalHit",
+          "values": [
+            "5r",
+            "critical.paralyzed"
+          ]
+        },
+        {
+          "relation": "DamageDiceRequired",
+          "values": [
+            "5r",
+            "critical.paralyzed",
+            "rider",
+            4,
+            6
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "CriticalHit",
+          "values": [
+            "5r",
+            "critical.paralyzed"
+          ]
+        },
+        {
+          "relation": "DamageDiceRequired",
+          "values": [
+            "5r",
+            "critical.paralyzed",
+            "rider",
+            4,
+            6
+          ]
+        }
+      ]
+    },
+    {
+      "id": "poison.immune",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "poison.immune.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "poison.immune",
+            "poison.immune.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "poison.immune",
+            10,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "poison.immune.actor",
+            "poisoned"
+          ],
+          [
+            "5r",
+            "poison.immune.actor",
+            "petrified"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "poison.immune",
+            "normal"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "ActiveCondition",
+          "values": [
+            "5r",
+            "poison.immune.actor",
+            "poisoned"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "poison.immune",
+            "normal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "poison.explicit.immune",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "poison.explicit.immune.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "poison.explicit.immune",
+            "poison.explicit.immune.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "poison.explicit.immune",
+            10,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "poison.explicit.immune.actor",
+            "poisoned"
+          ]
+        ],
+        "ConditionImmune": [
+          [
+            "5r",
+            "poison.explicit.immune.actor",
+            "poisoned"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "poison.explicit.immune",
+            "normal"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "sense.sight",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "sense.sight.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "sense.sight",
+            "sense.sight.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "sense.sight",
+            20,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "sense.sight.actor",
+            "blinded"
+          ]
+        ],
+        "RequiredSense": [
+          [
+            "5r",
+            "sense.sight",
+            "sight"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "sense.sight",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "sense.sight",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sense.hearing",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "sense.hearing.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "sense.hearing",
+            "sense.hearing.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "sense.hearing",
+            20,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "sense.hearing.actor",
+            "deafened"
+          ]
+        ],
+        "RequiredSense": [
+          [
+            "5r",
+            "sense.hearing",
+            "hearing"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "sense.hearing",
+            "failure"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "sense.hearing",
+            "failure"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fear.visible",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "fear.visible.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "fear.visible",
+            "fear.visible.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "fear.visible",
+            10,
+            3
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "fear.visible.actor",
+            "frightened"
+          ]
+        ],
+        "ConditionSource": [
+          [
+            "5r",
+            "fear.visible.actor",
+            "frightened",
+            "dragon",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "fear.visible",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "fear.visible",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fear.hidden",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "fear.hidden.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "fear.hidden",
+            "fear.hidden.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "fear.hidden",
+            10,
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "fear.hidden.actor",
+            "frightened"
+          ]
+        ],
+        "ConditionSource": [
+          [
+            "5r",
+            "fear.hidden.actor",
+            "frightened",
+            "dragon",
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "fear.hidden",
+            "normal"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "grapple.other",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "grapple.other.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "grapple.other",
+            "grapple.other.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "grapple.other",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "grapple.other",
+            "grapple.other.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "grapple.other",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "grapple.other.actor",
+            "grappled"
+          ]
+        ],
+        "ConditionSource": [
+          [
+            "5r",
+            "grapple.other.actor",
+            "grappled",
+            "grappler",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "grapple.other",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "grapple.other",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "charmed.attack",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "charmed.attack.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "charmed.attack",
+            "charmed.attack.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "charmed.attack",
+            10,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "charmed.attack",
+            "charmed.attack.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "charmed.attack",
+            1,
+            1,
+            1
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "charmed.attack.actor",
+            "charmed"
+          ]
+        ],
+        "ConditionSource": [
+          [
+            "5r",
+            "charmed.attack.actor",
+            "charmed",
+            "charmed.attack.target",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "charmed.attack",
+            "blocked"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Outcome",
+          "values": [
+            "5r",
+            "charmed.attack",
+            "blocked"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "charmed.social",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "charmed.social.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "charmed.social",
+            "charmed.social.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "charmed.social",
+            10,
+            17
+          ]
+        ],
+        "SocialCheck": [
+          [
+            "5r",
+            "charmed.social",
+            "charmed-target"
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "charmed-target",
+            "charmed"
+          ]
+        ],
+        "ConditionSource": [
+          [
+            "5r",
+            "charmed-target",
+            "charmed",
+            "charmed.social.actor",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "charmed.social",
+            "advantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "charmed.social",
+            "advantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "initiative.surprise",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "initiative.surprise.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "initiative.surprise",
+            "initiative.surprise.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "initiative.surprise",
+            10,
+            3
+          ]
+        ],
+        "Initiative": [
+          [
+            "5r",
+            "initiative.surprise",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "initiative.surprise",
+            3
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "initiative.surprise",
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "id": "initiative.invisible",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "initiative.invisible.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "initiative.invisible",
+            "initiative.invisible.actor",
+            "check",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "initiative.invisible",
+            10,
+            17
+          ]
+        ],
+        "Initiative": [
+          [
+            "5r",
+            "initiative.invisible",
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "initiative.invisible.actor",
+            "invisible"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "initiative.invisible",
+            17
+          ]
+        },
+        {
+          "relation": "InitiativeBefore",
+          "values": [
+            "5r",
+            "initiative.invisible",
+            "initiative.surprise"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "SelectedDie",
+          "values": [
+            "5r",
+            "initiative.invisible",
+            17
+          ]
+        }
+      ]
+    },
+    {
+      "id": "actions.available",
+      "description": "",
+      "facts": {
+        "Turn": [
+          [
+            "5r",
+            "fighter",
+            0,
+            0,
+            1
+          ]
+        ],
+        "ReactionWindow": [
+          [
+            "5r",
+            "fighter",
+            0
+          ]
+        ],
+        "BaseSpeed": [
+          [
+            "5r",
+            "fighter",
+            30
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Available",
+          "values": [
+            "5r",
+            "fighter",
+            "action"
+          ]
+        },
+        {
+          "relation": "Available",
+          "values": [
+            "5r",
+            "fighter",
+            "bonus_action"
+          ]
+        },
+        {
+          "relation": "AvailableAction",
+          "values": [
+            "5r",
+            "fighter",
+            "attack"
+          ]
+        },
+        {
+          "relation": "DashExtra",
+          "values": [
+            "5r",
+            "fighter",
+            30
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "Available",
+          "values": [
+            "5r",
+            "fighter",
+            "action"
+          ]
+        },
+        {
+          "relation": "DashExtra",
+          "values": [
+            "5r",
+            "fighter",
+            30
+          ]
+        }
+      ]
+    },
+    {
+      "id": "actions.disabled",
+      "description": "",
+      "facts": {
+        "Turn": [
+          [
+            "5r",
+            "disabled",
+            0,
+            0,
+            1
+          ]
+        ],
+        "ReactionWindow": [
+          [
+            "5r",
+            "disabled",
+            0
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "disabled",
+            "incapacitated"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "Effect",
+          "values": [
+            "5r",
+            "disabled",
+            "no_actions"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "Available",
+          "values": [
+            "5r",
+            "disabled",
+            "bonus_action"
+          ]
+        },
+        {
+          "relation": "Available",
+          "values": [
+            "5r",
+            "disabled",
+            "reaction"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "Effect",
+          "values": [
+            "5r",
+            "disabled",
+            "no_actions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "actions.no.bonus",
+      "description": "",
+      "facts": {
+        "Turn": [
+          [
+            "5r",
+            "ordinary",
+            0,
+            0,
+            0
+          ]
+        ],
+        "ReactionWindow": [
+          [
+            "5r",
+            "ordinary",
+            0
+          ]
+        ]
+      },
+      "expect": [],
+      "absent": [
+        {
+          "relation": "Available",
+          "values": [
+            "5r",
+            "ordinary",
+            "bonus_action"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "movement.cost",
+      "description": "",
+      "facts": {
+        "MoveSegment": [
+          [
+            "5r",
+            "crawl",
+            "crawler",
+            10,
+            1,
+            1
+          ]
+        ],
+        "BaseSpeed": [
+          [
+            "5r",
+            "crawler",
+            25
+          ]
+        ],
+        "Condition": [
+          [
+            "5r",
+            "crawler",
+            "prone"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "MovementCost",
+          "values": [
+            "5r",
+            "crawl",
+            30
+          ]
+        },
+        {
+          "relation": "StandCost",
+          "values": [
+            "5r",
+            "crawler",
+            12
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "MovementCost",
+          "values": [
+            "5r",
+            "crawl",
+            30
+          ]
+        }
+      ]
+    },
+    {
+      "id": "opportunity.trigger",
+      "description": "",
+      "facts": {
+        "ReactionWindow": [
+          [
+            "5r",
+            "guard",
+            0
+          ]
+        ],
+        "LeavingReach": [
+          [
+            "5r",
+            "walk",
+            "guard",
+            "runner",
+            1,
+            1,
+            0,
+            0
+          ],
+          [
+            "5r",
+            "forced",
+            "guard",
+            "runner",
+            1,
+            0,
+            0,
+            0
+          ],
+          [
+            "5r",
+            "teleport",
+            "guard",
+            "runner",
+            1,
+            1,
+            1,
+            0
+          ],
+          [
+            "5r",
+            "disengage",
+            "guard",
+            "runner",
+            1,
+            1,
+            0,
+            1
+          ],
+          [
+            "5r",
+            "unseen",
+            "guard",
+            "runner",
+            0,
+            1,
+            0,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "OpportunityAttack",
+          "values": [
+            "5r",
+            "walk",
+            "guard",
+            "runner"
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "OpportunityAttack",
+          "values": [
+            "5r",
+            "forced",
+            "guard",
+            "runner"
+          ]
+        },
+        {
+          "relation": "OpportunityAttack",
+          "values": [
+            "5r",
+            "teleport",
+            "guard",
+            "runner"
+          ]
+        },
+        {
+          "relation": "OpportunityAttack",
+          "values": [
+            "5r",
+            "disengage",
+            "guard",
+            "runner"
+          ]
+        },
+        {
+          "relation": "OpportunityAttack",
+          "values": [
+            "5r",
+            "unseen",
+            "guard",
+            "runner"
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "OpportunityAttack",
+          "values": [
+            "5r",
+            "walk",
+            "guard",
+            "runner"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dodge.visible",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "dodge.visible.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "dodge.visible",
+            "dodge.visible.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "dodge.visible",
+            10,
+            3
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "dodge.visible",
+            "dodge.visible.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "dodge.visible",
+            1,
+            1,
+            1
+          ]
+        ],
+        "DodgeActive": [
+          [
+            "5r",
+            "dodge.visible.target"
+          ]
+        ],
+        "BaseSpeed": [
+          [
+            "5r",
+            "dodge.visible.target",
+            30
+          ]
+        ],
+        "DodgeAttackerSeen": [
+          [
+            "5r",
+            "dodge.visible",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "dodge.visible",
+            "disadvantage"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "dodge.visible",
+            "disadvantage"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dodge.blind",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "dodge.blind.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "dodge.blind",
+            "dodge.blind.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "dodge.blind",
+            10,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "dodge.blind",
+            "dodge.blind.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "dodge.blind",
+            1,
+            1,
+            1
+          ]
+        ],
+        "DodgeActive": [
+          [
+            "5r",
+            "dodge.blind.target"
+          ]
+        ],
+        "BaseSpeed": [
+          [
+            "5r",
+            "dodge.blind.target",
+            30
+          ]
+        ],
+        "DodgeAttackerSeen": [
+          [
+            "5r",
+            "dodge.blind",
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "dodge.blind",
+            "normal"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "dodge.blind",
+            "normal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dodge.zero",
+      "description": "",
+      "facts": {
+        "AbilityScore": [
+          [
+            "5r",
+            "dodge.zero.actor",
+            "dex",
+            14
+          ]
+        ],
+        "Test": [
+          [
+            "5r",
+            "dodge.zero",
+            "dodge.zero.actor",
+            "attack",
+            "dex",
+            14,
+            0,
+            "none"
+          ]
+        ],
+        "Roll": [
+          [
+            "5r",
+            "dodge.zero",
+            10,
+            0
+          ]
+        ],
+        "Attack": [
+          [
+            "5r",
+            "dodge.zero",
+            "dodge.zero.target",
+            5,
+            "melee",
+            5,
+            5
+          ]
+        ],
+        "Visibility": [
+          [
+            "5r",
+            "dodge.zero",
+            1,
+            1,
+            1
+          ]
+        ],
+        "DodgeActive": [
+          [
+            "5r",
+            "dodge.zero.target"
+          ]
+        ],
+        "BaseSpeed": [
+          [
+            "5r",
+            "dodge.zero.target",
+            0
+          ]
+        ],
+        "DodgeAttackerSeen": [
+          [
+            "5r",
+            "dodge.zero",
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "dodge.zero",
+            "normal"
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "RollMode",
+          "values": [
+            "5r",
+            "dodge.zero",
+            "normal"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage.ordered",
+      "description": "",
+      "facts": {
+        "Damage": [
+          [
+            "5r",
+            "damage.ordered",
+            "damage.ordered.actor",
+            "fire",
+            28,
+            -5
+          ]
+        ],
+        "HitPoints": [
+          [
+            "5r",
+            "damage.ordered",
+            30,
+            40,
+            5
+          ]
+        ],
+        "Resistance": [
+          [
+            "5r",
+            "damage.ordered.actor",
+            "fire"
+          ],
+          [
+            "5r",
+            "damage.ordered.actor",
+            "all"
+          ]
+        ],
+        "Vulnerability": [
+          [
+            "5r",
+            "damage.ordered.actor",
+            "fire"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.ordered",
+            22
+          ]
+        },
+        {
+          "relation": "AfterDamage",
+          "values": [
+            "5r",
+            "damage.ordered",
+            13,
+            0,
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.ordered",
+            22
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage.resist",
+      "description": "",
+      "facts": {
+        "Damage": [
+          [
+            "5r",
+            "damage.resist",
+            "damage.resist.actor",
+            "fire",
+            28,
+            -5
+          ]
+        ],
+        "HitPoints": [
+          [
+            "5r",
+            "damage.resist",
+            30,
+            40,
+            5
+          ]
+        ],
+        "Resistance": [
+          [
+            "5r",
+            "damage.resist.actor",
+            "fire"
+          ],
+          [
+            "5r",
+            "damage.resist.actor",
+            "all"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.resist",
+            11
+          ]
+        },
+        {
+          "relation": "AfterDamage",
+          "values": [
+            "5r",
+            "damage.resist",
+            24,
+            0,
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.resist",
+            11
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage.vulnerable",
+      "description": "",
+      "facts": {
+        "Damage": [
+          [
+            "5r",
+            "damage.vulnerable",
+            "damage.vulnerable.actor",
+            "fire",
+            28,
+            -5
+          ]
+        ],
+        "HitPoints": [
+          [
+            "5r",
+            "damage.vulnerable",
+            30,
+            40,
+            5
+          ]
+        ],
+        "Vulnerability": [
+          [
+            "5r",
+            "damage.vulnerable.actor",
+            "fire"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.vulnerable",
+            46
+          ]
+        },
+        {
+          "relation": "AfterDamage",
+          "values": [
+            "5r",
+            "damage.vulnerable",
+            0,
+            0,
+            11
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.vulnerable",
+            46
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage.immune",
+      "description": "",
+      "facts": {
+        "Damage": [
+          [
+            "5r",
+            "damage.immune",
+            "damage.immune.actor",
+            "fire",
+            28,
+            -5
+          ]
+        ],
+        "HitPoints": [
+          [
+            "5r",
+            "damage.immune",
+            30,
+            40,
+            5
+          ]
+        ],
+        "Resistance": [
+          [
+            "5r",
+            "damage.immune.actor",
+            "fire"
+          ],
+          [
+            "5r",
+            "damage.immune.actor",
+            "all"
+          ]
+        ],
+        "Vulnerability": [
+          [
+            "5r",
+            "damage.immune.actor",
+            "fire"
+          ]
+        ],
+        "DamageImmune": [
+          [
+            "5r",
+            "damage.immune.actor",
+            "fire"
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.immune",
+            0
+          ]
+        },
+        {
+          "relation": "AfterDamage",
+          "values": [
+            "5r",
+            "damage.immune",
+            30,
+            5,
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.immune",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage.plain",
+      "description": "",
+      "facts": {
+        "Damage": [
+          [
+            "5r",
+            "damage.plain",
+            "damage.plain.actor",
+            "fire",
+            28,
+            -5
+          ]
+        ],
+        "HitPoints": [
+          [
+            "5r",
+            "damage.plain",
+            30,
+            40,
+            5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.plain",
+            23
+          ]
+        },
+        {
+          "relation": "AfterDamage",
+          "values": [
+            "5r",
+            "damage.plain",
+            12,
+            0,
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.plain",
+            23
+          ]
+        }
+      ]
+    },
+    {
+      "id": "damage.floor",
+      "description": "",
+      "facts": {
+        "Damage": [
+          [
+            "5r",
+            "damage.floor",
+            "floor.actor",
+            "fire",
+            2,
+            -5
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.floor",
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "DamageTaken",
+          "values": [
+            "5r",
+            "damage.floor",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "healing.cap",
+      "description": "",
+      "facts": {
+        "HitPoints": [
+          [
+            "5r",
+            "healing.cap",
+            14,
+            20,
+            5
+          ]
+        ],
+        "Healing": [
+          [
+            "5r",
+            "healing.cap",
+            8
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "AfterHealing",
+          "values": [
+            "5r",
+            "healing.cap",
+            20,
+            5
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "AfterHealing",
+          "values": [
+            "5r",
+            "healing.cap",
+            20,
+            5
+          ]
+        }
+      ]
+    },
+    {
+      "id": "temp.0",
+      "description": "",
+      "facts": {
+        "HitPoints": [
+          [
+            "5r",
+            "temp.0",
+            0,
+            20,
+            10
+          ]
+        ],
+        "TempGrant": [
+          [
+            "5r",
+            "temp.0",
+            12,
+            0
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "AfterTempGrant",
+          "values": [
+            "5r",
+            "temp.0",
+            0,
+            12
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "AfterTempGrant",
+          "values": [
+            "5r",
+            "temp.0",
+            0,
+            12
+          ]
+        }
+      ]
+    },
+    {
+      "id": "temp.1",
+      "description": "",
+      "facts": {
+        "HitPoints": [
+          [
+            "5r",
+            "temp.1",
+            0,
+            20,
+            10
+          ]
+        ],
+        "TempGrant": [
+          [
+            "5r",
+            "temp.1",
+            12,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "AfterTempGrant",
+          "values": [
+            "5r",
+            "temp.1",
+            0,
+            10
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "AfterTempGrant",
+          "values": [
+            "5r",
+            "temp.1",
+            0,
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "id": "passive",
+      "description": "",
+      "facts": {
+        "PassivePerception": [
+          [
+            "5r",
+            "neutral",
+            4,
+            0,
+            0
+          ],
+          [
+            "5r",
+            "adv",
+            4,
+            1,
+            0
+          ],
+          [
+            "5r",
+            "dis",
+            4,
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cancelled",
+            4,
+            1,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "neutral",
+            14
+          ]
+        },
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "adv",
+            19
+          ]
+        },
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "dis",
+            9
+          ]
+        },
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "cancelled",
+            14
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "neutral",
+            14
+          ]
+        },
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "adv",
+            19
+          ]
+        },
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "dis",
+            9
+          ]
+        },
+        {
+          "relation": "PassiveScore",
+          "values": [
+            "5r",
+            "cancelled",
+            14
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "primary_edition": "5r",
+  "covered": [
+    "ability modifiers; proficiency rank and single training multiplier",
+    "D20 tests, advantage cancellation, attack natural 1/20, cover, range and visibility",
+    "condition implications and mechanical D20/action/speed effects",
+    "initiative comparisons and ties; action/bonus/reaction availability; dash, movement cost and opportunity triggers",
+    "critical damage dice; damage modification, resistance, vulnerability and immunity; temporary HP and healing",
+    "Dodge benefits with sight/speed/incapacitation gates; passive perception"
+  ],
+  "partial": [
+    "2014: ability modifiers only; other scenario relations reject this edition.",
+    "ActionOption enumerates choices, not full effects of every action",
+    "Movement cost supports ordinary, difficult terrain and crawling; geometry is supplied",
+    "one typed damage packet per event; combine same-type dice before input; multiple packets require external sequencing"
+  ],
+  "deferred": [
+    "Full action implementations (hide, help, ready), rerolls and replacement choices",
+    "Skill default-ability lookup, spell save DC",
+    "weapon properties, armor variants, underwater combat, mounted combat, light/special-sense resolution",
+    "zero-HP death/stabilization, rests, concentration saves, durations and automatic state transitions",
+    "condition effects outside the selected relations (equipment drops, aging/weight, charm harmful effects, frightened approach)"
+  ],
+  "input_contract": [
+    "All scenario IDs must be unique across cases in a build; facts describe one settled evaluation snapshot.",
+    "Absent optional cause/condition/resistance means absent within this complete scenario, not unknown.",
+    "Ability scores, target DC/base AC, selected ability/training, positions/visibility and settled dice are explicit external facts.",
+    "ReactionWindow is since the actor’s last turn start; Turn describes the current actor’s own turn.",
+    "Rule and claim annotations are assistant-authored, unreviewed; source coordinates do not imply approved rule identity.",
+    "DodgeActive means its duration has not ended; DodgeAttackerSeen is the defender’s sight of this attacker.",
+    "PassivePerception.modifier is the complete supplied perception modifier, including training and penalties.",
+    "Symbols are nonempty, at most 2048 characters, and exclude controls, double quotes and backslashes (Soufflé 2.5 proof serialization).",
+    "A build is one joint snapshot (and one initiative contest); use separate builds for independent encounters. Rank accepts integer levels/CR bands 1–30 only.",
+    "AvailableAction and DashExtra describe available options and their potential extra movement, not actions already executed. MovementCost does not maintain a movement budget."
+  ]
+}

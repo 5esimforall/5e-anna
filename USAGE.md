@@ -19,6 +19,7 @@
 | `make test-unit` / `make test-browser` | 分别运行单元测试 / 浏览器回归 |
 | `make browser-setup` | 安装锁定的 Node 依赖与 Chromium，首次运行浏览器测试前执行 |
 | `make audit` | 审计数据库与导出文件 |
+| `make datalog` | 绑定原文证据，运行 Soufflé 通则与场景验收，生成溯源报告 |
 | `make check` | 运行测试与审计 |
 | `make update` | 显式拉取原文与 5etools-cn 更新并重建搜索索引；之后运行 `make build` 更新数据 |
 | `make status` | 查看原文、5etools-cn 版本与搜索索引状态 |
@@ -511,3 +512,33 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/ap
 知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方应按结构版本读取 `value.grants`、`value.parameters` 和 `value.effects`，不再读取结构 1 的独立背景目标或 `value.casting`。重建后，旧结构的审核决策保留原事件并重新待核；运行 `knowledge.py list` 找到当前主体的记录，再 `inspect` 核对，以 `--supersedes 旧决策ID` 保存新审核，或撤销旧决策。迁移不会新增人工批准。
 
 构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`audit.py --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)，实际检查证据见[施法链验证](tests/casting-chain-validation.md)。
+
+## Datalog 通则与原文溯源
+
+要检验通则如何共同决定结果，先将场景事实交给 Soufflé，再从解释追到规则子句和原文范围。规则库位于 `rules/core/`，覆盖与输入契约保存在其中的 `scope.json`；当前以 2024 基础规则为主，2014 仅启用有独立证据的属性调整值映射。
+
+安装 **Soufflé 2.5（64 位）** 后运行：
+
+```sh
+# macOS；其他平台使用 Soufflé 官方安装方式
+brew install souffle
+souffle --version
+# 先有与镜像一致的 catalog.sqlite；已有全量构建可直接使用
+make datalog
+# 选择一个场景，另存产物；不覆盖默认完整报告
+.venv/bin/python scripts/datalog.py build --case critical.paralyzed \
+  --output .cache/datalog-critical
+# 查询稳定子句身份或从原文反查子句、事实与证明
+.venv/bin/python scripts/datalog.py inspect --rule condition.close.critical
+.venv/bin/python scripts/datalog.py inspect --source-id condition.paralyzed
+```
+
+`make datalog` 不拉取镜像、不重建查询库，也不修改原文。默认产物在 `data/extracted/datalog/`，包括可直接打开的 `report.html`、`source-map.json`、`results.json`、`explanations.json` 和 `manifest.json`。运行 `make up` 后，报告里的证据链接会打开 Anna 的精确范围，原文链接会打开 Stella。`ANNA_PORT` 同时配置 make 命令写入的链接端口；直接运行脚本可用 `--base-url` 指定服务地址，`--lang en` 生成英文报告界面。
+
+`--source`、`--db`、`--library`、`--output` 分别选择镜像、目录库、规则库与生成目录，`--engine` 或 `SOUFFLE` 指定引擎。`inspect --bundle 路径` 先核验产物文件哈希，再读取保存的结果；它不重新判定原文是否有新版本。原文更新后先运行 `make build`，再运行 `make datalog` 重新绑定范围。引文、上下文变动或匹配不唯一时构建失败，旧产物保留。
+
+自定义场景通过 `--cases 文件.json` 传入。文件结构与 `rules/core/cases.json` 一致：顶层为 `{"schema":1,"cases":[…]}`，每个场景包含唯一 `id`、按关系名组织的 `facts`，以及可选的 `expect`、`absent` 和 `explain` 查询。元组的字段顺序、类型、唯一键和数值边界以 `relations.json` 为准。一次构建中的场景合并求值，因此角色、检定与事件标识须按场景区分；需要同一角色的多个时间点时分别构建。固定骰值是输入，不由 Python 模拟掷骰。
+
+报告区分源规则、结构投影、输入校验及待人工审核状态，不将子句数量当作规则完成度。动作选项表不表示每个动作效果都已实现；完整覆盖边界见 `scope.json`。单元测试会调用本机 Soufflé 执行正反场景和证明校验；未安装时明确跳过引擎测试，`make datalog` 则直接报错。
+
+引擎的输入采用 RFC 4180 CSV，平面输出采用无控制字符的原生 TSV；格式行为参见 [Soufflé I/O directives](https://souffle-lang.github.io/directives)。

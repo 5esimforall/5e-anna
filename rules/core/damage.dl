@@ -1,0 +1,53 @@
+// @rule damage.modify
+ModifiedDamage(E,I,max(0,N+B)) :- Damage(E,I,_,_,N,B).
+
+// @rule resistance.typed
+Resisted(E,I) :- Damage(E,I,A,T,_,_), Resistance(E,A,T).
+
+// @rule resistance.all
+Resisted(E,I) :- Damage(E,I,A,_,_,_), Resistance(E,A,"all").
+
+// @rule resistance.petrified
+Resisted(E,I) :- Damage(E,I,A,_,_,_), Effect(E,A,"all_resistance").
+
+// @rule resistance.halve
+AfterResistance(E,I,N/2) :- ModifiedDamage(E,I,N), Resisted(E,I).
+
+// @rule resistance.none
+AfterResistance(E,I,N) :- ModifiedDamage(E,I,N), !Resisted(E,I).
+
+// @rule damageimmune.typed
+ImmunePacket(E,I) :- Damage(E,I,A,T,_,_), DamageImmune(E,A,T).
+
+// @rule damageimmune.all
+ImmunePacket(E,I) :- Damage(E,I,A,_,_,_), DamageImmune(E,A,"all").
+
+// @rule vulnerability.typed
+VulnerablePacket(E,I) :- Damage(E,I,A,T,_,_), Vulnerability(E,A,T).
+
+// @rule vulnerability.all
+VulnerablePacket(E,I) :- Damage(E,I,A,_,_,_), Vulnerability(E,A,"all").
+
+// @rule immunity.zero
+DamageTaken(E,I,0) :- ImmunePacket(E,I).
+
+// @rule vulnerability.double
+DamageTaken(E,I,N*2) :- AfterResistance(E,I,N), VulnerablePacket(E,I), !ImmunePacket(E,I).
+
+// @rule vulnerability.none
+DamageTaken(E,I,N) :- AfterResistance(E,I,N), !VulnerablePacket(E,I), !ImmunePacket(E,I).
+
+// @rule hitpoints.damage
+AfterDamage(E,I,max(0,H-max(0,D-T)),max(0,T-D),max(0,D-T-H)) :- HitPoints(E,I,H,_,T), DamageTaken(E,I,D).
+
+// @rule hitpoints.bloodied
+Bloodied(E,I) :- AfterDamage(E,I,H,_,_), HitPoints(E,I,_,M,_), H*2 <= M.
+
+// @rule healing.cap
+AfterHealing(E,I,min(H+N,M),T) :- HitPoints(E,I,H,M,T), Healing(E,I,N).
+
+// @rule temporary.keep
+AfterTempGrant(E,I,H,T) :- HitPoints(E,I,H,_,T), TempGrant(E,I,_,1).
+
+// @rule temporary.replace
+AfterTempGrant(E,I,H,N) :- HitPoints(E,I,H,_,_), TempGrant(E,I,N,0).

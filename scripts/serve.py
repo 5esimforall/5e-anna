@@ -469,8 +469,10 @@ class Handler(BaseHTTPRequestHandler):
                     limit=int(first(p,'limit','50')),offset=int(first(p,'offset','0'))))
                 elif url.path=='/api/export': self.send(csv_export(query(db,p,export=True)['rows'],browse.schema_for(entry_types(p))),'text/csv; charset=utf-8',download=True)
                 elif url.path=='/source':
-                    row=db.execute('SELECT text FROM pages WHERE path=?',(first(p,'path'),)).fetchone()
+                    row=db.execute('SELECT text,sha256 FROM pages WHERE path=?',(first(p,'path'),)).fetchone()
                     if not row: raise LookupError('页面不存在')
+                    if first(p,'sha256') and first(p,'sha256') != row[1]:
+                        self.send({'error':'source_snapshot_mismatch','path':first(p,'path')},status=409); return
                     text=row[0]; start=max(0,min(len(text),int(first(p,'start','0')))); end=max(start,min(len(text),int(first(p,'end',str(start)))))
                     body='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页面文本 · 5e Anna</title><script src="/kit.js"></script><script src="/theme.js"></script><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/style.css"><main class="source-page"><a href="/">← 条目查询</a><h1>页面文本</h1><p>提取后的文本；高亮为所选证据范围。</p><p>'+html.escape(first(p,'path'))+'</p><pre>'+html.escape(text[:start])+'<mark id="evidence">'+html.escape(text[start:end])+'</mark>'+html.escape(text[end:])+'</pre></main></html>'
                     self.send(body.encode(),'text/html; charset=utf-8')

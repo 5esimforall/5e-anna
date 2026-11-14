@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "id": "anna.core",
+  "engine": {
+    "name": "souffle",
+    "version": "2.5"
+  },
+  "relations": "relations.json",
+  "sources": "sources.json",
+  "rules": "rules.json",
+  "facts": "facts.json",
+  "cases": "cases.json",
+  "scope": "scope.json",
+  "modules": [
+    "checks.dl",
+    "combat.dl",
+    "conditions.dl",
+    "actions.dl",
+    "damage.dl",
+    "validation.dl"
+  ]
+}

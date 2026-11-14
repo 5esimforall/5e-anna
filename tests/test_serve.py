@@ -331,6 +331,13 @@ class WebTests(unittest.TestCase):
         self.assertIn('<title>页面文本 · 5e Anna</title>'.encode(),body)
         self.assertIn(b'href="/favicon.ico"',body)
         self.assertLess(body.index(b'src="/theme.js"'),body.index(b'href="/style.css"'))
+    def test_source_snapshot_guard(self):
+        row=self.db.execute('SELECT path,sha256 FROM pages LIMIT 1').fetchone()
+        url='/source?'+urlencode({'path':row[0],'sha256':row[1]})
+        self.assertEqual(self.request(url)[0],200)
+        status,_,body=self.request('/source?'+urlencode({'path':row[0],'sha256':'stale'}))
+        self.assertEqual(status,409)
+        self.assertEqual(json.loads(body)['error'],'source_snapshot_mismatch')
     def test_reader_modules_are_served_with_script_types(self):
         page=self.request('/read')[2]
         for name in ('model','flow'):

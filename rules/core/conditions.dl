@@ -1,0 +1,62 @@
+// @rule condition.activate
+ActiveCondition(E,A,C) :- Condition(E,A,C), !ConditionImmune(E,A,C), C != "poisoned".
+
+// @rule condition.poison
+ActiveCondition(E,A,"poisoned") :- Condition(E,A,"poisoned"), !ConditionImmune(E,A,"poisoned"), !PoisonBlocked(E,A).
+
+// @rule condition.implies
+ActiveCondition(E,A,D) :- Condition(E,A,C), !ConditionImmune(E,A,C), ConditionImplies(E,C,D), !ConditionImmune(E,A,D).
+
+// @rule condition.effect
+Effect(E,A,F) :- ActiveCondition(E,A,C), ConditionEffect(E,C,F).
+
+// @rule condition.attack.disadvantage
+HasDisadvantage(E,T) :- Test(E,T,A,"attack",_,_,_,_), Effect(E,A,"attack_disadvantage").
+
+// @rule condition.check.disadvantage
+HasDisadvantage(E,T) :- Test(E,T,A,"check",_,_,_,_), Effect(E,A,"check_disadvantage").
+
+// @rule condition.target.advantage
+HasAdvantage(E,T) :- Attack(E,T,A,_,_,_,_), Effect(E,A,"attacked_advantage").
+
+// @rule condition.dex.disadvantage
+HasDisadvantage(E,T) :- Test(E,T,A,"save","dex",_,_,_), Effect(E,A,"dex_disadvantage").
+
+// @rule condition.auto.str
+AutoFailure(E,T,"condition") :- Test(E,T,A,"save","str",_,_,_), Effect(E,A,"str_dex_failure").
+
+// @rule condition.auto.dex
+AutoFailure(E,T,"condition") :- Test(E,T,A,"save","dex",_,_,_), Effect(E,A,"str_dex_failure").
+
+// @rule condition.close.critical
+CriticalHit(E,T) :- Attack(E,T,A,D,_,_,_), D <= 5, Effect(E,A,"close_critical"), Outcome(E,T,"success").
+
+// @rule condition.prone.near
+HasAdvantage(E,T) :- Attack(E,T,A,D,_,_,_), D <= 5, Effect(E,A,"prone_target").
+
+// @rule condition.prone.far
+HasDisadvantage(E,T) :- Attack(E,T,A,D,_,_,_), D > 5, Effect(E,A,"prone_target").
+
+// @rule condition.sense.sight
+AutoFailure(E,T,"sight") :- Test(E,T,A,"check",_,_,_,_), RequiredSense(E,T,"sight"), Effect(E,A,"sight_failure").
+
+// @rule condition.sense.hearing
+AutoFailure(E,T,"hearing") :- Test(E,T,A,"check",_,_,_,_), RequiredSense(E,T,"hearing"), Effect(E,A,"hearing_failure").
+
+// @rule frightened.disadvantage
+HasDisadvantage(E,T) :- Test(E,T,A,K,_,_,_,_), K != "save", ActiveCondition(E,A,"frightened"), ConditionSource(E,A,"frightened",_,1).
+
+// @rule grappled.other.target
+HasDisadvantage(E,T) :- Test(E,T,A,"attack",_,_,_,_), Attack(E,T,B,_,_,_,_), ActiveCondition(E,A,"grappled"), ConditionSource(E,A,"grappled",G,_), B != G.
+
+// @rule charmed.attack.block
+BlockedAttack(E,T,"charmed") :- Test(E,T,A,"attack",_,_,_,_), Attack(E,T,B,_,_,_,_), ActiveCondition(E,A,"charmed"), ConditionSource(E,A,"charmed",B,_).
+
+// @rule charmed.social
+HasAdvantage(E,T) :- Test(E,T,A,"check",_,_,_,_), SocialCheck(E,T,B), ActiveCondition(E,B,"charmed"), ConditionSource(E,B,"charmed",A,_).
+
+// @rule exhaustion.death
+ExhaustionDeath(E,A) :- Exhaustion(E,A,6).
+
+// @rule condition.petrified.poison.immunity
+PoisonBlocked(E,A) :- Condition(E,A,"petrified"), !ConditionImmune(E,A,"petrified").

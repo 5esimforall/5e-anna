@@ -1,0 +1,56 @@
+// @rule cover.higher
+HigherCover(E,T,D) :- Cover(E,T,D), Cover(E,T,H), H > D.
+
+// @rule cover.bonus.0
+CoverBonus(E,T,0) :- Cover(E,T,0), !HigherCover(E,T,0).
+
+// @rule cover.bonus.1
+CoverBonus(E,T,2) :- Cover(E,T,1), !HigherCover(E,T,1).
+
+// @rule cover.bonus.2
+CoverBonus(E,T,5) :- Cover(E,T,2), !HigherCover(E,T,2).
+
+// @rule cover.bonus.3
+CoverBonus(E,T,0) :- Cover(E,T,3), !HigherCover(E,T,3).
+
+// @rule cover.absent
+CoverBonus(E,T,0) :- Test(E,T,_,_,_,_,_,_), !Cover(E,T,_).
+
+// @rule attack.blocked
+Outcome(E,T,"blocked") :- BlockedAttack(E,T,_).
+
+// @rule armor.unarmored
+UnarmoredAC(E,A,10+M) :- AbilityModifier(E,A,"dex",M).
+
+// @rule cover.total
+BlockedAttack(E,T,"total_cover") :- Test(E,T,_,"attack",_,_,_,_), Cover(E,T,3).
+
+// @rule range.exceeded
+BlockedAttack(E,T,"out_of_range") :- Attack(E,T,_,D,_,_,M), D > M.
+
+// @rule range.long
+HasDisadvantage(E,T) :- Attack(E,T,_,D,"ranged",N,M), D > N, D <= M.
+
+// @rule range.close.enemy
+HasDisadvantage(E,T) :- Attack(E,T,_,_,"ranged",_,_), CloseEnemy(E,T,1,0).
+
+// @rule visibility.unseen.target
+HasDisadvantage(E,T) :- Visibility(E,T,0,_,_).
+
+// @rule visibility.unseen.attacker
+HasAdvantage(E,T) :- Visibility(E,T,_,0,_).
+
+// @rule visibility.wrong.location
+ForcedMiss(E,T,"wrong_location") :- Visibility(E,T,_,_,0).
+
+// @rule critical.natural
+CriticalHit(E,T) :- Outcome(E,T,"success"), Test(E,T,_,"attack",_,_,_,_), SelectedDie(E,T,20).
+
+// @rule critical.dice
+DamageDiceRequired(E,T,C,N*2,S) :- DamageDice(E,T,C,N,S), CriticalHit(E,T).
+
+// @rule ordinary.dice
+DamageDiceRequired(E,T,C,N,S) :- DamageDice(E,T,C,N,S), Outcome(E,T,"success"), !CriticalHit(E,T).
+
+// @rule attack.forced.miss
+Outcome(E,T,"failure") :- ForcedMiss(E,T,_), !BlockedAttack(E,T,_).

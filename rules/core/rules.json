@@ -1,0 +1,1719 @@
+{
+  "ability.modifier": {
+    "kind": "source",
+    "editions": [
+      "5r",
+      "5e"
+    ],
+    "sources": {
+      "5r": [
+        "ability"
+      ],
+      "5e": [
+        "5e.ability"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "training.bonus": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.advantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.disadvantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.mode.normal": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.mode.cancel": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.mode.higher": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.mode.lower": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.select.normal": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.select.advantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "roll.select.disadvantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "training.none": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "training.proficient": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "training.expertise": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "training.half": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "training"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "exhaustion.penalty": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.exhaustion"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "exhaustion.absent": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.exhaustion"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.higher": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.bonus.0": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.bonus.1": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.bonus.2": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.bonus.3": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.absent": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "save.cover": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "other.adjustment.check": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "other.adjustment.save": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.target": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack",
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "other.target": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "test.total": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20",
+        "condition.exhaustion"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.natural.one": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.natural.twenty": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.compare.success": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "test.compare.success": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.compare.failure": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "test.compare.failure": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "test.automatic.failure": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "d20"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.blocked": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target",
+        "range"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "armor.unarmored": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cover.total": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "range.exceeded": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "range",
+        "opportunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "range.long": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "range"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "range.close.enemy": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "range"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "visibility.unseen.target": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "visibility.unseen.attacker": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "visibility.wrong.location": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "critical.natural": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "attack"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "critical.dice": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "critical"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "ordinary.dice": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "damage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "condition.activate": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "immunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "condition.poison": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "immunity",
+        "condition.petrified"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "condition.implies": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "immunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "condition.effect": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.attack.disadvantage": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.check.disadvantage": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.target.advantage": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.dex.disadvantage": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.auto.str": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.auto.dex": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.close.critical": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.prone.near": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.prone"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "condition.prone.far": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.prone"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "condition.sense.sight": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.sense.hearing": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "frightened.disadvantage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.frightened"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "grappled.other.target": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.grappled"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "charmed.attack.block": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.charmed"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "charmed.social": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.charmed"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "initiative.surprise": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "initiative.advantage": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "initiative.disadvantage": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "initiative.order": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "initiative.tie": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "speed.zero": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "speed.exhaustion": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.exhaustion"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "speed.base": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "movement"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "turn.action": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "turn",
+        "condition.incapacitated"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "turn.bonus": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "bonus"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "turn.reaction": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "reaction",
+        "condition.incapacitated"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "action.options": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "actions"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "dash.extra": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "actions"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "movement.cost": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "movement",
+        "crawling"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "prone.stand": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.prone"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "opportunity.available": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "opportunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "damage.modify": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "damage",
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "resistance.typed": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "resistance.all": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "resistance.petrified": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.petrified"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "resistance.halve": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "resistance.none": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "damageimmune.typed": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "immunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "damageimmune.all": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "immunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "vulnerability.typed": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "vulnerability.all": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "immunity.zero": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "immunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "vulnerability.double": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "vulnerability.none": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "resistance"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "hitpoints.damage": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "hp",
+        "temporary"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "hitpoints.bloodied": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "hp"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "healing.cap": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "healing",
+        "temporary"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "temporary.keep": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "temporary"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "temporary.replace": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "temporary"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "exhaustion.death": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.exhaustion"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "validate.test.ability": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.test.roll": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.test.training": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.roll.second": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.attack.context": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.attack.visibility": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.attack.range": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.attack.mode": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.hp.maximum": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.initiative.kind": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.damage.healing": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.damage.temp": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.healing.temp": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "dodge.attack": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "dodge"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "dodge.save": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "dodge"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "passive.score": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "passive",
+        "advantage"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "validate.orphan.roll": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.advantagecause": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.disadvantagecause": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.cover": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.attack": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.visibility": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.closeenemy": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.damagedice": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.requiredsense": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.socialcheck": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.initiative": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.orphan.dodgeattackerseen": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.condition.source.frightened": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.condition.source.charmed": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.condition.source.grappled": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "validate.expertise.check": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Structural validation or projection of the explicit scenario contract; not an additional game rule."
+  },
+  "condition.petrified.poison.immunity": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "condition.petrified",
+        "immunity"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "attack.forced.miss": {
+    "kind": "source",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": [
+        "target"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "validate.attack.kind": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.sense.kind": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.social.kind": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.dodge.speed": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.healing.hp": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.temporary.hp": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.attack.support.visibility": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.attack.support.closeenemy": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.attack.support.damagedice": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  },
+  "validate.attack.support.dodgeattackerseen": {
+    "kind": "projection",
+    "editions": [
+      "5r"
+    ],
+    "sources": {
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "Validate required context and relation roles in the explicit scenario contract."
+  }
+}

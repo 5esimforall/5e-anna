@@ -1,0 +1,116 @@
+// @rule validate.test.ability
+Violation(E,T,"missing_ability") :- Test(E,T,A,_,B,_,_,_), !AbilityScore(E,A,B,_).
+
+// @rule validate.test.roll
+Violation(E,T,"missing_roll") :- Test(E,T,_,_,_,_,_,_), !Roll(E,T,_,_), !AutoFailure(E,T,_).
+
+// @rule validate.test.training
+Violation(E,T,"missing_rank") :- Test(E,T,A,_,_,_,_,P), P != "none", !Rank(E,A,_).
+
+// @rule validate.roll.second
+Violation(E,T,"missing_second_die") :- RollMode(E,T,M), M != "normal", Roll(E,T,_,0), !AutoFailure(E,T,_).
+
+// @rule validate.attack.context
+Violation(E,T,"missing_attack_context") :- Test(E,T,_,"attack",_,_,_,_), !Attack(E,T,_,_,_,_,_).
+
+// @rule validate.attack.visibility
+Violation(E,T,"missing_visibility") :- Attack(E,T,_,_,_,_,_), !Visibility(E,T,_,_,_).
+
+// @rule validate.attack.range
+Violation(E,T,"invalid_range") :- Attack(E,T,_,_,_,N,M), N > M.
+
+// @rule validate.attack.mode
+Violation(E,T,"invalid_attack_mode") :- Attack(E,T,_,_,M,_,_), M != "melee", M != "ranged".
+
+// @rule validate.hp.maximum
+Violation(E,T,"hp_above_maximum") :- HitPoints(E,T,H,M,_), H > M.
+
+// @rule validate.initiative.kind
+Violation(E,T,"invalid_initiative") :- Initiative(E,T,_), !Test(E,T,_,"check","dex",_,_,_).
+
+// @rule validate.damage.healing
+Violation(E,T,"conflicting_hp_event") :- Damage(E,T,_,_,_,_), Healing(E,T,_).
+
+// @rule validate.damage.temp
+Violation(E,T,"conflicting_hp_event") :- Damage(E,T,_,_,_,_), TempGrant(E,T,_,_).
+
+// @rule validate.healing.temp
+Violation(E,T,"conflicting_hp_event") :- Healing(E,T,_), TempGrant(E,T,_,_).
+
+// @rule validate.orphan.roll
+Violation(E,T,"orphan_Roll") :- Roll(E,T,_,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.advantagecause
+Violation(E,T,"orphan_AdvantageCause") :- AdvantageCause(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.disadvantagecause
+Violation(E,T,"orphan_DisadvantageCause") :- DisadvantageCause(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.cover
+Violation(E,T,"orphan_Cover") :- Cover(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.attack
+Violation(E,T,"orphan_Attack") :- Attack(E,T,_,_,_,_,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.visibility
+Violation(E,T,"orphan_Visibility") :- Visibility(E,T,_,_,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.closeenemy
+Violation(E,T,"orphan_CloseEnemy") :- CloseEnemy(E,T,_,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.damagedice
+Violation(E,T,"orphan_DamageDice") :- DamageDice(E,T,_,_,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.requiredsense
+Violation(E,T,"orphan_RequiredSense") :- RequiredSense(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.socialcheck
+Violation(E,T,"orphan_SocialCheck") :- SocialCheck(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.initiative
+Violation(E,T,"orphan_Initiative") :- Initiative(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.orphan.dodgeattackerseen
+Violation(E,T,"orphan_DodgeAttackerSeen") :- DodgeAttackerSeen(E,T,_), !Test(E,T,_,_,_,_,_,_).
+
+// @rule validate.condition.source.frightened
+Violation(E,A,"missing_condition_source") :- ActiveCondition(E,A,"frightened"), !ConditionSource(E,A,"frightened",_,_).
+
+// @rule validate.condition.source.charmed
+Violation(E,A,"missing_condition_source") :- ActiveCondition(E,A,"charmed"), !ConditionSource(E,A,"charmed",_,_).
+
+// @rule validate.condition.source.grappled
+Violation(E,A,"missing_condition_source") :- ActiveCondition(E,A,"grappled"), !ConditionSource(E,A,"grappled",_,_).
+
+// @rule validate.expertise.check
+Violation(E,T,"expertise_requires_check") :- Test(E,T,_,K,_,_,_,"expertise"), K != "check".
+
+// @rule validate.attack.kind
+Violation(E,T,"invalid_attack_test") :- Attack(E,T,_,_,_,_,_), !Test(E,T,_,"attack",_,_,_,_).
+
+// @rule validate.sense.kind
+Violation(E,T,"invalid_sense_test") :- RequiredSense(E,T,_), !Test(E,T,_,"check",_,_,_,_).
+
+// @rule validate.social.kind
+Violation(E,T,"invalid_social_test") :- SocialCheck(E,T,_), !Test(E,T,_,"check",_,_,_,_).
+
+// @rule validate.dodge.speed
+Violation(E,A,"missing_speed") :- DodgeActive(E,A), !BaseSpeed(E,A,_).
+
+// @rule validate.healing.hp
+Violation(E,T,"missing_hit_points") :- Healing(E,T,_), !HitPoints(E,T,_,_,_).
+
+// @rule validate.temporary.hp
+Violation(E,T,"missing_hit_points") :- TempGrant(E,T,_,_), !HitPoints(E,T,_,_,_).
+
+// @rule validate.attack.support.visibility
+Violation(E,T,"missing_attack_context") :- Visibility(E,T,_,_,_), !Attack(E,T,_,_,_,_,_).
+
+// @rule validate.attack.support.closeenemy
+Violation(E,T,"missing_attack_context") :- CloseEnemy(E,T,_,_), !Attack(E,T,_,_,_,_,_).
+
+// @rule validate.attack.support.damagedice
+Violation(E,T,"missing_attack_context") :- DamageDice(E,T,_,_,_), !Attack(E,T,_,_,_,_,_).
+
+// @rule validate.attack.support.dodgeattackerseen
+Violation(E,T,"missing_attack_context") :- DodgeAttackerSeen(E,T,_), !Attack(E,T,_,_,_,_,_).

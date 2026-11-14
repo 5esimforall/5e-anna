@@ -1,0 +1,1917 @@
+{
+  "types": {
+    "Edition": {
+      "base": "symbol",
+      "values": [
+        "5e",
+        "5r"
+      ]
+    },
+    "RuleId": {
+      "base": "symbol"
+    },
+    "Text": {
+      "base": "symbol"
+    },
+    "Number": {
+      "base": "number"
+    },
+    "Ability": {
+      "base": "symbol",
+      "values": [
+        "str",
+        "dex",
+        "con",
+        "int",
+        "wis",
+        "cha"
+      ]
+    },
+    "TestKind": {
+      "base": "symbol",
+      "values": [
+        "check",
+        "save",
+        "attack"
+      ]
+    },
+    "Training": {
+      "base": "symbol",
+      "values": [
+        "none",
+        "proficient",
+        "expertise",
+        "half"
+      ]
+    },
+    "Flag": {
+      "base": "number",
+      "values": [
+        0,
+        1
+      ]
+    },
+    "ConditionName": {
+      "base": "symbol",
+      "values": [
+        "blinded",
+        "charmed",
+        "deafened",
+        "frightened",
+        "grappled",
+        "incapacitated",
+        "invisible",
+        "paralyzed",
+        "petrified",
+        "poisoned",
+        "prone",
+        "restrained",
+        "stunned",
+        "unconscious"
+      ]
+    },
+    "Sense": {
+      "base": "symbol",
+      "values": [
+        "sight",
+        "hearing"
+      ]
+    }
+  },
+  "relations": {
+    "RuleEnabled": {
+      "fields": [
+        [
+          "rule_id",
+          "RuleId"
+        ],
+        [
+          "edition",
+          "Edition"
+        ]
+      ],
+      "input": "infrastructure",
+      "key": [
+        0,
+        1
+      ]
+    },
+    "AbilityScore": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ],
+        [
+          "score",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1,
+        2
+      ],
+      "bounds": {
+        "score": {
+          "min": 1,
+          "max": 30
+        }
+      },
+      "editions": [
+        "5r",
+        "5e"
+      ]
+    },
+    "AbilityModifier": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "ability",
+          "Ability"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Rank": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "rank",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "rank": {
+          "min": 1,
+          "max": 30
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "ProficiencyBonus": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Test": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "kind",
+          "TestKind"
+        ],
+        [
+          "ability",
+          "Ability"
+        ],
+        [
+          "target",
+          "Number"
+        ],
+        [
+          "circumstance",
+          "Number"
+        ],
+        [
+          "training",
+          "Training"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "target": {
+          "min": 0,
+          "max": 1000
+        },
+        "circumstance": {
+          "min": -1000,
+          "max": 1000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "Roll": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "first",
+          "Number"
+        ],
+        [
+          "second",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "first": {
+          "min": 1,
+          "max": 20
+        },
+        "second": {
+          "min": 0,
+          "max": 20
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "AdvantageCause": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "cause",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "DisadvantageCause": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "cause",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "HasAdvantage": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "HasDisadvantage": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "RollMode": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "mode",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "SelectedDie": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "TrainingBonus": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "TestTotal": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Outcome": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "outcome",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "AutoFailure": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "reason",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "Violation": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "subject",
+          "Text"
+        ],
+        [
+          "code",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "Exhaustion": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "level",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "level": {
+          "min": 0,
+          "max": 6
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "TestPenalty": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "CoverBonus": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Cover": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "degree",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "bounds": {
+        "degree": {
+          "min": 0,
+          "max": 3
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "HigherCover": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "degree",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "RollAdjustment": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "TargetNumber": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "BlockedAttack": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "reason",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "UnarmoredAC": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Attack": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ],
+        [
+          "distance",
+          "Number"
+        ],
+        [
+          "mode",
+          "Text"
+        ],
+        [
+          "normal_range",
+          "Number"
+        ],
+        [
+          "maximum_range",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "distance": {
+          "min": 0,
+          "max": 10000
+        },
+        "normal_range": {
+          "min": 0,
+          "max": 10000
+        },
+        "maximum_range": {
+          "min": 0,
+          "max": 10000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "Visibility": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "target_seen",
+          "Flag"
+        ],
+        [
+          "attacker_seen",
+          "Flag"
+        ],
+        [
+          "location_correct",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "CloseEnemy": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "sees_attacker",
+          "Flag"
+        ],
+        [
+          "incapacitated",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "CriticalHit": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "DamageDice": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "component",
+          "Text"
+        ],
+        [
+          "dice_count",
+          "Number"
+        ],
+        [
+          "sides",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1,
+        2
+      ],
+      "bounds": {
+        "count": {
+          "min": 1,
+          "max": 100
+        },
+        "sides": {
+          "min": 1,
+          "max": 1000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "DamageDiceRequired": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "component",
+          "Text"
+        ],
+        [
+          "dice_count",
+          "Number"
+        ],
+        [
+          "sides",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Condition": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "condition",
+          "ConditionName"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "ConditionImmune": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "condition",
+          "ConditionName"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "ActiveCondition": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "condition",
+          "ConditionName"
+        ]
+      ],
+      "output": true
+    },
+    "ConditionImplies": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "condition",
+          "ConditionName"
+        ],
+        [
+          "implied",
+          "ConditionName"
+        ]
+      ],
+      "input": "library"
+    },
+    "ConditionEffect": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "condition",
+          "ConditionName"
+        ],
+        [
+          "effect",
+          "Text"
+        ]
+      ],
+      "input": "library"
+    },
+    "Effect": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "effect",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "RequiredSense": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "sense",
+          "Sense"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "ConditionSource": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "condition",
+          "ConditionName"
+        ],
+        [
+          "source",
+          "Text"
+        ],
+        [
+          "visible",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "SocialCheck": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "Initiative": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "surprised",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "InitiativeBefore": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "first",
+          "Text"
+        ],
+        [
+          "second",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "InitiativeTie": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "first",
+          "Text"
+        ],
+        [
+          "second",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "BaseSpeed": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "speed",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "speed": {
+          "min": 0,
+          "max": 10000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "Speed": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Turn": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "action_used",
+          "Flag"
+        ],
+        [
+          "bonus_used",
+          "Flag"
+        ],
+        [
+          "bonus_granted",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "ReactionWindow": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "reaction_used",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "Available": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "resource",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "ActionOption": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "action",
+          "Text"
+        ]
+      ],
+      "input": "library"
+    },
+    "AvailableAction": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "action",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "DashExtra": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "distance",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "MoveSegment": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "segment",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "distance",
+          "Number"
+        ],
+        [
+          "difficult",
+          "Flag"
+        ],
+        [
+          "crawling",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "distance": {
+          "min": 0,
+          "max": 10000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "MovementCost": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "segment",
+          "Text"
+        ],
+        [
+          "cost",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "StandCost": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "cost",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "LeavingReach": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "observer",
+          "Text"
+        ],
+        [
+          "mover",
+          "Text"
+        ],
+        [
+          "seen",
+          "Flag"
+        ],
+        [
+          "uses_movement",
+          "Flag"
+        ],
+        [
+          "teleport",
+          "Flag"
+        ],
+        [
+          "disengaged",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "OpportunityAttack": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "Damage": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "damage_type",
+          "Text"
+        ],
+        [
+          "amount",
+          "Number"
+        ],
+        [
+          "adjustment",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "amount": {
+          "min": 0,
+          "max": 1000000
+        },
+        "adjustment": {
+          "min": -1000000,
+          "max": 1000000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "Resistance": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "damage_type",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "Vulnerability": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "damage_type",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "DamageImmune": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "damage_type",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "Resisted": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "ModifiedDamage": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "AfterResistance": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "DamageTaken": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ImmunePacket": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "VulnerablePacket": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "HitPoints": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "current",
+          "Number"
+        ],
+        [
+          "maximum",
+          "Number"
+        ],
+        [
+          "temporary",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "current": {
+          "min": 0,
+          "max": 1000000
+        },
+        "maximum": {
+          "min": 0,
+          "max": 1000000
+        },
+        "temporary": {
+          "min": 0,
+          "max": 1000000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "AfterDamage": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "hp",
+          "Number"
+        ],
+        [
+          "temporary",
+          "Number"
+        ],
+        [
+          "overflow",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "Bloodied": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "Healing": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "amount",
+          "Number"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "amount": {
+          "min": 0,
+          "max": 1000000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "AfterHealing": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "hp",
+          "Number"
+        ],
+        [
+          "temporary",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "TempGrant": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "amount",
+          "Number"
+        ],
+        [
+          "keep_old",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "amount": {
+          "min": 0,
+          "max": 1000000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "AfterTempGrant": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "event",
+          "Text"
+        ],
+        [
+          "hp",
+          "Number"
+        ],
+        [
+          "temporary",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "ExhaustionDeath": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "DodgeActive": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ]
+      ],
+      "input": "scenario",
+      "editions": [
+        "5r"
+      ]
+    },
+    "DodgeAttackerSeen": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "seen",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "editions": [
+        "5r"
+      ]
+    },
+    "PassivePerception": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "modifier",
+          "Number"
+        ],
+        [
+          "advantage",
+          "Flag"
+        ],
+        [
+          "disadvantage",
+          "Flag"
+        ]
+      ],
+      "input": "scenario",
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "modifier": {
+          "min": -1000,
+          "max": 1000
+        }
+      },
+      "editions": [
+        "5r"
+      ]
+    },
+    "PassiveScore": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "value",
+          "Number"
+        ]
+      ],
+      "output": true
+    },
+    "PoisonBlocked": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ]
+      ],
+      "output": true
+    },
+    "ForcedMiss": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "test",
+          "Text"
+        ],
+        [
+          "reason",
+          "Text"
+        ]
+      ],
+      "output": true
+    }
+  }
+}

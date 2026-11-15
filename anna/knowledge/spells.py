@@ -19,6 +19,8 @@ def parse_effect_clause(clause, ev):
     """A complete matching clause returns its claims; an unknown suffix rejects it all."""
     sequence=parse_sequence_clause(clause,ev,DAMAGE_TYPES)
     if sequence is not None:return sequence
+    armor=parse_armor_effect(clause,ev)
+    if armor is not None:return armor
     nodes=[]
     def emit(kind,**fields):nodes.append({'kind':kind,**fields})
     # Target selection and attack delivery are independent statements. Flavor text is
@@ -58,6 +60,28 @@ def parse_effect_clause(clause, ev):
         else:
             return parse_save_or_duration(clause,ev)
     return [{**n,'evidence':ev} for n in nodes]
+
+
+def parse_armor_effect(clause, ev):
+    """Shared AC replacement grammar; preserve targeting and termination separately."""
+    if re.fullmatch(r'你触碰一个未着装护甲的自愿生物(?:，使其受一个保护性魔法力场环绕直至法术终止)?。',clause):
+        nodes=[{'kind':'targets','selection':{'kind':'creature','count':1,'contact':True,
+                                            'willing':True,'armored':False}}]
+    elif (m:=re.fullmatch(r'(?:直至法术终止前，)?目标的基础AC变为(\d+)\+它的('+ABILITY+r')调整值。',clause)):
+        nodes=[{'kind':'modifier','field':'armor_class.base','operation':'replace',
+                'quantity':{'kind':'sum','terms':[{'kind':'constant','value':int(m[1])},
+                            {'kind':'modifier','ability':m[2],'subject':'target'}]},
+                'delivery':'automatic','timing':'ongoing','target':target_ref(),
+                'ends':{'kind':'spell_ends'}}]
+    elif clause in {'当目标穿上护甲时，此法术将提前终止。',
+                    '目标着装护甲或你以一个动作解散该法术后法术随之终止。'}:
+        nodes=[{'kind':'end_spell','scope':'spell','when':{'kind':'armor_worn','subject':'target'},
+                'target':target_ref()}]
+        if '解散' in clause:
+            nodes.append({'kind':'end_spell','scope':'spell','when':{'kind':'dismiss','subject':'caster'},
+                          'use':{'action':'action'}})
+    else:return None
+    return [{**node,'evidence':ev} for node in nodes]
 
 
 def parse_save_or_duration(clause,ev):

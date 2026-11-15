@@ -21,6 +21,18 @@ def mention(body,name='测试法术'):
 
 
 class AccessTests(unittest.TestCase):
+    def test_self_cast_and_material_exception_remain_separate(self):
+        for body,waived in [('你可以随意以自身为目标施展测试法术，且无需消耗法术位和材料成分。',True),
+                            ('你能对自身无需消耗法术位地施展测试法术。',False)]:
+            value=parse_access(feature(body),body,[mention(body)])
+            branch=value['grants'][0]['branches'][0]
+            self.assertEqual(branch['target'],{'kind':'self'})
+            self.assertFalse(branch['resource']['consumed'])
+            self.assertEqual(branch.get('components',{}).get('waived',[]),['M'] if waived else [])
+            self.assertFalse(value['unparsed'])
+            changed=body[:-1]+'，但仅限夜晚。'
+            self.assertTrue(parse_access(feature(changed),changed,[mention(changed)])['unparsed'])
+
     def test_known_prepared_and_mention_are_distinct(self):
         for verb,mode in [('习得','known'),('学会','known'),('始终准备着','prepared')]:
             body='你'+verb+'测试法术。'
@@ -90,6 +102,25 @@ class AccessTests(unittest.TestCase):
 
 
 class EffectTests(unittest.TestCase):
+    def test_armor_replacement_and_edition_specific_termination(self):
+        header='施法时间：动作\n施法距离：触碰\n法术成分：V、S、M（皮革）\n持续时间：8小时\n'
+        for legacy in (True,False):
+            body=header+('你触碰一个未着装护甲的自愿生物，使其受一个保护性魔法力场环绕直至法术终止。目标的基础 AC 变为 13+它的敏捷调整值。目标着装护甲或你以一个动作解散该法术后法术随之终止。' if legacy else
+                         '你触碰一个未着装护甲的自愿生物。直至法术终止前，目标的基础AC变为 13+它的敏捷调整值。当目标穿上护甲时，此法术将提前终止。')
+            result=parse_spell(feature(body),body);effects=result['effects']
+            self.assertFalse(result['unparsed'])
+            self.assertEqual(effects[0]['selection'],{'kind':'creature','count':1,'contact':True,'willing':True,'armored':False})
+            self.assertEqual(effects[1]['quantity']['terms'][0],{'kind':'constant','value':13})
+            self.assertEqual(effects[1]['target']['effect_id'],effects[0]['id'])
+            self.assertEqual(effects[1]['delivery'],'automatic')
+            self.assertEqual(effects[2]['when'],{'kind':'armor_worn','subject':'target'})
+            self.assertEqual(len(effects),4 if legacy else 3)
+            if legacy:self.assertEqual(effects[3]['use'],{'action':'action'})
+            changed=body.replace('它的敏捷调整值。','它的敏捷调整值，但只对龙生效。')
+            self.assertTrue(parse_spell(feature(changed),changed)['unparsed'])
+            missing=body.replace('你触碰一个未着装护甲的自愿生物。','') if not legacy else body.replace('你触碰一个未着装护甲的自愿生物，使其受一个保护性魔法力场环绕直至法术终止。','')
+            self.assertTrue(parse_spell(feature(missing),missing)['unparsed'])
+
     def test_teleport_preserves_destination_predicates(self):
         body='施法时间：附赠动作\n施法距离：自身\n法术成分：V\n持续时间：立即\n你短暂地被银白的雾气所笼罩，传送到至多30尺内一个你能看见且未占据空间。'
         result=parse_spell(feature(body),body)

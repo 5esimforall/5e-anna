@@ -170,7 +170,7 @@ Test(E,T,A,"save",B,DC,C,P) :- SpellSave(E,T,A,S,I,B,C), SpellSaveDC(E,S,I,DC), 
 ArmorSpellActive(E,F,A,B) :- ArmorSpell(E,F,I,A,H,0), ArmorSpellProfile(E,I,B,L), H < L, ArmorLoadout(E,A,"unarmored",_,_,_).
 
 // @rule mage.armor.base
-ArmorBase(E,A,B+M) :- ArmorSpellActive(E,_,A,B), AbilityModifier(E,A,"dex",M).
+ArmorBase(E,A,AC) :- ArmorSpell(E,F,I,A,_,_), ArmorSpellActive(E,F,A,_), ArmorSpellValue(E,A,I,AC).
 
 // @rule mage.armor.expired
 ArmorSpellEnded(E,F,"duration") :- ArmorSpell(E,F,I,_,H,_), ArmorSpellProfile(E,I,_,L), H >= L.

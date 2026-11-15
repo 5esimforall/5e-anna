@@ -9003,6 +9003,3105 @@
           ]
         }
       ]
+    },
+    {
+      "id": "cast.5e.duration",
+      "description": "幽影护甲：一次动作、零法术位；8小时边界结束，之后不会复活",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.duration",
+            "cast.5e.duration.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.duration.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.duration",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.duration",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.duration.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.duration.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5e",
+            "cast.5e.duration",
+            1,
+            28799,
+            1,
+            "observe",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.duration",
+            2,
+            28800,
+            1,
+            "observe",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.duration",
+            3,
+            28801,
+            2,
+            "observe",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.duration"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            0,
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            0,
+            15
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            1,
+            15
+          ]
+        },
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            2,
+            "duration"
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            3,
+            12
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            3,
+            1,
+            2,
+            1
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            0,
+            15
+          ]
+        },
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5e",
+            "cast.5e.duration",
+            2,
+            "duration"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5e.material",
+      "description": "同样没有材料：2014豁免M；2024预检拒绝且不消耗动作",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.material",
+            "cast.5e.material.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.material.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.material",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.material",
+            1,
+            1,
+            0,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.material.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.material.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.material"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.material",
+            0,
+            1,
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.material"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5e.dismissal",
+      "description": "dismissal",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.dismissal",
+            "cast.5e.dismissal.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.dismissal.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.dismissal",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.dismissal",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.dismissal.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.dismissal.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5e",
+            "cast.5e.dismissal",
+            1,
+            0,
+            0,
+            "dismiss",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.dismissal",
+            2,
+            6,
+            1,
+            "dismiss",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.dismissal",
+            3,
+            7,
+            1,
+            "observe",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.dismissal",
+            1,
+            "no_action",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.dismissal",
+            2,
+            "dismissed",
+            0,
+            2,
+            0
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.dismissal",
+            2,
+            1,
+            0
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.dismissal",
+            3,
+            12
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.dismissal",
+            2,
+            "dismissed",
+            0,
+            2,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5e.armor_ends",
+      "description": "armor_ends",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.armor_ends",
+            "cast.5e.armor_ends.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.armor_ends.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.armor_ends",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.armor_ends",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.armor_ends.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.armor_ends.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5e",
+            "cast.5e.armor_ends",
+            1,
+            60,
+            1,
+            "observe",
+            1,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.armor_ends",
+            2,
+            120,
+            2,
+            "observe",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5e",
+            "cast.5e.armor_ends",
+            1,
+            "armor"
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.armor_ends",
+            2,
+            1,
+            2,
+            0
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.armor_ends",
+            2,
+            12
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.armor_ends",
+            2,
+            15
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5e",
+            "cast.5e.armor_ends",
+            1,
+            "armor"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5e.action_budget",
+      "description": "action_budget",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.action_budget",
+            "cast.5e.action_budget.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.action_budget.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.action_budget",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.action_budget",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.action_budget.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.action_budget.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5e",
+            "cast.5e.action_budget",
+            1,
+            0,
+            0,
+            "spend_action",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.action_budget",
+            2,
+            6,
+            1,
+            "spend_action",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.action_budget",
+            3,
+            6,
+            1,
+            "spend_action",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.action_budget",
+            4,
+            12,
+            2,
+            "dismiss",
+            0,
+            0
+          ],
+          [
+            "5e",
+            "cast.5e.action_budget",
+            5,
+            12,
+            2,
+            "observe",
+            0,
+            1
+          ],
+          [
+            "5e",
+            "cast.5e.action_budget",
+            6,
+            12,
+            2,
+            "spend_action",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.action_budget",
+            1,
+            "no_action",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.action_budget",
+            2,
+            "action_spent",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.action_budget",
+            3,
+            "no_action",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.action_budget",
+            4,
+            1,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.action_budget",
+            4,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5e",
+            "cast.5e.action_budget",
+            6,
+            "action_spent",
+            0,
+            2,
+            1
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_verbal",
+      "description": "blocked_verbal",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_verbal",
+            "cast.5e.blocked_verbal.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_verbal.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_verbal",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_verbal",
+            0,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_verbal.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_verbal.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_verbal",
+            "verbal_unavailable"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_verbal",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_verbal",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_verbal"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_somatic",
+      "description": "blocked_somatic",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_somatic",
+            "cast.5e.blocked_somatic.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_somatic.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_somatic",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_somatic",
+            1,
+            0,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_somatic.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_somatic.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_somatic",
+            "somatic_unavailable"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_somatic",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_somatic",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_somatic"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_armor",
+      "description": "blocked_armor",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_armor",
+            "cast.5e.blocked_armor.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_armor.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_armor",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_armor",
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_armor.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_armor.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_armor",
+            "armored_target"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_armor",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_armor",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_armor"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_willing",
+      "description": "blocked_willing",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_willing",
+            "cast.5e.blocked_willing.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_willing.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_willing",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_willing",
+            1,
+            1,
+            1,
+            0,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_willing.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_willing.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_willing",
+            "unwilling_target"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_willing",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_willing",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_willing"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_action",
+      "description": "blocked_action",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_action",
+            "cast.5e.blocked_action.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_action.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_action",
+            0,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_action",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_action.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_action.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_action",
+            "no_action"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_action",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_action",
+            0,
+            0,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_action"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_feature",
+      "description": "blocked_feature",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_feature",
+            "cast.5e.blocked_feature.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_feature.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_feature",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_feature",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_feature.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_feature",
+            "missing_feature"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_feature",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_feature",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_feature"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_target",
+      "description": "blocked_target",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_target",
+            "cast.5e.blocked_target.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_target.other"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_target",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_target",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_target.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_target.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_target",
+            "self_only"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_target",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_target",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_target"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.negative_dex_no_slots",
+      "description": "negative_dex_no_slots",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.negative_dex_no_slots",
+            "cast.5e.negative_dex_no_slots.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.negative_dex_no_slots.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.negative_dex_no_slots",
+            1,
+            0
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.negative_dex_no_slots",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.negative_dex_no_slots.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.negative_dex_no_slots.actor",
+            "dex",
+            8
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.negative_dex_no_slots"
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5e",
+            "cast.5e.negative_dex_no_slots",
+            0,
+            12
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.negative_dex_no_slots",
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.duration",
+      "description": "幽影护甲：一次动作、零法术位；8小时边界结束，之后不会复活",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.duration",
+            "cast.5r.duration.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.duration.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.duration",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.duration",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.duration.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.duration.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5r",
+            "cast.5r.duration",
+            1,
+            28799,
+            1,
+            "observe",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.duration",
+            2,
+            28800,
+            1,
+            "observe",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.duration",
+            3,
+            28801,
+            2,
+            "observe",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.duration"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            0,
+            1,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            0,
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            0,
+            15
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            1,
+            15
+          ]
+        },
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            2,
+            "duration"
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            3,
+            12
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            3,
+            1,
+            2,
+            1
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            0,
+            15
+          ]
+        },
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5r",
+            "cast.5r.duration",
+            2,
+            "duration"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5r.material",
+      "description": "同样没有材料：2014豁免M；2024预检拒绝且不消耗动作",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.material",
+            "cast.5r.material.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.material.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.material",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.material",
+            1,
+            1,
+            0,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.material.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.material.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.material",
+            "material_unavailable"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.material",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.material",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.material",
+            "material_unavailable"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5r.dismissal",
+      "description": "dismissal",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.dismissal",
+            "cast.5r.dismissal.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.dismissal.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.dismissal",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.dismissal",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.dismissal.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.dismissal.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5r",
+            "cast.5r.dismissal",
+            1,
+            0,
+            0,
+            "dismiss",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.dismissal",
+            2,
+            6,
+            1,
+            "dismiss",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.dismissal",
+            3,
+            7,
+            1,
+            "observe",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.dismissal",
+            1,
+            "unsupported_dismissal",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.dismissal",
+            2,
+            "unsupported_dismissal",
+            1,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.dismissal",
+            2,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.dismissal",
+            3,
+            15
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": [
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.dismissal",
+            2,
+            "unsupported_dismissal",
+            1,
+            2,
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5r.armor_ends",
+      "description": "armor_ends",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.armor_ends",
+            "cast.5r.armor_ends.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.armor_ends.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.armor_ends",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.armor_ends",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.armor_ends.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.armor_ends.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5r",
+            "cast.5r.armor_ends",
+            1,
+            60,
+            1,
+            "observe",
+            1,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.armor_ends",
+            2,
+            120,
+            2,
+            "observe",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5r",
+            "cast.5r.armor_ends",
+            1,
+            "armor"
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.armor_ends",
+            2,
+            1,
+            2,
+            0
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.armor_ends",
+            2,
+            12
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.armor_ends",
+            2,
+            15
+          ]
+        }
+      ],
+      "explain": [
+        {
+          "relation": "CastEnded",
+          "values": [
+            "5r",
+            "cast.5r.armor_ends",
+            1,
+            "armor"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cast.5r.action_budget",
+      "description": "action_budget",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.action_budget",
+            "cast.5r.action_budget.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.action_budget.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.action_budget",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.action_budget",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.action_budget.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.action_budget.actor",
+            "dex",
+            14
+          ]
+        ],
+        "CastFollowup": [
+          [
+            "5r",
+            "cast.5r.action_budget",
+            1,
+            0,
+            0,
+            "spend_action",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.action_budget",
+            2,
+            6,
+            1,
+            "spend_action",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.action_budget",
+            3,
+            6,
+            1,
+            "spend_action",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.action_budget",
+            4,
+            12,
+            2,
+            "dismiss",
+            0,
+            0
+          ],
+          [
+            "5r",
+            "cast.5r.action_budget",
+            5,
+            12,
+            2,
+            "observe",
+            0,
+            1
+          ],
+          [
+            "5r",
+            "cast.5r.action_budget",
+            6,
+            12,
+            2,
+            "spend_action",
+            0,
+            1
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.action_budget",
+            1,
+            "no_action",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.action_budget",
+            2,
+            "action_spent",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.action_budget",
+            3,
+            "no_action",
+            0,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.action_budget",
+            4,
+            1,
+            2,
+            1
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.action_budget",
+            4,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastStepResult",
+          "values": [
+            "5r",
+            "cast.5r.action_budget",
+            6,
+            "action_spent",
+            0,
+            2,
+            1
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_verbal",
+      "description": "blocked_verbal",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_verbal",
+            "cast.5r.blocked_verbal.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_verbal.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_verbal",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_verbal",
+            0,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_verbal.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_verbal.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_verbal",
+            "verbal_unavailable"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_verbal",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_verbal",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_verbal"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_somatic",
+      "description": "blocked_somatic",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_somatic",
+            "cast.5r.blocked_somatic.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_somatic.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_somatic",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_somatic",
+            1,
+            0,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_somatic.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_somatic.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_somatic",
+            "somatic_unavailable"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_somatic",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_somatic",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_somatic"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_armor",
+      "description": "blocked_armor",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_armor",
+            "cast.5r.blocked_armor.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_armor.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_armor",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_armor",
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_armor.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_armor.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_armor",
+            "armored_target"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_armor",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_armor",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_armor"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_willing",
+      "description": "blocked_willing",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_willing",
+            "cast.5r.blocked_willing.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_willing.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_willing",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_willing",
+            1,
+            1,
+            1,
+            0,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_willing.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_willing.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_willing",
+            "unwilling_target"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_willing",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_willing",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_willing"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_action",
+      "description": "blocked_action",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_action",
+            "cast.5r.blocked_action.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_action.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_action",
+            0,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_action",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_action.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_action.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_action",
+            "no_action"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_action",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_action",
+            0,
+            0,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_action"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_feature",
+      "description": "blocked_feature",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_feature",
+            "cast.5r.blocked_feature.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_feature.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_feature",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_feature",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_feature.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_feature",
+            "missing_feature"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_feature",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_feature",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_feature"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_target",
+      "description": "blocked_target",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_target",
+            "cast.5r.blocked_target.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_target.other"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_target",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_target",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_target.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_target.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_target",
+            "self_only"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_target",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_target",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_target"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.negative_dex_no_slots",
+      "description": "negative_dex_no_slots",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.negative_dex_no_slots",
+            "cast.5r.negative_dex_no_slots.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.negative_dex_no_slots.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.negative_dex_no_slots",
+            1,
+            0
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.negative_dex_no_slots",
+            1,
+            1,
+            1,
+            1,
+            0,
+            1
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.negative_dex_no_slots.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.negative_dex_no_slots.actor",
+            "dex",
+            8
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.negative_dex_no_slots"
+          ]
+        },
+        {
+          "relation": "CastBaseAC",
+          "values": [
+            "5r",
+            "cast.5r.negative_dex_no_slots",
+            0,
+            12
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.negative_dex_no_slots",
+            0,
+            0,
+            0,
+            1
+          ]
+        }
+      ],
+      "absent": [],
+      "explain": []
+    },
+    {
+      "id": "cast.5e.blocked_permission",
+      "description": "动作许可中断不消耗动作预算",
+      "facts": {
+        "CastRequest": [
+          [
+            "5e",
+            "cast.5e.blocked_permission",
+            "cast.5e.blocked_permission.actor",
+            "ver_205593d20d0c37015ecd0ab1",
+            "grant_1",
+            "branch_1",
+            "cast.5e.blocked_permission.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5e",
+            "cast.5e.blocked_permission",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5e",
+            "cast.5e.blocked_permission",
+            1,
+            1,
+            1,
+            1,
+            0,
+            0
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5e",
+            "cast.5e.blocked_permission.actor",
+            "ver_205593d20d0c37015ecd0ab1"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5e",
+            "cast.5e.blocked_permission.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5e",
+            "cast.5e.blocked_permission",
+            "cannot_act"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5e",
+            "cast.5e.blocked_permission",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5e",
+            "cast.5e.blocked_permission",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5e",
+            "cast.5e.blocked_permission"
+          ]
+        }
+      ],
+      "explain": []
+    },
+    {
+      "id": "cast.5r.blocked_permission",
+      "description": "动作许可中断不消耗动作预算",
+      "facts": {
+        "CastRequest": [
+          [
+            "5r",
+            "cast.5r.blocked_permission",
+            "cast.5r.blocked_permission.actor",
+            "ver_3d28cd45188a9be58b8bece0",
+            "grant_1",
+            "branch_1",
+            "cast.5r.blocked_permission.actor"
+          ]
+        ],
+        "CastResources": [
+          [
+            "5r",
+            "cast.5r.blocked_permission",
+            1,
+            2
+          ]
+        ],
+        "CastReadiness": [
+          [
+            "5r",
+            "cast.5r.blocked_permission",
+            1,
+            1,
+            1,
+            1,
+            0,
+            0
+          ]
+        ],
+        "FeatureAccess": [
+          [
+            "5r",
+            "cast.5r.blocked_permission.actor",
+            "ver_3d28cd45188a9be58b8bece0"
+          ]
+        ],
+        "AbilityScore": [
+          [
+            "5r",
+            "cast.5r.blocked_permission.actor",
+            "dex",
+            14
+          ]
+        ]
+      },
+      "expect": [
+        {
+          "relation": "CastBlocked",
+          "values": [
+            "5r",
+            "cast.5r.blocked_permission",
+            "cannot_act"
+          ]
+        },
+        {
+          "relation": "CastCost",
+          "values": [
+            "5r",
+            "cast.5r.blocked_permission",
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "relation": "CastState",
+          "values": [
+            "5r",
+            "cast.5r.blocked_permission",
+            0,
+            1,
+            2,
+            0
+          ]
+        }
+      ],
+      "absent": [
+        {
+          "relation": "CastAllowed",
+          "values": [
+            "5r",
+            "cast.5r.blocked_permission"
+          ]
+        }
+      ],
+      "explain": []
     }
   ]
 }

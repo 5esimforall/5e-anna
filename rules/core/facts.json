@@ -1157,18 +1157,58 @@
     ],
     "review_status": "unreviewed",
     "entry_id": "ver_6c717543a5b29b61a09b6bae",
-    "parameter_bindings": {
-      "3": {
+    "knowledge_bindings": [
+      {
         "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
-        "parameter": "duration",
-        "field": "quantity",
-        "requires": {
-          "kind": "timed",
-          "unit": "hour",
-          "concentration": false
-        }
+        "path": [
+          "parameters",
+          "duration",
+          "quantity"
+        ],
+        "value_index": 3
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "parameters",
+          "duration",
+          "kind"
+        ],
+        "expected": "timed"
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "parameters",
+          "duration",
+          "unit"
+        ],
+        "expected": "hour"
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "parameters",
+          "duration",
+          "concentration"
+        ],
+        "expected": false
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "quantity",
+          "terms",
+          0,
+          "value"
+        ],
+        "value_index": 2
       }
-    }
+    ]
   },
   {
     "id": "5r.skill.athletics",
@@ -1690,18 +1730,58 @@
     ],
     "review_status": "unreviewed",
     "entry_id": "ver_992b31e3033fc968022d586c",
-    "parameter_bindings": {
-      "3": {
+    "knowledge_bindings": [
+      {
         "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
-        "parameter": "duration",
-        "field": "quantity",
-        "requires": {
-          "kind": "timed",
-          "unit": "hour",
-          "concentration": false
-        }
+        "path": [
+          "parameters",
+          "duration",
+          "quantity"
+        ],
+        "value_index": 3
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "parameters",
+          "duration",
+          "kind"
+        ],
+        "expected": "timed"
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "parameters",
+          "duration",
+          "unit"
+        ],
+        "expected": "hour"
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "parameters",
+          "duration",
+          "concentration"
+        ],
+        "expected": false
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "quantity",
+          "terms",
+          0,
+          "value"
+        ],
+        "value_index": 2
       }
-    }
+    ]
   },
   {
     "id": "5e.entry.mage_armor.requirements",
@@ -1717,18 +1797,26 @@
       "5e.entry.mage_armor"
     ],
     "review_status": "unreviewed",
-    "parameter_bindings": {
-      "2": {
+    "knowledge_bindings": [
+      {
         "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
-        "parameter": "action",
-        "field": "kind"
+        "path": [
+          "parameters",
+          "action",
+          "kind"
+        ],
+        "value_index": 2
       },
-      "3": {
+      {
         "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
-        "parameter": "range",
-        "field": "kind"
+        "path": [
+          "parameters",
+          "range",
+          "kind"
+        ],
+        "value_index": 3
       }
-    }
+    ]
   },
   {
     "id": "5r.entry.mage_armor.requirements",
@@ -1744,17 +1832,731 @@
       "5r.entry.mage_armor"
     ],
     "review_status": "unreviewed",
-    "parameter_bindings": {
-      "2": {
+    "knowledge_bindings": [
+      {
         "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
-        "parameter": "action",
-        "field": "kind"
+        "path": [
+          "parameters",
+          "action",
+          "kind"
+        ],
+        "value_index": 2
       },
-      "3": {
+      {
         "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
-        "parameter": "range",
-        "field": "kind"
+        "path": [
+          "parameters",
+          "range",
+          "kind"
+        ],
+        "value_index": 3
       }
-    }
+    ]
+  },
+  {
+    "id": "5e.grant.armor_of_shadows",
+    "relation": "GrantedArmorSpell",
+    "values": [
+      "5e",
+      "ver_205593d20d0c37015ecd0ab1",
+      "grant_1",
+      "branch_1",
+      "ver_6c717543a5b29b61a09b6bae"
+    ],
+    "entry_id": "ver_205593d20d0c37015ecd0ab1",
+    "sources": [
+      "5e.entry.armor_of_shadows"
+    ],
+    "review_status": "unreviewed",
+    "knowledge_bindings": [
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "id"
+        ],
+        "value_index": 2
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "id"
+        ],
+        "value_index": 3
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "target",
+          "resolution",
+          "targets",
+          0
+        ],
+        "value_index": 4
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "target",
+          "resolution",
+          "status"
+        ],
+        "expected": "resolved"
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "mode"
+        ],
+        "expected": "cast"
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "target"
+        ],
+        "expected": {
+          "kind": "self"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "resource"
+        ],
+        "expected": {
+          "kind": "spell_slot",
+          "consumed": false
+        }
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "prerequisites"
+        ],
+        "expected": {
+          "status": "not_stated"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "activation"
+        ],
+        "expected": null
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "unparsed"
+        ],
+        "expected": []
+      },
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "components",
+          "waived"
+        ],
+        "expected": [
+          "M"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "5e.procedure.mage_armor",
+    "relation": "ArmorProcedure",
+    "values": [
+      "5e",
+      "ver_6c717543a5b29b61a09b6bae",
+      "automatic"
+    ],
+    "entry_id": "ver_6c717543a5b29b61a09b6bae",
+    "sources": [
+      "5e.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "knowledge_bindings": [
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "unparsed"
+        ],
+        "expected": []
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_1"
+          },
+          "selection"
+        ],
+        "expected": {
+          "kind": "creature",
+          "count": 1,
+          "contact": true,
+          "willing": true,
+          "armored": false
+        }
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "field"
+        ],
+        "expected": "armor_class.base"
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "operation"
+        ],
+        "expected": "replace"
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "quantity",
+          "terms",
+          1
+        ],
+        "expected": {
+          "kind": "modifier",
+          "ability": "敏捷",
+          "subject": "target"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "delivery"
+        ],
+        "expected": "automatic"
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "ends"
+        ],
+        "expected": {
+          "kind": "spell_ends"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_3"
+          },
+          "when"
+        ],
+        "expected": {
+          "kind": "armor_worn",
+          "subject": "target"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "parameters",
+          "components",
+          "required"
+        ],
+        "expected": [
+          "V",
+          "S",
+          "M"
+        ]
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "parameters",
+          "duration",
+          "maximum"
+        ],
+        "expected": false
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "parameters",
+          "action",
+          "ritual"
+        ],
+        "expected": false
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_4"
+          },
+          "when"
+        ],
+        "expected": {
+          "kind": "dismiss",
+          "subject": "caster"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_4"
+          },
+          "use"
+        ],
+        "expected": {
+          "action": "action"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "delivery"
+        ],
+        "value_index": 2
+      }
+    ]
+  },
+  {
+    "id": "5r.grant.armor_of_shadows",
+    "relation": "GrantedArmorSpell",
+    "values": [
+      "5r",
+      "ver_3d28cd45188a9be58b8bece0",
+      "grant_1",
+      "branch_1",
+      "ver_992b31e3033fc968022d586c"
+    ],
+    "entry_id": "ver_3d28cd45188a9be58b8bece0",
+    "sources": [
+      "5r.entry.armor_of_shadows"
+    ],
+    "review_status": "unreviewed",
+    "knowledge_bindings": [
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "id"
+        ],
+        "value_index": 2
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "id"
+        ],
+        "value_index": 3
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "target",
+          "resolution",
+          "targets",
+          0
+        ],
+        "value_index": 4
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "target",
+          "resolution",
+          "status"
+        ],
+        "expected": "resolved"
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "mode"
+        ],
+        "expected": "cast"
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "target"
+        ],
+        "expected": {
+          "kind": "self"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "resource"
+        ],
+        "expected": {
+          "kind": "spell_slot",
+          "consumed": false
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "prerequisites"
+        ],
+        "expected": {
+          "status": "not_stated"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "activation"
+        ],
+        "expected": null
+      },
+      {
+        "knowledge_id": "knowledge_f98d5dc207d53980ee68a675",
+        "path": [
+          "unparsed"
+        ],
+        "expected": []
+      }
+    ]
+  },
+  {
+    "id": "5r.procedure.mage_armor",
+    "relation": "ArmorProcedure",
+    "values": [
+      "5r",
+      "ver_992b31e3033fc968022d586c",
+      "automatic"
+    ],
+    "entry_id": "ver_992b31e3033fc968022d586c",
+    "sources": [
+      "5r.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "knowledge_bindings": [
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "unparsed"
+        ],
+        "expected": []
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_1"
+          },
+          "selection"
+        ],
+        "expected": {
+          "kind": "creature",
+          "count": 1,
+          "contact": true,
+          "willing": true,
+          "armored": false
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "field"
+        ],
+        "expected": "armor_class.base"
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "operation"
+        ],
+        "expected": "replace"
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "quantity",
+          "terms",
+          1
+        ],
+        "expected": {
+          "kind": "modifier",
+          "ability": "敏捷",
+          "subject": "target"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "delivery"
+        ],
+        "expected": "automatic"
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "ends"
+        ],
+        "expected": {
+          "kind": "spell_ends"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_3"
+          },
+          "when"
+        ],
+        "expected": {
+          "kind": "armor_worn",
+          "subject": "target"
+        }
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "parameters",
+          "components",
+          "required"
+        ],
+        "expected": [
+          "V",
+          "S",
+          "M"
+        ]
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "parameters",
+          "duration",
+          "maximum"
+        ],
+        "expected": false
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "parameters",
+          "action",
+          "ritual"
+        ],
+        "expected": false
+      },
+      {
+        "knowledge_id": "knowledge_f2a9b50811f6f7bc16002553",
+        "path": [
+          "effects",
+          {
+            "id": "effect_2"
+          },
+          "delivery"
+        ],
+        "value_index": 2
+      }
+    ]
+  },
+  {
+    "id": "5e.grant.armor_of_shadows.material",
+    "relation": "WaivedCastingComponent",
+    "values": [
+      "5e",
+      "ver_205593d20d0c37015ecd0ab1",
+      "grant_1",
+      "branch_1",
+      "M"
+    ],
+    "entry_id": "ver_205593d20d0c37015ecd0ab1",
+    "sources": [
+      "5e.entry.armor_of_shadows"
+    ],
+    "review_status": "unreviewed",
+    "knowledge_bindings": [
+      {
+        "knowledge_id": "knowledge_84e616987e3f4c09a6eee77e",
+        "path": [
+          "grants",
+          {
+            "id": "grant_1"
+          },
+          "branches",
+          {
+            "id": "branch_1"
+          },
+          "components",
+          "waived",
+          0
+        ],
+        "value_index": 4
+      }
+    ]
+  },
+  {
+    "id": "5e.procedure.mage_armor.dismiss",
+    "relation": "SpellDismissalAction",
+    "values": [
+      "5e",
+      "ver_6c717543a5b29b61a09b6bae",
+      "action"
+    ],
+    "entry_id": "ver_6c717543a5b29b61a09b6bae",
+    "sources": [
+      "5e.entry.mage_armor"
+    ],
+    "review_status": "unreviewed",
+    "knowledge_bindings": [
+      {
+        "knowledge_id": "knowledge_4fe139f6ca761e278324a3ee",
+        "path": [
+          "effects",
+          {
+            "id": "effect_4"
+          },
+          "use",
+          "action"
+        ],
+        "value_index": 2
+      }
+    ]
   }
 ]

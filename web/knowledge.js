@@ -66,7 +66,7 @@ window.annaKnowledge=(()=>{
       property:{object:'物件',flammable:'可燃',worn:'被着装',carried:'被携带'},
       shape:{cone:'锥状',sphere:'球状',cube:'立方'},actor:{caster:'施法者',target:'目标',self:'自身'},
       phase:{start:'开始',end:'结束',during:'期间'},relative:{next:'下一回合',each:'每回合',subsequent:'后续各回合'},
-      mechanic:{speed:'速度',attack_roll:'攻击检定','healing.allowed':'允许恢复生命值','prone.self_end':'自行结束倒地','spell_slot.consumed':'法术位消耗','casting.target':'施法目标','casting.targets':'目标间距','components.waived':'免除成分','saving_throw.modifier':'特定豁免修正','saving_throw.result':'豁免结果'},
+      mechanic:{'armor_class.base':'基础护甲等级',speed:'速度',attack_roll:'攻击检定','healing.allowed':'允许恢复生命值','prone.self_end':'自行结束倒地','spell_slot.consumed':'法术位消耗','casting.target':'施法目标','casting.targets':'目标间距','components.waived':'免除成分','saving_throw.modifier':'特定豁免修正','saving_throw.result':'豁免结果'},
       hit:'命中',miss:'未命中',spellActive:'法术仍生效',takesDamage:'受到伤害',outsideRange:'目标超出施法距离',totalCover:'目标相对施法者处于全身掩护',otherAction:'施法者用动作做其他事情',canLaugh:'目标能够发笑',withinArea:'位于区域',
       referencedQuantity:'引用数量',localLinks:'沿效果关系阅读',targetDefinition:'目标定义',initial:'初次',repeatCheck:'重复',attackOutcome:'首击命中要求',independentAttack:'无论首击是否命中',unresolvedAttack:'原文未明确后续伤害与首击的条件关系',
       ongoingCost:'每次后续施用',bonusAction:'附赠动作',standardAction:'动作',oncePerTurn:'每回合一次',subtract:'减少',yes:'是',no:'否',laugh:'不受控制地狂笑',endAll:'结束法术',endTarget:'结束目标身上的效应',nextAttack:'对目标的下一次攻击',
@@ -88,7 +88,7 @@ window.annaKnowledge=(()=>{
       property:{object:'Object',flammable:'Flammable',worn:'Worn',carried:'Carried'},
       shape:{cone:'Cone',sphere:'Sphere',cube:'Cube'},actor:{caster:'Caster',target:'Target',self:'Self'},
       phase:{start:'Start',end:'End',during:'During'},relative:{next:'Next turn',each:'Each turn',subsequent:'Subsequent turns'},
-      mechanic:{speed:'Speed',attack_roll:'Attack roll','healing.allowed':'Healing allowed','prone.self_end':'End own prone condition','spell_slot.consumed':'Spell slot consumed','casting.target':'Casting target','casting.targets':'Target spacing','components.waived':'Waived components','saving_throw.modifier':'Specific save modifier','saving_throw.result':'Save result'},
+      mechanic:{'armor_class.base':'Base Armor Class',speed:'Speed',attack_roll:'Attack roll','healing.allowed':'Healing allowed','prone.self_end':'End own prone condition','spell_slot.consumed':'Spell slot consumed','casting.target':'Casting target','casting.targets':'Target spacing','components.waived':'Waived components','saving_throw.modifier':'Specific save modifier','saving_throw.result':'Save result'},
       hit:'Hit',miss:'Miss',spellActive:'Spell remains active',takesDamage:'Takes damage',outsideRange:'Target is beyond spell range',totalCover:'Target has total cover from caster',otherAction:'Caster spends the action on something else',canLaugh:'Target can laugh',withinArea:'Within area',
       referencedQuantity:'Referenced quantity',localLinks:'Follow effect relationships',targetDefinition:'Target definition',initial:'Initial',repeatCheck:'Repeated',attackOutcome:'Initial hit requirement',independentAttack:'Regardless of the initial attack result',unresolvedAttack:'Source does not state how ongoing damage depends on the initial hit',
       ongoingCost:'Each later use',bonusAction:'Bonus action',standardAction:'Action',oncePerTurn:'Once per turn',subtract:'Subtract',yes:'Yes',no:'No',laugh:'Laugh uncontrollably',endAll:'End the spell',endTarget:'End the effect on this target',nextAttack:'Next attack against this target',
@@ -101,14 +101,14 @@ window.annaKnowledge=(()=>{
       cumulativeCount:'累计次数阈值',cumulative:'累计',perTarget:'每个目标分别计数',initialCountUnknown:'原文未明确首次检定是否计入累计',separateTotals:'成功与失败分别累计，无需连续',stopAt:'任一计数达到阈值即停止',
       burst:'爆裂',after:'发生于检定结束之后',includesOrigin:'包含原攻击目标',around:'以目标为中心',stone:'变为石头',concentrationMaximum:'专注维持至法术最大持续时间',magicRemoval:'由下列法术或类似魔法移除',
       removed_by:'由该法术移除',untilRemoved:'持续至被移除',construct:'构装生物',undead:'亡灵生物',flesh:'血肉之躯',noEffect:'不受该效应影响',
-      timing:{cumulative:'累计结果'},trigger:{check_total:'累计检定结果',concentration_duration:'专注持续时长',creature_type:'生物类型',event_ref:'前置事件'},end_trigger:{magic_removal:'魔法移除'},
+      timing:{cumulative:'累计结果'},trigger:{armor_worn:'目标穿上护甲',dismiss:'主动解散',check_total:'累计检定结果',concentration_duration:'专注持续时长',creature_type:'生物类型',event_ref:'前置事件'},end_trigger:{magic_removal:'魔法移除'},
       mechanic:{damage:'伤害','saving_throw.sequence':'豁免序列','effect.duration':'效果期限'}},
     en:{use_action:{action:'Action',bonus_action:'Bonus action',reaction:'Reaction',timed:'Other time',not_stated:'Not stated for this effect'},usageCost:'Usage cost',cost:'Resource cost',perFeature:'For this feature',attack_received:'Visible attacker hits self',multiply:'Multiply by',floor:'Round down',roundingUnknown:'Rounding not stated here',classLevelValue:'class level',query_subject:{provider:'Providers',spell:'Spells',entry:'Entries (including non-spell abilities)'},defaultSubject:'Providers (default)',subjectHint:'Direct entry queries omit spell-access conditions. Provider queries retain one usage branch.',unresolvedLinks:'Unresolved effect references',candidates:'Candidates (inspection does not confirm)',referenceRole:{target_ref:'Target group',attack_result:'Attack result',save_result:'Save result',check_ref:'Saving throw',check_total:'Cumulative threshold',sequence_ref:'Check sequence',attack_complete:'Attack completed',event_ref:'Prior event',condition:'Condition prerequisite',damage_ref:'Damage effect',quantity_ref:'Damage quantity'},fields:{use_action:'Action cost for this effect',query_subject:'Query subject',target_scope:'Target scope for this effect',cumulative_result:'Cumulative result'},target_scope:{single:'Single target',area:'Each target in an area',not_stated:'Not classified'},cumulative_result:{success:'Success count',failure:'Failure count'},
       effect:{event:'Event',check_sequence:'Check sequence',sequence_policy:'Counting policy',duration_override:'Duration override',no_effect:'Explicitly unaffected'},
       cumulativeCount:'Cumulative count threshold',cumulative:'Cumulative',perTarget:'Count separately for each target',initialCountUnknown:'Source does not specify whether the initial check counts',separateTotals:'Track successes and failures separately; not necessarily consecutive',stopAt:'Stop when either count reaches its threshold',
       burst:'Burst',after:'After the check completes',includesOrigin:'Includes the original attack target',around:'Centered on target',stone:'Turns to stone',concentrationMaximum:'Concentration lasts for the spell’s maximum duration',magicRemoval:'Removed by the following spell or similar magic',
       removed_by:'Removed by this spell',untilRemoved:'Until removed',construct:'Construct',undead:'Undead',flesh:'Flesh body',noEffect:'Unaffected by this effect',
-      timing:{cumulative:'Cumulative outcome'},trigger:{check_total:'Cumulative check result',concentration_duration:'Concentration duration',creature_type:'Creature type',event_ref:'Prior event'},end_trigger:{magic_removal:'Magical removal'},
+      timing:{cumulative:'Cumulative outcome'},trigger:{armor_worn:'Target dons armor',dismiss:'Voluntary dismissal',check_total:'Cumulative check result',concentration_duration:'Concentration duration',creature_type:'Creature type',event_ref:'Prior event'},end_trigger:{magic_removal:'Magical removal'},
       mechanic:{damage:'Damage','saving_throw.sequence':'Save sequence','effect.duration':'Effect duration'}}
   };
   for(const lang of ['zh','en']){
@@ -118,6 +118,8 @@ window.annaKnowledge=(()=>{
     const {fields,effect,...rest}=extended[lang];Object.assign(labels[lang].fields,fields);Object.assign(labels[lang].effect,effect);Object.assign(labels[lang],rest);
     labels[lang].fields={query_subject:labels[lang].fields.query_subject,...labels[lang].fields};
   }
+  Object.assign(labels.zh,{contact:'触碰',willing:'自愿',unarmored:'未着装护甲',armorWorn:'目标穿上护甲',dismiss:'施法者选择解散'});
+  Object.assign(labels.en,{contact:'Touch',willing:'Willing',unarmored:'Not wearing armor',armorWorn:'Target dons armor',dismiss:'Caster chooses to dismiss'});
   const l=labels[document.documentElement.lang.startsWith('en')?'en':'zh'];
   const badge=t=>`<span class="badge">${esc(t)}</span>`;
   const entryLink=(id,n,from='')=>`<button type="button" class="link-button" data-chain-entry="${esc(id)}" data-chain-from="${esc(from||id)}">${esc(n||id)}</button>`;
@@ -178,6 +180,8 @@ window.annaKnowledge=(()=>{
     if(c.kind==='save_result')return l.save+' '+(c.effect_id||l.notParsed)+' · '+l[c.result]+(c.occurrence?' · '+l.ordinalCheck.replace('{n}',c.occurrence):'');
     if(c.kind==='condition')return l.conditionActive+' '+c.value+' ('+(c.effect_id||l.notParsed)+')';
     if(c.kind==='combat_with')return l.combat;
+    if(c.kind==='armor_worn')return l.armorWorn;
+    if(c.kind==='dismiss')return l.dismiss;
     if(c.kind==='spell_ends')return l.spellEnds;
     if(c.kind==='damage_from')return l.damageEnds;
     if(c.kind==='branch_selected')return l.branchSelected+' · '+c.grant_id+' / '+c.branch_id;
@@ -210,10 +214,10 @@ window.annaKnowledge=(()=>{
     if(t.kind==='target_ref')return l.targetDefinition+' '+(t.effect_id||l.notParsed);
     if(t.kind==='area')return (t.measure==='radius'?l.radius+' ':'')+t.size+' '+l.foot+' '+(t.shape==='radius'?l.radius:l.shape[t.shape])+' · '+(t.chosen_by==='caster'?l.chosenByCaster:l.creature)+(t.origin?' · '+l.around+' '+(t.origin.effect_id||l.notParsed):'')+(t.includes_origin?' · '+l.includesOrigin:'');
     if(t.kind==='choice')return t.count+' · '+t.choices.map(k=>l[k]||l.property[k]||k).join(' / ');
-    return [t.count,t.kind?l[t.kind]||t.kind:'',t.visible?l.visible:'',t.within==='spell_range'?l.range:''].filter(Boolean).join(' · ');
+    return [t.count,t.kind?l[t.kind]||t.kind:'',t.visible?l.visible:'',t.within==='spell_range'?l.range:'',t.contact?l.contact:'',t.willing?l.willing:'',t.armored===false?l.unarmored:''].filter(Boolean).join(' · ');
   }
   function changeText(c){
-    const value=c.operation==='multiply'?l.multiply+' '+c.factor.numerator+'/'+c.factor.denominator+' · '+(c.rounding==='floor'?l.floor:l.roundingUnknown):c.operation==='subtract'?l.subtract+' '+expression(c.quantity):c.operation==='advantage'?l.advantageName:
+    const value=c.operation==='replace'?expression(c.quantity):c.operation==='multiply'?l.multiply+' '+c.factor.numerator+'/'+c.factor.denominator+' · '+(c.rounding==='floor'?l.floor:l.roundingUnknown):c.operation==='subtract'?l.subtract+' '+expression(c.quantity):c.operation==='advantage'?l.advantageName:
       typeof c.value==='boolean'?l[c.value?'yes':'no']:c.value?.effect_id?c.value.effect_id:c.value?.kind==='pairwise_distance'?l.pairwise+' '+c.value.maximum+' '+l.foot:Array.isArray(c.value)?c.value.join(' / '):c.value==='self'?l.self:c.value==='advantage'?l.advantageName:c.value==='disadvantage'?l.disadvantageName:c.value==='until_removed'?l.untilRemoved:c.value==='end'?l.endAll:l[c.value]||String(c.value??l.notStated);
     return (l.mechanic[c.field]||c.field)+' → '+value+(c.applies==='next_attack_against_target'?' · '+l.nextAttack:'')+(c.check?' · '+(c.check.effect_id||l.notParsed):'')+(c.applies_to?.kind==='spell_saves'?' · '+l.allSpellSaves:c.applies_to?' · '+(c.applies_to.effect_id||l.notParsed):'');
   }

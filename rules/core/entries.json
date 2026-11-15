@@ -336,7 +336,7 @@
       "5e.entry.mage_armor"
     ],
     "knowledge": {
-      "knowledge_4fe139f6ca761e278324a3ee": "73f79800866556f35c4a86a01ff81f3c81c79c01f21985f7eb9e868aa2a4a335"
+      "knowledge_4fe139f6ca761e278324a3ee": "3d6908b017d5ace02331906a587a0e235ce688eb5e0dc1708ce6823c9418d837"
     }
   },
   "ver_96fa837d8dcbbd58d610d900": {
@@ -660,7 +660,40 @@
       "5r.entry.mage_armor"
     ],
     "knowledge": {
-      "knowledge_f2a9b50811f6f7bc16002553": "d5e93ee52dab7fc2e457e359981e2d335343e91aab57e3cf899191048b5640b9"
+      "knowledge_f2a9b50811f6f7bc16002553": "0c3b4ddbf9da959634474bbac3abc810e5afd97a42547fcc6642fc7105da4bc2"
+    }
+  },
+  "ver_205593d20d0c37015ecd0ab1": {
+    "edition": "5e",
+    "type": "class_feature",
+    "body_hash": "1d36353bd2f295694cfcd889a97a75aa81fd0a211cae3b18208f1fbb6fc5962f",
+    "fields": {
+      "legacy": true,
+      "ruleset": "5e",
+      "source_id": "src_a00c764955b18f32fb27c71a",
+      "type": "class_feature"
+    },
+    "sources": [
+      "5e.entry.armor_of_shadows"
+    ],
+    "knowledge": {
+      "knowledge_84e616987e3f4c09a6eee77e": "d1f1c6cca591fdac65995d9ee2a4f71aab53a2744925dd3ed10cf419feda08fc"
+    }
+  },
+  "ver_3d28cd45188a9be58b8bece0": {
+    "edition": "5r",
+    "type": "class_feature",
+    "body_hash": "eb3b663711bfd97dbf8317db9a233b791e687a4e6c8ef762db40679ce48b2f01",
+    "fields": {
+      "ruleset": "5r",
+      "source_id": "src_f473a607f72c5a164e63506e",
+      "type": "class_feature"
+    },
+    "sources": [
+      "5r.entry.armor_of_shadows"
+    ],
+    "knowledge": {
+      "knowledge_f98d5dc207d53980ee68a675": "702f30840c61e49aa783a364411b8c077087cc6898f150c9237a6a144030b68a"
     }
   }
 }

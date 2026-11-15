@@ -416,3 +416,46 @@ test('subclass table acquisition survives reading, reload, history, export and S
   await expect(resume).toHaveAttribute('href',/chain_path=/);await resume.click();
   await expect(stella.locator('.chain-path button')).toHaveCount(3);await stella.close();expect(errors).toEqual([]);
 });
+
+for (const edition of ['5e','5r']) {
+  test(`Armor of Shadows ${edition} reuses the grant and effect chain without importing the other edition`,async({page,request})=>{
+    const ids=edition==='5e'?['ver_205593d20d0c37015ecd0ab1','ver_6c717543a5b29b61a09b6bae']:['ver_3d28cd45188a9be58b8bece0','ver_992b31e3033fc968022d586c'];
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const response=await request.get(anna+'/api/knowledge-chain?'+new URLSearchParams({id:ids[0],spell:ids[1]}));
+    expect(response.ok()).toBeTruthy();
+    for(const trigger of ['armor_worn','dismiss']){
+      const result=await (await request.get(anna+'/api/entries?'+new URLSearchParams({versions:'each',casting:JSON.stringify({query_subject:'spell',spell:'法师护甲',effect:'end_spell',trigger})}))).json();
+      expect(result.rows.some(r=>r.id===ids[1])).toBe(trigger==='armor_worn'||edition==='5e');
+    }
+    await page.goto(anna+'/?'+new URLSearchParams({entry:ids[0],tab:'chain',chain_spell:ids[1]}));
+    await expect(page.locator('.chain-branch').first()).toContainText('自身');
+    const effects=page.locator('.chain-effect');await expect(effects).toHaveCount(edition==='5e'?4:3);
+    await expect(effects.nth(0)).toContainText('触碰');await expect(effects.nth(0)).toContainText('自愿');
+    await expect(effects.nth(0)).toContainText('未着装护甲');
+    await expect(effects.nth(1)).toContainText('基础护甲等级 → 13 + 敏捷 调整值');
+    await expect(effects.nth(2)).toContainText('目标穿上护甲');
+    if(edition==='5e'){
+      await expect(page.locator('.chain-branch').first()).toContainText('免除成分');
+      await expect(effects.nth(3)).toContainText('施法者选择解散');
+      await expect(effects.nth(3)).toContainText('动作');
+    } else await expect(page.locator('.rule-chain')).not.toContainText('施法者选择解散');
+    const exportUrl=await page.locator('.rule-chain > a[download]').getAttribute('href');
+    const exported=await (await request.get(anna+exportUrl)).json();
+    const procedure=exported.chain.records.find(r=>r.subject_id===ids[1]&&r.kind==='procedure');
+    expect(procedure.status).toBe('resolved');expect(procedure.ruleset).toBe(edition);
+    expect(procedure.value.effects[1].quantity.terms[0].value).toBe(13);
+    const ev=effects.nth(1).locator('.chain-evidence');await ev.locator('summary').click();
+    const popup=page.waitForEvent('popup');await ev.getByRole('link').click();const source=await popup;
+    await expect(source.locator('#evidence')).toContainText('13+');await source.close();
+    const reading=page.waitForEvent('popup');
+    await page.locator('.knowledge-record').filter({has:page.locator('.chain-effect')}).getByRole('link',{name:'在 Stella 中阅读 ↗'}).click();
+    const stella=await reading;await expect(stella.locator('#book-main')).toHaveAttribute('aria-busy','false');
+    await expect(stella.frameLocator('#book-main iframe').locator('body')).toContainText('法师护甲');await stella.close();
+    await page.reload();await expect(effects).toHaveCount(edition==='5e'?4:3);
+    await page.setViewportSize({width:390,height:844});
+    await page.getByRole('tab',{name:'规则链',exact:true}).focus();await page.keyboard.press('ArrowLeft');await page.keyboard.press('ArrowRight');
+    await expect(page.getByRole('tab',{name:'规则链',exact:true})).toHaveAttribute('aria-selected','true');
+    await expect(effects.nth(1)).toContainText('13 + 敏捷');
+    await page.setViewportSize({width:1280,height:800});expect(errors).toEqual([]);
+  });
+}

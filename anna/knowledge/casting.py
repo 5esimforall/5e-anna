@@ -56,7 +56,7 @@ def supported_access_clause(clause, mentions):
         r'你始终准备着你选择的这道法术与SPELL。',
         r'你(?:习得|学会|知晓)SPELL。',
         r'你始终准备着SPELL。',
-        r'你(?:可以|能)(?:随意)?(?:对自身)?(?:无需消耗法术位地)?施展SPELL(?:，且无需消耗法术位和材料成分)?。',
+        r'你(?:可以|能)(?:随意)?(?:对自身|以自身为目标)?(?:无需消耗法术位地)?施展SPELL(?:，且无需消耗法术位和材料成分)?。',
         r'你可以(?:从中|用它)施展(?:法术)?SPELL。',
         r'你可以(?:从中|用其)施展(?:法术)?SPELL(?:，但(?:只能以自身为目标|目标只能为自身))?。',
         r'你可以用一个动作对自身施展法术SPELL，次数不限。',
@@ -177,7 +177,7 @@ def parse_access(entry, text, spell_mentions):
             if slots: resource.update(count=1, level='appropriate' if re.search(r'合适|对应', clause) else 'available')
             if '最低环阶' in clause: branch['cast_level']={'kind':'spell_level'}
             if when:branch['when']=deepcopy(when)
-            if re.search(r'对自身|只能以自身为目标|目标只能为自身',clause):branch['target']={'kind':'self'}
+            if re.search(r'对自身|以自身为目标|目标只能为自身',clause):branch['target']={'kind':'self'}
             if '无需消耗法术位和材料成分' in clause:branch['components']={'waived':['M']}
             if re.search(r'随意|次数不限',clause):branch['frequency']='at_will'
             if '用一个动作' in clause:branch['action']='action'

@@ -18,7 +18,8 @@
     "actions.dl",
     "damage.dl",
     "validation.dl",
-    "inputs.dl"
+    "inputs.dl",
+    "casting.dl"
   ],
   "entries": "entries.json",
   "editions": "editions.json"

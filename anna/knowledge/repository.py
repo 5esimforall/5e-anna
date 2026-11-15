@@ -244,7 +244,7 @@ def rule_links(entry, value, context):
         for event,label in [('short_rest','短休'),('long_rest','长休')]:
             if recovery in {event,'short_or_long_rest'}:add(label,'uses_rule',scope,use.get('evidence',[effect['evidence']])[-1],when=effect.get('when'))
         if effect['kind'] in {'modifier','restriction'}:
-            label={'speed':'速度','attack_roll':'攻击检定','healing.allowed':'治疗','prone.self_end':'倒地','damage':'伤害'}[effect['field']]
+            label={'speed':'速度','attack_roll':'攻击检定','healing.allowed':'治疗','prone.self_end':'倒地','damage':'伤害','armor_class.base':'护甲等级'}[effect['field']]
             change={k:effect[k] for k in ('field','operation','quantity','value','applies','uses','factor','rounding','applies_to') if k in effect}
             add(label,'exception_to',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'),change=change)
             if effect.get('operation')=='advantage':add('优势','uses_rule',scope,effect['evidence'],when=effect.get('when'),ends=effect.get('ends'))
@@ -263,7 +263,7 @@ def rule_links(entry, value, context):
         if effect['kind']=='target_constraint':
             add('目标','exception_to',scope,effect['evidence'],change={'field':'casting.targets','value':effect['constraint']})
         if effect['kind']=='end_spell':
-            if any(c.get('kind')=='check_total' for c in condition_terms(effect['when'])):
+            if any(c.get('kind') in {'check_total','armor_worn','dismiss'} for c in condition_terms(effect['when'])):
                 add('持续时间','exception_to',scope,effect['evidence'],when=effect['when'],change={'field':'effect.duration','value':'end'})
             for condition in condition_terms(effect['when']):
                 if condition.get('kind')=='cover':add('全身掩护','uses_rule',scope,effect['evidence'],when=condition)

@@ -217,7 +217,40 @@
       "5e": "implemented",
       "5r": "implemented"
     },
-    "summary": "两代基础AC均为13+敏捷，持续8小时，穿甲提前结束；2014另写施法者可用动作解散，2024未写此条。动作、触碰和时长绑定既有procedure参数；当前仅执行已成功施法后的状态。",
+    "summary": "两代基础AC均为13+敏捷，持续8小时，穿甲提前结束；2014另写施法者可用动作解散，2024未写此条。参数、AC替换与结束条件绑定既有procedure；幽影护甲单次施法轨迹执行动作消耗、持续及不可复活的终止。",
+    "review_status": "unreviewed"
+  },
+  {
+    "id": "armor_of_shadows",
+    "status": "different",
+    "sources": {
+      "5e": [
+        "5e.entry.armor_of_shadows",
+        "5e.entry.mage_armor",
+        "5e.components",
+        "5e.cast.turn"
+      ],
+      "5r": [
+        "5r.entry.armor_of_shadows",
+        "5r.entry.mage_armor",
+        "5r.components",
+        "5r.cast.turn"
+      ]
+    },
+    "rule_ids": [
+      "cast.selection",
+      "cast.block.material",
+      "cast.state.accept",
+      "cast.before.expired",
+      "cast.before.armored",
+      "cast.event.dismiss",
+      "cast.event.dismiss.unsupported"
+    ],
+    "support": {
+      "5e": "implemented_single_cast",
+      "5r": "implemented_single_cast"
+    },
+    "summary": "两代均限定自身并免除法术位；2014明确免材料，2024仍需满足法师护甲的V/S/M。两代无攻击或豁免；资格、目标与成分预检通过才执行施法。只检查已拥有祈唤后的使用资格，不推导角色构建。",
     "review_status": "unreviewed"
   }
 ]

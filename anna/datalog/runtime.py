@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from anna.datalog.sources import (DatalogError, bind_entries, bind_sources, read_json, validate_origins,
-                             verify_pages, within)
+                             verify_pages, within, knowledge_value)
 from anna.paths import PROJECT, WEB
 from anna.serialization import canonical, digest
 
@@ -242,26 +242,34 @@ def collect_facts(library, cases, bound_entries=None):
                                'review_status': claim.get('review_status', 'unreviewed')}, 'library')
         if eid and bound_entries is not None:
             add(relation, values, {'kind': 'entry', **bound_entries[eid]}, 'library')
-        for index, projection in claim.get('parameter_bindings', {}).items():
-            if (not isinstance(index, str) or not index.isdecimal() or not 1 < int(index) < len(values) or
-                    not isinstance(projection, dict) or
-                    set(projection) - {'knowledge_id', 'parameter', 'field', 'requires'} or
-                    not all(isinstance(projection.get(k), str) for k in ('knowledge_id', 'parameter', 'field')) or
-                    not isinstance(projection.get('requires', {}), dict) or not eid or
-                    projection['knowledge_id'] not in library['entries'][eid]['knowledge']):
-                raise DatalogError('invalid_parameter_binding', cid)
+        if 'parameter_bindings' in claim:
+            raise DatalogError('invalid_knowledge_binding', cid)
+        bindings = claim.get('knowledge_bindings', [])
+        if not isinstance(bindings, list):
+            raise DatalogError('invalid_knowledge_binding', cid)
+        for projection in bindings:
+            if (not isinstance(projection, dict) or
+                    set(projection) not in ({'knowledge_id','path','value_index'}, {'knowledge_id','path','expected'}) or
+                    not isinstance(projection.get('knowledge_id'), str) or not eid or
+                    projection['knowledge_id'] not in library['entries'][eid]['knowledge'] or
+                    not isinstance(projection.get('path'), list) or not projection['path'] or
+                    any(not (isinstance(p,str) and p or type(p) is int and p >= 0 or
+                             isinstance(p,dict) and set(p)=={'id'} and isinstance(p['id'],str) and p['id'])
+                        for p in projection['path']) or
+                    ('value_index' in projection and (type(projection['value_index']) is not int or
+                                                     not 1 < projection['value_index'] < len(values)))):
+                raise DatalogError('invalid_knowledge_binding', cid)
             if bound_entries is None:
                 # Pure engine fixtures use the pinned tuple. Builds must verify
                 # the current effective record before transporting its value.
                 continue
             record = next(k for k in bound_entries[eid]['knowledge'] if k['id'] == projection['knowledge_id'])
-            parameter = record['parameters'].get(projection['parameter'], {})
-            if (canonical(parameter.get(projection['field'])) != canonical(values[int(index)]) or
-                    any(parameter.get(k) != v for k, v in projection.get('requires', {}).items())):
-                raise DatalogError('knowledge_parameter_mismatch', cid, field=index)
-            add(relation, values, {'kind': 'knowledge_parameter', 'knowledge_id': record['id'],
-                'parameter': projection['parameter'], 'field': projection['field'],
-                'evidence': parameter['evidence'], 'sources': claim['sources'],
+            value, evidence = knowledge_value(record, projection['path'])
+            expected = values[projection['value_index']] if 'value_index' in projection else projection['expected']
+            if canonical(value) != canonical(expected):
+                raise DatalogError('knowledge_value_mismatch', cid, path=projection['path'])
+            add(relation, values, {'kind': 'knowledge_value', 'knowledge_id': record['id'],
+                'path': projection['path'], 'evidence': evidence, 'sources': claim['sources'],
                 'review_status': record['review_status'], 'decision_ids': record['decision_ids']}, 'library')
     case_ids = set()
     for case in cases:

@@ -542,17 +542,44 @@ make datalog
 # 从现有法师护甲条目计算 AC，并查看既有知识参数的来源
 .venv/bin/python -m anna.datalog.runtime build --case inputs.5r.mage_active \
   --output .cache/datalog-mage-armor
+# 从实际祈唤开始：一次施法、动作预算、到期与主动解散的两代差异
+.venv/bin/python -m anna.datalog.runtime build --case cast.5r.duration \
+  --output .cache/datalog-cast
+.venv/bin/python -m anna.datalog.runtime inspect --comparison armor_of_shadows
 ```
 
 `make datalog` 不拉取镜像、不重建查询库，也不修改原文。默认产物在 `data/extracted/datalog/`，包括可直接打开的 `report.html`、`source-map.json`、`results.json`、`explanations.json` 和 `manifest.json`。运行 `make up` 后，报告里的证据链接会打开 Anna 的精确范围，原文链接会打开 Stella。`ANNA_PORT` 同时配置 make 命令写入的链接端口；直接运行脚本可用 `--base-url` 指定服务地址，`--lang en` 生成英文报告界面。
 
 `--source`、`--db`、`--library`、`--output` 分别选择镜像、目录库、规则库与生成目录，`--engine` 或 `SOUFFLE` 指定引擎。`inspect --bundle 路径` 先核验产物文件哈希，再读取保存的结果；它不重新判定原文是否有新版本。原文更新后先运行 `make build`，再运行 `make datalog` 重新绑定范围。引文、上下文变动或匹配不唯一时构建失败，旧产物保留。
 
-自定义场景通过 `--cases 文件.json` 传入。文件结构与 `rules/core/cases.json` 一致：顶层为 `{"schema":1,"cases":[…]}`，每个场景包含唯一 `id`、按关系名组织的 `facts`，以及可选的 `expect`、`absent` 和 `explain` 查询。元组的字段顺序、类型、唯一键和数值边界以 `relations.json` 为准。一次构建中的场景合并求值，因此角色、检定与事件标识须按场景区分；需要同一角色的多个时间点时分别构建。固定骰值是输入，不由 Python 模拟掷骰。
+自定义场景通过 `--cases 文件.json` 传入。文件结构与 `rules/core/cases.json` 一致：顶层为 `{"schema":1,"cases":[…]}`，每个场景包含唯一 `id`、按关系名组织的 `facts`，以及可选的 `expect`、`absent` 和 `explain` 查询。元组的字段顺序、类型、唯一键和数值边界以 `relations.json` 为准。一次构建中的场景合并求值，因此角色、检定与事件标识须按场景区分。普通快照的多个时间点分别构建；幽影护甲的单次施法轨迹使用下述带编号观察点。固定骰值是输入，不由 Python 模拟掷骰。
 
 优先按问题提供 `SkillCheck`、`ToolCheck`、`WeaponUse` 或 `SpellSave`，并提供角色属性、熟练、装备及必要场景状态；具体组合可从 `inputs.5e.*`、`inputs.5r.*` 场景复制。旧场景的直接 `Test`、`Attack`、`DamageDice` 输入已改名为 `TestInput`、`AttackInput`、`DamageDiceInput`；原名称现在是派生结果，不再接受写入。低层输入用于显式裁定，不能与同一检定的高层请求混用。
 
-装备和施法来源使用 `entries.json` 中具体代际的条目标识，不使用名称查找。该文件固定所核对的正文、字段和有效知识修订；任一版本改变时，先核对差异、重新确认标注及参数绑定，再更新投影，不能只替换指纹来绕过失败。`source-map.json` 的 `entries` 和证明中的 `entry_origins` 可追到条目、知识状态和决策记录。法师护甲场景代表已成功施放后的状态，尚不模拟材料、动作和法术位消耗。
+装备和施法来源使用 `entries.json` 中具体代际的条目标识，不使用名称查找。该文件固定所核对的正文、字段和有效知识修订；任一版本改变时，先核对差异、重新确认标注及知识绑定，再更新投影，不能只替换指纹来绕过失败。`knowledge_bindings` 的路径从有效记录的 `value` 开始：字符串访问字段，`{"id":"grant_1"}` 选择局部陈述，数字访问数量项等数组位置；`value_index` 指定必须一致的事实元组下标，`expected` 检查结构约束，两者只选一个。`source-map.json` 的 `entries` 和证明中的 `entry_origins` 可追到条目、知识状态和决策记录。
+
+### 幽影护甲的单次施法轨迹
+
+从 `cast.5e.*`、`cast.5r.*` 场景复制所需示例：`duration` 检查8小时边界，`material` 对照材料要求，`dismissal` 对照动作解散，`armor_ends` 验证穿甲终止后脱甲不会复活效果，`action_budget` 验证同回合不能重复花费动作。`negative_dex_no_slots` 验证零法术位仍可施法，并保留负敏捷调整值。
+
+| 输入 | 提供什么 |
+| --- | --- |
+| `CastRequest` | 代际、轨迹标识、角色、祈唤版本、`grant_1`、`branch_1`、目标角色 |
+| `FeatureAccess` | 已取得的具体祈唤；省略表示未拥有，不从职业名称推断 |
+| `CastResources` | 剩余主动作（0／1）和法术位总数；本分支不花费法术位 |
+| `CastReadiness` | 言语、姿势、材料、自愿、已穿甲、当前动作许可，六个明确的0／1值 |
+| `AbilityScore` | 该角色的 `dex` 属性值，供基础 AC 公式使用 |
+| `CastFollowup` | 从1连续编号的步骤、施法后秒数、从0开始的自身回合编号、操作、已穿甲、当前动作许可 |
+
+这些输入描述一个待执行的使用请求。缺少必要信息或选到另一代分支时构建失败；已知不符合资格、目标、成分或动作要求时输出 `CastBlocked`，不执行也不扣资源。这与“强行对无效目标施法”的规则不同，后者尚未实现。材料就绪需包含可实际使用的材料或获准替代品，不能仅因持有法器便填1。两代均要求言语与姿势；2014免材料，2024要求材料。该法术无需攻击或豁免，通过预检后直接计算基础 AC。
+
+观察点的 `observe` 只推进时间与状态；`spend_action` 消耗一个其他主动作；`dismiss` 请求原文明示的主动解散。新普通回合恢复至多一个主动作，`can_act=0` 会阻断执行而不消耗预算；许可恢复可使用未花费的动作，但同回合不恢复已花费的动作。穿甲输入是已经完成的装备状态，不代表立即完成穿甲活动。到达持续时间、穿甲或2014有效解散后，效果保持结束。2024解散请求输出 `unsupported_dismissal`，不扣动作，也不借用2014条文。
+
+在结果中查看 `CastSelection` 的实际法术、`CastCost` 的每步消耗、`CastState` 的剩余动作／法术位及有效状态、`CastStepResult` 的操作结果、`CastEnded` 的结束原因和 `CastBaseAC` 的基础值。基础值不含盾牌及其他加值，穿甲后不计算所穿护甲的最终 AC。一个角色只支持一次施法，不接受与另一轨迹、`ArmorSpell` 或 `ArmorLoadout` 混用；角色构建、多次施法叠加、反制和一般战斗时序尚未接入。
+
+`inputs.*.mage_*` 与 `ArmorSpell` 仍是已成功施法后的显式低层快照，由调用方负责移除结束实例；它们不会补救失败的 `CastRequest`。查询界面和 Stella 提供同一套知识的阅读、证据与导出，轨迹运行使用上述 Datalog 命令，不在阅读界面扣除角色资源。
+
+### 代际对照与报告
 
 `rules/core/editions.json` 保存两代的对应、差异和未支持清单，构建时校验来源与子句引用，并复制到产物目录。用 `inspect --comparison 标识` 读取当前产物中的一项。缺失的本代条目、规则、参数或相互冲突的请求会报错，不会用另一代结果补齐。
 

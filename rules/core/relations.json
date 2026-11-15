@@ -118,6 +118,14 @@
         "medium",
         "heavy"
       ]
+    },
+    "CastOperation": {
+      "base": "symbol",
+      "values": [
+        "observe",
+        "dismiss",
+        "spend_action"
+      ]
     }
   },
   "relations": {
@@ -3103,6 +3111,759 @@
       "key": [
         0,
         1
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "GrantedArmorSpell": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "provider",
+          "Text"
+        ],
+        [
+          "grant",
+          "Text"
+        ],
+        [
+          "branch",
+          "Text"
+        ],
+        [
+          "spell",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "library",
+      "output": true,
+      "key": [
+        0,
+        1,
+        2,
+        3
+      ]
+    },
+    "ArmorProcedure": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "spell",
+          "Text"
+        ],
+        [
+          "delivery",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "library",
+      "output": true,
+      "key": [
+        0,
+        1
+      ]
+    },
+    "FeatureAccess": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "provider",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "scenario",
+      "output": true,
+      "key": [
+        0,
+        1,
+        2
+      ]
+    },
+    "CastRequest": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "provider",
+          "Text"
+        ],
+        [
+          "grant",
+          "Text"
+        ],
+        [
+          "branch",
+          "Text"
+        ],
+        [
+          "target",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "scenario",
+      "output": true,
+      "key": [
+        0,
+        1
+      ]
+    },
+    "CastResources": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "actions",
+          "Flag"
+        ],
+        [
+          "slots",
+          "Number"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "scenario",
+      "output": true,
+      "key": [
+        0,
+        1
+      ],
+      "bounds": {
+        "slots": {
+          "min": 0,
+          "max": 100
+        }
+      }
+    },
+    "CastReadiness": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "verbal",
+          "Flag"
+        ],
+        [
+          "somatic",
+          "Flag"
+        ],
+        [
+          "material",
+          "Flag"
+        ],
+        [
+          "willing",
+          "Flag"
+        ],
+        [
+          "armored",
+          "Flag"
+        ],
+        [
+          "can_act",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "scenario",
+      "output": true,
+      "key": [
+        0,
+        1
+      ]
+    },
+    "CastFollowup": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "seconds",
+          "Number"
+        ],
+        [
+          "turn",
+          "Number"
+        ],
+        [
+          "operation",
+          "CastOperation"
+        ],
+        [
+          "armored",
+          "Flag"
+        ],
+        [
+          "can_act",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "scenario",
+      "output": true,
+      "key": [
+        0,
+        1,
+        2
+      ],
+      "bounds": {
+        "step": {
+          "min": 1,
+          "max": 128
+        },
+        "seconds": {
+          "min": 0,
+          "max": 31536000
+        },
+        "turn": {
+          "min": 0,
+          "max": 1000000
+        }
+      }
+    },
+    "CastSelection": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "spell",
+          "Text"
+        ],
+        [
+          "waive_material",
+          "Flag"
+        ],
+        [
+          "dismiss_action",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastBlocked": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "reason",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastAllowed": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastCost": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "actions",
+          "Number"
+        ],
+        [
+          "slots",
+          "Number"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastState": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "actions",
+          "Flag"
+        ],
+        [
+          "slots",
+          "Number"
+        ],
+        [
+          "active",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastStepResult": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "outcome",
+          "Text"
+        ],
+        [
+          "actions",
+          "Flag"
+        ],
+        [
+          "slots",
+          "Number"
+        ],
+        [
+          "active",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastEnded": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "reason",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "CastBaseAC": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "ac",
+          "Number"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "output": true
+    },
+    "ArmorSpellValue": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "actor",
+          "Text"
+        ],
+        [
+          "spell",
+          "Text"
+        ],
+        [
+          "ac",
+          "Number"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "CastClock": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "seconds",
+          "Number"
+        ],
+        [
+          "turn",
+          "Number"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "CastCursor": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "actions",
+          "Flag"
+        ],
+        [
+          "slots",
+          "Number"
+        ],
+        [
+          "active",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "CastBefore": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "actions",
+          "Flag"
+        ],
+        [
+          "slots",
+          "Number"
+        ],
+        [
+          "active",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "CastWorn": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "step",
+          "Number"
+        ],
+        [
+          "armored",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "WaivedCastingComponent": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "provider",
+          "Text"
+        ],
+        [
+          "grant",
+          "Text"
+        ],
+        [
+          "branch",
+          "Text"
+        ],
+        [
+          "component",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "library",
+      "key": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "output": true
+    },
+    "SpellDismissalAction": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "spell",
+          "Text"
+        ],
+        [
+          "action",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ],
+      "input": "library",
+      "key": [
+        0,
+        1
+      ],
+      "output": true
+    },
+    "CastSpell": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "spell",
+          "Text"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "CastMaterialPolicy": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "waived",
+          "Flag"
+        ]
+      ],
+      "editions": [
+        "5e",
+        "5r"
+      ]
+    },
+    "CastDismissalPolicy": {
+      "fields": [
+        [
+          "edition",
+          "Edition"
+        ],
+        [
+          "run",
+          "Text"
+        ],
+        [
+          "permitted",
+          "Flag"
+        ]
       ],
       "editions": [
         "5e",

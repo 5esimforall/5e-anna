@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 import anna.datalog.runtime as d
-from anna.datalog.sources import DatalogError, bind_entries, bind_sources, locate, read_json, within
+from anna.datalog.sources import DatalogError, bind_entries, bind_sources, locate, read_json, within, knowledge_value
 from anna.source.html import Document
 from anna.datalog.report import render_report
 
@@ -150,7 +150,7 @@ class ContractTests(unittest.TestCase):
             self.assertGreater(rebound['s']['span'][0],b['span'][0])
             self.assertEqual(rebound['s']['raw'],b['raw'])
 
-    def test_entry_binding_identity_revision_and_knowledge_parameters(self):
+    def test_entry_binding_identity_revision_and_knowledge_values(self):
         with tempfile.TemporaryDirectory() as temp:
             db = Path(temp)/'catalog.sqlite'
             entry = {'id':'entry', 'ruleset':'5r', 'type':'spell', 'body_hash':'body',
@@ -168,20 +168,21 @@ class ContractTests(unittest.TestCase):
                 conn.execute('INSERT INTO entries VALUES(?,?)',('entry',json.dumps(entry)))
                 conn.execute('INSERT INTO effective_knowledge VALUES(?,?)',('knowledge',raw));conn.commit()
             bound = bind_entries({'entry':selector},sources,db)
-            self.assertEqual(bound['entry']['knowledge'][0]['parameters']['duration']['quantity'],8)
+            self.assertEqual(bound['entry']['knowledge'][0]['value']['parameters']['duration']['quantity'],8)
             self.assertEqual(bound['entry']['identity_status'],'provisional')
             library = copy.deepcopy(self.library)
             library['sources']['source'] = {'edition':'5r'}
             library['entries'] = {'entry':selector}
             library['facts'] = [{'id':'test.spell','relation':'ArmorSpellProfile',
                 'values':['5r','entry',13,8], 'sources':['source'], 'entry_id':'entry',
-                'review_status':'unreviewed', 'parameter_bindings':{'3':{'knowledge_id':'knowledge',
-                    'parameter':'duration','field':'quantity','requires':{'kind':'timed','unit':'hour'}}}}]
+                'review_status':'unreviewed', 'knowledge_bindings':[{'knowledge_id':'knowledge',
+                    'path':['parameters','duration','quantity'],'value_index':3},
+                    {'knowledge_id':'knowledge','path':['parameters','duration','unit'],'expected':'hour'}]}]
             _, origins = d.collect_facts(library,[],bound)
             refs = origins[d.fact_key('ArmorSpellProfile',['5r','entry',13,8])]
-            self.assertEqual({x['kind'] for x in refs},{'claim','entry','knowledge_parameter'})
+            self.assertEqual({x['kind'] for x in refs},{'claim','entry','knowledge_value'})
             library['facts'][0]['values'][3] = 9
-            self.error('knowledge_parameter_mismatch',d.collect_facts,library,[],bound)
+            self.error('knowledge_value_mismatch',d.collect_facts,library,[],bound)
             for field,value,code in [('edition','5e','entry_edition_mismatch'),
                                       ('body_hash','changed','entry_changed'),
                                       ('fields',{},'entry_changed')]:
@@ -191,13 +192,38 @@ class ContractTests(unittest.TestCase):
             self.error('entry_evidence_mismatch',bind_entries,{'entry':selector},
                        {'source':{'edition':'5r','entry_ids':['different-same-name']}},db)
             for status,review in [('partial','applied'),('rejected','applied'),('review','stale'),('review','conflict')]:
-                changed = {**record,'status':status,'review_status':review}
+                changed = {**record,'status':status,'review_status':review,'decision_ids':['decision']}
                 with closing(sqlite3.connect(db)) as conn:
                     conn.execute('UPDATE effective_knowledge SET data=?',(json.dumps(changed),));conn.commit()
                 self.error('entry_knowledge_changed',bind_entries,{'entry':selector},sources,db)
+                inspected={**selector,'knowledge':{'knowledge':sha256(json.dumps(changed).encode()).hexdigest()}}
+                if status=='partial':
+                    accepted=bind_entries({'entry':inspected},sources,db)['entry']['knowledge'][0]
+                    self.assertEqual(accepted['decision_ids'],['decision'])
+                    self.assertEqual(accepted['review_status'],'applied')
+                else:self.error('entry_knowledge_changed',bind_entries,{'entry':inspected},sources,db)
             with closing(sqlite3.connect(db)) as conn:
                 conn.execute('DELETE FROM effective_knowledge');conn.commit()
             self.error('entry_knowledge_missing',bind_entries,{'entry':selector},sources,db)
+
+    def test_local_statement_binding_is_id_scoped_and_retains_evidence(self):
+        evidence={'path':'page','span':[1,4],'raw':'规则文'}
+        branch={'id':'branch_1','target':{'kind':'self'},'evidence':[evidence]}
+        record={'id':'knowledge','value':{'grants':[{'id':'grant_1','branches':[branch]}]},'evidence':evidence}
+        path=['grants',{'id':'grant_1'},'branches',{'id':'branch_1'},'target','kind']
+        self.assertEqual(knowledge_value(record,path),('self',[evidence]))
+        record['value']['grants'][0]['branches'].append(copy.deepcopy(branch))
+        self.error('knowledge_path_unresolved',knowledge_value,record,path)
+        record['value']['grants'][0]['branches']=[]
+        self.error('knowledge_path_unresolved',knowledge_value,record,path)
+        library=copy.deepcopy(self.library)
+        claim=next(c for c in library['facts'] if c.get('knowledge_bindings'))
+        for change in [{'path':[True]},{'path':[{'name':'effect_1'}]},{'path':[]},
+                       {'value_index':True},{'value_index':10000}]:
+            binding=copy.deepcopy(claim['knowledge_bindings'][0])
+            claim['knowledge_bindings'][0].update(change)
+            self.error('invalid_knowledge_binding',d.collect_facts,library,[])
+            claim['knowledge_bindings'][0]=binding
 
 
 @unittest.skipUnless(shutil.which('souffle'), 'Install Soufflé 2.5 to run actual engine acceptance')
@@ -221,6 +247,36 @@ class EngineTests(unittest.TestCase):
                     csv.writer(file,lineterminator='\n').writerows(rows[relation].values())
         d.invoke_engine('souffle',directory)
         return directory,d.load_results(directory,self.library['schema']),origins
+
+    def test_cast_contract_rejects_incomplete_conflicting_and_cross_edition_runs(self):
+        base=next(c for c in d.selected_cases(self.library) if c['id']=='cast.5r.duration')
+        cases=[];expected=[]
+        def changed(name,code,edit):
+            run='invalid.cast.'+name
+            case=json.loads(json.dumps(base).replace(base['id'],run))
+            for field in ('expect','absent','explain'):case[field]=[]
+            edit(case['facts']);cases.append(case);expected.append(['5r',run,code])
+        changed('resources','missing_cast_resources',lambda f:f.pop('CastResources'))
+        changed('readiness','missing_cast_readiness',lambda f:f.pop('CastReadiness'))
+        changed('ability','missing_cast_ability',lambda f:f.pop('AbilityScore'))
+        changed('branch','unsupported_cast_branch',lambda f:f['CastRequest'][0].__setitem__(5,'missing_branch'))
+        changed('edition','unsupported_cast_branch',lambda f:f['CastRequest'][0].__setitem__(3,'ver_205593d20d0c37015ecd0ab1'))
+        changed('gap','missing_cast_step',lambda f:f['CastFollowup'].pop(0))
+        changed('time','cast_time_reversed',lambda f:f['CastFollowup'][1].__setitem__(3,2))
+        changed('turn','cast_turn_reversed',lambda f:f['CastFollowup'][1].__setitem__(4,0))
+        changed('orphan','orphan_cast_followup',lambda f:f.pop('CastRequest'))
+        changed('snapshot','mixed_cast_snapshot',lambda f:f.update(ArmorSpell=[['5r','old','ver_992b31e3033fc968022d586c',f['CastRequest'][0][2],0,0]]))
+        _,results,_=self.evaluate(cases,'cast-invalid')
+        for row in expected:self.assertIn(row,results['Violation'])
+        for name in ('branch','edition','resources','readiness'):
+            self.assertNotIn(['5r','invalid.cast.'+name],results['CastAllowed'])
+        conflict=copy.deepcopy(base)
+        conflict['facts']['CastReadiness'].append(copy.deepcopy(conflict['facts']['CastReadiness'][0]))
+        conflict['facts']['CastReadiness'][-1][6]=1
+        with self.assertRaises(DatalogError) as caught:d.collect_facts(self.library,[conflict])
+        self.assertEqual(caught.exception.code,'conflicting_fact')
+        for relation,values in [('CastState',['5r','injected',0,1,0,1]),('CastAllowed',['5r','injected'])]:
+            with self.assertRaises(DatalogError):d.validate_tuple(self.library['schema'],relation,values,input_kind='scenario')
 
     def test_all_authored_cases_and_actual_proof_links(self):
         cases=d.selected_cases(self.library)
@@ -335,7 +391,7 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(manifest['review_status'],'unreviewed')
         self.assertEqual(d.verify_bundle(output)['snapshot'],manifest['snapshot'])
         mapping=read_json(output/'source-map.json')
-        self.assertEqual(len(mapping['entries']),32)
+        self.assertEqual(len(mapping['entries']),34)
         for source in mapping['sources'].values():
             self.assertEqual(source['quote'],source['raw'])
             self.assertIn('sha256=',source['links']['evidence'])
@@ -343,11 +399,17 @@ class EngineTests(unittest.TestCase):
         self.assertIn('condition.paralyzed',proof['source_ids'])
         mage=next(p for p in read_json(output/'explanations.json')['explanations'] if p['case_ids']==['inputs.5r.mage_active'])
         self.assertEqual(mage['entry_origins'][0]['entry_id'],'ver_992b31e3033fc968022d586c')
-        self.assertIn('knowledge_parameter',json.dumps(mage['proof']))
+        self.assertIn('knowledge_value',json.dumps(mage['proof']))
         attack=next(p for p in read_json(output/'explanations.json')['explanations'] if p['case_ids']==['inputs.5r.mage_target'])
         self.assertEqual({e['entry_id'] for e in attack['entry_origins']},
                          {'ver_96fa837d8dcbbd58d610d900','ver_992b31e3033fc968022d586c'})
         self.assertTrue(all(mapping['sources'][s]['edition']=='5r' for s in attack['source_ids']))
+        cast=next(p for p in read_json(output/'explanations.json')['explanations']
+                  if p['case_ids']==['cast.5r.duration'] and p['relation']=='CastBaseAC')
+        self.assertEqual({e['entry_id'] for e in cast['entry_origins']},
+                         {'ver_3d28cd45188a9be58b8bece0','ver_992b31e3033fc968022d586c'})
+        self.assertTrue(all(mapping['sources'][s]['edition']=='5r' for s in cast['source_ids']))
+        self.assertIn('knowledge_value',json.dumps(cast['proof']))
         report=(output/'report.html').read_text()
         self.assertIn('id="source-condition.paralyzed"',report)
         self.assertIn('href="#rule-critical.dice"',report)

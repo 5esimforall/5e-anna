@@ -3429,5 +3429,894 @@
     },
     "review_status": "unreviewed",
     "rationale": "Validate known input profiles and normalize the absence of an armor strength requirement."
+  },
+  "cast.selection": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.block.feature": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.armor_of_shadows"
+      ],
+      "5r": [
+        "5r.entry.armor_of_shadows"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.target": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.armor_of_shadows"
+      ],
+      "5r": [
+        "5r.entry.armor_of_shadows"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.willing": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.armor": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.action": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.cast.turn"
+      ],
+      "5r": [
+        "5r.cast.turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.verbal": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.components"
+      ],
+      "5r": [
+        "5r.components"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.somatic": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.components"
+      ],
+      "5r": [
+        "5r.components"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.block.material": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.components"
+      ],
+      "5r": [
+        "5r.components"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.allowed": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.state.accept": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor",
+        "5e.entry.armor_of_shadows"
+      ],
+      "5r": [
+        "5r.entry.mage_armor",
+        "5r.entry.armor_of_shadows"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.state.reject": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "预检拒绝意味着未执行施法，保留资源；不模拟对无效目标强行施法。"
+  },
+  "cast.cost.initial": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.clock.initial": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.clock.followup": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.worn.initial": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.worn.followup": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.cursor.same": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.cast.turn"
+      ],
+      "5r": [
+        "5r.cast.turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.cursor.new": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.cast.turn"
+      ],
+      "5r": [
+        "5r.cast.turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.before.inactive": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.before.expired": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.before.armored": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.before.active": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.end.expired": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.end.armored": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.event.observe": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.event.spend": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.cast.turn"
+      ],
+      "5r": [
+        "5r.cast.turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.event.spend.denied": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.cast.turn"
+      ],
+      "5r": [
+        "5r.cast.turn"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.event.dismiss.unsupported": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "所选版本无主动解散陈述，不借用另一代许可；不消耗动作。"
+  },
+  "cast.event.dismiss.inactive": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.event.dismiss.noaction": {
+    "kind": "source",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.event.dismiss": {
+    "kind": "source",
+    "editions": [
+      "5e"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.end.dismissed": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.state.followup": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.cost.followup": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "mage.armor.value": {
+    "kind": "source",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [
+        "5e.entry.mage_armor"
+      ],
+      "5r": [
+        "5r.entry.mage_armor"
+      ]
+    },
+    "review_status": "unreviewed"
+  },
+  "cast.ac.active": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.ac.unarmored": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.selection": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.resources": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.readiness": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.dex": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.orphan.resources": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.orphan.readiness": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.orphan.followup": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.gap": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.time": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.turn": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.overlap": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.snapshot": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.loadout": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.unsupported.feature": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.unique.state.actions": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.unique.state.slots": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "validate.cast.unique.state.effect": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "有限单次施法轨迹的显式输入、连接与状态传递；不补全缺失规则。"
+  },
+  "cast.spell": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "连接已固定完整知识过程及正向例外陈述；缺失许可只表示该过程未支持，不跨代补全。"
+  },
+  "cast.material.waived": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "连接已固定完整知识过程及正向例外陈述；缺失许可只表示该过程未支持，不跨代补全。"
+  },
+  "cast.material.required": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "连接已固定完整知识过程及正向例外陈述；缺失许可只表示该过程未支持，不跨代补全。"
+  },
+  "cast.dismiss.permitted": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "连接已固定完整知识过程及正向例外陈述；缺失许可只表示该过程未支持，不跨代补全。"
+  },
+  "cast.dismiss.unsupported": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "连接已固定完整知识过程及正向例外陈述；缺失许可只表示该过程未支持，不跨代补全。"
+  },
+  "validate.cast.complete": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "连接已固定完整知识过程及正向例外陈述；缺失许可只表示该过程未支持，不跨代补全。"
+  },
+  "cast.block.permission": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "当前动作许可由场景明确提供；许可中断不消耗剩余动作预算，也不自动恢复已花费的动作。"
+  },
+  "cast.event.spend.unavailable": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "当前动作许可由场景明确提供；许可中断不消耗剩余动作预算，也不自动恢复已花费的动作。"
+  },
+  "cast.event.dismiss.unavailable": {
+    "kind": "projection",
+    "editions": [
+      "5e",
+      "5r"
+    ],
+    "sources": {
+      "5e": [],
+      "5r": []
+    },
+    "review_status": "unreviewed",
+    "rationale": "当前动作许可由场景明确提供；许可中断不消耗剩余动作预算，也不自动恢复已花费的动作。"
   }
 }

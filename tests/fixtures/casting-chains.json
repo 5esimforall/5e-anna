@@ -4,7 +4,9 @@
     {"name":"魔法学徒","ruleset":"5e","path":"topics/玩家手册/自定义选项/专长.html","grants":2,"modes":["known","known"]},
     {"name":"魔法学徒","ruleset":"5r","path":"topics/玩家手册2024/专长/起源专长.htm","grants":2,"modes":["known","prepared"]},
     {"name":"妖精触碰","ruleset":"5e","path":"topics/塔莎的万事坩埚/玩家选项/专长.html","grants":2,"modes":["known","known"]},
-    {"name":"妖精触碰","ruleset":"5r","path":"topics/玩家手册2024/专长/通用专长.htm","grants":2,"modes":["prepared","prepared"]}
+    {"name":"妖精触碰","ruleset":"5r","path":"topics/玩家手册2024/专长/通用专长.htm","grants":2,"modes":["prepared","prepared"]},
+    {"name":"幽影护甲","ruleset":"5e","path":"topics/玩家手册/职业/邪术师/魔能祈唤.html","grants":1,"modes":["cast"]},
+    {"name":"幽影护甲","ruleset":"5r","path":"topics/玩家手册2024/角色职业/魔契师/魔能祈唤选项.htm","grants":1,"modes":["cast"]}
   ],
   "acquisition": [
     {"name":"侍僧","path":"topics/玩家手册2024/角色起源/背景/侍僧.htm","class_list":"牧师","allowed_spell":"疗伤术","excluded_spell":"魔法飞弹"},
@@ -15,6 +17,8 @@
     {"name":"迷踪步","path":"topics/玩家手册/魔法/法术详述/2环.html","kinds":["teleport"]},
     {"name":"迷踪步","path":"topics/玩家手册2024/法术详述/2环.htm","kinds":["teleport"]},
     {"name":"疗伤术","path":"topics/玩家手册2024/法术详述/1环.htm","kinds":["healing","upcast"]},
-    {"name":"魅惑类人","path":"topics/玩家手册2024/法术详述/1环.htm","kinds":["saving_throw","condition","attitude","awareness","upcast"]}
+    {"name":"魅惑类人","path":"topics/玩家手册2024/法术详述/1环.htm","kinds":["saving_throw","condition","attitude","awareness","upcast"]},
+    {"name":"法师护甲","path":"topics/玩家手册/魔法/法术详述/1环.html","kinds":["targets","modifier","end_spell","end_spell"]},
+    {"name":"法师护甲","path":"topics/玩家手册2024/法术详述/1环.htm","kinds":["targets","modifier","end_spell"]}
   ]
 }

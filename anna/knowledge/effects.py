@@ -10,7 +10,7 @@ QUERY_VALUES={
     'delivery':('attack_roll','saving_throw','automatic','not_stated'),
     'timing':('immediate','ongoing','repeat','cumulative','not_stated'),
     'save_ability':(*ABILITIES,'not_stated'),
-    'trigger':('attack_result','save_result','turn','damage_received','wake_action','outside_spell_range','cover','action_spent','requires_sleep','condition_immunity','check_total','concentration_duration','creature_type','event_ref'),
+    'trigger':('attack_result','save_result','turn','damage_received','wake_action','outside_spell_range','cover','action_spent','requires_sleep','condition_immunity','check_total','concentration_duration','creature_type','event_ref','armor_worn','dismiss'),
     'end_trigger':('turn','spell_ends','damage_from','magic_removal'),
     'target_scope':('single','area','not_stated'),
     'use_action':ACTIONS,

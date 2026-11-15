@@ -194,9 +194,33 @@ def bind_entries(selectors, sources, db_path):
                 knowledge.append({'id': kid, 'sha256': expected, 'status': record['status'],
                                   'review_status': record['review_status'],
                                   'decision_ids': record.get('decision_ids', []),
-                                  'parameters': record.get('value', {}).get('parameters', {})})
+                                  'value': record['value'], 'evidence': record.get('evidence')})
             result[eid] = {'entry_id': eid, 'edition': entry['ruleset'], 'name': entry['name'],
                            'identity_status': entry['identity_status'], 'body_hash': entry['body_hash'],
                            'sources': selector['sources'], 'knowledge': knowledge,
                            'review_status': 'unreviewed'}
     return result
+
+
+def knowledge_value(record, path):
+    """Follow fields and stable local IDs, retaining the nearest source evidence."""
+    value, evidence = record['value'], record.get('evidence')
+    for part in path:
+        if isinstance(value, dict) and value.get('evidence'):
+            evidence = value['evidence']
+        if isinstance(part, dict):
+            matches = [v for v in value if isinstance(v, dict) and v.get('id') == part['id']] if isinstance(value, list) else []
+            if len(matches) != 1:
+                raise DatalogError('knowledge_path_unresolved', record['id'], path=path)
+            value = matches[0]
+        elif isinstance(part, str) and isinstance(value, dict) and part in value:
+            value = value[part]
+        elif type(part) is int and isinstance(value, list) and 0 <= part < len(value):
+            value = value[part]
+        else:
+            raise DatalogError('knowledge_path_unresolved', record['id'], path=path)
+    if isinstance(value, dict) and value.get('evidence'):
+        evidence = value['evidence']
+    if not evidence:
+        raise DatalogError('knowledge_evidence_missing', record['id'], path=path)
+    return value, evidence

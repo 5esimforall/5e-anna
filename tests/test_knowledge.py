@@ -6,8 +6,10 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from anna.knowledge.repository import (build_knowledge, chain, Context, inspect, save, casting_condition,
-                       validate_record, record_for, parse_access, branches)
+from anna.knowledge.repository import build_knowledge, save, validate_record, record_for, parse_access, branches
+from anna.presentation.knowledge import chain, casting_condition
+from anna.knowledge.context import Context
+from anna.knowledge.inspection import inspect
 from anna.review.commands import revoke
 from anna.serialization import canonical
 from anna.review.store import load_events, append_event, locked, extraction_hash

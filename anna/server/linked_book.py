@@ -14,8 +14,9 @@ from urllib.parse import quote
 from anna.source.html import Document
 from anna.source.pages import read_page
 from anna.paths import PROJECT, WEB
+from anna.presentation import contracts
 from anna.review.store import require_current, load_events
-from anna.server.reader import SCHEMA, build_navigation, content_file, strip_reader_scripts
+from anna.presentation.reader import SCHEMA, build_navigation, content_file, strip_reader_scripts
 
 BOOK=PROJECT/'data/5echm-anna'
 MARKER=b'<!-- anna-link-layer -->'
@@ -61,7 +62,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
         pages={p:{'sha256':h,'text':t} for p,h,t in db.execute('SELECT path,sha256,text FROM pages')}
         entries={};by_page=defaultdict(list)
         for raw, in db.execute('SELECT data FROM entries'):
-            e=json.loads(raw)
+            e=contracts.entry(json.loads(raw))
             if 'title_end' not in e:raise ValueError('Rebuild the database first: title_end is missing')
             entries[e['id']]=e;by_page[e['page_path']].append(e)
         review_snapshot=require_current(db)
@@ -72,7 +73,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                 actual=fingerprint(source/path) if (source/path).exists() else None
                 if actual!=expected:raise ValueError('Concept discovery evidence does not match the database snapshot; run make build: '+path)
         for path,raw in db.execute("SELECT page_path,data FROM effective_references WHERE can_link=1 ORDER BY page_path,start,id"):
-            mentions[path].append(json.loads(raw))
+            mentions[path].append(contracts.reference(json.loads(raw)))
         reference_coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='reference_coverage'").fetchone()[0])
         unresolved=[json.loads(raw) for raw, in db.execute("SELECT data FROM effective_references WHERE signal='explicit' AND status IN ('review','unresolved','ambiguous')")]
     inputs={p.relative_to(source).as_posix():fingerprint(p) for p in source.rglob('*') if p.is_file() and '.git' not in p.relative_to(source).parts and not p.is_symlink()}

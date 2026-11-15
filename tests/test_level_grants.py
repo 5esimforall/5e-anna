@@ -8,7 +8,9 @@ import unittest
 from anna.source.html import Document
 from anna.source.tables import extract_tables, table_grid
 from anna.knowledge.levels import parse_table_access, feature_access
-from anna.knowledge.repository import Context, record_for, branches, replay, binding, chain, build_knowledge, casting_condition, audit_knowledge
+from anna.knowledge.context import Context
+from anna.knowledge.repository import record_for, branches, replay, binding, build_knowledge, audit_knowledge
+from anna.presentation.knowledge import chain, casting_condition
 from anna.serialization import digest, canonical
 from anna.knowledge.conditions import condition_terms
 from anna.knowledge.model import rule_value

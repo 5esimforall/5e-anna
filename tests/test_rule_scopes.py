@@ -145,7 +145,7 @@ DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class CorpusScopeTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from anna.knowledge.repository import Context
+        from anna.knowledge.context import Context
         cls.db=sqlite3.connect(DB.resolve().as_uri()+'?mode=ro',uri=True);cls.context=Context(cls.db)
     @classmethod
     def tearDownClass(cls):cls.db.close()
@@ -155,7 +155,8 @@ class CorpusScopeTests(unittest.TestCase):
         self.assertEqual(len(entries),1,(name,generation,prefix));return entries[0]
 
     def test_equipment_and_class_acquisition_remain_distinct_along_the_path(self):
-        from anna.knowledge.repository import chain,record_for
+        from anna.presentation.knowledge import chain
+        from anna.knowledge.repository import record_for
         cases=[('Boots of Levitation','5e','topics/城主指南/',True,'worn'),
                ('Ring of Jumping','5r','topics/城主指南2024/',True,'worn'),
                ('Ring of Water Walking','5r','topics/城主指南2024/',False,'worn'),
@@ -210,7 +211,7 @@ class CorpusScopeTests(unittest.TestCase):
             self.assertEqual(parse_spell(renamed,self.context.pages[entry['page_path']]),value)
 
     def test_background_reaches_ordinal_save_and_explicit_exception(self):
-        from anna.knowledge.repository import chain,casting_condition
+        from anna.presentation.knowledge import chain, casting_condition
         entry=self.entry('Sleep','5r','topics/玩家手册2024/')
         root=next(e for e in self.context.entries.values() if e['name_zh']=='智者' and e['ruleset']=='5r')
         result=chain(self.db,root['id'],entry['id'],effect_id='effect_5')

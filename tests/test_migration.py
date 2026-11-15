@@ -208,7 +208,8 @@ class MigrationTests(unittest.TestCase):
         self.assertNotIn('old-table', alignment.ids)
 
     def test_valid_review_is_previewed_but_stale_review_is_not_revived(self):
-        from anna.knowledge.repository import Context, binding
+        from anna.knowledge.context import Context
+        from anna.knowledge.repository import binding
         old = self.catalog('old')
         new = self.catalog('new', path='topics/moved.htm', suffix='-new')
         basis = Context(old.db).basis(old.record)
@@ -321,7 +322,8 @@ class CompactSnapshotTests(unittest.TestCase):
                 self.assertEqual(db.execute('SELECT * FROM ' + name).fetchall(), c.db.execute('SELECT * FROM ' + name).fetchall())
 
     def test_parent_review_history_cannot_be_dropped_before_capture(self):
-        from anna.knowledge.repository import Context, binding
+        from anna.knowledge.context import Context
+        from anna.knowledge.repository import binding
         c = self.catalog('old')
         basis = Context(c.db).basis(c.record)
         event = {'schema': 1, 'id': 'historical', 'created_at': 'now', 'operation': 'knowledge_accept',
@@ -346,7 +348,7 @@ class CompactSnapshotTests(unittest.TestCase):
         self.assertEqual(checks[0]['status'], 'unchanged')
 
     def test_projection_encoding_is_retained_and_changed_recipe_fails_closed(self):
-        from anna.knowledge.reading import build_rule_index
+        from anna.knowledge.rule_index import build_rule_index
         from unittest.mock import patch
         c = self.catalog('old')
         c.db.execute('CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY,subject_id TEXT,kind TEXT,status TEXT,review_status TEXT,data TEXT)')

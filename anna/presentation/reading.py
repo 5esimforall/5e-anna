@@ -2,33 +2,11 @@
 import json
 from collections import defaultdict
 from anna.knowledge.conditions import condition_terms
+from anna.presentation import contracts
 
 
 def records_for(db, subject):
-    return [json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge WHERE subject_id=? ORDER BY kind',(subject,))]
-
-
-def rule_rows(records):
-    for record in records:
-        for link in record['value'].get('rules',[]):
-            target=link['target']['resolution']
-            status=target['status'] if record['status']=='resolved' else record['status']
-            for tid in target['targets'] or [None]:
-                row={'id':record['id']+':'+link['id']+':'+str(tid),'source_id':record['subject_id'],
-                     'target_id':tid,'relation':link['relation'],'status':status,'record_id':record['id'],
-                     'review_status':record['review_status'],'target_status':target['status'],'scope':link['scope'],'when':link['when'],
-                     'change':link['change'],'ends':link['ends'],'evidence':link['target']['evidence']}
-                yield row
-
-
-def build_rule_index(db, records):
-    db.executescript('''CREATE TABLE knowledge_rule_links(id TEXT PRIMARY KEY,source_id TEXT REFERENCES entries(id),
-        target_id TEXT REFERENCES entries(id),relation TEXT,status TEXT,data TEXT NOT NULL);
-        CREATE INDEX knowledge_rule_target ON knowledge_rule_links(target_id,relation,status);
-        CREATE INDEX knowledge_rule_source ON knowledge_rule_links(source_id);''')
-    for row in rule_rows(records):
-        db.execute('INSERT INTO knowledge_rule_links VALUES(?,?,?,?,?,?)',
-            tuple(row[k] for k in ('id','source_id','target_id','relation','status'))+(json.dumps(row,ensure_ascii=False),))
+    return [contracts.record(json.loads(r[0])) for r in db.execute('SELECT data FROM effective_knowledge WHERE subject_id=? ORDER BY kind',(subject,))]
 
 
 def path_value(raw):
@@ -61,7 +39,7 @@ def outgoing(db, subject, scoped_options):
                 if term.get('target'):
                     target_edges(record,term['target'],'requires_option',{'kind':'acquisition','constraints':{},'expression':pre['expression']},pre['evidence'])
             options=scoped_options.get(subject)
-            if options is None:options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(subject,))]
+            if options is None:options=[contracts.option(json.loads(r[0])) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(subject,))]
             seen={}
             for option in options:
                 if option['subject_id']!=subject:continue
@@ -82,14 +60,14 @@ def outgoing(db, subject, scoped_options):
     for raw, in db.execute("SELECT data FROM knowledge_rule_links WHERE target_id=? AND relation='exception_to' AND status!='rejected' ORDER BY id",(subject,)):
         edge=json.loads(raw);edge.update(source_id=subject,target_id=edge['source_id'],relation='modified_by');edges.append(edge)
     for root,raw in db.execute('SELECT DISTINCT root_id,data FROM casting_options WHERE spell_id=?',(subject,)):
-        option=json.loads(raw)
+        option=contracts.option(json.loads(raw))
         prior=next((e for e in edges if e['relation']=='provided_by' and e['target_id']==root and e['scope']['grant_id']==option['grant_id'] and e.get('acquisition_steps')==option['acquisition_steps'] and e['record_id']==option['knowledge_id']),None)
         if prior:prior['scope']['usage'].append(usage(option))
         else:
             acquisition=[]
             for step in option['acquisition_steps']:
                 rid=step['knowledge_id']
-                record=json.loads(db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()[0])
+                record=contracts.record(json.loads(db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()[0]))
                 grant=next(g for g in record['value']['grants'] if g['id']==step['grant_id'])
                 acquisition.append({'record_id':rid,'subject_id':record['subject_id'],'review_status':record['review_status'],
                                     'constraints':grant['constraints'],'evidence':grant['target']['evidence']})
@@ -131,7 +109,7 @@ def reading(db, root, chain, raw_path=None, effect_id=None):
             for record in records_for(db,sid):
                 for grant in record['value'].get('grants',[]):
                     if grant['entry_type']=='spell':continue
-                    options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(sid,))]
+                    options=[contracts.option(json.loads(r[0])) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(sid,))]
                     for tid in grant['target']['resolution']['targets']:
                         if tid not in scoped:scoped[tid]=[o for o in options if o['subject_id']==tid]
             edge_cache[sid]=outgoing(db,sid,scoped)
@@ -168,7 +146,7 @@ def reading(db, root, chain, raw_path=None, effect_id=None):
     if spell_steps:
         step=spell_steps[-1];spell_id=step['target_id'];supplier=step['source_id']
         options=scoped.get(supplier)
-        if options is None:options=[json.loads(r[0]) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(supplier,))]
+        if options is None:options=[contracts.option(json.loads(r[0])) for r in db.execute('SELECT data FROM casting_options WHERE root_id=?',(supplier,))]
     else:spell_id=chain['selected_spell_id'];options=chain['options']
     chain['bindings']=[{'subject_id':o['subject_id'],'grant_id':o['grant_id'],'branch_id':o['branch_id'],
         'spell_id':spell_id,'variable':'spellcasting','value':o['grant'].get('ability'),

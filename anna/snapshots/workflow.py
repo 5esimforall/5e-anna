@@ -93,7 +93,7 @@ def table_dependencies(context, entry):
 
 
 def knowledge_dependencies(before, after, alignment):
-    from anna.knowledge.repository import Context
+    from anna.knowledge.context import Context
     old_context, new_context = Context(before), Context(after)
     old_records, new_records = records(before, 'rule_knowledge'), records(after, 'rule_knowledge')
     by_subject = defaultdict(list)
@@ -159,7 +159,7 @@ def review_results(db):
 
 
 def review_dependencies(before, after, alignment, saved_log, current_log, knowledge_checks=None):
-    from anna.knowledge.repository import Context
+    from anna.knowledge.context import Context
     from anna.catalog.references import ReviewContext
     from anna.review.store import KNOWLEDGE_OPERATIONS
     old_events, _ = load_events(saved_log)

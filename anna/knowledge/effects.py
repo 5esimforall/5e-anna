@@ -1,22 +1,9 @@
 """Queryable effect rows retain one subject and one local effect, never a mixed summary."""
 import json
-from anna.knowledge.conditions import local_references, condition_terms, ABILITIES
-from anna.knowledge.values import DAMAGE_TYPES
-from anna.knowledge.model import ACTIONS, EFFECT_KINDS, effect_usage
+from anna.knowledge.query_schema import EFFECT_QUERY_VALUES as QUERY_VALUES
+from anna.knowledge.conditions import local_references, condition_terms
+from anna.knowledge.model import effect_usage
 
-QUERY_VALUES={
-    'effect':EFFECT_KINDS,
-    'damage_type':tuple(DAMAGE_TYPES.values()),
-    'delivery':('attack_roll','saving_throw','automatic','not_stated'),
-    'timing':('immediate','ongoing','repeat','cumulative','not_stated'),
-    'save_ability':(*ABILITIES,'not_stated'),
-    'trigger':('attack_result','save_result','turn','damage_received','wake_action','outside_spell_range','cover','action_spent','requires_sleep','condition_immunity','check_total','concentration_duration','creature_type','event_ref','armor_worn','dismiss'),
-    'end_trigger':('turn','spell_ends','damage_from','magic_removal'),
-    'target_scope':('single','area','not_stated'),
-    'use_action':ACTIONS,
-    'cumulative_result':('success','failure'),
-}
-QUERY_PARAMETERS={'cumulative_count'}
 COLUMNS=('id','subject_id','effect_id','effect','damage_type','delivery','timing','save_ability','target_scope','use_action')
 
 

@@ -8,9 +8,9 @@ import tempfile
 import unittest
 from anna.source.pages import read_page
 from anna.source.html import Document
-from anna.server.layout import entry_layout, render
+from anna.presentation.layout import entry_layout, render
 import anna.paths as paths
-from anna.server.query import DB,connect
+from anna.presentation.catalog import DB, connect
 
 ALLOWED_CLASSES={'note','inferred','short','ref'}
 
@@ -127,7 +127,7 @@ class CorpusLayoutTests(unittest.TestCase):
         located=[n['located'] for n in layout['notes']]
         self.assertEqual(located,sorted(located,reverse=True));self.assertIn(False,located)
     def test_spell_header_lines_form_a_card_and_text_starts_after_the_title(self):
-        from anna.server.query import detail
+        from anna.presentation.catalog import detail
         eid=self.entry('spell','Toll the Dead','5r');layout=entry_layout(self.db,eid,paths.WEB)
         self.assertEqual(re.findall(r'<dt>(?:<mark[^>]*>)?([^<]+)',layout['html']),['施法时间','施法距离','法术成分','持续时间'])
         self.assertNotIn('Toll the Dead',layout['html'])

@@ -1,0 +1,188 @@
+{
+  "source": {
+    "topics/contract.htm": "<html><body><h2 id=\"Alpha\">甲 Alpha</h2><p>一环防护。😀 <b>反应</b>。</p><table><tr><td>甲</td><td>乙</td></tr></table></body></html>"
+  },
+  "sql": [
+    "BEGIN TRANSACTION;",
+    "CREATE TABLE effective_references(id,page_path,start,end,data);",
+    "INSERT INTO \"effective_references\" VALUES('ref','topics/contract.htm',17,19,'{\"id\": \"ref\", \"target_id\": \"ver_reaction\", \"start\": 17, \"end\": 19}');",
+    "CREATE TABLE entries(id,data);",
+    "INSERT INTO \"entries\" VALUES('ver_contract','{\"id\": \"ver_contract\", \"name\": \"甲 Alpha\", \"name_zh\": \"甲\", \"name_en\": \"Alpha\", \"type\": \"spell\", \"page_path\": \"topics/contract.htm\", \"start\": 0, \"title_end\": 10, \"end\": 27, \"anchors\": [\"Alpha\"], \"fields\": {\"spell_level\": 1}}');",
+    "CREATE TABLE facts(id,entry_id,field,value,evidence,rule,status);",
+    "INSERT INTO \"facts\" VALUES('fact','ver_contract','spell_level','1','{\"path\": \"topics/contract.htm\", \"span\": [10, 12]}','fixture','原文明示');",
+    "CREATE TABLE pages(path,text,sha256);",
+    "INSERT INTO \"pages\" VALUES('topics/contract.htm','\n甲 Alpha\n\n一环防护。😀 反应。\n\n\n甲乙\n\n','066c673e8c4e54986a64db4d5b754f2e5cf33abcb6a1dad4bf84a28848cd29d3');",
+    "COMMIT;"
+  ],
+  "entry": {
+    "id": "ver_contract",
+    "name": "甲 Alpha",
+    "name_zh": "甲",
+    "name_en": "Alpha",
+    "type": "spell",
+    "page_path": "topics/contract.htm",
+    "start": 0,
+    "title_end": 10,
+    "end": 27,
+    "anchors": [
+      "Alpha"
+    ],
+    "fields": {
+      "spell_level": 1
+    }
+  },
+  "navigation": {
+    "schema": 6,
+    "nodes": [
+      {
+        "id": "page_b495a0682a5029b6",
+        "parent_id": "",
+        "label": "contract",
+        "path": "topics/contract.htm",
+        "fragment": "",
+        "status": "present"
+      }
+    ],
+    "default_page": "topics/contract.htm",
+    "pages": {
+      "topics/contract.htm": {
+        "title": "contract",
+        "definitions": [
+          {
+            "id": "ver_contract",
+            "name": "甲 Alpha",
+            "fragment": "anna-ver_contract",
+            "locatable": true
+          }
+        ]
+      }
+    },
+    "presentation_resources": [],
+    "source_release": null,
+    "snapshot": "fixture-snapshot"
+  },
+  "manifest": {
+    "entries": {
+      "ver_contract": {
+        "path": "topics/contract.htm",
+        "fragment": "anna-ver_contract",
+        "locatable": true
+      }
+    }
+  },
+  "layout": {
+    "status": "ok",
+    "path": "topics/contract.htm",
+    "html": "<p><mark class=\"note\" data-notes=\"spell_level\">一环</mark>防护。😀 <strong><button type=\"button\" class=\"ref\" data-entry=\"ver_reaction\">反应</button></strong>。</p><table><tbody><tr><td class=\"short\">甲</td><td class=\"short\">乙</td></tr></tbody></table>",
+    "notes": [
+      {
+        "field": "spell_level",
+        "status": "原文明示",
+        "located": true
+      }
+    ]
+  },
+  "payload": {
+    "definitions": [
+      {
+        "id": "ver_contract",
+        "name": "甲 Alpha",
+        "body": {
+          "a": [
+            [
+              0,
+              0
+            ],
+            0
+          ],
+          "b": [
+            [
+              2,
+              0,
+              0,
+              1,
+              0
+            ],
+            1
+          ],
+          "text": "甲 Alpha一环防护。😀 反应。甲乙"
+        },
+        "title": {
+          "a": [
+            [
+              0,
+              0
+            ],
+            0
+          ],
+          "b": [
+            [
+              0,
+              0
+            ],
+            7
+          ],
+          "text": "甲 Alpha"
+        }
+      }
+    ],
+    "references": [
+      {
+        "id": "ver_reaction",
+        "reference_id": "ref",
+        "range": {
+          "a": [
+            [
+              1,
+              1,
+              0
+            ],
+            0
+          ],
+          "b": [
+            [
+              1,
+              1,
+              0
+            ],
+            2
+          ],
+          "text": "反应"
+        }
+      }
+    ],
+    "reader": {
+      "snapshot": "fixture-snapshot",
+      "presentation_resources": []
+    }
+  },
+  "linked_html": "<html><body><h2 id=\"Alpha\">甲 Alpha</h2><p>一环防护。😀 <b>反应</b>。</p><table><tr><td>甲</td><td>乙</td></tr></table></body></html><!-- anna-link-layer --><script type=\"application/json\" id=\"anna-bindings\">{\"definitions\":[{\"id\":\"ver_contract\",\"name\":\"\\u7532 Alpha\",\"body\":{\"a\":[[0,0],0],\"b\":[[2,0,0,1,0],1],\"text\":\"\\u7532 Alpha\\u4e00\\u73af\\u9632\\u62a4\\u3002\\ud83d\\ude00 \\u53cd\\u5e94\\u3002\\u7532\\u4e59\"},\"title\":{\"a\":[[0,0],0],\"b\":[[0,0],7],\"text\":\"\\u7532 Alpha\"}}],\"references\":[{\"id\":\"ver_reaction\",\"reference_id\":\"ref\",\"range\":{\"a\":[[1,1,0],0],\"b\":[[1,1,0],2],\"text\":\"\\u53cd\\u5e94\"}}],\"reader\":{\"snapshot\":\"fixture-snapshot\",\"presentation_resources\":[]}}</script><script charset=\"utf-8\" src=\"/book/anna-assets/link-labels.js\"></script><script charset=\"utf-8\" src=\"/book/anna-assets/links.js\"></script><script charset=\"utf-8\" src=\"/book/anna-assets/topic.js\"></script><!-- /anna-link-layer -->",
+  "page": {
+    "snapshot": "fixture-snapshot",
+    "path": "topics/contract.htm",
+    "fragment": "",
+    "title": "contract",
+    "definitions": [
+      {
+        "id": "ver_contract",
+        "name": "甲 Alpha",
+        "fragment": "anna-ver_contract",
+        "locatable": true
+      }
+    ]
+  },
+  "definition": {
+    "snapshot": "fixture-snapshot",
+    "path": "topics/contract.htm",
+    "fragment": "anna-ver_contract",
+    "title": "contract",
+    "definitions": [
+      {
+        "id": "ver_contract",
+        "name": "甲 Alpha",
+        "fragment": "anna-ver_contract",
+        "locatable": true
+      }
+    ]
+  }
+}

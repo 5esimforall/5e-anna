@@ -14,9 +14,10 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from anna.server.linked_book import BOOK, fingerprint
 from anna.paths import WEB
-from anna.server.reader import SCHEMA, ReaderError, page_data
+from anna.presentation.reader import SCHEMA, ReaderError, page_data
 from anna.review.store import load_events
 import anna.server.query as serve
+from anna.presentation import catalog
 import anna.source.search as search
 
 
@@ -213,9 +214,9 @@ class AnnaHandler(serve.Handler):
             elif url.path == '/api/reader-page':
                 if any(len(v) != 1 for v in params.values()):
                     raise ReaderError('invalid_location', 400)
-                self.send(page_data(self.current.reader, self.current.manifest, path=serve.first(params, 'path'), entry=serve.first(params, 'entry')))
+                self.send(page_data(self.current.reader, self.current.manifest, path=catalog.first(params, 'path'), entry=catalog.first(params, 'entry')))
             else:
-                if len(serve.first(params, 'keyword')) > 2000:
+                if len(catalog.first(params, 'keyword')) > 2000:
                     raise ReaderError('invalid_search', 400)
                 self.send(search.search_entries(self.search_entries, params))
         except ReaderError as exc:
@@ -305,7 +306,7 @@ def create_server(db, book, manifest, port, watch=False, bundle=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8000)
-    parser.add_argument('--db', type=Path, default=serve.DB)
+    parser.add_argument('--db', type=Path, default=catalog.DB)
     parser.add_argument('--book', type=Path, default=BOOK)
     parser.add_argument('--source', type=Path, default=WEB)
     parser.add_argument('--watch', action='store_true', help='swap in a rebuilt bundle without restarting')

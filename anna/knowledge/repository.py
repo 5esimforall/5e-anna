@@ -13,28 +13,18 @@ from anna.knowledge.casting import parse_access, GRANT
 from anna.knowledge.levels import parse_table_access, feature_access
 from anna.knowledge.values import evidence
 from anna.knowledge.model import SCHEMA, KINDS, rule_value, validate_structure
-from anna.catalog.concepts import Resolver, aliases
-from anna.source.html import key
 from anna.serialization import canonical, digest
+from anna.source.html import key
 from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events, append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS
 from anna.paths import PROJECT
+from anna.knowledge.context import Context, walk_targets, nested_values
+from anna.knowledge.inspection import inspect
 from anna.knowledge.conditions import ABILITIES, CLASSES, validate_conditions, condition_terms, conjunction
 from anna.knowledge.spells import parse_spell
-from anna.knowledge.effects import QUERY_VALUES as EFFECT_QUERY_VALUES, QUERY_PARAMETERS as EFFECT_QUERY_PARAMETERS, build_effect_index, audit_effect_index
+from anna.knowledge.effects import build_effect_index, audit_effect_index
 
 ACCESS_TYPES = {'feat', 'class_feature', 'species', 'magic_item', 'reward'}
 REVIEW_OPERATIONS = KNOWLEDGE_OPERATIONS
-QUERY_VALUES = {
-    'query_subject': ('provider','spell','entry'),
-    'mode': ('known', 'prepared', 'cast', 'list'),
-    'resource': ('slot_free', 'spell_slot', 'not_stated'),
-    'recovery': ('long_rest', 'short_rest', 'short_or_long_rest', 'not_stated'),
-    'selection': ('fixed', 'choice'),
-    'access_condition': ('level','class_level','ability_score','class','campaign','requirement','item_state','option_selected'),
-    'casting_target': ('self','not_stated'),
-    **EFFECT_QUERY_VALUES,
-}
-ACCESS_QUERY_FIELDS={'mode','resource','recovery','selection','access_condition','casting_target'}
 
 
 def exists(db):
@@ -44,110 +34,6 @@ def exists(db):
 def is_knowledge(event):
     return event['operation'] in REVIEW_OPERATIONS
 
-
-class Context:
-    def __init__(self, db):
-        self.entries = {e['id']: e for raw, in db.execute('SELECT data FROM entries') for e in [json.loads(raw)]}
-        self.pages = dict(db.execute('SELECT path,text FROM pages'))
-        present={r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        self.tables=[json.loads(r[0]) for r in db.execute('SELECT data FROM raw_tables')] if 'raw_tables' in present else []
-        self.class_links=[{'subject_id':r[0],'object_id':r[1],'evidence':json.loads(r[2])} for r in db.execute("SELECT subject_id,object_id,evidence FROM relations WHERE predicate='belongs_to_class' ORDER BY subject_id,object_id,evidence")] if 'relations' in present else []
-        self.sources = [json.loads(raw) for raw, in db.execute('SELECT data FROM sources')]
-        self.source_by_id = {s['id']: s for s in self.sources}
-        self.resolver = Resolver(list(self.entries.values()), self.sources)
-        self.spell_names = defaultdict(set)
-        for e in self.entries.values():
-            if e['type']=='spell':
-                for n in aliases(e):
-                    if len(n)>1: self.spell_names[n].add(e['id'])
-        self.name_pattern = re.compile('|'.join(re.escape(n) for n in sorted(self.spell_names,key=lambda n:(-len(n),n))),re.IGNORECASE) if self.spell_names else None
-
-    def class_owner(self, entry):
-        ids=set();seen=set();current=entry
-        while current and current['id'] not in seen:
-            seen.add(current['id'])
-            if current['type']=='class':ids.add(current['id'])
-            ids.update(r['object_id'] for r in self.class_links if r['subject_id']==current['id'])
-            current=self.entries.get(current.get('parent_id'))
-        if len(ids)!=1:return None
-        owner=self.entries.get(next(iter(ids)))
-        return owner if owner and owner['type']=='class' and owner['ruleset']==entry['ruleset'] and owner['name_zh'] in CLASSES else None
-
-    def resolve(self, entry, name, kind):
-        return self.resolver.resolve(name, kind, entry['page_path'], entry['title_end'],
-            scope={'source_ids':entry['source_ids'], 'ruleset':entry['ruleset']})
-
-    def mentions(self, entry):
-        if not self.name_pattern:return []
-        text=self.pages[entry['page_path']];out=[];prior=None
-        for m in self.name_pattern.finditer(text,entry['title_end'],entry['end']):
-            if m[0].isascii() and ((m.start() and text[m.start()-1].isascii() and text[m.start()-1].isalpha()) or (m.end()<len(text) and text[m.end()].isascii() and text[m.end()].isalpha())):continue
-            result=self.resolve(entry,m[0],'spell')
-            # Adjacent bilingual names are one reference, not two grants.
-            if prior and not text[prior['evidence']['span'][1]:m.start()].strip() and set(result['targets'])==set(prior['resolution']['targets']):
-                prior['evidence']=evidence(entry['page_path'],text,prior['evidence']['span'][0],m.end());continue
-            prior={'kind':'entry','name':m[0],'resolution':result,'evidence':evidence(entry['page_path'],text,m.start(),m.end())}
-            out.append(prior)
-        return out
-
-    def choice_options(self, entry, target, restrictions=None):
-        constraints=target['constraints'];levels=constraints.get('levels')
-        if not levels or entry['ruleset'] not in {'5e','5r'}:return []
-        classes=constraints.get('class_list',{}).get('values',[])
-        if restrictions and restrictions.get('class_list'):
-            classes=[c for c in classes if c in restrictions['class_list']]
-            if not classes:return []
-        schools=constraints.get('schools',[])
-        import anna.catalog.views as browse
-        options=[]
-        for e in self.entries.values():
-            if e['type']!='spell' or e['ruleset']!=entry['ruleset']:continue
-            # Membership is evidenced by spell-list fields, in the relevant source or
-            # the recorded core dependency, never by global name uniqueness.
-            same=set(e['source_ids']) & set(entry['source_ids'])
-            core=any(self.source_by_id.get(s,{}).get('reference_role')=='core_rules' and
-                     self.source_by_id[s]['ruleset_hint']==entry['ruleset'] for s in e['source_ids'])
-            trusted=all(self.source_by_id.get(s,{}).get('ruleset_hint')==entry['ruleset'] for s in entry['source_ids'])
-            if not same and not (core and trusted):continue
-            if not set(map(str,levels)) & set(browse.normalized(e['fields'],'spell_level')):continue
-            if schools and not set(schools) & set(browse.normalized(e['fields'],'school')):continue
-            if classes and not set(classes) & set(browse.normalized(e['fields'],'spell_classes')):continue
-            options.append(e['id'])
-        return sorted(options)
-
-    def basis(self, record):
-        entry=self.entries[record['subject_id']]
-        ids=set(record.get('dependencies',[]))
-        ids.add(entry['id'])
-        if any(t.get('owner_id') for t in nested_values(record['value'])):
-            parent=self.entries.get(entry.get('parent_id'));seen=set()
-            while parent and parent['id'] not in seen:
-                seen.add(parent['id']);ids.add(parent['id']);parent=self.entries.get(parent.get('parent_id'))
-        def definition(e):
-            return {k:e.get(k) for k in ('id','name','name_en','name_zh','type','ruleset','source_ids','parent_id','fields','page_path','start','title_end','end')} | {
-                'body_sha256':digest(self.pages[e['page_path']][e['start']:e['end']])}
-        source_ids={s for i in ids if i in self.entries for s in self.entries[i]['source_ids']}
-        return {'schema':SCHEMA,'record':record,
-            'definitions':{i:definition(self.entries[i]) if i in self.entries else None for i in sorted(ids)},
-            'class_ownership':[r for r in self.class_links if r['subject_id'] in ids],
-            'sources':{s:{k:self.source_by_id.get(s,{}).get(k) for k in ('name','ruleset_hint','reference_role','origin','archived')} for s in sorted(source_ids)}}
-
-
-def walk_targets(value):
-    if isinstance(value,dict):
-        if 'resolution' in value:yield value
-        for k,v in value.items():
-            if k!='resolution_evidence':yield from walk_targets(v)
-    elif isinstance(value,list):
-        for v in value:yield from walk_targets(v)
-
-
-def nested_values(value):
-    if isinstance(value,dict):
-        yield value
-        for item in value.values():yield from nested_values(item)
-    elif isinstance(value,list):
-        for item in value:yield from nested_values(item)
 
 
 def validate_record(record, context):
@@ -470,7 +356,7 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
             review={'id':'knowledge_review_'+r['event']['id'],'target':r['event']['binding']['subject_id'],
                     'reason':'knowledge_decision_'+r['status'],'priority':'high','detail':r,'evidence':r['event']['binding']}
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)',(review['id'],review['target'],review['reason'],review['priority'],canonical(review)))
-    from anna.knowledge.reading import build_rule_index
+    from anna.knowledge.rule_index import build_rule_index
     build_rule_index(db,effective)
     build_effect_index(db,effective)
     count=0
@@ -507,7 +393,7 @@ def audit_knowledge(db, folder):
     expected={r['id']:r for r in branches(context,records)}
     actual={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM casting_options')}
     if expected!=actual:errors.append('casting_options: projection mismatch')
-    from anna.knowledge.reading import rule_rows
+    from anna.knowledge.rule_index import rule_rows
     expected_rules={r['id']:r for r in rule_rows(records)}
     rule_columns=('id','source_id','target_id','relation','status')
     actual_rules={r[0]:dict(zip(rule_columns,r[:-1]))|{'data':json.loads(r[-1])}
@@ -529,104 +415,6 @@ def knowledge_diff(before, after):
         if a!=b:changes.append({'id':rid,'change':'added' if a is None else 'removed' if b is None else 'changed','before':a,'after':b})
     return changes
 
-
-def casting_query(raw):
-    try:query=json.loads(raw) if isinstance(raw,str) else raw
-    except (ValueError,TypeError) as exc:raise ValueError('Invalid casting query') from exc
-    if not isinstance(query,dict) or not query or any(k not in {*QUERY_VALUES,*EFFECT_QUERY_PARAMETERS,'spell'} for k in query):raise ValueError('Invalid casting query fields')
-    for k,v in query.items():
-        if k=='spell':
-            if not isinstance(v,str) or not v.strip() or len(v)>200:raise ValueError('Invalid spell search')
-        elif k=='cumulative_count':
-            if type(v) is not int or not 1<=v<=1000000:raise ValueError('Invalid cumulative count')
-        elif v not in QUERY_VALUES[k]:raise ValueError('Invalid casting query value')
-    if query.get('query_subject') in {'spell','entry'} and ACCESS_QUERY_FIELDS & query.keys():
-        raise ValueError('Direct queries cannot contain provider conditions')
-    return query
-
-
-def casting_condition(raw, alias='e'):
-    query=casting_query(raw);clauses=[];values=[];effects=[];effect_values=[];thresholds=[];threshold_values=[]
-    for k,v in query.items():
-        if k=='query_subject':continue
-        if k in {'cumulative_result','cumulative_count'}:
-            thresholds.append("json_extract(th.value,'$."+('result' if k=='cumulative_result' else 'count')+"')=?")
-            threshold_values.append(v);continue
-        if k in EFFECT_QUERY_VALUES:
-            effects.append('EXISTS(SELECT 1 FROM json_each(ef.data,\'$.'+k+'s\') WHERE value=?)' if k in {'trigger','end_trigger'} else 'ef.'+k+'=?')
-            effect_values.append(v);continue
-        if k=='spell':clauses.append('instr(lower('+alias+'.name),lower(?))>0' if query.get('query_subject') in {'spell','entry'} else 'EXISTS(SELECT 1 FROM entries s WHERE s.id=c.spell_id AND instr(lower(s.name),lower(?))>0)')
-        elif k=='access_condition':clauses.append("EXISTS(SELECT 1 FROM json_each(c.data,'$.condition_kinds') WHERE value=?)")
-        elif k=='casting_target':clauses.append("json_extract(c.data,'$.casting_target')=?")
-        else:clauses.append('c.'+k+'=?')
-        values.append(v)
-    if thresholds:
-        effects.append("EXISTS(SELECT 1 FROM json_each(ef.data,'$.thresholds') th WHERE "+' AND '.join(thresholds)+')')
-        effect_values.extend(threshold_values)
-    if effects:
-        spell=alias+'.id' if query.get('query_subject') in {'spell','entry'} else 'c.spell_id'
-        clauses.append('EXISTS(SELECT 1 FROM rule_effect_index ef WHERE ef.subject_id='+spell+' AND '+' AND '.join(effects)+')');values.extend(effect_values)
-    if query.get('query_subject') in {'spell','entry'}:
-        direct=[alias+".type='spell'"] if query['query_subject']=='spell' else []
-        direct+=clauses
-        # With no semantic predicate this is a discovery scope, not a claim that
-        # every procedure is complete. Effect predicates still use only valid rows.
-        if query['query_subject']=='entry':
-            direct.append("EXISTS(SELECT 1 FROM effective_knowledge k WHERE k.subject_id="+alias+".id AND k.kind='procedure')")
-        return '('+' AND '.join(direct)+')',values
-    if not clauses:return alias+'.id IN(SELECT root_id FROM casting_options)',values
-    return alias+'.id IN(SELECT c.root_id FROM casting_options c WHERE '+' AND '.join(clauses)+')',values
-
-
-def chain(db, entry_id, spell_id=None, reading_path=None, effect_id=None):
-    if not exists(db):return {'schema':SCHEMA,'records':[],'nodes':[],'options':[],'incoming':[]}
-    if not db.execute('SELECT 1 FROM entries WHERE id=?',(entry_id,)).fetchone():raise LookupError('Entry not found')
-    subject_ids={entry_id};options=[]
-    # Group identical grants and branches; choice domains do not duplicate the whole UI.
-    grouped={}
-    for raw, in db.execute('SELECT data FROM casting_options WHERE root_id=? ORDER BY subject_id,id',(entry_id,)):
-        option=json.loads(raw);key_=(option['subject_id'],option['grant_id'],option['branch_id'],canonical(option['acquisition_steps']))
-        if key_ not in grouped:grouped[key_]={k:v for k,v in option.items() if k not in {'id','spell_id'}}|{'spell_ids':[]}
-        grouped[key_]['spell_ids'].append(option['spell_id']);subject_ids.add(option['subject_id'])
-    options=list(grouped.values())
-    subject_ids.update(s['subject_id'] for o in options for s in o['acquisition_steps'])
-    available={i for o in options for i in o['spell_ids']}
-    fixed={i for o in options if o['selection']=='fixed' for i in o['spell_ids']}
-    if spell_id is not None and spell_id not in available:raise ValueError('Spell is not an effective option of this chain')
-    selected=spell_id or (next(iter(fixed)) if len(fixed)==1 else None)
-    if selected:subject_ids.add(selected)
-    records=[]
-    for sid in sorted(subject_ids):
-        records.extend(json.loads(raw) for raw, in db.execute('SELECT data FROM effective_knowledge WHERE subject_id=? ORDER BY kind',(sid,)))
-    target_ids={i for o in options for i in o['spell_ids']}
-    for r in records:
-        for target in walk_targets(r['value']):target_ids.update(target['resolution']['targets'])
-    # Definition links are shared effective references, not a second name resolver.
-    references=[]
-    if db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():
-        for sid in sorted(subject_ids):
-            e=db.execute('SELECT page_path,start,end FROM entries WHERE id=?',(sid,)).fetchone()
-            if e:
-                for rid,tid,raw in db.execute("SELECT r.id,r.target_id,r.data FROM effective_references r JOIN entries t ON t.id=r.target_id WHERE r.page_path=? AND r.start>=? AND r.end<=? AND r.status='resolved' AND t.type IN ('rule','action','condition','ability','skill')",tuple(e)):
-                    references.append({'reference_id':rid,'target_id':tid,'evidence':json.loads(raw).get('evidence',{})});target_ids.add(tid)
-    nodes=[]
-    for eid in sorted(subject_ids|target_ids):
-        r=db.execute('SELECT id,name,type,ruleset,page_path,start,end FROM entries WHERE id=?',(eid,)).fetchone()
-        if r:nodes.append(dict(zip(('id','name','type','ruleset','page_path','start','end'),r)))
-    incoming=[{'entry_id':r[0],'name':r[1],'ruleset':r[2]} for r in db.execute('SELECT DISTINCT e.id,e.name,e.ruleset FROM casting_options c JOIN entries e ON e.id=c.root_id WHERE c.spell_id=? ORDER BY e.name,e.id',(entry_id,))]
-    if reading_path is None and spell_id:
-        paths={tuple([entry_id]+[s['target_id'] for s in o['acquisition_steps']]+[spell_id]) for o in options if spell_id in o['spell_ids']}
-        if len(paths)==1:reading_path=list(next(iter(paths)))
-    from anna.knowledge.reading import reading
-    return reading(db,entry_id,{'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected},reading_path,effect_id)
-
-
-def inspect(db, rid):
-    row=db.execute('SELECT data FROM rule_knowledge WHERE id=?',(rid,)).fetchone()
-    if not row:raise ValueError('Knowledge record not found')
-    record=json.loads(row[0]);context=Context(db);basis=context.basis(record)
-    effective=db.execute('SELECT data FROM effective_knowledge WHERE id=?',(rid,)).fetchone()
-    return {'observation':record,'effective':json.loads(effective[0]),'basis':basis,'basis_sha256':digest(basis)}
 
 
 def save(db,path,rid,operation,expected_basis,reviewer,reason,supersedes=None):
@@ -661,7 +449,9 @@ def main():
         else:
             with sqlite3.connect(args.db.resolve().as_uri()+'?mode=ro',uri=True) as db:
                 if args.command=='inspect':result=inspect(db,args.id)
-                elif args.command=='chain':result=chain(db,args.id)
+                elif args.command=='chain':
+                    from anna.presentation.knowledge import chain
+                    result=chain(db,args.id)
                 elif args.command=='list':
                     if not 1<=args.limit<=300:raise ValueError('Limit must be between 1 and 300')
                     filters=[];values=[]

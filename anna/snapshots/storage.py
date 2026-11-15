@@ -256,11 +256,12 @@ def save_tables(db, descriptors, objects, tmp):
 def projection_rows(db, name):
     records = [json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge ORDER BY id')]
     if name == 'casting_options':
-        from anna.knowledge.repository import Context, branches
+        from anna.knowledge.context import Context
+        from anna.knowledge.repository import branches
         for r in branches(Context(db), records):
             yield tuple(r[k] for k in ('id', 'root_id', 'subject_id', 'spell_id', 'mode', 'resource', 'recovery', 'selection')) + (canonical(r),)
     elif name == 'knowledge_rule_links':
-        from anna.knowledge.reading import rule_rows
+        from anna.knowledge.rule_index import rule_rows
         for r in rule_rows(records):
             yield tuple(r[k] for k in ('id', 'source_id', 'target_id', 'relation', 'status')) + (json.dumps(r, ensure_ascii=False),)
     elif name == 'rule_effect_index':

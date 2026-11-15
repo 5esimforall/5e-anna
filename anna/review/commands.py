@@ -9,7 +9,8 @@ import sys
 
 from anna.paths import PROJECT
 from anna.review.search import search_candidates
-from anna.catalog.references import ReviewContext, query_decisions, query_references, query_missing_definitions
+from anna.catalog.references import ReviewContext
+from anna.presentation.references import query_decisions, query_references, query_missing_definitions
 from anna.serialization import digest
 from anna.review.store import DEFAULT_DECISIONS, append_event, append_events, lifecycle, load_events, locked, require_appendable, input_snapshot
 

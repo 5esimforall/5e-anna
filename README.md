@@ -28,12 +28,13 @@ Python 实现集中在 `anna/`，用包导入表达依赖；`scripts/` 只保存
 | --- | --- |
 | `anna/source/` | 原文解码、HTML 与表格结构、来源名录、盘点及全文搜索 |
 | `anna/catalog/` | 条目分类与构建、概念和引用、查询视图、命令行查询及审计 |
-| `anna/knowledge/` | 规则陈述模型、条件与数值、施法／特性／等级提取、有效知识与沿链阅读 |
+| `anna/knowledge/` | 规则陈述模型、条件与数值、施法／特性／等级提取、有效知识、依赖依据与索引生成 |
 | `anna/review/` | 审核日志、候选检索与审核命令 |
 | `anna/compare/` | 5etools 对照与规则链语义核对 |
 | `anna/snapshots/` | 紧凑快照、恢复、来源对应、迁移比较及启用门禁 |
 | `anna/datalog/` | Soufflé 调用、来源绑定、证明与报告；本地化资源随报告模块维护 |
-| `anna/server/` | 统一 HTTP 服务、查询处理、阅读模型、原文排版与链接版生成 |
+| `anna/presentation/` | 只读查询、规则链与阅读模型、原文排版及显式响应投影；[消费契约](anna/presentation/README.md)独立于提取实现 |
+| `anna/server/` | 统一 HTTP 传输、快照发布校验与链接版生成 |
 | `anna/paths.py`、`anna/serialization.py` | 项目路径、确定性序列化与导出格式 |
 | `rules/` | 有证据的规则库、关系 schema 和场景数据；与执行机制分开 |
 | `scripts/` | 图标导出、生成产物清理等离线维护脚本，不承载应用入口或领域模块 |

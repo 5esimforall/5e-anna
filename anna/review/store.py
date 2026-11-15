@@ -23,7 +23,7 @@ def pipeline_hash():
 # Bump when the meaning of stored review dependencies changes, not for UI edits.
 REVIEW_SEMANTICS_VERSION = 1
 EXTRACTION_MODULES = ('serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py', 'catalog/types.py', 'source/registry.py', 'source/tables.py',
-                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/casting.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/reading.py', 'knowledge/spells.py', 'knowledge/checks.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py', 'knowledge/features.py', 'knowledge/levels.py')
+                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/casting.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py', 'knowledge/inspection.py', 'knowledge/query_schema.py', 'knowledge/spells.py', 'knowledge/checks.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py', 'knowledge/features.py', 'knowledge/levels.py')
 
 
 def extraction_hash():

@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from anna.server.reader import build_navigation, source_release, content_file, strip_reader_scripts, WINCHM_NAVIGATION
+from anna.presentation.reader import build_navigation, source_release, content_file, strip_reader_scripts, WINCHM_NAVIGATION
 from anna.source.html import Document
 from anna.server.linked_book import text_slice
 

@@ -8,7 +8,10 @@ from anna.knowledge.features import parse_feature
 from anna.knowledge.model import SCHEMA, rule_value, validate_structure
 from anna.knowledge.conditions import validate_conditions
 from anna.knowledge.values import quantity_expression
-from anna.knowledge.repository import Context, record_for, chain, casting_condition, inspect, save, audit_knowledge, validate_record
+from anna.knowledge.context import Context
+from anna.knowledge.repository import record_for, save, audit_knowledge, validate_record
+from anna.presentation.knowledge import chain, casting_condition
+from anna.knowledge.inspection import inspect
 from anna.serialization import canonical, digest
 from anna.review.store import append_event, load_events
 from anna.review.commands import revoke

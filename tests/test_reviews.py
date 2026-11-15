@@ -8,7 +8,8 @@ import unittest
 from anna.catalog.concepts import build_concepts
 from anna.source.html import Document
 from anna.server.linked_book import build_book, fingerprint, MARKER
-from anna.catalog.references import build_references, query_references, query_decisions, query_missing_definitions
+from anna.catalog.references import build_references
+from anna.presentation.references import query_references, query_decisions, query_missing_definitions
 from anna.review.search import search_candidates
 from anna.review.commands import inspect, save, save_batch, revoke
 from anna.review.store import append_event, load_events, locked, pipeline_hash, extraction_hash, require_current

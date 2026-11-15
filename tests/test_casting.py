@@ -6,7 +6,9 @@ import unittest
 from anna.knowledge.casting import parse_access
 from anna.knowledge.values import evidence, quantity_expression
 from anna.knowledge.spells import parse_spell
-from anna.knowledge.repository import Context, record_for, branches, casting_condition, casting_query
+from anna.knowledge.context import Context
+from anna.knowledge.repository import record_for, branches
+from anna.presentation.knowledge import casting_condition, casting_query
 
 
 def feature(body):
@@ -222,7 +224,7 @@ class CorpusCastingTests(unittest.TestCase):
             self.assertEqual([x['kind'] for x in value['effects']],case['kinds']);self.assertFalse(value['unparsed'])
 
     def test_background_constraints_survive_the_complete_chain(self):
-        from anna.knowledge.repository import chain
+        from anna.presentation.knowledge import chain
         cases=json.loads((Path(__file__).parent/'fixtures/casting-chains.json').read_text())
         for case in cases['acquisition']:
             root=next(e for e in self.context.entries.values() if e['name_zh']==case['name'] and e['page_path']==case['path'])

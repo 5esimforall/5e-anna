@@ -112,7 +112,7 @@ DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class CorpusSequenceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from anna.knowledge.repository import Context
+        from anna.knowledge.context import Context
         cls.db=sqlite3.connect(DB.resolve().as_uri()+'?mode=ro',uri=True);cls.ctx=Context(cls.db)
     @classmethod
     def tearDownClass(cls):cls.db.close()

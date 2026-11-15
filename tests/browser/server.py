@@ -19,7 +19,7 @@ import anna.server.app as up
 import anna.source.search as search
 
 PORT=int(os.environ.get('ANNA_E2E_PORT','18380'))
-DB=Path(os.environ.get('ANNA_E2E_DB',up.serve.DB)).resolve()
+DB=Path(os.environ.get('ANNA_E2E_DB',up.catalog.DB)).resolve()
 BOOK=Path(os.environ.get('ANNA_E2E_BOOK',BOOK)).resolve()
 
 

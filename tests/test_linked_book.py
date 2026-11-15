@@ -8,7 +8,7 @@ import unittest
 from anna.source.html import Document
 from anna.review.store import load_events
 from anna.server.linked_book import text_slice,inject,build_book,fingerprint,MARKER
-from anna.server.reader import build_navigation,page_data,ReaderError
+from anna.presentation.reader import build_navigation,page_data,ReaderError
 
 class DOMBindingTests(unittest.TestCase):
     def test_offsets_unicode_whitespace_and_markup(self):

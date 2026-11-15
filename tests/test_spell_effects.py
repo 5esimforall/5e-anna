@@ -130,7 +130,7 @@ DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 class CorpusEffectTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        from anna.knowledge.repository import Context
+        from anna.knowledge.context import Context
         cls.db=sqlite3.connect(DB.resolve().as_uri()+'?mode=ro',uri=True);cls.context=Context(cls.db)
     @classmethod
     def tearDownClass(cls):cls.db.close()
@@ -145,7 +145,7 @@ class CorpusEffectTests(unittest.TestCase):
                 self.assertEqual(parse_spell(renamed,self.context.pages[e['page_path']]),value)
 
     def test_acquisition_reaches_ongoing_use_and_scoped_exception(self):
-        from anna.knowledge.repository import chain,casting_condition
+        from anna.presentation.knowledge import chain, casting_condition
         root=next(e for e in self.context.entries.values() if e['name_zh']=='智者' and e['ruleset']=='5r')
         witch=next(e for e in self.context.entries.values() if e.get('name_en')=='Witch Bolt' and e['ruleset']=='5r' and e['type']=='spell')
         result=chain(self.db,root['id'],witch['id']);record=next(r for r in result['records'] if r['subject_id']==witch['id'] and r['kind']=='procedure')

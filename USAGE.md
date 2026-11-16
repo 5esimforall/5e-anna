@@ -247,7 +247,7 @@ make build
 .venv/bin/python -m anna.review.commands decisions --status conflict
 ```
 
-重放结果保存于 `review_decisions` 表及 `data/extracted/review_decisions.jsonl`；失效、消失和冲突同步进入 `review_queue`。`reference_coverage.json` 汇总有效语义、审核和点击层状态。只读 API 提供 `/api/references`（支持 `id`、`path`、`signal`、`status`、`review_status`、`limit`、`offset`）及 `/api/review-decisions`（支持 `status`、`limit`、`offset`）。
+重放结果保存于 `review_decisions` 表及 `data/extracted/review_decisions.jsonl`；失效、消失和冲突同步进入 `review_queue`。`reference_coverage.json` 汇总有效语义、审核和点击层状态。
 
 审核日志尚未重放时，`make linked` 和新启动的 `make up` 会拒绝使用旧审核快照；已经运行的查询仍展示其构建快照，`/api/meta` 的 `review_snapshot.pending_rebuild` 提示有待重建输入。构建替换数据库或链接版后，运行中的服务拒绝继续混用产物，必须重启。
 

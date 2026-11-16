@@ -49,6 +49,29 @@ def compact(s):
     return re.sub(r'\s+', ' ', str(s)).strip()
 
 
+def format_kind(tag):
+    """Require a uniform mark across the whole occurrence, not just one styled child."""
+    kinds=set()
+    for node in tag.find_all(string=True):
+        if not str(node).strip():continue
+        ancestors=list(node.parents);boundary=next(i for i,p in enumerate(ancestors) if p is tag)
+        inner=any(p.name in {'em','i'} for p in ancestors[:boundary])
+        outer=any(p.name in {'em','i'} for p in ancestors[boundary+1:])
+        bold=any(p.name in {'b','strong'} for p in ancestors)
+        kinds.add('ambiguous' if sum((inner,outer,bold))>1 else
+                  'creature' if bold else 'spell' if inner else 'magic_item' if outer else 'concept')
+    return kinds.pop() if len(kinds)==1 else 'ambiguous'
+
+
+def format_tag_paths(tag):
+    paths=[]
+    for node in tag.find_all(string=True):
+        if str(node).strip():
+            path=[p.name for p in reversed(list(node.parents)) if p.name in {'u','em','i','b','strong'}]
+            if path not in paths:paths.append(path)
+    return paths
+
+
 def key(s):
     return re.sub(r'[\W_]+','',unicodedata.normalize('NFKC',s).casefold())
 
@@ -352,6 +375,47 @@ class Document:
         a,b=self.span(tag)
         return self.text[a:b]
     def close(self):self.soup.decompose()
+
+    def dom_snapshot(self):
+        """Extract all DOM signals needed by downstream concept and link analyzers in one pass."""
+        anchors={a:[list(self.span(t)) for t in tags] for a,tags in self.anchors.items()}
+        body_links=[{'href':a['href'],'span':list(self.span(a)),'link_text':compact(a.get_text(' ',strip=True))}
+                    for a in self.body.find_all('a',href=True)]
+        stylesheets=[]
+        for link in self.soup.find_all('link',href=True):
+            dest=resolve_link(self.path,link['href'])
+            if 'stylesheet' not in link.get('rel',[]) or not dest:continue
+            if dest[0] not in stylesheets:stylesheets.append(dest[0])
+        u_marks=[]
+        for tag in self.body.find_all('u'):
+            a,b=self.span(tag)
+            u_marks.append({
+                'span':[a,b],
+                'kind':format_kind(tag),
+                'has_parent_u':bool(tag.find_parent('u')),
+                'in_explicit_parent':bool(tag.find_parent('a',href=True)),
+                'has_explicit_child':bool(tag.find('a',href=True)),
+                'in_example':any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents),
+                'tag_paths':format_tag_paths(tag),
+                'markup':str(tag),
+            })
+        concept_tables=[]
+        for ti,table in enumerate(self.tables()):
+            if table['tag'].find_parent('table'):continue
+            if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in table['tag'].parents):continue
+            rows=table['rows']
+            header=next((r for r in rows[:4] if r['cell_tags'] and all(t=='th' for t in r['cell_tags'])),rows[0])
+            headers=[compact(h) for h in header['cells']]
+            cells=[]
+            for ri,row in enumerate(rows[1:],1):
+                if row['cell_tags'] and all(t=='th' for t in row['cell_tags']):continue
+                for ci,cell_span in enumerate(row['cell_spans']):
+                    cells.append([ri,ci,cell_span[0],cell_span[1]])
+            concept_tables.append({'index':ti,'span':list(table['span']),'headers':headers,'cells':cells})
+        non_prose_spans=[list(self.span(t)) for t in self.elements
+                         if t.name in {'table','blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class',[]))]
+        return {'anchors':anchors,'body_links':body_links,'stylesheets':stylesheets,
+                'u_marks':u_marks,'concept_tables':concept_tables,'non_prose_spans':non_prose_spans}
 
     def tables(self):
         out=[]

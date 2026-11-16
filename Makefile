@@ -12,7 +12,7 @@ ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status index clean build inventory test audit check up upper linked test-unit test-browser browser-setup icons
+.PHONY: usage clone update status index clean build test audit check up upper linked test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -73,9 +73,6 @@ icons:
 build: clone icons
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build --5etools "$(5ETOOLS_PATH)"
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
-
-inventory: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.inventory
 
 test: test-unit test-browser
 

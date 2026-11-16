@@ -6,7 +6,21 @@ import re
 from urllib.parse import urlsplit,unquote
 
 from anna.source.html import compact,key,digest,Document,split_name
-from anna.source.inventory import Toc,clean,bucket
+from anna.source.pages import Toc,clean
+
+# 来源分桶是物理路径分区，不把文件夹名冒充正式书名。
+SPLIT = {'第三方', '模组', 'DNDBeyond', '其他', '被遗忘的国度'}
+SPLIT2 = {'其他/新UA', '其他/beyond drops', '其他/异界传送Plane Shift', '其他/穆克', '第三方/鬼魅幽谷', '第三方/瓦尔达的秘密尖塔'}
+EXCLUDE = {'速查', '速查 - 副本 - 副本', 'Generator', 'template', 'template2', '空白页模板', '格式转换工具包', '鸣谢'}
+
+def bucket(rel):
+    p = rel.parts
+    if len(p) == 1 or p[0] in EXCLUDE:
+        return None
+    n = 2 if p[0] in SPLIT and len(p)>2 else 1
+    if '/'.join(p[:2]) in SPLIT2 and len(p)>3:
+        n = 3
+    return '/'.join(p[:n])
 
 CONTAINERS={'本书速查','模组相关','电子资源','纸质出版物','电子出版物','破解奥秘UA','空际远坠Drop','穆克系列','鬼魅幽谷','德拉肯海姆','瓦尔达的秘密尖塔','谦卑林','异界传送系列','怪物纲要系列'}
 WORLD_WORDS=['被遗忘的国度','艾伯伦','拉尼卡','荒洲','塞洛斯','鸦阁','斯翠海文','克莱恩','塔尔多雷','德拉肯海姆','谦卑林','胧忆岛','鬼魅幽谷']

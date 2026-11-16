@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name
+from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,format_kind,key,resolve_link,split_name
 from anna.catalog.types import RULE_TYPES
 
 def aliases(entry):
@@ -20,19 +20,6 @@ def aliases(entry):
     if not names:return []
     zh,en=split_name(names[0])
     return list(dict.fromkeys(names+[n for n in (zh,en) if n]))
-
-def format_kind(tag):
-    """Require a uniform mark across the whole occurrence, not just one styled child."""
-    kinds=set()
-    for node in tag.find_all(string=True):
-        if not str(node).strip():continue
-        ancestors=list(node.parents);boundary=next(i for i,p in enumerate(ancestors) if p is tag)
-        inner=any(p.name in {'em','i'} for p in ancestors[:boundary])
-        outer=any(p.name in {'em','i'} for p in ancestors[boundary+1:])
-        bold=any(p.name in {'b','strong'} for p in ancestors)
-        kinds.add('ambiguous' if sum((inner,outer,bold))>1 else
-                  'creature' if bold else 'spell' if inner else 'magic_item' if outer else 'concept')
-    return kinds.pop() if len(kinds)==1 else 'ambiguous'
 
 def style_profile(source,relative_path='topics/style.css'):
     """Read the source's documented convention; a changed/missing rule is not trusted."""
@@ -50,14 +37,8 @@ def style_profile(source,relative_path='topics/style.css'):
         rules[kind]={'selectors':sorted(selectors),'declarations':compact(m[2]),'annotation':comment}
     return {'id':'source_underline_v1','path':relative_path,'sha256':sha256(raw).hexdigest(),'rules':rules,'supported':len(rules)==len(expected)}
 
-def format_evidence(tag,profile,linked):
-    # Ordered paths preserve outer/inner nesting and partial or conflicting markup.
-    paths=[]
-    for node in tag.find_all(string=True):
-        if str(node).strip():
-            path=[p.name for p in reversed(list(node.parents)) if p.name in {'u','em','i','b','strong'}]
-            if path not in paths:paths.append(path)
-    return {'tag_paths':paths,'markup':str(tag),'profile_id':profile['id'] if profile and linked else None,
+def format_evidence(tag_paths,markup,profile,linked):
+    return {'tag_paths':tag_paths,'markup':markup,'profile_id':profile['id'] if profile and linked else None,
             'stylesheet_path':profile['path'] if profile and linked else None,
             'stylesheet_sha256':profile['sha256'] if profile and linked else None}
 
@@ -336,7 +317,7 @@ class Resolver:
         if competitors:return pending('plain_competing_kind','ambiguous',[target_id,*competitors]),evidence
         return resolution,evidence
 
-def build_concepts(db,source,out,entries,pages,sources=()):
+def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
     resolver=Resolver(entries,sources);observations=[];definition_ids={e['id'] for e in entries if e['type'] in RULE_TYPES or e.get('table_span') and e['type']=='lore'}
     def observe(path,a,b,label,signal,kind,targets=(),reason='',status=None,role='mention',evidence=None,resolution_evidence=None):
         targets=sorted(set(targets));status=status or ('resolved' if len(targets)==1 else 'ambiguous' if targets else 'unresolved')
@@ -345,6 +326,15 @@ def build_concepts(db,source,out,entries,pages,sources=()):
              'target_id':targets[0] if status=='resolved' else None,'candidates':targets}
         if resolution_evidence:row['evidence']['resolution']=resolution_evidence
         observations.append(row);return row
+    from anna.source.pages import read_page
+    def page_dom(path):
+        if dom_by_path and path in dom_by_path:
+            return pages[path]['text'],dom_by_path[path]
+        doc=Document(path,read_page(Path(source)/path)[0])
+        try:
+            return doc.text,doc.dom_snapshot()
+        finally:
+            doc.close()
     # Walk the actual navigation subtree, not a directory-name heuristic.
     quick_paths=set();toc=Path(source)/'webhelpcontents.htm'
     if toc.exists():
@@ -360,17 +350,15 @@ def build_concepts(db,source,out,entries,pages,sources=()):
     # Every explicit link in a glossary/quickref registry gets an outcome, even broken anchors.
     registry_paths={p for p in pages if '术语速查' in p or '词条精通速查' in p}
     registry_paths|=quick_paths
-    from anna.source.pages import read_page
     for path in sorted(registry_paths):
-        doc=Document(path,read_page(Path(source)/path)[0])
-        for a in doc.body.find_all('a',href=True):
-            dest=resolve_link(path,a['href'])
+        _,dom=page_dom(path)
+        for link in dom['body_links']:
+            dest=resolve_link(path,link['href'])
             if not dest or not dest[0].startswith('topics/'):continue
             ids=resolver.locator(*dest)
             if not dest[1]:ids=[e['id'] for e in resolver.pages.get(dest[0],[]) if e.get('is_primary') and e['type']!='section']
-            row=observe(path,*doc.span(a),compact(a.get_text(' ',strip=True)),'index','entry',ids,'explicit_locator',role='index',evidence={'href':a['href'],'target_path':dest[0],'fragment':dest[1]})
+            row=observe(path,*link['span'],link['link_text'],'index','entry',ids,'explicit_locator',role='index',evidence={'href':link['href'],'target_path':dest[0],'fragment':dest[1]})
             if row['status']=='resolved':resolver.indexed.add(row['target_id'])
-        doc.close()
     terms={n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
     scan_terms=term_scanner(terms) if terms else None
     table_terms={n for e in entries if e['type'] in TABLE_REFERENCE_TYPES for n in aliases(e) if len(n)>=2}
@@ -387,15 +375,11 @@ def build_concepts(db,source,out,entries,pages,sources=()):
     profiles={};page_coverage=[];discovery_inputs={'webhelpcontents.htm'}
     for path,page in sorted(pages.items()):
         if page.get('parse_status')!='ok':continue
-        doc=Document(path,read_page(Path(source)/path)[0]);occupied=[doc.span(t) for t in doc.body.find_all('a',href=True)]
+        page_text,dom=page_dom(path);occupied=[tuple(link['span']) for link in dom['body_links']]
         titles=[(e['start'],e['title_end']) for e in resolver.pages[path]]
         def in_title(a,b):return any(x<=a and b<=y for x,y in titles)
-        stylesheet_paths=[]
-        for link in doc.soup.find_all('link',href=True):
-            dest=resolve_link(path,link['href'])
-            if 'stylesheet' not in link.get('rel',[]) or not dest:continue
-            css_path=dest[0]
-            if css_path not in stylesheet_paths:stylesheet_paths.append(css_path)
+        stylesheet_paths=list(dom['stylesheets'])
+        for css_path in stylesheet_paths:
             discovery_inputs.add(css_path)
             if css_path not in profiles:profiles[css_path]=style_profile(source,css_path)
         supported=[profiles[p] for p in stylesheet_paths if profiles[p] and profiles[p]['supported']]
@@ -404,109 +388,101 @@ def build_concepts(db,source,out,entries,pages,sources=()):
         # A named object defined inside a subfeature points to that subfeature's rule paragraph.
         # This is a scoped definition binding, not a global alias for an external item.
         if trusted:
-            for tag in doc.body.find_all('u'):
-                a,b=doc.span(tag);kind=format_kind(tag)
-                if kind not in {'magic_item','spell','creature'} or tag.find_parent('a',href=True):continue
-                if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents):continue
+            for mark in dom['u_marks']:
+                a,b=mark['span'];kind=mark['kind']
+                if kind not in {'magic_item','spell','creature'} or mark['in_explicit_parent'] or mark['in_example']:continue
                 owners=[e for e in resolver.pages[path] if e.get('boundary_rule')=='feature_inline_heading' and e['title_end']<=a<b<=e['end']]
                 if not owners:continue
                 owner=min(owners,key=lambda e:e['end']-e['start'])
-                if not re.search(r'(?:名为|称为|称作)[“「\s]*$',doc.text[max(owner['title_end'],a-50):a]):continue
+                if not re.search(r'(?:名为|称为|称作)[“「\s]*$',page_text[max(owner['title_end'],a-50):a]):continue
                 # A naming phrase must be followed by an object description, not just a comparison.
-                if not re.match(r'[”」]?的(?:魔法)?(?:容器|物品|武器|护甲|法术|生物)',doc.text[b:b+30]):continue
-                label=compact(doc.text[a:b]);zh,en=split_name(label)
+                if not re.match(r'[”」]?的(?:魔法)?(?:容器|物品|武器|护甲|法术|生物)',page_text[b:b+30]):continue
+                label=compact(page_text[a:b]);zh,en=split_name(label)
                 parent=resolver.entries.get(owner.get('parent_id'),owner)
                 record={'id':'local_def_'+digest(path,a,b),'path':path,'name':label,'kind':kind,
                     'name_keys':sorted({key(n) for n in (label,zh,en) if n}),
                     'span':[a,b],'definition_id':owner['id'],'scope':[parent['start'],parent['end']],
                     'scope_entry_id':parent['id'],'rule':'named_object_in_subfeature'}
                 resolver.local_definitions[path].append(record)
-        for tag in doc.body.find_all('u'):
-            if tag.find_parent('u'):continue
+        for mark in dom['u_marks']:
+            if mark['has_parent_u']:continue
             marked+=1
-            a,b=doc.span(tag);occupied.append((a,b));label=compact(doc.text[a:b]);kind=format_kind(tag)
-            evidence=format_evidence(tag,profile,linked)
+            a,b=mark['span'];occupied.append((a,b));label=compact(page_text[a:b]);kind=mark['kind']
+            evidence=format_evidence(mark['tag_paths'],mark['markup'],profile,linked)
             evidence['stylesheets']=[{'path':p,'sha256':profiles[p]['sha256'] if profiles[p] else None,'supported':bool(profiles[p] and profiles[p]['supported'])} for p in stylesheet_paths]
             evidence['format_mark_id']='mark_'+digest(path,a,b)
             evidence['format_mark_span']=[a,b]
             if in_title(a,b):observe(path,a,b,label,'format',kind,reason='definition_title',status='excluded',role='definition',evidence=evidence);continue
-            if tag.find_parent('a',href=True) or tag.find('a',href=True):
+            if mark['in_explicit_parent'] or mark['has_explicit_child']:
                 observe(path,a,b,label,'format',kind,reason='explicit_link',status='excluded',role='explicit_reference',evidence=evidence);continue
-            if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents):
+            if mark['in_example']:
                 observe(path,a,b,label,'format',kind,reason='example_context',status='review',role='example',evidence=evidence);continue
-            spans=reference_spans(doc.text,a,b,kind,resolver) if trusted and kind!='ambiguous' else [(a,b)]
+            spans=reference_spans(page_text,a,b,kind,resolver) if trusted and kind!='ambiguous' else [(a,b)]
             for start,end in spans:
                 part_evidence=dict(evidence)
                 if len(spans)>1:part_evidence['segmentation']='verified_name_list'
                 if not trusted:resolution={'reason':'unknown_style','status':'review'}
                 elif kind=='ambiguous':resolution={'reason':'mixed_format','status':'review'}
-                else:resolution=resolver.resolve(compact(doc.text[start:end]),kind,path,start)
-                observe(path,start,end,compact(doc.text[start:end]),'format',kind,**resolution,evidence=part_evidence)
+                else:resolution=resolver.resolve(compact(page_text[start:end]),kind,path,start)
+                observe(path,start,end,compact(page_text[start:end]),'format',kind,**resolution,evidence=part_evidence)
         # A class table cell that is only a list of class-feature names is a reference-bearing
         # structure of its own, like a rules-use clause in prose. Existing links, format marks and
         # definition titles win, and a cell containing prose or an unknown item stays out.
         if table_scan:
-            for ti,table in enumerate(doc.tables()):
-                if table['tag'].find_parent('table'):continue
-                if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in table['tag'].parents):continue
-                rows=table['rows'];header=next((r for r in rows[:4] if r['cell_tags'] and
-                    all(tag=='th' for tag in r['cell_tags'])),rows[0])
-                headers=[compact(h) for h in header['cells']]
-                for ri,row in enumerate(rows[1:],1):
-                    if row['cell_tags'] and all(tag=='th' for tag in row['cell_tags']):continue
-                    for ci,cell_span in enumerate(row['cell_spans']):
-                        ca,cb=cell_span;text=doc.text[ca:cb]
-                        if not text.strip():continue
-                        if any(ca < te and ts < cb for ts,te in titles):continue
-                        if any(ca < ob and oa < cb for oa,ob in occupied):continue
-                        names=table_cell_names(text,table_scan)
-                        if not names:continue
-                        linked=[]
-                        for a,b,label in names:
-                            resolution=resolver.resolve(label,'concept',path,ca+a,types=TABLE_REFERENCE_TYPES)
-                            if resolution['status']=='resolved':linked.append((a,b,label,resolution))
-                        if not linked:continue
-                        merged=[]
-                        for a,b,label,resolution in linked:
-                            if merged and merged[-1][3]['targets']==resolution['targets'] and not text[merged[-1][1]:a].strip():
-                                merged[-1]=(merged[-1][0],b,text[merged[-1][0]:b],merged[-1][3])
-                            else:merged.append((a,b,label,resolution))
-                        for a,b,label,resolution in merged:
-                            evidence={'table':{'id':'tbl_'+digest(path,ti),'span':list(table['span']),
-                                'cell_span':[ca,cb],'row':ri,'column':ci,'headers':headers,
-                                'cell_text':compact(text)},'resolution_reason':resolution['reason']}
-                            if resolution.get('resolution_evidence'):evidence['resolution']=resolution['resolution_evidence']
-                            observe(path,ca+a,ca+b,label,'table','concept',role='mention',evidence=evidence,**resolution)
-                        occupied.append((ca,cb))
+            for table in dom['concept_tables']:
+                headers=table['headers']
+                for ri,ci,ca,cb in table['cells']:
+                    text=page_text[ca:cb]
+                    if not text.strip():continue
+                    if any(ca < te and ts < cb for ts,te in titles):continue
+                    if any(ca < ob and oa < cb for oa,ob in occupied):continue
+                    names=table_cell_names(text,table_scan)
+                    if not names:continue
+                    linked=[]
+                    for a,b,label in names:
+                        resolution=resolver.resolve(label,'concept',path,ca+a,types=TABLE_REFERENCE_TYPES)
+                        if resolution['status']=='resolved':linked.append((a,b,label,resolution))
+                    if not linked:continue
+                    merged=[]
+                    for a,b,label,resolution in linked:
+                        if merged and merged[-1][3]['targets']==resolution['targets'] and not text[merged[-1][1]:a].strip():
+                            merged[-1]=(merged[-1][0],b,text[merged[-1][0]:b],merged[-1][3])
+                        else:merged.append((a,b,label,resolution))
+                    for a,b,label,resolution in merged:
+                        evidence={'table':{'id':'tbl_'+digest(path,table['index']),'span':table['span'],
+                            'cell_span':[ca,cb],'row':ri,'column':ci,'headers':headers,
+                            'cell_text':compact(text)},'resolution_reason':resolution['reason']}
+                        if resolution.get('resolution_evidence'):evidence['resolution']=resolution['resolution_evidence']
+                        observe(path,ca+a,ca+b,label,'table','concept',role='mention',evidence=evidence,**resolution)
+                    occupied.append((ca,cb))
         page_coverage.append({'path':path,'book':path.split('/')[1],'profile_applies':trusted,'format_count':marked})
         # Unclassified boundaries and definitional prose remain visible as candidates, not invented definitions.
         for e in resolver.pages[path]:
             if e['type']=='section' and e['title_end']>e['start']:
                 observe(path,e['start'],e['title_end'],e['name'],'heading','concept',reason='unclassified_definition',status='review',role='definition_candidate')
-        for m in re.finditer(r'(?:称为|称作|定义为)[“「]?([^。；\n”」]{2,24})',doc.text):
+        for m in re.finditer(r'(?:称为|称作|定义为)[“「]?([^。；\n”」]{2,24})',page_text):
             observe(path,m.start(1),m.end(1),m[1],'definition_phrase','concept',reason='semantic_candidate',status='review',role='definition_candidate')
         if scan_terms:
             covered=overlap_check(occupied+titles)
-            non_prose=overlap_check(doc.span(t) for t in doc.elements if t.name in {'table','blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class',[])))
+            non_prose=overlap_check(tuple(s) for s in dom['non_prose_spans'])
             previous=None
-            for m in scan_terms(doc.text):
+            for m in scan_terms(page_text):
                 a,b=m.span()
                 if covered(a,b):continue
-                if m[0].isascii() and ((a and re.match(r'[A-Za-z0-9_]',doc.text[a-1])) or (b<len(doc.text) and re.match(r'[A-Za-z0-9_]',doc.text[b]))):continue
-                syntax=plain_syntax(doc.text,a,b,previous)
+                if m[0].isascii() and ((a and re.match(r'[A-Za-z0-9_]',page_text[a-1])) or (b<len(page_text) and re.match(r'[A-Za-z0-9_]',page_text[b]))):continue
+                syntax=plain_syntax(page_text,a,b,previous)
                 resolution,evidence=resolver.resolve_plain(m[0],path,a,b,syntax,non_prose(a,b))
                 # A longer name defined only in the other rules generation (2014 力量检定 in 2024 text) yields to the
                 # longest name inside it that this generation defines.
                 if resolution['reason']=='ruleset_mismatch':
-                    for end in shorter_names(doc.text,a,b):
-                        inner_syntax=plain_syntax(doc.text,a,end,previous)
-                        inner,inner_evidence=resolver.resolve_plain(doc.text[a:end],path,a,end,inner_syntax,non_prose(a,end))
+                    for end in shorter_names(page_text,a,b):
+                        inner_syntax=plain_syntax(page_text,a,end,previous)
+                        inner,inner_evidence=resolver.resolve_plain(page_text[a:end],path,a,end,inner_syntax,non_prose(a,end))
                         if inner['status']!='resolved':continue
                         inner_evidence['longer_name']={'text':m[0],'span':[a,b],'resolution_reason':resolution['reason']}
                         b,syntax,resolution,evidence=end,inner_syntax,inner,inner_evidence;break
                 if resolution['status']=='resolved':previous=(b,syntax['slot'])
-                observe(path,a,b,doc.text[a:b],'plain','concept',**resolution,evidence=evidence)
-        doc.close()
+                observe(path,a,b,page_text[a:b],'plain','concept',**resolution,evidence=evidence)
     db.executescript('''
     CREATE TABLE concepts(id TEXT PRIMARY KEY,definition_id TEXT UNIQUE REFERENCES entries(id),identity_status TEXT NOT NULL,data TEXT NOT NULL);
     CREATE TABLE concept_observations(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table')),status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),target_id TEXT REFERENCES entries(id),data TEXT NOT NULL);

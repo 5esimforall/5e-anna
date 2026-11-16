@@ -64,7 +64,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual('--watch' in result.stdout, command == 'upper')
 
     def test_paths_independent_of_cwd_and_environment_override(self):
-        code = 'import anna.paths as paths, anna.catalog.build as build, anna.source.inventory as inventory, anna.source.search as book_search; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == inventory.WEB == book_search.WEB'
+        code = 'import anna.paths as paths, anna.catalog.build as build, anna.source.search as book_search; print(str(paths.WEB)); assert paths.WEB == build.DEFAULT_WEB == book_search.WEB'
         with tempfile.TemporaryDirectory() as td:
             env = dict(os.environ, PYTHONPATH=str(PROJECT))
             env.pop('WEB_DIR', None)
@@ -137,7 +137,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
-        for command in ('up', 'upper', 'build', 'index', 'inventory'):
+        for command in ('up', 'upper', 'build', 'index'):
             result = self.make(PROJECT, '-n', command)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('git pull', result.stdout)
@@ -148,7 +148,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_removed_commands_are_gone(self):
         # make up is the sole HTTP service entry; the query module has no standalone server.
-        for command in ('serve','open'):
+        for command in ('serve','open','inventory'):
             result=self.make(PROJECT,'-n',command)
             self.assertNotEqual(result.returncode,0)
         self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())

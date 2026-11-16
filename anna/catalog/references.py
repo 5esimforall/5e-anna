@@ -122,27 +122,35 @@ def reference(observation):
     return ref
 
 
-def discover_originals(source, context):
+def discover_originals(source, context, dom_by_path=None):
     """Read original links once; the book exporter no longer has a separate resolver."""
     from anna.source.pages import read_page
     links = defaultdict(list)
     anchors = {}
     for path, page in sorted(context.pages.items()):
         if not page['text']: continue
-        doc = Document(path, read_page(Path(source)/path)[0])
-        if doc.text != page['text']: raise ValueError('原文文本与数据库不一致：'+path)
-        anchors[path] = {name: [doc.span(tag)[0] for tag in tags] for name, tags in doc.anchors.items()}
+        if dom_by_path and path in dom_by_path:
+            dom = dom_by_path[path]
+            text = page['text']
+        else:
+            doc = Document(path, read_page(Path(source)/path)[0])
+            try:
+                if doc.text != page['text']: raise ValueError('原文文本与数据库不一致：'+path)
+                dom = doc.dom_snapshot()
+                text = doc.text
+            finally:
+                doc.close()
+        anchors[path] = {name: [s[0] for s in spans] for name, spans in dom['anchors'].items()}
         occurrences = Counter()
-        for tag in doc.body.find_all('a', href=True):
-            dest = resolve_link(path, tag['href'])
+        for link in dom['body_links']:
+            dest = resolve_link(path, link['href'])
             if not dest or not dest[0].startswith('topics/'): continue
-            a, b = doc.span(tag)
+            a, b = link['span']
             occurrence = occurrences[(a,b)]; occurrences[(a,b)] += 1
             links[path].append({'id': 'reference_'+digest([path, a, b, 'explicit', occurrence])[:24],
-                'path': path, 'start': a, 'end': b, 'text': compact(doc.text[a:b]),
+                'path': path, 'start': a, 'end': b, 'text': compact(text[a:b]),
                 'signal': 'explicit', 'kind': 'entry', 'role': 'explicit_reference',
-                'evidence': {'href': tag['href'], 'target_path': dest[0], 'fragment': dest[1]}})
-        doc.close()
+                'evidence': {'href': link['href'], 'target_path': dest[0], 'fragment': dest[1]}})
     for path, rows in links.items():
         for row in rows:
             destination = row['evidence']['target_path']; fragment = row['evidence']['fragment']
@@ -249,14 +257,14 @@ def presentation(refs, context, path):
         if ref['id'] in conflicts: ref.update(can_link=False, presentation='overlapping_references')
 
 
-def build_references(db, source, out, decision_path=DEFAULT_DECISIONS):
+def build_references(db, source, out, decision_path=DEFAULT_DECISIONS, dom_by_path=None):
     events, log_hash = load_events(decision_path)
     states = lifecycle(events)
     all_event_count = len(events)
     reference_ids = {e['id'] for e in events if e['operation'] != 'revoke'}
     events = [e for e in events if e['id'] in reference_ids or e['operation']=='revoke' and e['decision_id'] in reference_ids]
     context = ReviewContext(db)
-    originals = discover_originals(source, context)
+    originals = discover_originals(source, context, dom_by_path=dom_by_path)
     by_page = defaultdict(list)
     results = {}
     for event in events:

@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from pathlib import PurePosixPath
 
 from anna.source.html import resolve_link
-from anna.source.inventory import Toc
+from anna.source.pages import Toc
 
 SCHEMA = 6
 

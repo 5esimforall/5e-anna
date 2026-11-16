@@ -86,11 +86,12 @@ def parse_one(args):
         raw,encoding,h=read_page(Path(web)/path)
         page.update(encoding=encoding,sha256=h)
         if page['role'] in {'excluded_template_or_copy','editorial'}:
-            page['parse_status']='excluded';return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'issues':[]}
+            page['parse_status']='excluded';return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'issues':[]}
         doc=Document(path,raw)
         page.update(title=doc.title,text=doc.text)
+        dom=doc.dom_snapshot()
         if page['role']=='index':
-            out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'issues':[]}
+            out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':dom['anchors'],'dom':dom,'issues':[]}
             doc.close();return out
         cs=doc.candidates(observations)
         mark_class_regions(cs,doc.text)
@@ -170,15 +171,15 @@ def parse_one(args):
             target=resolve_link(path,a['href'])
             if target and target[0].startswith('topics/'):
                 links.append({'label':compact(a.get_text(' ',strip=True)), 'target_path':target[0],'target_anchor':target[1],'span':doc.span(a)})
-        anchors={a:[list(doc.span(t)) for t in tags] for a,tags in doc.anchors.items()}
+        anchors=dom['anchors']
         issues=list(table_issues)
         for a,spans in anchors.items():
             if len(spans)>1:issues.append({'reason':'duplicate_anchor','detail':a,'span':spans[0]})
-        out={'page':page,'candidates':output,'tables':tables,'links':links,'anchors':anchors,'issues':issues}
+        out={'page':page,'candidates':output,'tables':tables,'links':links,'anchors':anchors,'dom':dom,'issues':issues}
         doc.close();return out
     except Exception as e:
         page.update(parse_status='error',error=f'{type(e).__name__}: {e}')
-        return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'issues':[]}
+        return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'issues':[]}
 
 
 class Build:
@@ -186,7 +187,7 @@ class Build:
         self.web=web.resolve()
         self.registry=SourceRegistry(web)
         self.sources=self.registry.sources
-        self.pages={};self.entries=[];self.facts=[];self.relations=[];self.tables=[];self.reviews=[]
+        self.pages={};self.dom_by_path={};self.entries=[];self.facts=[];self.relations=[];self.tables=[];self.reviews=[]
         self.page_entries=defaultdict(list);self.locators=defaultdict(set);self.observations=[];self.ob_by_id={};self.ob_targets=defaultdict(list)
         self.anchor_spans={};self.raw_links=[]
         self.entry_by_id={};self.printed={}
@@ -242,6 +243,8 @@ class Build:
         page.update(source_ids=owners,source_method=method,toc_nodes=[n['node_id'] for n in self.registry.page_toc.get(path,[])])
         page['characters']=len(page['text'])
         self.pages[path]=page
+        if result.get('dom') is not None:
+            self.dom_by_path[path]=result['dom']
         if page['parse_status']=='error':
             self.review(path,'parse_error',page['error'],priority='high');return
         if page['role']!='document':return
@@ -587,9 +590,9 @@ class Build:
             db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         for name,(where,_) in EXTRA_VIEWS.items():db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         from anna.catalog.concepts import build_concepts
-        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources)
+        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path)
         from anna.catalog.references import build_references
-        reference_coverage=build_references(db,self.web,out,decision_path)
+        reference_coverage=build_references(db,self.web,out,decision_path,dom_by_path=self.dom_by_path)
         from anna.knowledge.repository import build_knowledge
         knowledge_coverage=build_knowledge(db,out,annotations_path=annotations_path)
         counterpart_coverage=None

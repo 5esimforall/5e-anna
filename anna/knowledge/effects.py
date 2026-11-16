@@ -30,12 +30,54 @@ def target_scope(effect,by_id,saves):
     return 'area' if target.get('kind')=='area' else 'single' if target.get('count')==1 else 'not_stated'
 
 
-def effect_rows(records):
+def resolved_effect_ids(record, *, entry_wide=False):
+    """Identify locally valid effects; transitive local references fail closed."""
+    if record['kind'] != 'procedure':
+        return set()
+    effects = record['value'].get('effects', [])
+    if entry_wide:
+        return {e['id'] for e in effects} if record['status'] == 'resolved' else set()
+    if record['status'] not in {'resolved', 'partial'}:
+        return set()
+    value = record['value']
+    if value.get('prerequisites', {}).get('status') == 'unparsed':
+        return set()
+    if (value.get('activation') or {}).get('status') == 'unparsed':
+        return set()
+    competing = {
+        (g['evidence']['path'], tuple(g['evidence']['span']))
+        for g in value.get('unparsed', [])
+        if g.get('reason') == 'competing_sequence_threshold' and g.get('evidence', {}).get('span')
+    }
+    valid = {
+        e['id']
+        for e in effects
+        if e.get('initial_attack_result') != 'not_stated'
+        and (e['evidence']['path'], tuple(e['evidence']['span'])) not in competing
+    }
+    changed = True
+    while changed:
+        changed = False
+        for e in effects:
+            if e['id'] not in valid:
+                continue
+            for _, ref in local_references(e):
+                tid = ref.get('effect_id')
+                if not tid or tid not in valid:
+                    valid.remove(e['id'])
+                    changed = True
+                    break
+    return valid
+
+
+def effect_rows(records, *, entry_wide=False):
     for record in records:
-        if record['kind']!='procedure' or record['status']!='resolved':continue
+        if record['kind']!='procedure':continue
+        allowed=resolved_effect_ids(record, entry_wide=entry_wide)
+        if not allowed:continue
         by_id={e['id']:e for e in record['value']['effects']}
         for effect in record['value']['effects']:
-            if effect['kind'] not in QUERY_VALUES['effect']:continue
+            if effect['id'] not in allowed or effect['kind'] not in QUERY_VALUES['effect']:continue
             refs=[r for _,r in local_references(effect)]
             delivery=effect.get('delivery')
             if not delivery:

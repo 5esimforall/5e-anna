@@ -2,7 +2,7 @@
 
 ## 统一命令
 
-以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 只转调其已列出的常用命令，不维护另一套实现；`baseline`、`migration`、`datalog` 和 `icons` 在本项目中执行。
+以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 只转调其已列出的常用命令，不维护另一套实现；`baseline`、`migration` 和 `icons` 在本项目中执行。
 
 | 命令 | 用途 |
 | --- | --- |
@@ -20,7 +20,6 @@
 | `make test-unit` / `make test-browser` | 分别运行单元测试 / 浏览器回归 |
 | `make browser-setup` | 安装锁定的 Node 依赖与 Chromium，首次运行浏览器测试前执行 |
 | `make audit` | 审计数据库与导出文件 |
-| `make datalog` | 绑定原文证据，运行 Soufflé 通则与场景验收，生成溯源报告 |
 | `make check` | 运行测试与审计 |
 | `make update` | 显式拉取原文与 5etools-cn 更新并重建搜索索引；之后运行 `make build` 更新数据 |
 | `make status` | 查看原文、5etools-cn 版本与搜索索引状态 |
@@ -49,9 +48,9 @@ make check
 
 ## 清理与重建
 
-清理前停止正在运行的 anna 服务，然后执行 `make clean`。命令直接删除 `data/`、`output/`、`.cache/`、`.venv/`、`node_modules/`、中断构建目录、Python 缓存和由人物原图导出的界面图标，不备份，也不遍历指向项目外的符号链接。`assets/branding/` 原图、`rules/` 规则库和 `reviews/` 现行审核输入保留。历史比较数据按需整体删除 `baselines/`；普通清理不会删除尚在使用的比较基准。
+清理前停止正在运行的 anna 服务，然后执行 `make clean`。命令直接删除 `data/`、`output/`、`.cache/`、`.venv/`、`node_modules/`、中断构建目录、Python 缓存和由人物原图导出的界面图标，不备份，也不遍历指向项目外的符号链接。`assets/branding/` 原图、`annotations/` 结构化标注和 `reviews/` 现行审核输入保留。历史比较数据按需整体删除 `baselines/`；普通清理不会删除尚在使用的比较基准。
 
-清理后按上节重新安装依赖，执行 `make build` 恢复图标、查询库与链接版；`make datalog` 恢复溯源报告，`make index` 恢复全文索引。只有运行浏览器测试才需要 `make browser-setup`。生成文件和历史测试报告不提交 Git。
+清理后按上节重新安装依赖，执行 `make build` 恢复图标、查询库与链接版，`make index` 恢复全文索引。只有运行浏览器测试才需要 `make browser-setup`。生成文件和历史测试报告不提交 Git。
 
 ## 整理基准与迁移核对
 
@@ -370,24 +369,6 @@ make build
 
 5etools-cn 的中文数据采用 CC BY-NC-SA 4.0。对照结果用于本机核对；若对外发布包含其中文内容的派生数据，需署名、非商用并以相同许可共享。
 
-### 第一批规则链语义对照
-
-条目对应之后，可以继续核对法术、等级、选择域、施法属性和资源表达。在 anna 目录运行：
-
-```sh
-.venv/bin/python -m anna.compare.semantics
-# 指定既有数据库、两个只读镜像和报告输出前缀
-.venv/bin/python -m anna.compare.semantics \
-  --db data/extracted/catalog.sqlite --source ../5echm-web \
-  --5etools ../5etools-cn --output output/counterpart-semantics
-```
-
-默认生成 [Markdown 报告](data/extracted/counterpart_semantics.md)和[完整 JSON](data/extracted/counterpart_semantics.json)。报告覆盖 PHB14 精灵亚种、PHB14／24 牧师领域法术、两代魔法学徒及 PHB24 侍僧／向导／智者、DMG14／24 魔法飞弹魔杖／火球魔杖／治愈法杖。它独立于 `make build`，只读已有数据库，不下载镜像、不改变有效规则或审核日志；缺少构建快照时先运行 `make build`。
-
-每个维度分别列出一致、结构化值分歧、anna 尚未表达、外部字段不足、外部结构暂不支持或对应范围待核。JSON 保留双方值、原文码点范围、外部 JSON Pointer、输入文件哈希、解析和审核状态。部分解析记录的局部一致不能计作整条链已支持；名称相同但范围未确认时只列候选。数据结构和比较边界见 [MODEL](MODEL.md#规则链语义对照报告)。
-
-更新外部镜像后，报告会拒绝沿用旧数据库的对应位置；先重建，再重新运行命令。所用不全书页面变动、证据范围损坏或生成期间输入变化同样会报错。报告只校验实际引用的原文文件；不替代全库构建校验。`--output` 是文件名前缀，产生 `.json` 与 `.md`，不可指向输入镜像内；这些本地含原文的报告不纳入版本控制，也不自动发布。对应契约由 `tests/test_counterpart_semantics.py` 验证。
-
 ## 自动化验证
 
 `make test` 同时运行单元测试和 Playwright 浏览器回归；`make check` 再加数据审计。首次需要 Node.js 20+ 与 npm，并执行 `make browser-setup` 安装 `package-lock.json` 锁定的开发依赖及 Chromium；运行 anna 本身仍只需 Python 依赖。单独运行某层检查：
@@ -482,24 +463,33 @@ python3 -m anna.catalog.query --type spell --field school=塑能
 
 原文证据、Stella 阅读入口及 JSON 导出都使用同一条有效规则链。从 Stella 的“最近打开的位置”选择原查询，可恢复规则链路径；直接查当前话题则打开该条目自身。
 
-两代魔法学徒、TCE／2024 妖精触碰及 2024 侍僧／向导／智者是首组验收样本；更多句式仍可能显示“部分解析”。
+核心结构化规则由纯结构提取器（标题、前置、同调、法术参数、背景专长、子职等级能力、核心定义角色）与 `annotations/annotations.jsonl` 中的内容／上下文双哈希版本化标注共同组成。标注按原文子句（`clause`）、限定文本片段（`span`）或标题表（`table`）锚定，不保存易变的字节偏移和 `ver_...` 临时条目 ID；当条目重排位置或移动到唯一目标页面时，只要被标注内容、邻接拓扑和目标查找语义保持不变，标注即可迁移复用。相关子句被改写、头部条件变化、跨锚点插句或拆段、或目标出现新增同名竞争时，对应标注会进入 `stale` 或 `ambiguous`，并在重建前阻止失效片段进入查询索引。
+
+构建期对已标注片段做分句级投影：部分标注条目中已完整消解的授予与局部效果（例如 PHB14 `石化术` 的累计 3 次失败效果）仍进入查询索引与阅读路径，未标注句留在 `unparsed` 中待补。两代魔法学徒、TCE／2024 妖精触碰、2024 侍僧／向导／智者、生命领域、2024 精灵血系、幽影护甲、回气与直觉闪避等核心链均已通过标注与结构提取贯通。
 
 导出的 JSON 携带 `schema` 与构建快照，记录保留解析状态、审核状态和未解析原文，另带 `reading` 路径、`segments` 逐段状态及 `bindings` 变量供给。解析状态为已解析、部分解析、待核或已否决；审核状态为未人工核准、已采用、已撤销、依据变化或审核冲突。两套状态分开显示，不以空值代替未解析。未提取、明确没有、不适用等区分属于覆盖与验收，不混入单条记录的状态。条目身份以稳定 ID 连接；跨快照的移动、拆分、合并和删除尚未自动迁移旧标识，导出只携带当前有效身份与构建快照。
 
-核对模式显示记录 ID、结构化结果及检查入口。浏览器保持只读；审核通过命令行追加到现有独立决策日志：
+核对模式显示记录 ID、结构化结果及检查入口。浏览器保持只读；分句级标注通过 `annotations/annotations.jsonl` 维护，记录级核准或否决仍追加到 `reviews/decisions.jsonl`：
 
 ```sh
+# 查看条目的结构头部、表格锚点与可选正文子句（用于编写锚点）
+.venv/bin/python -m anna.knowledge.repository clauses 条目ID
+# 查看当前标注状态（--status 可选 applied / stale / missing / ambiguous / conflict / revoked）
+.venv/bin/python -m anna.knowledge.repository annotations --status applied --limit 50
+# 追加一条标注（--file 传入含 anchors / statements / 可选 scope 的 JSON；替代旧修订加 --supersedes 旧ann_rev_ID）
+.venv/bin/python -m anna.knowledge.repository annotate 条目ID \
+  --kind grant --file payload.json --reviewer 标注者 --reason '说明原文依据'
+# 查看有效知识记录、做记录级接受／否决，或按事件 ID 前缀撤销（ann_rev_ 撤标注，review_ 撤决策）
 .venv/bin/python -m anna.knowledge.repository list --kind grant --status resolved --limit 10
 .venv/bin/python -m anna.knowledge.repository inspect 记录ID
 .venv/bin/python -m anna.knowledge.repository accept 记录ID \
   --basis 查看所得basis_sha256 --reviewer 审核者 --reason '说明原文依据'
-# 否决用 reject；替代旧决策加 --supersedes 旧审核事件ID
-.venv/bin/python -m anna.knowledge.repository revoke 审核事件ID \
-  --reviewer 审核者 --reason '说明撤销原因'
+.venv/bin/python -m anna.knowledge.repository revoke ann_rev_事件ID或review_事件ID \
+  --reviewer 维护者 --reason '说明撤销原因'
 make build
 ```
 
-`accept` 表示核准当前记录，不补写缺失语义，也不消除目标歧义。原文或候选变化后，依据失效的记录不继续进入有效选项；重新检查后才能替代旧决定。无需审核即可只读检查：`python -m anna.knowledge.repository chain 条目ID`。
+`accept` 表示核准当前记录，不补写缺失语义，也不消除目标歧义。原文或候选变化后，依据失效的记录或标注不继续进入有效选项；重新检查后才能替代旧决定。无需修改日志即可只读检查：`python -m anna.knowledge.repository chain 条目ID`。
 
 HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/api/knowledge-inspect?id=记录ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；指定时必须属于起点条目的有效选项，否则返回 400。
 
@@ -517,72 +507,4 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/ap
 
 知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方读取 `value.grants`、`value.parameters` 和 `value.effects`。审核依赖依据只接受结构 2，事件封装仍使用独立的事件版本 1；不转换旧记录身份或旧批准。
 
-构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 分别保存自动观察、有效结果和审核结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。固定验收问题见[第一批验收清单](tests/batch1-acceptance.md)。
-
-## Datalog 通则与原文溯源
-
-要检验通则如何共同决定结果，先将场景事实交给 Soufflé，再从解释追到规则子句和原文范围。规则库位于 `rules/core/`，覆盖与输入契约保存在其中的 `scope.json`；当前以 2024 基础规则为主，2014 仅启用有独立证据的属性调整值映射。
-
-安装 **Soufflé 2.5（64 位）** 后运行：
-
-```sh
-# macOS；其他平台使用 Soufflé 官方安装方式
-brew install souffle
-souffle --version
-# 先有与镜像一致的 catalog.sqlite；已有全量构建可直接使用
-make datalog
-# 选择一个场景，另存产物；不覆盖默认完整报告
-.venv/bin/python -m anna.datalog.runtime build --case critical.paralyzed \
-  --output .cache/datalog-critical
-# 查询稳定子句身份或从原文反查子句、事实与证明
-.venv/bin/python -m anna.datalog.runtime inspect --rule condition.close.critical
-.venv/bin/python -m anna.datalog.runtime inspect --source-id condition.paralyzed
-# 同一个输入问题在两代中的规则对应与差异
-.venv/bin/python -m anna.datalog.runtime inspect --comparison heavy_weapon
-# 从现有法师护甲条目计算 AC，并查看既有知识参数的来源
-.venv/bin/python -m anna.datalog.runtime build --case inputs.5r.mage_active \
-  --output .cache/datalog-mage-armor
-# 从实际祈唤开始：一次施法、动作预算、到期与主动解散的两代差异
-.venv/bin/python -m anna.datalog.runtime build --case cast.5r.duration \
-  --output .cache/datalog-cast
-.venv/bin/python -m anna.datalog.runtime inspect --comparison armor_of_shadows
-```
-
-`make datalog` 不拉取镜像、不重建查询库，也不修改原文。默认产物在 `data/extracted/datalog/`，包括可直接打开的 `report.html`、`source-map.json`、`results.json`、`explanations.json` 和 `manifest.json`。运行 `make up` 后，报告里的证据链接会打开 Anna 的精确范围，原文链接会打开 Stella。`ANNA_PORT` 同时配置 make 命令写入的链接端口；直接运行脚本可用 `--base-url` 指定服务地址，`--lang en` 生成英文报告界面。
-
-`--source`、`--db`、`--library`、`--output` 分别选择镜像、目录库、规则库与生成目录，`--engine` 或 `SOUFFLE` 指定引擎。`inspect --bundle 路径` 先核验产物文件哈希，再读取保存的结果；它不重新判定原文是否有新版本。原文更新后先运行 `make build`，再运行 `make datalog` 重新绑定范围。引文、上下文变动或匹配不唯一时构建失败，旧产物保留。
-
-自定义场景通过 `--cases 文件.json` 传入。文件结构与 `rules/core/cases.json` 一致：顶层为 `{"schema":1,"cases":[…]}`，每个场景包含唯一 `id`、按关系名组织的 `facts`，以及可选的 `expect`、`absent` 和 `explain` 查询。元组的字段顺序、类型、唯一键和数值边界以 `relations.json` 为准。一次构建中的场景合并求值，因此角色、检定与事件标识须按场景区分。普通快照的多个时间点分别构建；幽影护甲的单次施法轨迹使用下述带编号观察点。固定骰值是输入，不由 Python 模拟掷骰。
-
-优先按问题提供 `SkillCheck`、`ToolCheck`、`WeaponUse` 或 `SpellSave`，并提供角色属性、熟练、装备及必要场景状态；具体组合可从 `inputs.5e.*`、`inputs.5r.*` 场景复制。旧场景的直接 `Test`、`Attack`、`DamageDice` 输入已改名为 `TestInput`、`AttackInput`、`DamageDiceInput`；原名称现在是派生结果，不再接受写入。低层输入用于显式裁定，不能与同一检定的高层请求混用。
-
-装备和施法来源使用 `entries.json` 中具体代际的条目标识，不使用名称查找。该文件固定所核对的正文、字段和有效知识修订；任一版本改变时，先核对差异、重新确认标注及知识绑定，再更新投影，不能只替换指纹来绕过失败。`knowledge_bindings` 的路径从有效记录的 `value` 开始：字符串访问字段，`{"id":"grant_1"}` 选择局部陈述，数字访问数量项等数组位置；`value_index` 指定必须一致的事实元组下标，`expected` 检查结构约束，两者只选一个。`source-map.json` 的 `entries` 和证明中的 `entry_origins` 可追到条目、知识状态和决策记录。
-
-### 幽影护甲的单次施法轨迹
-
-从 `cast.5e.*`、`cast.5r.*` 场景复制所需示例：`duration` 检查8小时边界，`material` 对照材料要求，`dismissal` 对照动作解散，`armor_ends` 验证穿甲终止后脱甲不会复活效果，`action_budget` 验证同回合不能重复花费动作。`negative_dex_no_slots` 验证零法术位仍可施法，并保留负敏捷调整值。
-
-| 输入 | 提供什么 |
-| --- | --- |
-| `CastRequest` | 代际、轨迹标识、角色、祈唤版本、`grant_1`、`branch_1`、目标角色 |
-| `FeatureAccess` | 已取得的具体祈唤；省略表示未拥有，不从职业名称推断 |
-| `CastResources` | 剩余主动作（0／1）和法术位总数；本分支不花费法术位 |
-| `CastReadiness` | 言语、姿势、材料、自愿、已穿甲、当前动作许可，六个明确的0／1值 |
-| `AbilityScore` | 该角色的 `dex` 属性值，供基础 AC 公式使用 |
-| `CastFollowup` | 从1连续编号的步骤、施法后秒数、从0开始的自身回合编号、操作、已穿甲、当前动作许可 |
-
-这些输入描述一个待执行的使用请求。缺少必要信息或选到另一代分支时构建失败；已知不符合资格、目标、成分或动作要求时输出 `CastBlocked`，不执行也不扣资源。这与“强行对无效目标施法”的规则不同，后者尚未实现。材料就绪需包含可实际使用的材料或获准替代品，不能仅因持有法器便填1。两代均要求言语与姿势；2014免材料，2024要求材料。该法术无需攻击或豁免，通过预检后直接计算基础 AC。
-
-观察点的 `observe` 只推进时间与状态；`spend_action` 消耗一个其他主动作；`dismiss` 请求原文明示的主动解散。新普通回合恢复至多一个主动作，`can_act=0` 会阻断执行而不消耗预算；许可恢复可使用未花费的动作，但同回合不恢复已花费的动作。穿甲输入是已经完成的装备状态，不代表立即完成穿甲活动。到达持续时间、穿甲或2014有效解散后，效果保持结束。2024解散请求输出 `unsupported_dismissal`，不扣动作，也不借用2014条文。
-
-在结果中查看 `CastSelection` 的实际法术、`CastCost` 的每步消耗、`CastState` 的剩余动作／法术位及有效状态、`CastStepResult` 的操作结果、`CastEnded` 的结束原因和 `CastBaseAC` 的基础值。基础值不含盾牌及其他加值，穿甲后不计算所穿护甲的最终 AC。一个角色只支持一次施法，不接受与另一轨迹、`ArmorSpell` 或 `ArmorLoadout` 混用；角色构建、多次施法叠加、反制和一般战斗时序尚未接入。
-
-`inputs.*.mage_*` 与 `ArmorSpell` 仍是已成功施法后的显式低层快照，由调用方负责移除结束实例；它们不会补救失败的 `CastRequest`。查询界面和 Stella 提供同一套知识的阅读、证据与导出，轨迹运行使用上述 Datalog 命令，不在阅读界面扣除角色资源。
-
-### 代际对照与报告
-
-`rules/core/editions.json` 保存两代的对应、差异和未支持清单，构建时校验来源与子句引用，并复制到产物目录。用 `inspect --comparison 标识` 读取当前产物中的一项。缺失的本代条目、规则、参数或相互冲突的请求会报错，不会用另一代结果补齐。
-
-报告区分源规则、结构投影、输入校验及待人工审核状态，不将子句数量当作规则完成度。动作选项表不表示每个动作效果都已实现；完整覆盖边界见 `scope.json`。单元测试会调用本机 Soufflé 执行正反场景和证明校验；未安装时明确跳过引擎测试，`make datalog` 则直接报错。
-
-引擎的输入采用 RFC 4180 CSV，平面输出采用无控制字符的原生 TSV；格式行为参见 [Soufflé I/O directives](https://souffle-lang.github.io/directives)。
+构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 与 `knowledge_annotations.jsonl` 分别保存合并后的基础记录、重放后的有效结果、记录决策重放以及标注评估结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。

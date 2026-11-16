@@ -4,26 +4,37 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from copy import deepcopy
 import argparse
+from hashlib import sha256
 import json
 from pathlib import Path
-import re
 import sqlite3
 
-from anna.knowledge.casting import parse_access, GRANT
-from anna.knowledge.levels import parse_table_access, feature_access
 from anna.knowledge.values import evidence
-from anna.knowledge.model import SCHEMA, KINDS, rule_value, validate_structure
+from anna.knowledge.model import SCHEMA, KINDS, rule_value, validate_structure, grant_is_resolved
 from anna.serialization import canonical, digest
 from anna.source.html import key
-from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events, append_event, locked, require_appendable, KNOWLEDGE_OPERATIONS
+from anna.review.store import (
+    DEFAULT_DECISIONS,
+    DEFAULT_ANNOTATIONS,
+    lifecycle,
+    load_events,
+    append_event,
+    locked,
+    require_appendable,
+    KNOWLEDGE_OPERATIONS,
+    load_annotations,
+    annotation_lifecycle,
+    append_annotation_events,
+    require_annotations_appendable,
+)
 from anna.paths import PROJECT
 from anna.knowledge.context import Context, walk_targets, nested_values
 from anna.knowledge.inspection import inspect
 from anna.knowledge.conditions import ABILITIES, CLASSES, validate_conditions, condition_terms, conjunction
-from anna.knowledge.spells import parse_spell
 from anna.knowledge.effects import build_effect_index, audit_effect_index
+from anna.knowledge.extract import extract_feat_grant, extract_subclass_features, extract_definition_roles
+from anna.knowledge.annotations import evaluate_annotations, compose_records, inspect_clauses, build_annotation_event
 
-ACCESS_TYPES = {'feat', 'class_feature', 'species', 'magic_item', 'reward'}
 REVIEW_OPERATIONS = KNOWLEDGE_OPERATIONS
 
 
@@ -193,62 +204,24 @@ def record_for(entry, kind, value, context):
     return record
 
 
-def feat_access(entry, context):
-    if entry['type']!='background':return None
-    text=context.pages[entry['page_path']]
-    match=re.search(r'(?m)^[ \t]*专长[：:]([^\n]+)',text[entry['title_end']:entry['end']])
-    if not match:return None
-    label=match[1].strip();name=re.split(r'[（(]',label)[0].strip()
-    a=entry['title_end']+match.start();b=entry['title_end']+match.end()
-    qualifiers=re.findall(r'[（(]([^）)]+)[）)]',label)
-    classes=[c for c in CLASSES if any(q==c for q in qualifiers)]
-    unknown=[q for q in qualifiers if q not in classes and not re.fullmatch(r'见第[^）]+章',q)]
-    ev=evidence(entry['page_path'],text,a,b)
-    target={'kind':'entry','name':name,'resolution':context.resolve(entry,name,'feat'),'evidence':ev}
-    return rule_value(grants=[{'id':'grant_1','entry_type':'feat','mode':'gain','target':target,
-        'constraints':{'class_list':classes} if classes else {},'branches':[],'evidence':[ev]}],
-        unparsed=[{'reason':'unparsed_grant_qualifier','evidence':ev}] if unknown else [])
-
-
-
-def definition_roles(context):
-    """Content roles explain definitions; they never establish equivalence or priority."""
-    groups=defaultdict(list)
-    core=[]
-    for e in context.entries.values():
-        if e['type'] not in {'rule','section','action','condition','ability','skill'} or not e.get('name_en'):continue
-        if not any(context.source_by_id.get(s,{}).get('reference_role')=='core_rules' for s in e['source_ids']):continue
-        core.append(e)
-        for sid in e['source_ids']:groups[(sid,key(e['name_en']))].append(e)
-    for e in core:
-        if '/术语汇编/' in e['page_path']:role='glossary'
-        elif e['type']=='section' and not e.get('is_primary') and any(len({x['page_path'] for x in groups[(s,key(e['name_en']))] if x['type']=='section' and not x.get('is_primary')})>1 for s in e['source_ids']):role='template'
-        elif e['type'] in {'rule','action','condition','ability','skill'}:role='explanation'
-        else:continue
-        value={'role':role,'scope_entry_id':e.get('parent_id'),'unparsed':[]}
-        yield record_for(e,'definition_role',value,context)
-
-
-def discover(context):
-    from anna.knowledge.features import parse_feature
-    records=list(definition_roles(context))
+def discover(context, ann_events=(), evaluated=None):
+    records = [record_for(e, 'definition_role', value, context) for e, value in extract_definition_roles(context)]
     for entry in context.entries.values():
-        if entry['end']<=entry['start']:continue
-        text=context.pages[entry['page_path']]
-        if entry['type']=='spell':
-            records.append(record_for(entry,'procedure',parse_spell(entry,text),context))
-        if entry['type'] in ACCESS_TYPES:
-            value=parse_table_access(entry,context)
-            if value is None:value=parse_access(entry,text,context.mentions(entry)) if GRANT.search(re.sub(r'\s+','',text[entry['title_end']:entry['end']])) else None
-            if value:records.append(record_for(entry,'grant',value,context))
-            procedure=parse_feature(entry,text,context.class_owner(entry))
-            if procedure:records.append(record_for(entry,'procedure',procedure,context))
-        if entry['type']=='subclass':
-            value=feature_access(entry,context)
-            if value:records.append(record_for(entry,'grant',value,context))
-        if entry['type']=='background':
-            value=feat_access(entry,context)
-            if value:records.append(record_for(entry,'grant',value,context))
+        if entry['end'] <= entry['start']:
+            continue
+        if entry['type'] == 'subclass':
+            value = extract_subclass_features(entry, context)
+            if value:
+                records.append(record_for(entry, 'grant', value, context))
+        elif entry['type'] == 'background':
+            value = extract_feat_grant(entry, context)
+            if value:
+                records.append(record_for(entry, 'grant', value, context))
+    structural_keys = {(r['subject_id'], r['kind']) for r in records}
+    if evaluated is None:
+        evaluated = evaluate_annotations(context, ann_events)
+    for entry, kind, value, _ in compose_records(context, evaluated, structural_keys=structural_keys):
+        records.append(record_for(entry, kind, value, context))
     return records
 
 
@@ -256,8 +229,26 @@ def binding(record):
     return {'knowledge_id':record['id'],'subject_id':record['subject_id'],'kind':record['kind'],**record['evidence']}
 
 
-def replay(records, events, context):
+def _annotation_statuses(evaluated):
+    grouped = defaultdict(list)
+    for row in evaluated or ():
+        sid = row.get('subject_id')
+        if sid and row['lifecycle_state'] not in {'revoked', 'superseded'}:
+            grouped[(sid, row['event']['kind'])].append(row['status'])
+    statuses = {}
+    for key_pair, group in grouped.items():
+        if 'conflict' in group:
+            statuses[key_pair] = 'conflict'
+        elif 'stale' in group or 'ambiguous' in group:
+            statuses[key_pair] = 'stale'
+        else:
+            statuses[key_pair] = 'applied'
+    return statuses
+
+
+def replay(records, events, context, evaluated=None):
     states=lifecycle(events);results={};claims=defaultdict(list);by_id={r['id']:r for r in records}
+    ann_statuses = _annotation_statuses(evaluated)
     for event in events:
         if not is_knowledge(event):continue
         rid=event['binding']['knowledge_id'];record=by_id.get(rid)
@@ -271,7 +262,12 @@ def replay(records, events, context):
         results[event['id']]=result
     effective=[]
     for record in records:
-        row=deepcopy(record);row.update(review_status='unreviewed',decision_ids=[])
+        row=deepcopy(record)
+        default_review = ann_statuses.get((row['subject_id'], row['kind']))
+        if not default_review:
+            reasons = {g.get('reason') for g in row['value'].get('unparsed', [])}
+            default_review = 'conflict' if 'conflicting_annotation' in reasons else 'stale' if 'stale_annotation' in reasons else 'unreviewed'
+        row.update(review_status=default_review, decision_ids=[])
         choices=claims[record['id']]
         if len(choices)>1:
             row.update(status='review',review_status='conflict')
@@ -280,15 +276,16 @@ def replay(records, events, context):
             e,valid=choices[0]
             if not valid:row.update(status='review',review_status='stale')
             elif e['operation']=='knowledge_reject':row.update(status='rejected',review_status='applied')
-            else:row['review_status']='applied'
+            elif default_review not in {'stale', 'conflict'}:row['review_status']='applied'
         elif any(e['binding']['knowledge_id']==record['id'] and states[e['id']]=='revoked' for e in events if is_knowledge(e)):
-            row['review_status']='revoked'
+            if default_review not in {'stale', 'conflict'}:
+                row['review_status']='revoked'
         row['decision_ids']=[e['id'] for e,_ in choices]
         effective.append(row)
     return effective,list(results.values())
 
 
-def branches(context, effective):
+def branches(context, effective, *, entry_wide=False):
     by_subject={r['subject_id']:r for r in effective if r['kind']=='grant'}
     def conditions(record,grant=None,branch=None):
         value=record['value'];subject=record['subject_id'];out=[]
@@ -299,9 +296,11 @@ def branches(context, effective):
         return out
     def walk(root,subject,steps,inherited,restrictions,visited):
         access=by_subject.get(subject)
-        if subject in visited or not access or access['status']!='resolved':return
+        allowed_statuses = {'resolved'} if entry_wide else {'resolved', 'partial'}
+        if subject in visited or not access or access['status'] not in allowed_statuses:return
         visited=visited|{subject}
         for grant in access['value']['grants']:
+            if not grant_is_resolved(access, grant, entry_wide=entry_wide):continue
             target=grant['target']
             if grant['entry_type']!='spell':
                 if target['kind']!='entry' or target['resolution']['status']!='resolved':continue
@@ -335,14 +334,45 @@ def branches(context, effective):
     for root in by_subject:yield from walk(root,root,[],[],{},set())
 
 
-def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
-    context=Context(db);records=discover(context);events,_=load_events(decision_path)
-    effective,decisions=replay(records,events,context)
+def _annotation_row(result):
+    event = result['event']
+    return {
+        'id': event['id'],
+        'annotation_id': event['annotation_id'],
+        'kind': event['kind'],
+        'status': result['status'],
+        'lifecycle_state': result['lifecycle_state'],
+        'subject_match': result['subject_match'],
+        'subject_id': result['subject_id'],
+        'subject': event['subject'],
+        'detail': result['detail'],
+        'event': event,
+        'current_basis': result['current_basis'],
+    }
+
+
+def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS, annotations_path=DEFAULT_ANNOTATIONS):
+    context=Context(db)
+    annotations_file = Path(annotations_path).resolve()
+    raw_annotations = annotations_file.read_bytes() if annotations_file.exists() else b''
+    ann_events, ann_hash = load_annotations(annotations_file)
+    ann_snapshot = {
+        'path': str(annotations_file),
+        'sha256': ann_hash,
+        'bytes': len(raw_annotations),
+        'events': len(ann_events),
+    }
+    evaluated = evaluate_annotations(context, ann_events)
+    records=discover(context, ann_events, evaluated=evaluated)
+    events,_=load_events(decision_path)
+    effective,decisions=replay(records,events,context,evaluated=evaluated)
     db.executescript('''
         CREATE TABLE rule_knowledge(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
         CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY REFERENCES rule_knowledge(id),subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,review_status TEXT,data TEXT NOT NULL);
         CREATE INDEX knowledge_subject ON effective_knowledge(subject_id,kind);
         CREATE TABLE knowledge_decisions(id TEXT PRIMARY KEY,knowledge_id TEXT,status TEXT,data TEXT NOT NULL);
+        CREATE TABLE knowledge_annotations(id TEXT PRIMARY KEY,annotation_id TEXT,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
+        CREATE INDEX knowledge_annotation_subject ON knowledge_annotations(subject_id,annotation_id,status);
         CREATE TABLE casting_options(id TEXT PRIMARY KEY,root_id TEXT REFERENCES entries(id),subject_id TEXT REFERENCES entries(id),
             spell_id TEXT REFERENCES entries(id),mode TEXT,resource TEXT,recovery TEXT,selection TEXT,data TEXT NOT NULL);
         CREATE INDEX casting_root ON casting_options(root_id);
@@ -356,6 +386,29 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
             review={'id':'knowledge_review_'+r['event']['id'],'target':r['event']['binding']['subject_id'],
                     'reason':'knowledge_decision_'+r['status'],'priority':'high','detail':r,'evidence':r['event']['binding']}
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)',(review['id'],review['target'],review['reason'],review['priority'],canonical(review)))
+    ann_rows = [_annotation_row(r) for r in evaluated]
+    for row in ann_rows:
+        db.execute(
+            'INSERT INTO knowledge_annotations VALUES(?,?,?,?,?,?)',
+            (row['id'], row['annotation_id'], row['subject_id'], row['kind'], row['status'], canonical(row)),
+        )
+        if row['status'] in {'stale', 'missing', 'ambiguous', 'conflict'}:
+            review = {
+                'id': 'annotation_review_' + row['id'],
+                'target': row['subject_id'] or row['annotation_id'],
+                'reason': 'knowledge_annotation_' + row['status'],
+                'priority': 'high',
+                'detail': {
+                    'annotation_id': row['annotation_id'],
+                    'revision_id': row['id'],
+                    'status': row['status'],
+                    'subject_match': row['subject_match'],
+                    'detail': row['detail'],
+                },
+                'evidence': row['subject'],
+            }
+            db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)', (review['id'], review['target'], review['reason'], review['priority'], canonical(review)))
+    db.execute('INSERT INTO metadata VALUES(?,?)', ('annotation_snapshot', canonical(ann_snapshot)))
     from anna.knowledge.rule_index import build_rule_index
     build_rule_index(db,effective)
     build_effect_index(db,effective)
@@ -366,9 +419,10 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS):
         'by_kind':dict(Counter(r['kind'] for r in records)),
         'outcomes':dict(Counter(r['status'] for r in effective)),
         'reviews':dict(Counter(r['review_status'] for r in effective)),
+        'annotations':dict(Counter(row['status'] for row in ann_rows)),
         'unparsed':dict(Counter(g['reason'] for r in records for g in r['value'].get('unparsed',[])))}
     db.execute('INSERT INTO metadata VALUES(?,?)',('knowledge_coverage',canonical(coverage)))
-    for name,rows in [('rule_knowledge',records),('effective_knowledge',effective),('knowledge_decisions',decisions)]:
+    for name,rows in [('rule_knowledge',records),('effective_knowledge',effective),('knowledge_decisions',decisions),('knowledge_annotations',ann_rows)]:
         (Path(out)/(name+'.jsonl')).write_text(''.join(canonical(r)+'\n' for r in rows))
     (Path(out)/'knowledge_coverage.json').write_text(json.dumps(coverage,ensure_ascii=False,indent=2)+'\n')
     return coverage
@@ -378,13 +432,17 @@ def audit_knowledge(db, folder):
     """Check exact evidence, projections and exports; summarize by actual source."""
     if not exists(db):return None
     context=Context(db);errors=[];matrix=Counter()
+    present = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     records=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge')]
     for record in records:
         try:validate_record(record,context)
         except ValueError as exc:errors.append(record['id']+': '+str(exc))
         for sid in context.entries[record['subject_id']]['source_ids'] or ['unknown']:
             matrix[(sid,record['kind'],record['status'])]+=1
-    for name in ('rule_knowledge','effective_knowledge','knowledge_decisions'):
+    exports = ['rule_knowledge','effective_knowledge','knowledge_decisions']
+    if 'knowledge_annotations' in present:
+        exports.append('knowledge_annotations')
+    for name in exports:
         path=Path(folder)/(name+'.jsonl')
         expected={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM '+name)}
         exported=[json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
@@ -430,13 +488,66 @@ def save(db,path,rid,operation,expected_basis,reviewer,reason,supersedes=None):
             'basis':view['basis'],'basis_sha256':expected_basis,'reviewer':reviewer.strip(),'reason':reason.strip(),'supersedes':supersedes},log_hash)
 
 
+def save_annotation(db, path, entry_id, kind, anchors, statements, reviewer, reason, *,
+                    annotation_id=None, scope=None, supersedes=None):
+    if not reviewer.strip() or not reason.strip():
+        raise ValueError('Reviewer and reason are required')
+    context = Context(db)
+    with locked(path):
+        require_annotations_appendable(db, path)
+        events, log_hash = load_annotations(path)
+        pending = build_annotation_event(
+            context, entry_id, kind, anchors, statements, reviewer.strip(), reason.strip(),
+            annotation_id=annotation_id, scope=scope, supersedes=supersedes,
+        )
+        states, _ = annotation_lifecycle(events)
+        active = [
+            e['id'] for e in events
+            if e['operation'] == 'annotate'
+            and e['annotation_id'] == pending['annotation_id']
+            and states[e['id']] in {'active', 'conflict'}
+        ]
+        if active != ([supersedes] if supersedes else []):
+            raise ValueError('Supersede the active annotation revision or revoke competing revisions')
+        return append_annotation_events(path, [pending], log_hash)[0]
+
+
+def revoke_annotation(path, rev_id, reviewer, reason):
+    if not reviewer.strip() or not reason.strip():
+        raise ValueError('Reviewer and reason are required')
+    with locked(path):
+        events, log_hash = load_annotations(path)
+        states, _ = annotation_lifecycle(events)
+        if states.get(rev_id) not in {'active', 'conflict'}:
+            raise ValueError('Only active or conflicting annotation revisions can be revoked')
+        return append_annotation_events(
+            path,
+            [{'operation': 'revoke', 'target_revision_id': rev_id, 'reviewer': reviewer.strip(), 'reason': reason.strip()}],
+            log_hash,
+        )[0]
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
     parser.add_argument('--decisions',type=Path,default=DEFAULT_DECISIONS)
+    parser.add_argument('--annotations',type=Path,default=DEFAULT_ANNOTATIONS)
     commands=parser.add_subparsers(dest='command',required=True)
     listing=commands.add_parser('list');listing.add_argument('--kind',choices=sorted(KINDS));listing.add_argument('--status');listing.add_argument('--limit',type=int,default=20)
     viewing=commands.add_parser('inspect');viewing.add_argument('id')
+    clauses_cmd=commands.add_parser('clauses');clauses_cmd.add_argument('id')
+    ann_list=commands.add_parser('annotations');ann_list.add_argument('--status');ann_list.add_argument('--limit',type=int,default=50)
+    ann_cmd=commands.add_parser('annotate')
+    ann_cmd.add_argument('id')
+    ann_cmd.add_argument('--kind',required=True,choices=('grant','procedure'))
+    ann_cmd.add_argument('--anchors')
+    ann_cmd.add_argument('--statements')
+    ann_cmd.add_argument('--scope')
+    ann_cmd.add_argument('--file',type=Path)
+    ann_cmd.add_argument('--annotation-id')
+    ann_cmd.add_argument('--reviewer',required=True)
+    ann_cmd.add_argument('--reason',required=True)
+    ann_cmd.add_argument('--supersedes')
     for name in ('accept','reject'):
         cmd=commands.add_parser(name);cmd.add_argument('id');cmd.add_argument('--basis',required=True);cmd.add_argument('--reviewer',required=True);cmd.add_argument('--reason',required=True);cmd.add_argument('--supersedes')
     reading=commands.add_parser('chain');reading.add_argument('id')
@@ -444,11 +555,33 @@ def main():
     args=parser.parse_args()
     try:
         if args.command=='revoke':
-            from anna.review.commands import revoke
-            result=revoke(args.decisions,args.id,args.reviewer,args.reason)
+            if args.id.startswith('ann_rev_'):
+                result = revoke_annotation(args.annotations, args.id, args.reviewer, args.reason)
+            else:
+                from anna.review.commands import revoke
+                result=revoke(args.decisions,args.id,args.reviewer,args.reason)
         else:
             with sqlite3.connect(args.db.resolve().as_uri()+'?mode=ro',uri=True) as db:
                 if args.command=='inspect':result=inspect(db,args.id)
+                elif args.command=='clauses':
+                    result=inspect_clauses(Context(db),args.id)
+                elif args.command=='annotations':
+                    if not 1<=args.limit<=500:raise ValueError('Limit must be between 1 and 500')
+                    filters=[];values=[]
+                    if args.status:filters.append('status=?');values.append(args.status)
+                    result=[json.loads(r[0]) for r in db.execute('SELECT data FROM knowledge_annotations'+(' WHERE '+' AND '.join(filters) if filters else '')+' ORDER BY annotation_id,id LIMIT ?',values+[args.limit])]
+                elif args.command=='annotate':
+                    payload = json.loads(args.file.read_text()) if args.file else {}
+                    anchors = json.loads(args.anchors) if args.anchors else payload.get('anchors')
+                    statements = json.loads(args.statements) if args.statements else payload.get('statements')
+                    scope = json.loads(args.scope) if args.scope else payload.get('scope')
+                    aid = args.annotation_id or payload.get('annotation_id')
+                    if not isinstance(anchors, list) or not isinstance(statements, dict):
+                        raise ValueError('Both anchors (list) and statements (object) are required')
+                    result = save_annotation(
+                        db, args.annotations, args.id, args.kind, anchors, statements,
+                        args.reviewer, args.reason, annotation_id=aid, scope=scope, supersedes=args.supersedes,
+                    )
                 elif args.command=='chain':
                     from anna.presentation.knowledge import chain
                     result=chain(db,args.id)

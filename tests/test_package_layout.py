@@ -31,8 +31,8 @@ class PackageLayoutTests(unittest.TestCase):
 
     def test_module_commands_expose_help(self):
         commands=('catalog.build','catalog.audit','catalog.query','source.search',
-                  'review.commands','knowledge.repository','compare.semantics',
-                  'snapshots.workflow','datalog.runtime','server.linked_book','server.app')
+                  'review.commands','knowledge.repository',
+                  'snapshots.workflow','server.linked_book','server.app')
         for command in commands:
             with self.subTest(command=command):
                 result=subprocess.run([sys.executable,'-m','anna.'+command,'--help'],cwd=PROJECT,

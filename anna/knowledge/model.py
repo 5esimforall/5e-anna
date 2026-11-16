@@ -128,3 +128,31 @@ def effect_usage(value, effect):
         return {}
     action = value['parameters'].get('action')
     return {'action': action['kind'], 'evidence': [action['evidence']]} if action else {}
+
+
+def grant_is_resolved(record, grant, *, entry_wide=False):
+    """Whether a grant (and its usage branches) can project into query indexes."""
+    if entry_wide:
+        return record['status'] == 'resolved'
+    if record['status'] not in {'resolved', 'partial'}:
+        return False
+    value = record['value']
+    if value.get('prerequisites', {}).get('status') == 'unparsed':
+        return False
+    if (value.get('activation') or {}).get('status') == 'unparsed':
+        return False
+    if grant.get('mode') == 'selection':
+        return False
+    target = grant.get('target', {})
+    if target.get('kind') == 'entry' and target.get('resolution', {}).get('status') != 'resolved':
+        return False
+    if target.get('kind') == 'choice' and not target.get('options'):
+        return False
+    contexts = value.get('contexts', {})
+    for term in condition_terms(grant.get('when')):
+        if term.get('kind') == 'option_selected':
+            ctx = contexts.get(term.get('context_id'), {})
+            options = [o for o in ctx.get('options', []) if o.get('id') == term.get('option_id')]
+            if ctx.get('kind') != 'choose_one' or len(options) != 1 or term.get('name') != options[0].get('name'):
+                return False
+    return True

@@ -21,6 +21,8 @@ from anna.serialization import canonical
 
 SHARDS = 64
 PROJECTIONS = {'casting_options', 'knowledge_rule_links', 'rule_effect_index'}
+PROJECTION_STORAGE = 'projection_v2'
+SUPPORTED_PROJECTIONS = {'projection_v1', 'projection_v2'}
 BASE_TABLES = {'effective_knowledge': 'rule_knowledge', 'effective_references': 'concept_observations'}
 CODECS = [(sort, compact, ascii_) for ascii_ in (False, True) for sort in (True, False) for compact in (True, False)]
 
@@ -204,8 +206,8 @@ def save_tables(db, descriptors, objects, tmp):
         info = dict(original)
         info.update(table_digest(db, name, info))
         if name in PROJECTIONS and 'effective_knowledge' in descriptors:
-            info['storage'] = 'projection_v1'
-            generated = {row[0]: row for row in projection_rows(db, name)}
+            info['storage'] = PROJECTION_STORAGE
+            generated = {row[0]: row for row in projection_rows(db, name, storage=PROJECTION_STORAGE)}
             corrections = {}
             for row in ordered_rows(db, name, info):
                 expected = generated.pop(row[0], None)
@@ -253,20 +255,21 @@ def save_tables(db, descriptors, objects, tmp):
     return result
 
 
-def projection_rows(db, name):
+def projection_rows(db, name, *, storage=PROJECTION_STORAGE):
+    entry_wide = storage == 'projection_v1'
     records = [json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge ORDER BY id')]
     if name == 'casting_options':
         from anna.knowledge.context import Context
         from anna.knowledge.repository import branches
-        for r in branches(Context(db), records):
+        for r in branches(Context(db), records, entry_wide=entry_wide):
             yield tuple(r[k] for k in ('id', 'root_id', 'subject_id', 'spell_id', 'mode', 'resource', 'recovery', 'selection')) + (canonical(r),)
     elif name == 'knowledge_rule_links':
         from anna.knowledge.rule_index import rule_rows
-        for r in rule_rows(records):
+        for r in rule_rows(records, entry_wide=entry_wide):
             yield tuple(r[k] for k in ('id', 'source_id', 'target_id', 'relation', 'status')) + (json.dumps(r, ensure_ascii=False),)
     elif name == 'rule_effect_index':
         from anna.knowledge.effects import effect_rows, COLUMNS
-        for r in effect_rows(records):
+        for r in effect_rows(records, entry_wide=entry_wide):
             yield tuple(r[k] for k in COLUMNS) + (json.dumps(r, ensure_ascii=False),)
     else:
         raise ValueError('Unknown projection recipe: ' + name)
@@ -279,15 +282,15 @@ def restore_tables(db, manifest, objects):
     pending = set(descriptors)
     while pending:
         ready = [n for n in sorted(pending) if descriptors[n].get('base') not in pending and
-                 (descriptors[n]['storage'] != 'projection_v1' or not (pending - PROJECTIONS))]
+                 (descriptors[n]['storage'] not in SUPPORTED_PROJECTIONS or not (pending - PROJECTIONS))]
         if not ready:
             raise ValueError('Cyclic snapshot dependencies')
         for name in ready:
             info = descriptors[name]
             def rows():
-                if info['storage'] == 'projection_v1':
+                if info['storage'] in SUPPORTED_PROJECTIONS:
                     overrides = json.loads(objects.get(info['encoding_overrides'])) if 'encoding_overrides' in info else {}
-                    for row in projection_rows(db, name):
+                    for row in projection_rows(db, name, storage=info['storage']):
                         values = list(row)
                         for i, value in overrides.get(row[0], {}).items():
                             values[int(i)] = uncell(value)

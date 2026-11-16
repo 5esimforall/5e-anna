@@ -18,6 +18,8 @@ output/
 # Local advisory locks; review decisions themselves are versioned inputs.
 /reviews/*.lock
 /reviews/.review-*
+/annotations/*.lock
+/annotations/.annotation-*
 
 # Disposable local comparison snapshots and generated brand icons
 /baselines/

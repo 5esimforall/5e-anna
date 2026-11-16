@@ -360,11 +360,62 @@ class CompactSnapshotTests(unittest.TestCase):
         build_rule_index(c.db, [record]); c.db.commit()
         root = self.capture(c)
         self.assertIn('encoding_overrides', verify(root)['tables']['knowledge_rule_links'])
+        self.assertEqual(verify(root)['tables']['knowledge_rule_links']['storage'], 'projection_v2')
         with closing(connect(materialize(root, self.root / 'cache'))) as db:
             self.assertEqual(db.execute('SELECT * FROM knowledge_rule_links').fetchall(), c.db.execute('SELECT * FROM knowledge_rule_links').fetchall())
         with patch('anna.snapshots.storage.projection_rows', return_value=iter(())):
             with self.assertRaisesRegex(ValueError, 'Restored table mismatch'):
                 materialize(root, self.root / 'changed-recipe-cache')
+
+    def test_partial_projection_v2_and_v1_historical_compatibility(self):
+        from anna.knowledge.effects import build_effect_index
+        from anna.knowledge.rule_index import build_rule_index
+        from anna.snapshots.storage import projection_rows
+        c = self.catalog('old')
+        c.db.execute('CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY,subject_id TEXT,kind TEXT,status TEXT,review_status TEXT,data TEXT)')
+        c.db.execute('CREATE TABLE casting_options(id TEXT PRIMARY KEY,root_id TEXT,subject_id TEXT,spell_id TEXT,mode TEXT,resource TEXT,recovery TEXT,selection TEXT,data TEXT)')
+        partial_record = {
+            **c.record,
+            'kind': 'procedure',
+            'status': 'partial',
+            'review_status': 'applied',
+            'value': {
+                'prerequisites': {'status': 'not_stated'},
+                'activation': None,
+                'contexts': {},
+                'grants': [],
+                'modifiers': [],
+                'parameters': {},
+                'effects': [{
+                    'id': 'effect_1', 'kind': 'healing',
+                    'quantity': {'kind': 'dice', 'count': 2, 'sides': 8},
+                    'evidence': c.record['evidence'], 'links': [],
+                }],
+                'descriptions': [],
+                'unparsed': [{'reason': 'unannotated_clause', 'evidence': c.record['evidence']}],
+                'rules': [{
+                    'id': 'rule_1',
+                    'relation': 'uses_rule',
+                    'scope': {'kind': 'effect', 'effect_id': 'effect_1'},
+                    'change': None, 'when': None, 'ends': None,
+                    'target': {'kind': 'entry', 'name': '治疗', 'resolution': {'status': 'resolved', 'targets': ['entry']}, 'evidence': c.record['evidence']},
+                }],
+            },
+        }
+        c.db.execute('INSERT INTO effective_knowledge VALUES(?,?,?,?,?,?)',
+                     (partial_record['id'], partial_record['subject_id'], 'procedure', 'partial', 'applied', canonical(partial_record)))
+        build_effect_index(c.db, [partial_record])
+        build_rule_index(c.db, [partial_record])
+        c.db.commit()
+        root = self.capture(c)
+        manifest = verify(root)
+        self.assertEqual(manifest['tables']['rule_effect_index']['storage'], 'projection_v2')
+        self.assertEqual(len(list(projection_rows(c.db, 'rule_effect_index', storage='projection_v2'))), 1)
+        self.assertEqual(len(list(projection_rows(c.db, 'rule_effect_index', storage='projection_v1'))), 0)
+        self.assertEqual(next(projection_rows(c.db, 'knowledge_rule_links', storage='projection_v2'))[4], 'resolved')
+        self.assertEqual(next(projection_rows(c.db, 'knowledge_rule_links', storage='projection_v1'))[4], 'partial')
+        with closing(connect(materialize(root, self.root / 'v2-cache'))) as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM rule_effect_index').fetchone()[0], 1)
 
     def test_exports_only_discard_proven_duplicates(self):
         from anna.snapshots.baseline import export_snapshot

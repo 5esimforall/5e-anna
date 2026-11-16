@@ -13,7 +13,7 @@ BASELINE ?=
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status index clean build baseline migration inventory test audit check up upper linked test-unit test-browser browser-setup datalog icons
+.PHONY: usage clone update status index clean build baseline migration inventory test audit check up upper linked test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -92,9 +92,6 @@ test-unit:
 
 audit:
 	@"$(PYTHON)" -m anna.catalog.audit
-
-datalog:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.datalog.runtime build --base-url "http://127.0.0.1:$(ANNA_PORT)"
 
 check: test audit
 

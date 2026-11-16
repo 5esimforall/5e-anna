@@ -12,7 +12,7 @@ from anna.snapshots.storage import Objects, export_bytes, export_recipe, restore
 
 from anna.paths import PROJECT
 from anna.serialization import canonical, digest
-from anna.review.store import load_events, snapshot
+from anna.review.store import load_events, load_annotations, snapshot
 
 SCHEMA = 2
 ACTIVE = PROJECT / 'baselines/active.json'
@@ -72,6 +72,8 @@ def object_refs(manifest):
     for group in ('source_files', 'counterpart_files'):
         yield from manifest[group].values()
     yield manifest['review_log']
+    if 'annotation_log' in manifest:
+        yield manifest['annotation_log']
     for info in manifest['tables'].values():
         yield from info.get('chunks', [])
         if 'encoding_overrides' in info:
@@ -121,7 +123,7 @@ def atomic_json(path, value):
         temp.unlink(missing_ok=True)
 
 
-def save_snapshot(db, output, source_files, counterpart_files, review_log, exports, parent, provenance):
+def save_snapshot(db, output, source_files, counterpart_files, review_log, exports, parent, provenance, annotations_log=None):
     """Publish a logical snapshot; caches and duplicate export files are not authority."""
     output = Path(output).resolve()
     if output.exists():
@@ -129,6 +131,9 @@ def save_snapshot(db, output, source_files, counterpart_files, review_log, expor
     output.parent.mkdir(parents=True, exist_ok=True)
     if parent and not review_log.startswith(decisions_path(parent).read_bytes()):
         raise ValueError('Review history must remain an append-only extension of the parent baseline')
+    if parent and annotations_log is not None and (parent_annotations := annotations_path(parent)) is not None:
+        if not annotations_log.startswith(parent_annotations.read_bytes()):
+            raise ValueError('Annotation history must remain an append-only extension of the parent baseline')
     store = objects(output)
     with tempfile.TemporaryDirectory(prefix='.baseline-', dir=output.parent) as tmp:
         stage = Path(tmp) / 'snapshot'; stage.mkdir()
@@ -147,6 +152,16 @@ def save_snapshot(db, output, source_files, counterpart_files, review_log, expor
                     'tables': save_tables(db, descriptors, store, tmp),
                     'review_snapshot': built, 'review_events': len(events), 'pending_review_events': len(events) - built['events'],
                     'review_log': store.put(review_log), 'source_files': {}, 'counterpart_files': {}, 'exports': {}}
+        if annotations_log is not None:
+            ann_built = metadata(db, 'annotation_snapshot')
+            ann_events = [json.loads(line) for line in annotations_log.splitlines() if line.strip()]
+            if ann_built:
+                ann_prefix = annotations_log[:ann_built['bytes']]
+                if sha256(ann_prefix).hexdigest() != ann_built['sha256'] or len(ann_events) < ann_built['events']:
+                    raise ValueError('Annotation log is not an append-only extension of the dataset snapshot')
+                manifest.update(annotation_snapshot=ann_built, annotation_events=len(ann_events),
+                                pending_annotation_events=len(ann_events) - ann_built['events'])
+            manifest['annotation_log'] = store.put(annotations_log)
         for kind in ('index', 'view', 'trigger'):
             manifest[{'index': 'indexes', 'view': 'views', 'trigger': 'triggers'}[kind]] = dict(db.execute(
                 "SELECT name,sql FROM sqlite_master WHERE type=? AND sql IS NOT NULL ORDER BY name", (kind,)))
@@ -181,7 +196,7 @@ def save_snapshot(db, output, source_files, counterpart_files, review_log, expor
     return manifest
 
 
-def capture(database, output, source, decisions, counterparts=None, *, pointer=ACTIVE):
+def capture(database, output, source, decisions, counterparts=None, *, pointer=ACTIVE, annotations=None):
     database, output, source, decisions = map(lambda p: Path(p).resolve(), (database, output, source, decisions))
     if output.exists():
         raise ValueError('Baseline already exists; never overwrite it: ' + str(output))
@@ -216,6 +231,14 @@ def capture(database, output, source, decisions, counterparts=None, *, pointer=A
             raw_log = decisions.read_bytes() if decisions.exists() else b''
             if sha256(raw_log).hexdigest() != log_hash:
                 raise ValueError('Decision log changed during capture')
+            ann_snap = metadata(db, 'annotation_snapshot')
+            ann_file = Path(annotations).resolve() if annotations is not None else (Path(ann_snap['path']).resolve() if ann_snap else None)
+            raw_annotations = None
+            if ann_file is not None:
+                _, ann_hash = load_annotations(ann_file)
+                raw_annotations = ann_file.read_bytes() if ann_file.exists() else b''
+                if sha256(raw_annotations).hexdigest() != ann_hash:
+                    raise ValueError('Annotation log changed during capture')
             counterpart = summary.get('counterparts', {})
             counterpart_files = []
             if counterpart.get('status') != 'skipped':
@@ -241,7 +264,8 @@ def capture(database, output, source, decisions, counterparts=None, *, pointer=A
                        if p.is_file() and not any(x.startswith('.') for x in p.relative_to(database.parent).parts)
                        and p.suffix in {'.csv', '.json', '.jsonl', '.md'})
             return save_snapshot(db, output, source_inputs(), counterpart_files, raw_log, exports, parent,
-                                 {'kind': 'capture', 'database_sha256': fingerprint(frozen), 'storage_codec': 1, 'projection_recipe': 1})
+                                 {'kind': 'capture', 'database_sha256': fingerprint(frozen), 'storage_codec': 1, 'projection_recipe': 1},
+                                 annotations_log=raw_annotations)
 
 
 def materialize(root, cache=None):
@@ -274,6 +298,20 @@ def decisions_path(root, cache=None):
     folder = cache / manifest['id']; folder.mkdir(parents=True, exist_ok=True)
     path = folder / 'decisions.jsonl'
     raw = objects(root).get(manifest['review_log'])
+    if not path.exists() or path.read_bytes() != raw:
+        path.write_bytes(raw)
+    return path
+
+
+def annotations_path(root, cache=None):
+    root = Path(root).resolve()
+    manifest = verify(root)
+    if 'annotation_log' not in manifest:
+        return None
+    cache = Path(cache) if cache else PROJECT / '.cache/baselines'
+    folder = cache / manifest['id']; folder.mkdir(parents=True, exist_ok=True)
+    path = folder / 'annotations.jsonl'
+    raw = objects(root).get(manifest['annotation_log'])
     if not path.exists() or path.read_bytes() != raw:
         path.write_bytes(raw)
     return path

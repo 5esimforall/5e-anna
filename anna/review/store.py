@@ -13,7 +13,9 @@ from anna.paths import PROJECT
 from anna.serialization import canonical, digest
 
 DEFAULT_DECISIONS = PROJECT / 'reviews/decisions.jsonl'
+DEFAULT_ANNOTATIONS = PROJECT / 'annotations/annotations.jsonl'
 KNOWLEDGE_OPERATIONS = {'knowledge_accept', 'knowledge_reject'}
+ANNOTATION_OPERATIONS = {'annotate', 'revoke'}
 
 
 def pipeline_hash():
@@ -23,7 +25,7 @@ def pipeline_hash():
 # Bump when the meaning of stored review dependencies changes, not for UI edits.
 REVIEW_SEMANTICS_VERSION = 1
 EXTRACTION_MODULES = ('serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py', 'catalog/types.py', 'source/registry.py', 'source/tables.py',
-                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/casting.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py', 'knowledge/inspection.py', 'knowledge/query_schema.py', 'knowledge/spells.py', 'knowledge/checks.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py', 'knowledge/features.py', 'knowledge/levels.py')
+                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/extract.py', 'knowledge/annotations.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py', 'knowledge/inspection.py', 'knowledge/query_schema.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py')
 
 
 def extraction_hash():
@@ -172,4 +174,158 @@ def require_current(db, path=None):
     _, current = load_events(path or saved['path'])
     if current != saved['sha256']:
         raise ValueError('Review log has not been replayed; run make build')
+    return saved
+
+
+def load_annotations(path=DEFAULT_ANNOTATIONS):
+    path = Path(path)
+    raw = path.read_bytes() if path.exists() else b''
+    events = []
+    known = {}
+    for number, line in enumerate(raw.decode('utf-8').splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+            if event.get('schema') != 1 or event.get('operation') not in ANNOTATION_OPERATIONS:
+                raise ValueError('Unsupported annotation schema or operation')
+            for field in ('id', 'reviewer', 'reason', 'created_at'):
+                if not isinstance(event.get(field), str) or not event[field].strip():
+                    raise ValueError('Missing field: ' + field)
+            if event['id'] in known:
+                raise ValueError('Duplicate annotation event ID')
+            if event['operation'] == 'revoke':
+                previous = known.get(event.get('target_revision_id'))
+                if not previous or previous['operation'] != 'annotate':
+                    raise ValueError('Revoked annotation revision does not exist')
+            else:
+                if not isinstance(event.get('annotation_id'), str) or not event['annotation_id'].strip():
+                    raise ValueError('Missing annotation_id')
+                if event.get('kind') not in {'grant', 'procedure'}:
+                    raise ValueError('Invalid annotation kind')
+                subject = event.get('subject')
+                if not isinstance(subject, dict):
+                    raise ValueError('Missing subject selector')
+                for field in ('type', 'ruleset', 'page_path'):
+                    if not isinstance(subject.get(field), str) or not subject[field].strip():
+                        raise ValueError('Invalid annotation subject: ' + field)
+                if not isinstance(subject.get('name_zh'), str) or not isinstance(subject.get('name_en', ''), str) or not (subject['name_zh'].strip() or subject.get('name_en', '').strip()):
+                    raise ValueError('Invalid annotation subject name')
+                anchors = event.get('anchors')
+                if not isinstance(anchors, list) or not anchors:
+                    raise ValueError('Annotation requires at least one anchor')
+                anchor_ids = set()
+                for anchor in anchors:
+                    if not isinstance(anchor, dict) or not isinstance(anchor.get('id'), str) or not anchor['id'].strip():
+                        raise ValueError('Invalid annotation anchor')
+                    if anchor['id'] in anchor_ids:
+                        raise ValueError('Duplicate anchor id: ' + anchor['id'])
+                    anchor_ids.add(anchor['id'])
+                    akind = anchor.get('kind')
+                    if akind in {'clause', 'span'}:
+                        if not isinstance(anchor.get('quote'), str) or not anchor['quote']:
+                            raise ValueError('Clause/span anchor requires quote')
+                    elif akind == 'table':
+                        if not isinstance(anchor.get('caption_zh'), str) or not anchor['caption_zh'].strip():
+                            raise ValueError('Table anchor requires caption_zh')
+                    else:
+                        raise ValueError('Unsupported anchor kind')
+                if not isinstance(event.get('statements'), dict):
+                    raise ValueError('Annotation statements must be an object')
+                basis = event.get('basis')
+                if not isinstance(basis, dict) or basis.get('schema') != 1:
+                    raise ValueError('Unsupported annotation basis schema')
+                if not isinstance(basis.get('content'), list) or not isinstance(basis.get('context'), dict):
+                    raise ValueError('Invalid annotation basis payload')
+                if basis.get('content_sha256') != digest(basis['content']) or basis.get('context_sha256') != digest(basis['context']):
+                    raise ValueError('Annotation basis digest mismatch')
+                if event.get('supersedes'):
+                    previous = known.get(event['supersedes'])
+                    if not previous or previous['operation'] != 'annotate' or previous['annotation_id'] != event['annotation_id']:
+                        raise ValueError('Superseded revision must belong to the same annotation')
+            known[event['id']] = event
+            events.append(event)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f'Invalid annotation log line {number}: {exc}') from exc
+    return events, sha256(raw).hexdigest()
+
+
+def annotation_lifecycle(events):
+    """Superseding/revoking never resurrects an older revision; duplicate actives conflict."""
+    states = {e['id']: 'active' for e in events if e['operation'] == 'annotate'}
+    for event in events:
+        if event['operation'] == 'revoke':
+            states[event['target_revision_id']] = 'revoked'
+        elif event.get('supersedes'):
+            states[event['supersedes']] = 'superseded'
+    by_annotation = {}
+    for event in events:
+        if event['operation'] == 'annotate' and states[event['id']] == 'active':
+            by_annotation.setdefault(event['annotation_id'], []).append(event['id'])
+    active = {}
+    for aid, ids in by_annotation.items():
+        if len(ids) == 1:
+            active[aid] = ids[0]
+        else:
+            for rev_id in ids:
+                states[rev_id] = 'conflict'
+    return states, active
+
+
+def append_annotation_events(path, pending, expected_hash):
+    """Caller holds locked(path); compare-and-swap protects concurrent saves."""
+    path = Path(path)
+    _, current = load_annotations(path)
+    if current != expected_hash:
+        raise ValueError('Annotation log changed; reload before saving')
+    events = [{'schema': 1, 'id': 'ann_rev_' + uuid4().hex,
+               'created_at': datetime.now(timezone.utc).isoformat(), **event} for event in pending]
+    raw = path.read_bytes() if path.exists() else b''
+    if raw and not raw.endswith(b'\n'):
+        raw += b'\n'
+    raw += ''.join(canonical(event) + '\n' for event in events).encode()
+    temp = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.annotation-', delete=False) as stream:
+            temp = Path(stream.name)
+            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        load_annotations(temp)
+        os.replace(temp, path)
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temp and temp.exists():
+            temp.unlink()
+    return events
+
+
+def annotation_snapshot(db):
+    row = db.execute("SELECT value FROM metadata WHERE key='annotation_snapshot'").fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def require_annotations_appendable(db, path):
+    saved = annotation_snapshot(db)
+    if not saved:
+        raise ValueError('Database is missing annotation snapshot; run make build')
+    raw = Path(path).read_bytes() if Path(path).exists() else b''
+    events, _ = load_annotations(path)
+    prefix = raw[:saved['bytes']]
+    if len(events) < saved['events'] or sha256(prefix).hexdigest() != saved['sha256']:
+        raise ValueError('Annotation log is not an append-only extension of the build snapshot; rebuild')
+    summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
+    if summary.get('extraction_sha256') != extraction_hash():
+        raise ValueError('Extraction implementation changed or the snapshot is stale; run make build')
+
+
+def require_current_annotations(db, path=None):
+    saved = annotation_snapshot(db)
+    if not saved:
+        return None
+    _, current = load_annotations(path or saved['path'])
+    if current != saved['sha256']:
+        raise ValueError('Annotation log has not been replayed; run make build')
     return saved

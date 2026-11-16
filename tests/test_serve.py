@@ -176,7 +176,13 @@ class WebTests(unittest.TestCase):
         status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(condition),'versions':'each'}))
         self.assertEqual(status,200);rows=json.loads(raw)['rows']
         stone=next(r for r in rows if r['name_en']=='Flesh to Stone' and r['ruleset']=='5r')
-        self.assertFalse(any(r['name_en']=='Flesh to Stone' and r['ruleset']=='5e' for r in rows))
+        stone_5e=next(r for r in rows if r['name_en']=='Flesh to Stone' and r['ruleset']=='5e')
+        status_5e,_,raw_5e=self.request('/api/knowledge-chain?'+urlencode({'id':stone_5e['id']}))
+        self.assertEqual(status_5e,200);chain_5e=json.loads(raw_5e)
+        rec_5e=next(r for r in chain_5e['records'] if r['kind']=='procedure' and r['subject_id']==stone_5e['id'])
+        self.assertEqual(rec_5e['status'],'partial')
+        self.assertEqual([g['reason'] for g in rec_5e['value']['unparsed']],['unannotated_clause','unannotated_clause'])
+        self.assertFalse(any(r['relation']=='removed_by' for r in rec_5e['value']['rules']))
         excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each']})
         self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
         for field,value in [('cumulative_count',2),('cumulative_result','success'),('save_ability','感知'),('target_scope','area')]:

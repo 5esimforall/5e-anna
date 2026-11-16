@@ -23,17 +23,23 @@ def outgoing(db, subject, scoped_options):
     edges=[]
     def usage(option):
         return {'branch_id':option['branch_id'],'conditions':option['conditions'],'target':option['casting_target']}
-    def target_edges(record, target, relation, scope, ev):
+    def target_edges(record, target, relation, scope, ev, *, resolved_override=False):
         resolution=target['resolution']
-        status=resolution['status'] if record['status']=='resolved' else record['status']
+        status=resolution['status'] if (record['status']=='resolved' or resolved_override) else record['status']
         for target_id in resolution['targets'] or [None]:
             edges.append({'source_id':subject,'target_id':target_id,'relation':relation,'status':status,
                 'record_id':record['id'],'target_status':resolution['status'],'scope':scope,'evidence':ev,'review_status':record['review_status']})
     for record in records_for(db,subject):
         value=record['value']
         if record['kind']=='grant':
+            entry_gates_ok=(record['status'] in {'resolved','partial'}
+                            and value.get('prerequisites',{}).get('status')!='unparsed'
+                            and (value.get('activation') or {}).get('status')!='unparsed')
             for grant in value['grants']:
-                if grant['entry_type']!='spell':target_edges(record,grant['target'],'grants_feat' if grant['entry_type']=='feat' else 'grants_feature',{'kind':'acquisition','constraints':grant['constraints'],'expression':grant.get('when')},grant['target']['evidence'])
+                if grant['entry_type']!='spell':
+                    target_edges(record,grant['target'],'grants_feat' if grant['entry_type']=='feat' else 'grants_feature',
+                                 {'kind':'acquisition','constraints':grant['constraints'],'expression':grant.get('when')},
+                                 grant['target']['evidence'],resolved_override=entry_gates_ok and grant['target']['resolution']['status']=='resolved')
             pre=value['prerequisites']
             for term in condition_terms(pre.get('expression')):
                 if term.get('target'):
@@ -53,8 +59,10 @@ def outgoing(db, subject, scoped_options):
                     seen[token]=edge;edges.append(edge)
             # Unresolved fixed grants remain inspectable, but never assert an effective option.
             for grant in value['grants']:
-                if grant['entry_type']=='spell' and grant['target']['kind']=='entry' and (record['status']!='resolved' or grant['target']['resolution']['status']!='resolved'):
-                    target_edges(record,grant['target'],'grants_spell',{'kind':'grant','grant_id':grant['id']},grant['evidence'][0])
+                if grant['entry_type']=='spell' and grant['target']['kind']=='entry':
+                    tids=grant['target']['resolution']['targets'] or [None]
+                    if any((grant['id'],tid) not in seen for tid in tids):
+                        target_edges(record,grant['target'],'grants_spell',{'kind':'grant','grant_id':grant['id']},grant['evidence'][0])
     for raw, in db.execute('SELECT data FROM knowledge_rule_links WHERE source_id=? ORDER BY id',(subject,)):
         edges.append(json.loads(raw))
     for raw, in db.execute("SELECT data FROM knowledge_rule_links WHERE target_id=? AND relation='exception_to' AND status!='rejected' ORDER BY id",(subject,)):

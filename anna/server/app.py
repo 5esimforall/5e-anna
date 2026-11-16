@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from anna.server.linked_book import BOOK, fingerprint
 from anna.paths import WEB
 from anna.presentation.reader import SCHEMA, ReaderError, page_data
-from anna.review.store import load_events
+from anna.review.store import load_events, load_annotations
 import anna.server.query as serve
 from anna.presentation import catalog
 import anna.source.search as search
@@ -42,6 +42,9 @@ def validate_bundle(source, db, book):
     reviewed = m.get('review_snapshot')
     if not reviewed or load_events(reviewed['path'])[1] != reviewed['sha256']:
         raise ValueError('Review log does not match the published snapshot; run make build')
+    annotated = m.get('annotation_snapshot')
+    if annotated and load_annotations(annotated['path'])[1] != annotated['sha256']:
+        raise ValueError('Annotation log does not match the published snapshot; run make build')
     if m['source_root'] != str(source) or not Path(db).is_file() or fingerprint(db) != m['database_sha256']:
         raise ValueError("Anna's database and Stella's linked book do not match; run make build")
     actual = {p.relative_to(source).as_posix(): p for p in source.rglob('*')

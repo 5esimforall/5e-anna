@@ -375,26 +375,50 @@ def knowledge_diff(before, after):
 
 
 
-def save_annotation(db, path, entry_id, kind, anchors, statements, reviewer, reason, *,
-                    annotation_id=None, scope=None, supersedes=None):
-    if not reviewer.strip() or not reason.strip():
+def save_annotation(db, path, subject_id, kind, anchors=None, statements=None, reviewer='', reason='', *,
+                    ruling=None, target=None, expected_content_sha256=None, expected_context_sha256=None,
+                    search_query='', annotation_id=None, scope=None, supersedes=None):
+    if not isinstance(reviewer, str) or not reviewer.strip() or not isinstance(reason, str) or not reason.strip():
         raise ValueError('Reviewer and reason are required')
     context = Context(db)
     with locked(path):
         require_annotations_appendable(db, path)
         events, log_hash = load_annotations(path)
-        pending = build_annotation_event(
-            context, entry_id, kind, anchors, statements, reviewer.strip(), reason.strip(),
-            annotation_id=annotation_id, scope=scope, supersedes=supersedes,
-        )
         states, _ = annotation_lifecycle(events)
-        active = [
-            e['id'] for e in events
-            if e['operation'] == 'annotate'
-            and e['annotation_id'] == pending['annotation_id']
-            and states[e['id']] in {'active', 'conflict'}
-        ]
-        if active != ([supersedes] if supersedes else []):
+        if kind == 'reference':
+            from anna.catalog.references import bind_reference_anchor, build_reference_event
+            by_id = {e['id']: e for e in events if e['operation'] == 'annotate'}
+            pending, ref = build_reference_event(
+                db, context, subject_id, ruling=ruling, reviewer=reviewer.strip(), reason=reason.strip(),
+                target=target, path=path, expected_content_sha256=expected_content_sha256,
+                expected_context_sha256=expected_context_sha256, search_query=search_query,
+                annotation_id=annotation_id, supersedes=supersedes, events_by_id=by_id,
+            )
+            active = [
+                e['id'] for e in events
+                if e['operation'] == 'annotate'
+                and e['kind'] == 'reference'
+                and states[e['id']] in {'active', 'conflict'}
+                and (
+                    e['annotation_id'] == pending['annotation_id']
+                    or (
+                        e['subject']['page_path'] == ref['path']
+                        and bind_reference_anchor(context, ref['path'], e['anchors'][0], [ref])[0] == 'bound'
+                    )
+                )
+            ]
+        else:
+            pending = build_annotation_event(
+                context, subject_id, kind, anchors, statements, reviewer.strip(), reason.strip(),
+                annotation_id=annotation_id, scope=scope, supersedes=supersedes,
+            )
+            active = [
+                e['id'] for e in events
+                if e['operation'] == 'annotate'
+                and e['annotation_id'] == pending['annotation_id']
+                and states[e['id']] in {'active', 'conflict'}
+            ]
+        if sorted(active) != ([supersedes] if supersedes else []):
             raise ValueError('Supersede the active annotation revision or revoke competing revisions')
         return append_annotation_events(path, [pending], log_hash)[0]
 
@@ -460,15 +484,13 @@ def main():
                     result=[json.loads(r[0]) for r in db.execute('SELECT data FROM knowledge_annotations'+(' WHERE '+' AND '.join(filters) if filters else '')+' ORDER BY annotation_id,id LIMIT ?',values+[args.limit])]
                 elif args.command=='annotate':
                     if args.kind=='reference':
-                        from anna.catalog.references import save_reference_annotation
                         if not args.ruling:
                             raise ValueError('--ruling is required when --kind reference')
-                        result=save_reference_annotation(
-                            db,args.annotations,ruling=args.ruling,reference_id=args.id,
-                            target=args.target,expected_content_sha256=args.expected_content_sha256,
-                            expected_context_sha256=args.expected_context_sha256,reviewer=args.reviewer,
-                            reason=args.reason,supersedes=args.supersedes,search_query=args.query,
-                            annotation_id=args.annotation_id,
+                        result=save_annotation(
+                            db,args.annotations,args.id,'reference',reviewer=args.reviewer,reason=args.reason,
+                            ruling=args.ruling,target=args.target,expected_content_sha256=args.expected_content_sha256,
+                            expected_context_sha256=args.expected_context_sha256,search_query=args.query,
+                            annotation_id=args.annotation_id,supersedes=args.supersedes,
                         )
                     else:
                         payload = json.loads(args.file.read_text()) if args.file else {}

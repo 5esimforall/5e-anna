@@ -10,12 +10,9 @@ from anna.knowledge.context import Context
 from anna.review.store import (
     DEFAULT_ANNOTATIONS,
     annotation_lifecycle,
-    append_annotation_events,
     input_snapshot,
     load_annotations,
-    locked,
     partition_annotations,
-    require_annotations_appendable,
 )
 from anna.serialization import canonical, digest
 from anna.source.html import Document, compact, key, resolve_link
@@ -743,110 +740,45 @@ def inspect_reference(db, reference_id, target=None, *, context=None, path=DEFAU
     }
 
 
-def save_reference_batch(db, path, items, *, expected_snapshot=None, expected_log=None):
-    if not isinstance(items, list) or not items:
-        raise ValueError('Batch must be a non-empty list of reference annotations')
-    with locked(path):
-        require_annotations_appendable(db, path)
-        if expected_snapshot is not None and expected_snapshot != input_snapshot(db):
-            raise ValueError('Build snapshot changed; inspect the whole batch again')
-        all_events, log_hash = load_annotations(path)
-        if expected_log is not None and expected_log != log_hash:
-            raise ValueError('Annotation log changed; re-check the batch before saving')
-        _, ref_events = partition_annotations(all_events)
-        states, _ = annotation_lifecycle(ref_events)
-        context = Context(db)
-        by_id = {e['id']: e for e in ref_events}
-        pending = []
-        seen = set()
-        for item in items:
-            if not isinstance(item, dict):
-                raise ValueError('Each reference annotation must be an object')
-            ruling = item.get('ruling')
-            reference_id = item.get('reference_id')
-            target = item.get('target')
-            reviewer = item.get('reviewer')
-            reason = item.get('reason')
-            supersedes = item.get('supersedes')
-            if ruling not in {'confirm', 'non_reference', 'missing_definition'}:
-                raise ValueError('Unsupported reference ruling')
-            if not isinstance(reviewer, str) or not reviewer.strip() or not isinstance(reason, str) or not reason.strip():
-                raise ValueError('Reviewer and reason cannot be empty')
-            if not isinstance(reference_id, str) or reference_id in seen:
-                raise ValueError('Reference ID is missing or duplicated in batch')
-            if target is not None and not isinstance(target, str):
-                raise ValueError('Target ID must be a string')
-            seen.add(reference_id)
-
-            view = inspect_reference(
-                db, reference_id, target, context=context, path=path,
-                missing_definition=ruling == 'missing_definition', query=item.get('search_query', ''),
-            )
-            if item.get('expected_content_sha256') and item['expected_content_sha256'] != view['content_sha256']:
-                raise ValueError('Reference content basis changed; inspect again: ' + reference_id)
-            if item.get('expected_context_sha256') and item['expected_context_sha256'] != view['context_sha256']:
-                raise ValueError('Reference context basis changed; inspect again: ' + reference_id)
-
-            ref = view['reference']
-            if not ref['text'].strip() or ref['presentation'] == 'definition_title':
-                raise ValueError('This is an empty range or a definition entry; it cannot be reviewed as a body reference')
-            if ruling == 'confirm' and (not target or not context.locatable(target)):
-                raise ValueError('Confirming a reference requires a locatable definition entry')
-            if ruling != 'confirm' and target is not None:
-                raise ValueError('Non-reference or missing-definition rulings cannot have a target')
-
-            anchor = view['anchors'][0]
-            aid = item.get('annotation_id') or (by_id[supersedes]['annotation_id'] if supersedes in by_id else None)
-            if aid is None:
-                aid = 'ann_ref_' + digest([ref['path'], anchor.get('within', ''), anchor['quote'], ref['signal']])[:20]
-
-            active = [
-                e['id'] for e in ref_events
-                if e['operation'] == 'annotate'
-                and states.get(e['id']) in {'active', 'conflict'}
-                and (
-                    e['annotation_id'] == aid
-                    or (
-                        e['subject']['page_path'] == ref['path']
-                        and bind_reference_anchor(context, ref['path'], e['anchors'][0], [ref])[0] == 'bound'
-                    )
-                )
-            ]
-            if sorted(active) != ([supersedes] if supersedes else []):
-                raise ValueError('This reference already has an active annotation; supersede it or revoke competing revisions')
-
-            event = {
-                'operation': 'annotate',
-                'annotation_id': aid,
-                'kind': 'reference',
-                'subject': view['subject'],
-                'anchors': view['anchors'],
-                'statements': view['statements'],
-                'basis': view['basis'],
-                'reviewer': reviewer.strip(),
-                'reason': reason.strip(),
-            }
-            if supersedes:
-                event['supersedes'] = supersedes
-            pending.append(event)
-        return append_annotation_events(path, pending, log_hash)
-
-
-def save_reference_annotation(db, path, *, ruling, reference_id, target=None, expected_content_sha256=None,
-                              expected_context_sha256=None, reviewer, reason, supersedes=None, search_query='', annotation_id=None):
-    return save_reference_batch(
-        db,
-        path,
-        [{
-            'ruling': ruling,
-            'reference_id': reference_id,
-            'target': target,
-            'expected_content_sha256': expected_content_sha256,
-            'expected_context_sha256': expected_context_sha256,
-            'reviewer': reviewer,
-            'reason': reason,
-            'supersedes': supersedes,
-            'search_query': search_query,
-            'annotation_id': annotation_id,
-        }],
-    )[0]
+def build_reference_event(
+    db, context, reference_id, *, ruling, reviewer, reason, target=None, path=DEFAULT_ANNOTATIONS,
+    expected_content_sha256=None, expected_context_sha256=None, search_query='',
+    annotation_id=None, supersedes=None, events_by_id=None,
+):
+    if ruling not in {'confirm', 'non_reference', 'missing_definition'}:
+        raise ValueError('Unsupported reference ruling')
+    if target is not None and not isinstance(target, str):
+        raise ValueError('Target ID must be a string')
+    view = inspect_reference(
+        db, reference_id, target, context=context, path=path,
+        missing_definition=ruling == 'missing_definition', query=search_query,
+    )
+    if expected_content_sha256 is not None and expected_content_sha256 != view['content_sha256']:
+        raise ValueError('Reference content basis changed; inspect again: ' + reference_id)
+    if expected_context_sha256 is not None and expected_context_sha256 != view['context_sha256']:
+        raise ValueError('Reference context basis changed; inspect again: ' + reference_id)
+    ref = view['reference']
+    if not ref['text'].strip() or ref.get('presentation') == 'definition_title':
+        raise ValueError('This is an empty range or a definition entry; it cannot be reviewed as a body reference')
+    if ruling == 'confirm' and (not target or not context.locatable(target)):
+        raise ValueError('Confirming a reference requires a locatable definition entry')
+    if ruling != 'confirm' and target is not None:
+        raise ValueError('Non-reference or missing-definition rulings cannot have a target')
+    anchor = view['anchors'][0]
+    aid = annotation_id or (events_by_id or {}).get(supersedes, {}).get('annotation_id')
+    if aid is None:
+        aid = 'ann_ref_' + digest([ref['path'], anchor.get('within', ''), anchor['quote'], ref['signal']])[:20]
+    event = {
+        'operation': 'annotate',
+        'annotation_id': aid,
+        'kind': 'reference',
+        'subject': view['subject'],
+        'anchors': view['anchors'],
+        'statements': view['statements'],
+        'basis': view['basis'],
+        'reviewer': reviewer,
+        'reason': reason,
+    }
+    if supersedes:
+        event['supersedes'] = supersedes
+    return event, ref

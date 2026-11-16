@@ -6,13 +6,8 @@ import tempfile
 import unittest
 
 from anna.catalog.concepts import build_concepts
-from anna.catalog.references import (
-    build_references,
-    inspect_reference,
-    save_reference_annotation,
-    save_reference_batch,
-)
-from anna.knowledge.repository import revoke_annotation
+from anna.catalog.references import build_references, inspect_reference
+from anna.knowledge.repository import revoke_annotation, save_annotation
 from anna.presentation.references import query_decisions, query_missing_definitions, query_references
 from anna.review.search import search_candidates
 from anna.review.store import (
@@ -110,11 +105,10 @@ class ReferenceAnnotationTests(unittest.TestCase):
     def confirm(self, ref=None, target='target', supersedes=None):
         ref = ref or self.plain()
         evidence = inspect_reference(self.db, ref['id'], target, path=self.log)
-        return save_reference_annotation(
-            self.db, self.log, ruling='confirm', reference_id=ref['id'], target=target,
-            expected_content_sha256=evidence['content_sha256'],
-            expected_context_sha256=evidence['context_sha256'],
-            reviewer='fixture', reason='synthetic reference evidence', supersedes=supersedes,
+        return save_annotation(
+            self.db, self.log, ref['id'], 'reference', reviewer='fixture', reason='synthetic reference evidence',
+            ruling='confirm', target=target, expected_content_sha256=evidence['content_sha256'],
+            expected_context_sha256=evidence['context_sha256'], supersedes=supersedes,
         )
 
     def test_invalid_basis_schema_or_digest_rejected_without_rewriting(self):
@@ -199,11 +193,10 @@ class ReferenceAnnotationTests(unittest.TestCase):
         self.rebuild()
         ref = self.plain()
         evidence = inspect_reference(self.db, ref['id'], path=self.log)
-        replacement = save_reference_annotation(
-            self.db, self.log, ruling='non_reference', reference_id=ref['id'], target=None,
-            expected_content_sha256=evidence['content_sha256'],
-            expected_context_sha256=evidence['context_sha256'],
-            reviewer='fixture', reason='ordinary prose', supersedes=event['id'],
+        replacement = save_annotation(
+            self.db, self.log, ref['id'], 'reference', reviewer='fixture', reason='ordinary prose',
+            ruling='non_reference', target=None, expected_content_sha256=evidence['content_sha256'],
+            expected_context_sha256=evidence['context_sha256'], supersedes=event['id'],
         )
         self.rebuild()
         self.assertEqual(self.plain()['reason'], 'reviewed_non_reference')
@@ -215,9 +208,9 @@ class ReferenceAnnotationTests(unittest.TestCase):
     def test_stale_save_and_pending_log_are_rejected(self):
         ref = self.plain()
         with self.assertRaisesRegex(ValueError, 'basis changed'):
-            save_reference_annotation(
-                self.db, self.log, ruling='confirm', reference_id=ref['id'], target='target',
-                expected_content_sha256='old', reviewer='fixture', reason='reason',
+            save_annotation(
+                self.db, self.log, ref['id'], 'reference', reviewer='fixture', reason='reason',
+                ruling='confirm', target='target', expected_content_sha256='old',
             )
         self.confirm()
         with self.assertRaisesRegex(ValueError, 'active annotation'):
@@ -225,44 +218,19 @@ class ReferenceAnnotationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'replayed'):
             build_book(self.source, self.database, self.root / 'book')
 
-    def batch_items(self):
-        refs = [self.plain(), next(r for r in query_references(self.db, signal='explicit')['rows'] if r['text'] == '未知引用')]
-        items = []
-        for r in refs:
-            ev = inspect_reference(self.db, r['id'], 'target', path=self.log)
-            items.append({
-                'ruling': 'confirm', 'reference_id': r['id'], 'target': 'target',
-                'expected_content_sha256': ev['content_sha256'],
-                'expected_context_sha256': ev['context_sha256'],
-                'reviewer': 'fixture', 'reason': 'synthetic evidence',
-            })
-        return items
-
-    def test_batch_is_atomic_and_pending_events_allow_more_saves(self):
-        items = self.batch_items()
-        bad = [items[0], dict(items[1], expected_content_sha256='outdated')]
-        before = load_annotations(self.log)[1]
-        with self.assertRaisesRegex(ValueError, 'basis changed'):
-            save_reference_batch(self.db, self.log, bad)
-        self.assertEqual(load_annotations(self.log)[1], before)
-        saved = save_reference_batch(self.db, self.log, items)
-        self.assertEqual(len(saved), 2)
+    def test_pending_events_allow_consecutive_saves_before_rebuild(self):
+        plain_ref = self.plain()
+        explicit_ref = next(r for r in query_references(self.db, signal='explicit')['rows'] if r['text'] == '未知引用')
+        first = self.confirm(ref=plain_ref)
+        second = self.confirm(ref=explicit_ref)
         with self.assertRaisesRegex(ValueError, 'replayed'):
             require_current_annotations(self.db, self.log)
-        save_reference_annotation(self.db, self.log, **dict(items[0], supersedes=saved[0]['id']))
+        # Superseding a pending un-replayed revision succeeds before rebuilding.
+        self.confirm(ref=plain_ref, supersedes=first['id'])
         self.rebuild()
         self.assertEqual(query_decisions(self.db, status='applied')['total'], 2)
         self.assertEqual(query_decisions(self.db, status='superseded')['total'], 1)
-
-    def test_batch_rejects_log_and_snapshot_changes(self):
-        items = self.batch_items()
-        with self.assertRaisesRegex(ValueError, 'Build snapshot'):
-            save_reference_batch(self.db, self.log, items, expected_snapshot='outdated')
-        with self.assertRaisesRegex(ValueError, 'Annotation log changed'):
-            save_reference_batch(self.db, self.log, items, expected_log='outdated')
-        with self.assertRaisesRegex(ValueError, 'duplicated'):
-            save_reference_batch(self.db, self.log, [items[0], items[0]])
-        self.assertEqual(load_annotations(self.log)[0], [])
+        self.assertEqual(len({first['id'], second['id']}), 2)
 
     def test_search_keeps_evidence_and_never_resolves(self):
         ref = self.plain()
@@ -279,11 +247,10 @@ class ReferenceAnnotationTests(unittest.TestCase):
     def test_missing_definition_lifecycle_and_withdrawn_repair(self):
         ref = next(r for r in query_references(self.db, signal='explicit')['rows'] if r['text'] == '未知引用')
         view = inspect_reference(self.db, ref['id'], missing_definition=True, path=self.log)
-        issue = save_reference_annotation(
-            self.db, self.log, ruling='missing_definition', reference_id=ref['id'], target=None,
-            expected_content_sha256=view['content_sha256'],
+        issue = save_annotation(
+            self.db, self.log, ref['id'], 'reference', reviewer='fixture', reason='No suitable independent definition',
+            ruling='missing_definition', target=None, expected_content_sha256=view['content_sha256'],
             expected_context_sha256=view['context_sha256'],
-            reviewer='fixture', reason='No suitable independent definition',
         )
         self.rebuild()
         self.assertEqual(query_missing_definitions(self.db, status='open')['total'], 1)

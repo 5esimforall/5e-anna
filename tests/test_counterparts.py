@@ -216,10 +216,13 @@ class CounterpartTests(unittest.TestCase):
         self.assertEqual(report['outcomes'], {'resolved': 12, 'ambiguous': 2, 'other_source': 1, 'unaligned': 1, 'unmatched': 2})
         result = audit_counterparts(self.db, out)
         self.assertEqual(result['errors'], [])
-        with (out / 'counterparts.csv').open(encoding='utf-8-sig', newline='') as f:
-            rows = {r['entry_id']: r for r in csv.DictReader(f)}
-        self.assertEqual(rows['fire24']['record_source'], 'XPHB')
-        self.assertTrue(rows['fire24']['record_locator'].startswith('data/spells/spells-xphb.json#/spell/'))
+        self.assertFalse((out / 'counterparts.csv').exists())
+        self.assertFalse((out / 'counterpart_coverage.json').exists())
+        row = self.db.execute(
+            "SELECT r.source, json_extract(r.data, '$.locator') FROM counterparts c JOIN counterpart_records r ON r.id = c.record_id WHERE c.entry_id='fire24'"
+        ).fetchone()
+        self.assertEqual(row[0], 'XPHB')
+        self.assertTrue(row[1].startswith('data/spells/spells-xphb.json#/spell/'))
         unmatched = next(eid for eid, o in self.outcomes.items() if o['outcome'] == 'unmatched')
         self.db.execute('UPDATE counterparts SET record_id=? WHERE entry_id=?', (self.outcomes['fire14']['record_id'], unmatched))
         self.assertIn(unmatched + ': unresolved record', audit_counterparts(self.db, out)['errors'])

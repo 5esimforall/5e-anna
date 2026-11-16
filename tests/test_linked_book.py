@@ -193,9 +193,6 @@ class LinkedBuildTests(unittest.TestCase):
             doc=Document('topics/test.htm',page.read_text());a,b=doc.span(doc.soup.u)
             conn=sqlite3.connect(db)
             conn.execute('UPDATE pages SET sha256=?,text=?',(fingerprint(page),doc.text))
-            conn.executescript('CREATE TABLE concept_observations(page_path,status,signal,data);')
-            for status in ['resolved','review','ambiguous']:
-                conn.execute('INSERT INTO concept_observations VALUES(?,?,?,?)',('topics/test.htm',status,'format',json.dumps({'start':a,'end':b,'target_id':'ver_test' if status=='resolved' else None})))
             conn.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'discovery_inputs':{'topics/style.css':fingerprint(css),'webhelpcontents.htm':None}})))
             ref={'id':'format_reference','path':'topics/test.htm','start':a,'end':b,'text':'格式引用','signal':'format',
                  'status':'resolved','target_id':'ver_test','can_link':True}

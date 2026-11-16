@@ -56,7 +56,9 @@ def search_candidates(db, reference_id, *, query='', entry_type='', ruleset='', 
     import json
     from anna.catalog.references import ReviewContext
     if not 1 <= limit <= 100 or offset < 0: raise ValueError('候选查询范围无效')
-    row = db.execute('SELECT data FROM effective_references WHERE id=?', (reference_id,)).fetchone()
+    cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+    where = 'id=? AND is_effective=1' if 'is_effective' in cols else 'id=?'
+    row = db.execute('SELECT data FROM effective_references WHERE ' + where, (reference_id,)).fetchone()
     if not row: raise LookupError('引用不存在，请重新查询有效引用 ID')
     ref = json.loads(row[0]); context = context or ReviewContext(db)
     matches = candidate_matches(context, ref, query)

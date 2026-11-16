@@ -5,7 +5,7 @@ from pathlib import Path
 import shutil
 
 
-GENERATED = ('data', 'output', '.cache', '.venv', 'node_modules')
+GENERATED = ('data', 'output', '.venv', 'node_modules')
 ICONS = ('anna-logo.png', 'stella-logo.png', 'favicon-16.png', 'favicon-32.png',
          'favicon-48.png', 'favicon.ico', 'stella-favicon.ico')
 

@@ -12,7 +12,7 @@ ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status index clean build test audit check up upper linked test-unit test-browser browser-setup icons
+.PHONY: usage clone update status clean build test audit check up upper linked test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -36,7 +36,6 @@ update: clone
 	@git -C "$(WEB_PATH)" log -1 --format='source updated to %h  %ad  %s' --date=iso
 	@git -C "$(5ETOOLS_PATH)" pull --ff-only
 	@git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn updated to %h  %ad  %s' --date=iso
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.search --rebuild
 
 status:
 	@if [ -d "$(WEB_PATH)/.git" ] || [ -f "$(WEB_PATH)/.git" ]; then \
@@ -55,14 +54,11 @@ status:
 	else \
 		echo "5etools-cn: not downloaded yet; run make clone"; \
 	fi
-	@if [ -f .cache/5echm-search.pkl ]; then \
-		printf 'search index: %s (source and content fingerprint checked at start)\n' "$$(du -h .cache/5echm-search.pkl | cut -f1 | tr -d ' ')"; \
+	@if [ -f data/extracted/catalog.sqlite ]; then \
+		printf 'catalog: %s\n' "$$(du -h data/extracted/catalog.sqlite | cut -f1 | tr -d ' ')"; \
 	else \
-		echo "search index: not built yet (make up builds it)"; \
+		echo "catalog: not built yet (run make build)"; \
 	fi
-
-index: clone
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.source.search --rebuild
 
 clean:
 	@python3 scripts/clean.py

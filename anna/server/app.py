@@ -74,8 +74,7 @@ def load_bundle(source, db, book, quiet=True):
     """Validate the published files and load what requests read; called again to reload after a rebuild."""
     signature_before = bundle_signature(db, book)
     validate_bundle(source, db, book)
-    search.WEB = Path(source).resolve()
-    entries = search.build_index(quiet=quiet)
+    entries = search.load_index(db, source, quiet=quiet)
     # The second validation catches a rebuild that overlapped loading the index; the final
     # signature check catches one that overlapped the second validation itself.
     manifest = validate_bundle(source, db, book)

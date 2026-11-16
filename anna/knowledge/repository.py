@@ -334,32 +334,19 @@ def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS):
         'annotations':dict(Counter(row['status'] for row in ann_rows)),
         'unparsed':dict(Counter(g['reason'] for r in records for g in r['value'].get('unparsed',[])))}
     db.execute('INSERT INTO metadata VALUES(?,?)',('knowledge_coverage',canonical(coverage)))
-    (Path(out)/'effective_knowledge.jsonl').write_text(''.join(canonical(r)+'\n' for r in records))
-    (Path(out)/'knowledge_annotations.jsonl').write_text(''.join(r[0]+'\n' for r in db.execute('SELECT data FROM knowledge_annotations ORDER BY annotation_id,id')))
-    (Path(out)/'knowledge_coverage.json').write_text(json.dumps(coverage,ensure_ascii=False,indent=2)+'\n')
     return coverage
 
 
-def audit_knowledge(db, folder):
-    """Check exact evidence, projections and exports; summarize by actual source."""
+def audit_knowledge(db, folder=None):
+    """Check exact evidence and projections; summarize by actual source."""
     if not exists(db):return None
     context=Context(db);errors=[];matrix=Counter()
-    present = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     records=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge')]
     for record in records:
         try:validate_record(record,context)
         except ValueError as exc:errors.append(record['id']+': '+str(exc))
         for sid in context.entries[record['subject_id']]['source_ids'] or ['unknown']:
             matrix[(sid,record['kind'],record['status'])]+=1
-    exports = ['effective_knowledge']
-    if 'knowledge_annotations' in present:
-        exports.append('knowledge_annotations')
-    for name in exports:
-        path=Path(folder)/(name+'.jsonl')
-        expected={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM '+name)}
-        exported=[json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-        actual={r['id']:r for r in exported}
-        if actual!=expected or len(actual)!=len(exported):errors.append(name+': export mismatch')
     usable = [r for r in records if r['review_status'] != 'conflict']
     expected={r['id']:r for r in branches(context,usable)}
     actual={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM casting_options')}

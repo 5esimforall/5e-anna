@@ -641,14 +641,17 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
         }
 
     db.executescript('''
-        CREATE TABLE effective_references(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER,end INTEGER,
-            signal TEXT,status TEXT,target_id TEXT REFERENCES entries(id),review_status TEXT,can_link INTEGER,presentation TEXT,data TEXT NOT NULL);
-        CREATE INDEX effective_reference_page_idx ON effective_references(page_path,start,end);
-        CREATE INDEX effective_reference_review_idx ON effective_references(review_status,status);
+        CREATE TABLE IF NOT EXISTS effective_references(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),
+            signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table','explicit')),
+            status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),
+            target_id TEXT REFERENCES entries(id),review_status TEXT,can_link INTEGER NOT NULL DEFAULT 0,
+            presentation TEXT,is_effective INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS effective_reference_page_idx ON effective_references(page_path,start,end);
+        CREATE INDEX IF NOT EXISTS effective_reference_target_idx ON effective_references(target_id);
+        CREATE INDEX IF NOT EXISTS effective_reference_review_idx ON effective_references(review_status,status);
         CREATE TABLE IF NOT EXISTS knowledge_annotations(id TEXT PRIMARY KEY,annotation_id TEXT,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS knowledge_annotation_subject ON knowledge_annotations(subject_id,annotation_id,status);
         DELETE FROM knowledge_annotations WHERE kind='reference';
-        CREATE INDEX IF NOT EXISTS concept_observation_page_idx ON concept_observations(page_path,start,end);
     ''')
 
     refs_by_page = {}
@@ -659,10 +662,12 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
             grouped[(ref['start'], ref['end'])].append(ref)
         exact = {span: group[0] for span, group in grouped.items() if len(group) == 1}
         for raw, in db.execute(
-            "SELECT data FROM concept_observations WHERE page_path=? AND signal IN ('index','format','plain','table') ORDER BY start,end,id",
+            "SELECT data FROM effective_references WHERE page_path=? AND signal IN ('index','format','plain','table') ORDER BY start,end,id",
             (path,),
         ):
             o = json.loads(raw)
+            if 'automatic' in o:
+                o = {**o, **o['automatic']}
             original = exact.get((o['start'], o['end']))
             if original:
                 original['observation_ids'].append(o['id'])
@@ -681,10 +686,10 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
         for ref in refs:
             assert 0 <= ref['start'] <= ref['end'] <= len(context.pages[path]['text']), ref['id']
             db.execute(
-                'INSERT INTO effective_references VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                'INSERT OR REPLACE INTO effective_references VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
                 (
                     ref['id'], path, ref['start'], ref['end'], ref['signal'], ref['status'], ref['target_id'],
-                    ref['review_status'], int(ref['can_link']), ref['presentation'], canonical(ref),
+                    ref['review_status'], int(ref['can_link']), ref['presentation'], 1, canonical(ref),
                 ),
             )
             total += 1
@@ -729,7 +734,6 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
     }
     db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)', ('annotation_snapshot', canonical(ann_snapshot)))
     db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)', ('reference_coverage', canonical(report)))
-    (Path(out) / 'reference_coverage.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     return report
 
 
@@ -792,12 +796,13 @@ def build_missing_definitions(db, events, results, out):
                 'INSERT INTO review_queue VALUES(?,?,?,?,?)',
                 (review['id'], review['target'], review['reason'], review['priority'], canonical(review)),
             )
-    (Path(out) / 'missing_definitions.jsonl').write_text(''.join(canonical(r) + '\n' for r in records))
     return dict(Counter(r['status'] for r in records))
 
 
 def read_reference(db, reference_id):
-    row = db.execute('SELECT data FROM effective_references WHERE id=?', (reference_id,)).fetchone()
+    cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+    where = 'id=? AND is_effective=1' if 'is_effective' in cols else 'id=?'
+    row = db.execute('SELECT data FROM effective_references WHERE ' + where, (reference_id,)).fetchone()
     if not row:
         raise ValueError('Reference not found; look up a valid reference ID')
     return json.loads(row[0])

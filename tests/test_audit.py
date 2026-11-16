@@ -14,16 +14,16 @@ class PlainProvenanceTests(unittest.TestCase):
     def errors(self,syntax,a=10,b=12):
         from anna.catalog.audit import audit_concepts
         db=sqlite3.connect(':memory:')
-        db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT);
-            CREATE TABLE concepts(definition_id TEXT,data TEXT);CREATE TABLE metadata(key TEXT,value TEXT);
-            CREATE TABLE concept_observations(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,data TEXT);''')
-        db.execute("INSERT INTO pages VALUES('p',?)",('x'*40,));db.executemany('INSERT INTO entries VALUES(?)',[('owner',),('wis',)])
-        db.execute('INSERT INTO concepts VALUES(?,?)',('wis',json.dumps({'ruleset':'5r','type':'ability'})))
+        db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT,ruleset TEXT,type TEXT);
+            CREATE TABLE metadata(key TEXT,value TEXT);
+            CREATE TABLE effective_references(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,is_effective INTEGER,data TEXT);''')
+        db.execute("INSERT INTO pages VALUES('p',?)",('x'*40,))
+        db.executemany('INSERT INTO entries VALUES(?,?,?)',[('owner',None,'section'),('wis','5r','ability')])
         o={'id':'o','path':'p','start':a,'end':b,'signal':'plain','status':'resolved','target_id':'wis','candidates':['wis'],'role':'mention',
            'evidence':{'syntax':syntax,'scope':{'ruleset':'5r','source_ids':['s'],'owner_ids':['owner']}}}
-        db.execute('INSERT INTO concept_observations VALUES(?,?,?,?,?,?,?,?)',('o','p',a,b,'plain','resolved','wis',json.dumps(o)))
+        db.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?,?,?)',('o','p',a,b,'plain','resolved','wis',0,json.dumps(o)))
         db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'observations':1,'outcomes':{'plain':{'resolved':1}},'gaps':{}})))
-        return [e for e in audit_concepts(db,'/nonexistent')['errors'] if 'provenance' in e]
+        return [e for e in audit_concepts(db)['errors'] if 'provenance' in e]
 
     def test_clause_cues_precede_and_notation_cues_contain_the_name(self):
         self.assertEqual(self.errors({'rule':'rule_use_clause','slot':'rule','cue_span':[7,10]}),[])
@@ -199,14 +199,14 @@ class TableProvenanceTests(unittest.TestCase):
         from anna.catalog.audit import audit_concepts
         db=sqlite3.connect(':memory:')
         db.executescript('''CREATE TABLE pages(path TEXT,text TEXT);CREATE TABLE entries(id TEXT);
-            CREATE TABLE concepts(definition_id TEXT,data TEXT);CREATE TABLE metadata(key TEXT,value TEXT);
-            CREATE TABLE concept_observations(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,data TEXT);''')
+            CREATE TABLE metadata(key TEXT,value TEXT);
+            CREATE TABLE effective_references(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,is_effective INTEGER,data TEXT);''')
         db.execute("INSERT INTO pages VALUES('p',?)",('x'*40,));db.execute("INSERT INTO entries VALUES('feature')")
         o={'id':'o','path':'p','start':10,'end':12,'signal':'table','status':'resolved','target_id':'feature',
            'candidates':['feature'],'role':role,'evidence':{'table':table}}
-        db.execute('INSERT INTO concept_observations VALUES(?,?,?,?,?,?,?,?)',('o','p',10,12,'table','resolved','feature',json.dumps(o)))
+        db.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?,?,?)',('o','p',10,12,'table','resolved','feature',0,json.dumps(o)))
         db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'observations':1,'outcomes':{'table':{'resolved':1}},'gaps':{}})))
-        return [e for e in audit_concepts(db,'/nonexistent')['errors'] if 'provenance' in e]
+        return [e for e in audit_concepts(db)['errors'] if 'provenance' in e]
 
     def test_cell_and_enclosing_table_bounds_are_required(self):
         table={'id':'tbl_x','span':[0,20],'cell_span':[8,16],'row':1,'column':0,'headers':['等级','职业特性'],'cell_text':'专精'}

@@ -99,8 +99,7 @@ def main():
     server.RequestHandlerClass=BrowserTestHandler
     thread=None;stop=threading.Event()
     try:
-        search.WEB=WEB;search.CACHE=PROJECT/'.cache/browser-search.pkl'
-        BrowserTestHandler.search_entries=search.build_index(quiet=True)
+        BrowserTestHandler.search_entries=search.load_index(DB,WEB,quiet=True)
         for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         print('Browser test server ready',flush=True);stop.wait()

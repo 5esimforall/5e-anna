@@ -63,7 +63,7 @@ class WebTests(unittest.TestCase):
                 ev=f['evidence'];a,b=ev['span'];text=self.db.execute('select text from pages where path=?',(ev['path'],)).fetchone()[0]
                 self.assertEqual(f['excerpt'],text[a:min(b,a+1200)])
     def test_concept_observations_are_scoped_and_keep_evidence(self):
-        row=self.db.execute("SELECT e.id FROM entries e JOIN concept_observations m ON m.page_path=e.page_path AND m.start>=e.start AND m.end<=e.end WHERE e.type='spell' AND m.signal='format' AND m.status='resolved' LIMIT 1").fetchone()
+        row=self.db.execute("SELECT e.id FROM entries e JOIN effective_references m ON m.page_path=e.page_path AND m.start>=e.start AND m.end<=e.end WHERE e.type='spell' AND m.signal='format' AND m.status='resolved' LIMIT 1").fetchone()
         self.assertIsNotNone(row);d=detail(self.db,row[0]);self.assertTrue(d['concept_observations'])
         for m in d['concept_observations']:
             self.assertEqual(m['path'],d['page_path'])

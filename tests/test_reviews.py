@@ -140,8 +140,8 @@ class ReferenceAnnotationTests(unittest.TestCase):
         self.rebuild()
         ref = query_references(self.db, reference_id=original['id'])['rows'][0]
         self.assertEqual((ref['target_id'], ref['review_status'], ref['can_link']), ('target', 'applied', True))
-        raw = self.db.execute('SELECT status,target_id FROM concept_observations WHERE id=?', (original['id'],)).fetchone()
-        self.assertEqual(raw, ('review', None))
+        raw = json.loads(self.db.execute('SELECT data FROM effective_references WHERE id=?', (original['id'],)).fetchone()[0])
+        self.assertEqual((raw['automatic']['status'], raw['automatic']['target_id']), ('review', None))
         book = self.root / 'book'
         build_book(self.source, self.database, book)
         generated = (book / self.path).read_bytes()

@@ -107,10 +107,10 @@ class ServerTests(unittest.TestCase):
             with self.subTest(signal=sig), tempfile.TemporaryDirectory() as td:
                 root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'
                 build_book(source,db,book)
-                code="import sys; from pathlib import Path; import anna.server.app as up; up.search.CACHE=Path(sys.argv.pop(1)); up.main()"
+                code="import anna.server.app as up; up.main()"
                 project=Path(__file__).resolve().parents[1]
                 with (root/'log').open('w+') as log:
-                    process=subprocess.Popen([sys.executable,'-c',code,str(root/'search.pkl'),'--source',str(source),'--db',str(db),'--book',str(book),'--port','0'],cwd=project,stdout=log,stderr=log)
+                    process=subprocess.Popen([sys.executable,'-c',code,'--source',str(source),'--db',str(db),'--book',str(book),'--port','0'],cwd=project,stdout=log,stderr=log)
                     try:
                         deadline=time.monotonic()+10
                         output=''
@@ -166,7 +166,6 @@ class WatchTests(unittest.TestCase):
             conn.execute("UPDATE metadata SET value=? WHERE key='summary'",(json.dumps({'full_scan':True,'rebuilt':True}),));conn.commit()
     def start(self,root,source,db,book,manifest):
         stack=ExitStack()
-        stack.enter_context(patch.object(up.search,'CACHE',root/'search.pkl'))
         stack.enter_context(patch.object(up.search,'WEB',source))
         server=create_server(db,book,manifest,0,watch=True)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()

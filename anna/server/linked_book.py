@@ -68,7 +68,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
         ann_snapshot=require_current_annotations(db)
         if ann_snapshot is None:raise ValueError('Database is missing annotation snapshot; run make build')
         mentions=defaultdict(list)
-        if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
+        if db.execute("SELECT 1 FROM metadata WHERE key='concept_coverage'").fetchone():
             coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
             for path,expected in coverage['discovery_inputs'].items():
                 actual=fingerprint(source/path) if (source/path).exists() else None

@@ -448,18 +448,4 @@ def build_counterparts(db, root, out):
               'unclaimed_by_source': dict(Counter(f['detail']['source'] for f in findings if f['kind'] == 'unclaimed_record').most_common()),
               'policy': 'counterparts are candidates with their matching rule; 不全书 text and extracted values are never rewritten'}
     db.execute('INSERT INTO metadata VALUES(?,?)', ('counterpart_coverage', canonical(report)))
-    records_by_id = {r['id']: r for r in records}
-    rows = []
-    for o in outcomes:
-        r = records_by_id.get(o['record_id'])
-        rows.append({**o, 'record_name': r['name_zh'] if r else '', 'record_name_en': r['name_en'] if r else '',
-                     'record_source': r['source'] if r else '', 'record_locator': r['locator'] if r else ''})
-    csv_write(out / 'counterparts.csv', rows, ['entry_id', 'type', 'name', 'outcome', 'rule', 'record_id', 'record_name', 'record_name_en',
-                                              'record_source', 'record_locator', 'aligned_codes', 'candidate_sources', 'candidates'])
-    csv_write(out / 'counterpart_findings.csv', [{**f, 'record_locator': records_by_id[f['record_id']]['locator']} for f in findings],
-              ['id', 'kind', 'entry_id', 'record_id', 'record_locator', 'detail'])
-    names = dict(db.execute('SELECT id,name FROM sources'))
-    csv_write(out / 'counterpart_sources.csv', [{**p, 'source_name': names.get(p['source_id'], '')} for p in alignment],
-              ['source_id', 'source_name', 'code', 'status', 'rules', 'evidence'])
-    (out / 'counterpart_coverage.json').write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
     return report

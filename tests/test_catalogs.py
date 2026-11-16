@@ -205,8 +205,9 @@ class AnimalLinkTests(unittest.TestCase):
             db=sqlite3.connect(Path(td)/'catalog.sqlite')
             self.assertEqual(db.execute('select count(*) from "坐骑"').fetchone()[0],5)
             self.assertEqual(db.execute('select count(*) from "动物购置"').fetchone()[0],19)
-            with (Path(td)/'views/坐骑.csv').open(encoding='utf-8-sig') as f:
-                self.assertEqual(len(list(csv.DictReader(f))),5)
+            self.assertFalse((Path(td)/'views').exists())
+            self.assertFalse((Path(td)/'entries.csv').exists())
+            self.assertTrue((Path(td)/'summary.json').exists())
             self.assertEqual(db.execute('pragma integrity_check').fetchone()[0],'ok')
             db.close()
             result,_,gaps=audit(Path(td)/'catalog.sqlite')

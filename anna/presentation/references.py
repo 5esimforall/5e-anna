@@ -5,7 +5,9 @@ from anna.presentation.contracts import reference
 
 def query_references(db, *, path='', reference_id='', status='', signal='', review_status='', limit=50, offset=0):
     if not 1 <= limit <= 300 or offset < 0: raise ValueError('引用查询范围无效')
-    clauses = []; values = []
+    cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+    clauses = ['is_effective=1'] if 'is_effective' in cols else []
+    values = []
     for field, value in [('page_path', path), ('id', reference_id), ('status', status), ('signal', signal), ('review_status', review_status)]:
         if value: clauses.append(field+'=?'); values.append(value)
     where = ' WHERE '+' AND '.join(clauses) if clauses else ''

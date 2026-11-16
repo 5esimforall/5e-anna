@@ -2,26 +2,27 @@
 # -*- coding: utf-8 -*-
 """Local full-text search over a read-only source snapshot; no upstream UI server.
 
-The reading app consumes search_entries. The CLI only builds the cache used by
-make index / make update; starting the reader never updates the source mirror.
+The reading app loads the pre-indexed book_search table from catalog.sqlite when it
+matches the source fingerprint, and falls back to scanning the source directory.
 """
 
 from __future__ import annotations
 
 import argparse
+from contextlib import closing
 from hashlib import sha256
 import html
 import json
 import math
-import pickle
 import re
+import sqlite3
 import subprocess
 import sys
 import time
 from pathlib import Path
 from urllib.parse import unquote
 
-from anna.paths import WEB, CACHE
+from anna.paths import PROJECT, WEB
 
 SCRIPT_RE = re.compile(r"(?is)<(script|style)\b.*?</\1>")
 BODY_RE = re.compile(r"(?is)<body[^>]*>(.*)</body>")
@@ -60,9 +61,9 @@ def extract_body_text(raw: str) -> str:
     return text.strip()
 
 
-def load_toc_titles() -> dict[str, str]:
+def load_toc_titles(web: Path | None = None) -> dict[str, str]:
     """从目录页里取各页面的标题（与官方搜索返回的 title 一致）。"""
-    path = WEB / "webhelpcontents.htm"
+    path = (web or WEB) / "webhelpcontents.htm"
     if not path.exists():
         return {}
     titles: dict[str, str] = {}
@@ -77,10 +78,10 @@ def load_toc_titles() -> dict[str, str]:
     return titles
 
 
-def web_commit() -> str:
+def web_commit(web: Path | None = None) -> str:
     try:
         out = subprocess.check_output(
-            ["git", "-C", str(WEB), "rev-parse", "HEAD"],
+            ["git", "-C", str(web or WEB), "rev-parse", "HEAD"],
             text=True,
             stderr=subprocess.DEVNULL,
         )
@@ -89,52 +90,38 @@ def web_commit() -> str:
         return "unknown"
 
 
-def index_signature():
+def index_signature(web: Path | None = None):
     """A Git commit alone cannot identify a locally changed source snapshot."""
+    root = web or WEB
     digest = sha256()
-    files = [p for p in (WEB / 'topics').rglob('*') if p.is_file() and p.suffix.lower() in {'.htm', '.html'}]
-    toc = WEB / 'webhelpcontents.htm'
+    files = [p for p in (root / 'topics').rglob('*') if p.is_file() and p.suffix.lower() in {'.htm', '.html'}]
+    toc = root / 'webhelpcontents.htm'
     if toc.is_file():
         files.append(toc)
     for path in sorted(files):
-        digest.update(path.relative_to(WEB).as_posix().encode() + b'\0')
+        digest.update(path.relative_to(root).as_posix().encode() + b'\0')
         digest.update(sha256(path.read_bytes()).digest())
     return digest.hexdigest()
 
 
-def build_index(force: bool = False, quiet: bool = False) -> list[dict]:
-    if not (WEB / "topics").is_dir():
-        sys.exit(f"找不到 {WEB}，请先运行 make clone 下载网页版静态站")
-
-    commit = web_commit()
-    snapshot = index_signature()
-    if not force and CACHE.exists():
-        try:
-            data = pickle.loads(CACHE.read_bytes())
-            if data.get("source") == str(WEB.resolve()) and data.get("snapshot") == snapshot and data.get("entries"):
-                if not quiet:
-                    print(
-                        f"[搜索] 已载入缓存索引：{len(data['entries'])} 页 "
-                        f"(commit {commit[:7]})",
-                        flush=True,
-                    )
-                return data["entries"]
-        except Exception:
-            pass
-
+def scan_entries(source: Path | None = None, quiet: bool = False) -> list[dict]:
+    root = Path(source).resolve() if source else WEB.resolve()
+    if not (root / "topics").is_dir():
+        sys.exit(f"找不到 {root}，请先运行 make clone 下载网页版静态站")
     started = time.time()
     if not quiet:
-        print(f"[search] building index: scanning {WEB / 'topics'} ...", flush=True)
-    toc_titles = load_toc_titles()
+        print(f"[search] scanning {root / 'topics'} ...", flush=True)
+    snapshot = index_signature(root)
+    toc_titles = load_toc_titles(root)
     entries: list[dict] = []
-    for path in sorted((WEB / "topics").rglob("*")):
+    for path in sorted((root / "topics").rglob("*")):
         if path.suffix.lower() not in (".htm", ".html"):
             continue
         try:
             raw = read_text(path)
         except Exception:
             continue
-        rel = path.relative_to(WEB).as_posix()
+        rel = path.relative_to(root).as_posix()
         src = rel.split("/", 1)[1] if "/" in rel else rel
         text = extract_body_text(raw)
         title = toc_titles.get(src) or extract_title(raw) or path.stem
@@ -150,23 +137,55 @@ def build_index(force: bool = False, quiet: bool = False) -> list[dict]:
                 "tl": text.lower(),
             }
         )
-
+    if index_signature(root) != snapshot:
+        raise ValueError('Source changed while scanning search index; retry')
     if not quiet:
         chars = sum(len(e["text"]) for e in entries)
         print(
-            f"[搜索] 索引完成：{len(entries)} 页 / {chars / 1e6:.1f}M 字 / "
+            f"[搜索] 扫描完成：{len(entries)} 页 / {chars / 1e6:.1f}M 字 / "
             f"{time.time() - started:.1f}s",
             flush=True,
         )
-
-    if index_signature() != snapshot:
-        raise ValueError('Source changed while building the index; retry make index')
-    CACHE.parent.mkdir(parents=True, exist_ok=True)
-    CACHE.write_bytes(
-        pickle.dumps({"source": str(WEB.resolve()), "commit": commit, "snapshot": snapshot, "built": time.time(), "entries": entries},
-                     protocol=pickle.HIGHEST_PROTOCOL)
-    )
     return entries
+
+
+def load_index(db_path: Path | None = None, source: Path | None = None, quiet: bool = False) -> list[dict]:
+    root = Path(source).resolve() if source else WEB.resolve()
+    if not (root / "topics").is_dir():
+        sys.exit(f"找不到 {root}，请先运行 make clone 下载网页版静态站")
+    snapshot = index_signature(root)
+    if db_path and Path(db_path).exists():
+        try:
+            uri = Path(db_path).resolve().as_uri() + '?mode=ro'
+            with closing(sqlite3.connect(uri, uri=True)) as conn:
+                has_table = conn.execute("SELECT 1 FROM sqlite_master WHERE name='book_search'").fetchone()
+                sig = conn.execute("SELECT value FROM metadata WHERE key='book_search_signature'").fetchone()
+                if has_table and sig and sig[0] == snapshot:
+                    entries = [
+                        {
+                            "i": i,
+                            "url": url,
+                            "src": src,
+                            "title": title,
+                            "tll": title.lower(),
+                            "cat": cat,
+                            "text": text,
+                            "tl": text.lower(),
+                        }
+                        for i, (url, src, title, cat, text) in enumerate(
+                            conn.execute('SELECT url,src,title,cat,text FROM book_search ORDER BY rowid')
+                        )
+                    ]
+                    if entries:
+                        if not quiet:
+                            print(
+                                f"[搜索] 已载入库内全文索引：{len(entries)} 页 (commit {web_commit(root)[:7]})",
+                                flush=True,
+                            )
+                        return entries
+        except Exception:
+            pass
+    return scan_entries(root, quiet=quiet)
 
 
 def parse_terms(keyword: str) -> list[str]:
@@ -287,10 +306,31 @@ def search_entries(entries: list[dict], params: dict[str, list[str]]) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--rebuild', action='store_true', help='Rebuild the index and ignore the cache')
+    parser.add_argument('keyword', nargs='?', default='', help='Search query string')
+    parser.add_argument('--db', type=Path, default=PROJECT / 'data/extracted/catalog.sqlite')
+    parser.add_argument('--source', type=Path, default=WEB)
+    parser.add_argument('--limit', type=int, default=20)
+    parser.add_argument('--page', type=int, default=1)
+    parser.add_argument('--regex', action='store_true')
+    parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
-    entries = build_index(force=args.rebuild, quiet=True)
-    print(f'[search] saved index to {CACHE} ({len(entries)} pages)', flush=True)
+    entries = load_index(args.db, args.source, quiet=True)
+    if not args.keyword:
+        print(json.dumps({'indexed_pages': len(entries)}, ensure_ascii=False))
+        return
+    params = {
+        'q': [args.keyword],
+        'pageSize': [str(max(1, min(100, args.limit)))],
+        'page': [str(max(1, args.page))],
+        'regex': ['1' if args.regex else '0'],
+    }
+    result = search_entries(entries, params)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"{result['total']} pages matched (showing {len(result['results'])})")
+        for item in result['results']:
+            print(f"{item['rawTitle']}\t{item['path']}")
 
 
 if __name__ == '__main__':

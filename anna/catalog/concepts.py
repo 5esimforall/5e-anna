@@ -484,25 +484,25 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
                 if resolution['status']=='resolved':previous=(b,syntax['slot'])
                 observe(path,a,b,page_text[a:b],'plain','concept',**resolution,evidence=evidence)
     db.executescript('''
-    CREATE TABLE concepts(id TEXT PRIMARY KEY,definition_id TEXT UNIQUE REFERENCES entries(id),identity_status TEXT NOT NULL,data TEXT NOT NULL);
-    CREATE TABLE concept_observations(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table')),status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),target_id TEXT REFERENCES entries(id),data TEXT NOT NULL);
-    CREATE INDEX concept_observations_page ON concept_observations(page_path,start);
-    CREATE INDEX concept_observations_target ON concept_observations(target_id);
+    CREATE TABLE effective_references(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),
+        signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table','explicit')),
+        status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),
+        target_id TEXT REFERENCES entries(id),review_status TEXT,can_link INTEGER NOT NULL DEFAULT 0,
+        presentation TEXT,is_effective INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL);
+    CREATE INDEX effective_reference_page_idx ON effective_references(page_path,start,end);
+    CREATE INDEX effective_reference_target_idx ON effective_references(target_id);
+    CREATE INDEX effective_reference_review_idx ON effective_references(review_status,status);
     ''')
-    for eid in sorted(definition_ids):
-        e=resolver.entries[eid];record={'id':'concept_'+e['entity_id'],'definition_id':eid,'identity_status':'provisional','aliases':aliases(e),'type':e['type'],'ruleset':e['ruleset'],'source_ids':e['source_ids']}
-        db.execute('INSERT INTO concepts VALUES(?,?,?,?)',(record['id'],eid,'provisional',json.dumps(record,ensure_ascii=False)))
     observations=list({o['id']:o for o in observations}.values())
-    with (out/'concept_observations.jsonl').open('w') as f:
-        for o in observations:
-            assert 0<=o['start']<=o['end']<=len(pages[o['path']]['text'])
-            data=json.dumps(o,ensure_ascii=False);f.write(data+'\n')
-            db.execute('INSERT INTO concept_observations VALUES(?,?,?,?,?,?,?,?)',(o['id'],o['path'],o['start'],o['end'],o['signal'],o['status'],o['target_id'],data))
+    for o in observations:
+        assert 0<=o['start']<=o['end']<=len(pages[o['path']]['text'])
+        data=json.dumps(o,ensure_ascii=False)
+        db.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                   (o['id'],o['path'],o['start'],o['end'],o['signal'],o['status'],o['target_id'],None,0,None,0,data))
     local_definitions=[d for defs in resolver.local_definitions.values() for d in defs]
     db.execute('CREATE TABLE local_definitions(id TEXT PRIMARY KEY,definition_id TEXT REFERENCES entries(id),scope_entry_id TEXT REFERENCES entries(id),data TEXT NOT NULL)')
     for d in local_definitions:
         db.execute('INSERT INTO local_definitions VALUES(?,?,?,?)',(d['id'],d['definition_id'],d['scope_entry_id'],json.dumps(d,ensure_ascii=False)))
-    (out/'local_definitions.jsonl').write_text(''.join(json.dumps(d,ensure_ascii=False)+'\n' for d in local_definitions))
     counts=Counter((o['signal'],o['status']) for o in observations)
     by_book={}
     for page in page_coverage:
@@ -522,6 +522,5 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
                     'ambiguous_targets':[o['id'] for o in observations if o['status']=='ambiguous']},
             'unindexed_definitions':sorted(definition_ids-resolver.indexed),
             'policy':'provisional definition identities; plain rule-use clauses require scoped core targets; table name cells require class-feature names in the owning class or subclass; no name-based merge'}
-    (out/'concept_coverage.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
     db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps(report,ensure_ascii=False)))
     return report

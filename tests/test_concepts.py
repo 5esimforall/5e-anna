@@ -222,7 +222,7 @@ class ConceptTests(unittest.TestCase):
             db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
             report=build_concepts(db,root,root,entries,pages)
             self.assertEqual(report['outcomes']['table'],{'resolved':4})
-            rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM concept_observations WHERE signal='table' ORDER BY start")]
+            rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM effective_references WHERE signal='table' ORDER BY start")]
             self.assertEqual([r['text'] for r in rows],['专精','偷袭','灵巧动作','灵巧动作Cunning Action'])
             self.assertEqual([r['target_id'] for r in rows],['f1','f2','f3','f3'])
             for row in rows:
@@ -273,16 +273,15 @@ class ConceptTests(unittest.TestCase):
             db.executemany('INSERT INTO entries VALUES(?)',[(e['id'],) for e in es]);db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
             report=build_concepts(db,root,root,es,pages)
             self.assertEqual(report['outcomes']['index'],{'resolved':1,'unresolved':1})
-            rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM concept_observations')]
+            rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_references')]
             marked=next(r for r in rows if r['signal']=='format' and r['text']=='专注');self.assertEqual(marked['target_id'],'a')
             plain=next(r for r in rows if r['signal']=='plain' and r['text']=='专注');self.assertEqual(plain['status'],'review');self.assertIsNone(plain['target_id'])
             self.assertEqual([r['text'] for r in rows if r['signal']=='plain' and r['text'].lower()=='concentration'],['Concentration']);self.assertEqual(plain['candidates'],['a']);self.assertEqual(pages[plain['path']]['text'][plain['start']:plain['end']],'专注')
             from anna.catalog.audit import audit_concepts
             self.assertEqual(audit_concepts(db,root)['errors'],[])
-            db.execute("UPDATE concept_observations SET target_id='a' WHERE status='review'")
-            self.assertTrue(any('unresolved target' in e for e in audit_concepts(db,root)['errors']))
-            (root/'concept_observations.jsonl').write_text('')
-            self.assertIn('concept_observations.jsonl: IDs mismatch',audit_concepts(db,root)['errors'])
+            db.execute("UPDATE effective_references SET target_id='a' WHERE status='review'")
+            self.assertTrue(any('data mismatch' in e for e in audit_concepts(db,root)['errors']))
+            self.assertFalse((root/'concept_observations.jsonl').exists())
             db.close()
     def test_roles_evidence_unknown_format_and_navigation_outside_quick_directory(self):
         from anna.paths import WEB
@@ -304,7 +303,7 @@ class ConceptTests(unittest.TestCase):
             db=sqlite3.connect(':memory:');db.executescript('PRAGMA foreign_keys=ON;CREATE TABLE entries(id PRIMARY KEY);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
             db.executemany('INSERT INTO entries VALUES(?)',[(e['id'],) for e in es]);db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
             report=build_concepts(db,root,root,es,pages)
-            rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM concept_observations WHERE signal='format'")]
+            rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM effective_references WHERE signal='format'")]
             by_reason={r['reason']:r for r in rows}
             self.assertEqual(by_reason['definition_title']['role'],'definition')
             self.assertEqual(by_reason['explicit_link']['role'],'explicit_reference')

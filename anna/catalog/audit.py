@@ -33,17 +33,27 @@ def connect(path):
     return db
 
 
-def audit_concepts(db,folder):
+def audit_concepts(db,folder=None):
     """Validate occurrence accounting independently of semantic review completion."""
     errors=[];ids=set();outcomes=Counter()
     pages=dict(db.execute('SELECT path,length(text) FROM pages'))
     entries={r[0] for r in db.execute('SELECT id FROM entries')}
-    rule_targets={r[0]:r[1] for r in db.execute(
-        "SELECT definition_id,json_extract(data,'$.ruleset'),json_extract(data,'$.type') FROM concepts") if r[2] in RULE_TYPES}
-    for row in db.execute('SELECT id,page_path,start,end,signal,status,target_id,data FROM concept_observations'):
-        mid,path,a,b,signal,status,target,raw=row;o=json.loads(raw);ids.add(mid);outcomes[(signal,status)]+=1
+    entry_cols={r[1] for r in db.execute('PRAGMA table_info(entries)')}
+    if {'ruleset','type'}<=entry_cols:
+        rule_targets={r[0]:r[1] for r in db.execute('SELECT id,ruleset,type FROM entries') if r[2] in RULE_TYPES}
+    elif 'data' in entry_cols:
+        rule_targets={e['id']:e.get('ruleset') for raw, in db.execute('SELECT data FROM entries')
+                      for e in [json.loads(raw)] if e.get('type') in RULE_TYPES}
+    else:
+        rule_targets={}
+    for row in db.execute("SELECT id,page_path,start,end,signal,status,target_id,is_effective,data FROM effective_references WHERE signal!='explicit'"):
+        mid,path,a,b,signal,col_status,col_target,is_eff,raw=row
+        eff=json.loads(raw)
+        if [mid,path,a,b,signal,col_status,col_target]!=[eff[k] for k in ('id','path','start','end','signal','status','target_id')]:errors.append(mid+': data mismatch')
+        o={**eff,**eff['automatic']} if (is_eff and 'automatic' in eff) else eff
+        status,target=o['status'],o['target_id']
+        ids.add(mid);outcomes[(signal,status)]+=1
         if not 0<=a<=b<=pages.get(path,-1):errors.append(mid+': invalid range')
-        if [mid,path,a,b,signal,status,target]!=[o[k] for k in ('id','path','start','end','signal','status','target_id')]:errors.append(mid+': data mismatch')
         if any(c not in entries for c in o['candidates']):errors.append(mid+': missing candidate')
         if status=='resolved':
             if not target or o['candidates']!=[target]:errors.append(mid+': invalid resolved target')
@@ -70,14 +80,6 @@ def audit_concepts(db,folder):
             if (o['role']!='mention' or not located or not isinstance(table.get('id'),str)
                 or not isinstance(table.get('headers'),list)):
                 errors.append(mid+': missing table reference provenance')
-    exported=set();p=Path(folder)/'concept_observations.jsonl'
-    if p.exists():
-        with p.open() as f:
-            for line in f:
-                mid=json.loads(line)['id']
-                if mid in exported:errors.append(mid+': duplicate export')
-                exported.add(mid)
-    if ids!=exported:errors.append('concept_observations.jsonl: IDs mismatch')
     coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
     if coverage['observations']!=len(ids):errors.append('coverage: total mismatch')
     expected={(s,status):n for s,values in coverage['outcomes'].items() for status,n in values.items()}
@@ -86,9 +88,8 @@ def audit_concepts(db,folder):
             'gap_counts':{k:len(v) for k,v in coverage['gaps'].items()}}
 
 
-def audit_counterparts(db,folder):
-    """Counterpart outcomes must be internally consistent and match their exports; agreement with
-    5etools-cn is reported, not required."""
+def audit_counterparts(db,folder=None):
+    """Counterpart outcomes must be internally consistent; agreement with 5etools-cn is reported, not required."""
     errors=[]
     records=set(r[0] for r in db.execute('SELECT id FROM counterpart_records'))
     entries=set(r[0] for r in db.execute('SELECT id FROM entries'))
@@ -108,11 +109,6 @@ def audit_counterparts(db,folder):
         if record not in records or (eid is not None and eid not in entries):errors.append(fid+': missing target')
         if kind=='reprinted_as' and (detail['other_entry_id'] not in entries or detail['other_record_id'] not in records):errors.append(fid+': missing reprint target')
         if (kind=='unclaimed_record')!=(eid is None):errors.append(fid+': entry presence disagrees with kind')
-    for name,column,ids in (('counterparts.csv','entry_id',rows),('counterpart_findings.csv','id',finding_ids)):
-        p=Path(folder)/name
-        if not p.exists():errors.append(name+': missing');continue
-        with p.open(encoding='utf-8-sig',newline='') as f:exported=[r[column] for r in csv.DictReader(f)]
-        if len(exported)!=len(ids) or set(exported)!=ids:errors.append(name+': IDs mismatch')
     coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='counterpart_coverage'").fetchone()[0])
     if coverage['outcomes']!=dict(outcomes) or coverage['entries']!=len(rows):errors.append('coverage: outcome mismatch')
     if coverage['findings']!=dict(findings):errors.append('coverage: finding mismatch')
@@ -206,18 +202,12 @@ def audit(db_path,baseline=None):
     entries={r['id']:dict(r) for r in db.execute('SELECT id,name,type,page_path,fields FROM entries')}
     view_counts={r[0]:db.execute('SELECT count(*) FROM "'+r[0].replace('"','""')+'"').fetchone()[0]
                  for r in db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name!='entry_text'")}
-    # Counts AND identities must agree across every exported CSV and SQL view.
+    # SQL views remain queryable directly inside catalog.sqlite.
     mismatches=[]
-    for name in view_counts:
-        p=Path(db_path).parent/'views'/f'{name}.csv'
-        if not p.exists():mismatches.append(name+': CSV missing');continue
-        with p.open(encoding='utf-8-sig',newline='') as f:ids=[r['id'] for r in csv.DictReader(f)]
-        sql_ids={r[0] for r in db.execute('SELECT id FROM "'+name.replace('"','""')+'"')}
-        if len(ids)!=len(sql_ids) or set(ids)!=sql_ids:mismatches.append(name+': IDs mismatch')
     reasons=dict(db.execute('SELECT reason,count(*) FROM review_queue GROUP BY reason'))
     catalog_reviews=[json.loads(r[0]) for r in db.execute("SELECT data FROM review_queue WHERE reason IN ('animal_statblock_unresolved','mount_example_unresolved','catalog_table_unhandled','catalog_row_layout_unresolved') ORDER BY reason,target")]
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
-    concepts=audit_concepts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone() else None
+    concepts=audit_concepts(db,Path(db_path).parent) if (db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone() and db.execute("SELECT 1 FROM metadata WHERE key='concept_coverage'").fetchone()) else None
     counterparts=audit_counterparts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
     knowledge=audit_knowledge(db,Path(db_path).parent);knowledge_changes=[]
     gaps,gap_pages,gap_sections=classification_gaps(db)
@@ -276,7 +266,7 @@ def gap_report(result,gaps):
         lines+=['','标题标注与条目所得分类：','','| 标注 | 分类 |','|---|---|']
         for label,types in shown.items():
             lines.append(f"| {label} | {'，'.join(f'{TYPE_LABELS.get(t,t)} {n}' for t,n in types.items())} |")
-    lines+=['','逐页见 `untyped_pages.csv`；逐段的信号与原文位置见 `classification_gaps.csv`。']
+    lines+=['','缺口详情保存在 `catalog.sqlite`（`entries`）与 `audit.json`。']
     return lines
 
 
@@ -293,7 +283,7 @@ def conflict_report(result):
         lines+=['','| 所得分类（规则） | 另有原文证据（规则） | 条目 |','|---|---|---:|']
         for p in now['pairs']:
             lines.append(f"| {TYPE_LABELS.get(p['type'],p['type'])}（`{p['rule']}`） | {TYPE_LABELS.get(p['printed_type'],p['printed_type'])}（`{p['printed_rule']}`） | {p['count']} |")
-    lines+=['','逐条见 `type_conflicts.csv`。']
+    lines+=['','冲突详情可在 Anna 核对模式下直接筛选查看。']
     return lines
 
 
@@ -315,27 +305,22 @@ def counterpart_report(result):
     lines+=['','核对线索：','']
     for kind,label in COUNTERPART_FINDINGS.items():
         lines.append(f"- {label}：{c['findings'].get(kind,0)}")
-    lines+=['',f"来源对齐：{'，'.join(f'{k} {n}' for k,n in c['alignment_status'].items())}；逐对见 `counterpart_sources.csv`。逐条对应见 `counterparts.csv`，线索与 5etools-cn 记录位置见 `counterpart_findings.csv`。"]
+    lines+=['',f"来源对齐：{'，'.join(f'{k} {n}' for k,n in c['alignment_status'].items())}；逐对、逐条与线索保存在 `catalog.sqlite` 的 `counterpart_sources`、`counterparts` 与 `counterpart_findings` 表。"]
     return lines
 
 
 def export_report(out,result,changes,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
-    (out/'knowledge_changes.jsonl').write_text(''.join(json.dumps(c,ensure_ascii=False)+'\n' for c in result['knowledge_changes']))
-    csv_write(out/'audit_changes.csv',changes,['id','name','page_path','change','before_type','after_type','before_fields','after_fields'])
-    csv_write(out/'untyped_pages.csv',gaps['pages'],['path','title','source','directory','sections','flagged_sections'])
-    csv_write(out/'classification_gaps.csv',gaps['sections'],['id','name','page_path','source','directory','page_untyped','signals','evidence'])
-    csv_write(out/'type_conflicts.csv',gaps['conflicts'],['id','name','page_path','type','rule','printed'])
     lines=['# 提取规则审计','',
         '检查范围：全库分类计数和证据状态、所有导出视图；逐表检查商品表列结构，检查原载具／设施／奖励／陷阱的上下文分类结果；原文回归覆盖两版PHB、两版DMG、MM、TCE、XGE及合作内容。',
         '这不是全库人工核验。未分类段落、待核关联和既有索引问题仍保留，不将空视图解释为原文不存在。','',
         '## 本轮变化','',
         f"- 条目变化：{result['change_counts']}；未指定基线时不推断本轮修正。",
-        f"- 规则陈述变化：{dict(Counter(c['change'] for c in result['knowledge_changes']))}。逐条见 knowledge_changes.jsonl。",'',
+        f"- 规则陈述变化：{dict(Counter(c['change'] for c in result['knowledge_changes']))}。",'',
         '## 校验','',
         f"- 全量扫描：{result['processed_pages']} 页；解析错误 {result['parse_errors']}。",
-        f"- SQLite：{result['integrity_check']}；外键错误 {result['foreign_key_errors']}；CSV／SQL视图不一致 {len(result['csv_sql_mismatches'])}。",
+        f"- SQLite：{result['integrity_check']}；外键错误 {result['foreign_key_errors']}。",
         f"- 输入与修改前一致：{result['same_input_as_baseline']}。",'',
         '## 分类计数（版本候选，不是去重实体）','','| 分类 | 修改前 | 修改后 |','|---|---:|---:|']
     for typ in sorted(result['after_types'].keys()|result['before_types'].keys()):
@@ -346,7 +331,7 @@ def export_report(out,result,changes,gaps):
         detail=json.dumps(r['detail'],ensure_ascii=False)
         lines.append(f"- `{r['reason']}`：{detail}；`{r['evidence'].get('path','')}`。")
     lines+=['','未支持的混合饮食／住宿价格表保留原表并进入审核队列，不伪装成装备条目。驴／骡的并列表述逐个关联；未找到独立驴数据卡时保留待核，不擅用骡替代。',
-        '', '全库待核原因与数量见 `audit.json`；逐条增删、类型和字段变化见 `audit_changes.csv`。计数下降可能是纠正误分类，并不表示删去原文。','']
+        '', '全库待核原因与数量见 `audit.json` 与 `catalog.sqlite`。计数下降可能是纠正误分类，并不表示删去原文。','']
     lines+=gap_report(result,gaps)
     lines+=conflict_report(result)
     lines+=['',*counterpart_report(result)]

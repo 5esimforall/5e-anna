@@ -368,8 +368,14 @@ def detail(db, eid, chain_spell=None, chain_path=None, chain_effect=None):
     e['relations']=[dict(r) for r in db.execute('SELECT predicate,object_id,target_label,status FROM relations WHERE subject_id=? ORDER BY predicate,target_label',(eid,))]
     e['versions']=version_compare(db,e)
     e['concept_observations']=[]
-    if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
+    has_obs=bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone())
+    has_eff=bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone())
+    eff_cols={r[1] for r in db.execute('PRAGMA table_info(effective_references)')} if has_eff else set()
+    if has_obs:
         e['concept_observations']=[contracts.observation(json.loads(r[0])) for r in db.execute("SELECT data FROM concept_observations WHERE page_path=? AND start>=? AND end<=? ORDER BY start,signal",(e['page_path'],e['start'],e['end']))]
+    elif has_eff and 'is_effective' in eff_cols:
+        e['concept_observations']=[contracts.observation({**o,**o['automatic']} if 'automatic' in o else o) for r in db.execute("SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? AND signal!='explicit' ORDER BY start,signal",(e['page_path'],e['start'],e['end'])) for o in [json.loads(r[0])]]
+    if e['concept_observations']:
         ids=sorted({cid for o in e['concept_observations'] if not o['target_id'] for cid in o['candidates']})
         candidates={}
         for start in range(0,len(ids),400):
@@ -380,10 +386,11 @@ def detail(db, eid, chain_spell=None, chain_path=None, chain_effect=None):
     e['missing_definitions']=query_missing_definitions(db,path=e['page_path'],limit=300)['rows'] if db.execute("SELECT 1 FROM sqlite_master WHERE name='missing_definitions'").fetchone() else []
     e['reviews']=[json.loads(r[0]) for r in db.execute('SELECT data FROM review_queue WHERE target IN (?,?) ORDER BY priority,reason',(eid,e['page_path']))]
     e['effective_references']=[]
-    if db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():
-        e['effective_references']=[contracts.reference(json.loads(r[0])) for r in db.execute(
-            'SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id',
-            (e['page_path'],e['start'],e['end']))]
+    if has_eff:
+        eff_sql=('SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? AND is_effective=1 ORDER BY start,id'
+                 if 'is_effective' in eff_cols else
+                 'SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id')
+        e['effective_references']=[contracts.reference(json.loads(r[0])) for r in db.execute(eff_sql,(e['page_path'],e['start'],e['end']))]
         ids=sorted({cid for r in e['effective_references'] if not r['target_id'] for cid in r['candidates']})
         candidates={}
         for start in range(0,len(ids),400):

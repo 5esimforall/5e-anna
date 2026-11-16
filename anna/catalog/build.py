@@ -10,17 +10,19 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
 
-from anna.serialization import canonical, csv_write, jsonl_write
+from anna.serialization import canonical
 from anna.source.pages import read_page
 from anna.source.html import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, skill_notation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
 from anna.catalog.types import TYPE_LABELS, classify, refine_page_types, mark_class_regions, evidence_status, type_conflicts, RULE_TYPES
 from anna.source.registry import SourceRegistry
+from anna.source.search import extract_body_text as extract_search_body, extract_title as extract_search_title, index_signature, load_toc_titles
 from anna.source.tables import extract_tables
 
 from anna.paths import PROJECT, WEB as DEFAULT_WEB, FIVETOOLS as DEFAULT_FIVETOOLS
@@ -85,13 +87,14 @@ def parse_one(args):
     try:
         raw,encoding,h=read_page(Path(web)/path)
         page.update(encoding=encoding,sha256=h)
+        search_doc={'url':path,'html_title':extract_search_title(raw),'text':extract_search_body(raw)}
         if page['role'] in {'excluded_template_or_copy','editorial'}:
-            page['parse_status']='excluded';return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'issues':[]}
+            page['parse_status']='excluded';return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'search':search_doc,'issues':[]}
         doc=Document(path,raw)
         page.update(title=doc.title,text=doc.text)
         dom=doc.dom_snapshot()
         if page['role']=='index':
-            out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':dom['anchors'],'dom':dom,'issues':[]}
+            out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':dom['anchors'],'dom':dom,'search':search_doc,'issues':[]}
             doc.close();return out
         cs=doc.candidates(observations)
         mark_class_regions(cs,doc.text)
@@ -175,11 +178,11 @@ def parse_one(args):
         issues=list(table_issues)
         for a,spans in anchors.items():
             if len(spans)>1:issues.append({'reason':'duplicate_anchor','detail':a,'span':spans[0]})
-        out={'page':page,'candidates':output,'tables':tables,'links':links,'anchors':anchors,'dom':dom,'issues':issues}
+        out={'page':page,'candidates':output,'tables':tables,'links':links,'anchors':anchors,'dom':dom,'search':search_doc,'issues':issues}
         doc.close();return out
     except Exception as e:
         page.update(parse_status='error',error=f'{type(e).__name__}: {e}')
-        return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'issues':[]}
+        return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'search':None,'issues':[]}
 
 
 class Build:
@@ -187,7 +190,7 @@ class Build:
         self.web=web.resolve()
         self.registry=SourceRegistry(web)
         self.sources=self.registry.sources
-        self.pages={};self.dom_by_path={};self.entries=[];self.facts=[];self.relations=[];self.tables=[];self.reviews=[]
+        self.pages={};self.dom_by_path={};self.search_rows={};self.entries=[];self.facts=[];self.relations=[];self.tables=[];self.reviews=[]
         self.page_entries=defaultdict(list);self.locators=defaultdict(set);self.observations=[];self.ob_by_id={};self.ob_targets=defaultdict(list)
         self.anchor_spans={};self.raw_links=[]
         self.entry_by_id={};self.printed={}
@@ -245,6 +248,8 @@ class Build:
         self.pages[path]=page
         if result.get('dom') is not None:
             self.dom_by_path[path]=result['dom']
+        if result.get('search') is not None:
+            self.search_rows[path]=result['search']
         if page['parse_status']=='error':
             self.review(path,'parse_error',page['error'],priority='high');return
         if page['role']!='document':return
@@ -563,6 +568,7 @@ class Build:
         CREATE TABLE index_observations(id TEXT PRIMARY KEY,page_path TEXT,target_path TEXT,target_anchor TEXT,kind TEXT,data TEXT);
         CREATE TABLE review_queue(id TEXT PRIMARY KEY,target TEXT,reason TEXT,priority TEXT,data TEXT);
         CREATE TABLE identity_candidates(group_id TEXT PRIMARY KEY,type TEXT,status TEXT,data TEXT);
+        CREATE TABLE book_search(url TEXT PRIMARY KEY,src TEXT NOT NULL,title TEXT NOT NULL,cat TEXT NOT NULL,text TEXT NOT NULL);
         CREATE INDEX entry_type_idx ON entries(type);
         CREATE INDEX entry_ruleset_idx ON entries(ruleset);
         CREATE INDEX entry_name_idx ON entries(name_en);
@@ -614,33 +620,22 @@ class Build:
             'parser':'beautifulsoup4/html5lib','pipeline_sha256':pipeline_hash(),'extraction_sha256':extraction_hash()}
         manifest=sha256('\n'.join(p+':'+self.pages[p]['sha256'] for p in sorted(self.pages)).encode()).hexdigest()
         summary['input_manifest_sha256']=manifest
+        toc_titles=load_toc_titles(self.web)
+        for path in sorted(self.search_rows):
+            s=self.search_rows[path]
+            src=path.split('/',1)[1] if '/' in path else path
+            title=toc_titles.get(src) or s['html_title'] or Path(path).stem
+            cat=src.split('/',1)[0] if '/' in src else src
+            db.execute('INSERT INTO book_search VALUES(?,?,?,?,?)',(path,src,title,cat,s['text']))
+        if len(self.pages)==total_inputs and (self.web/'topics').is_dir():
+            db.execute('INSERT INTO metadata VALUES(?,?)',('book_search_signature',index_signature(self.web)))
         db.execute('INSERT INTO metadata VALUES(?,?)',('summary',canonical(summary)))
         db.commit()
         assert not db.execute('PRAGMA foreign_key_check').fetchall()
         assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
         db.close()
-        csv_write(out/'sources.csv',sources,['id','name','label','origin','release_status','source_type','reference_role','reference_role_evidence','ruleset_hint','archived','setting','coverage','aliases','paths','catalog_ids','evidence'])
-        csv_write(out/'source_catalog.csv',self.registry.catalog,['id','section','name_zh','name_en','abbreviations','aliases','level','ruleset_hint','evidence'])
-        csv_write(out/'pages.csv',self.pages.values(),['path','title','role','parse_status','encoding','sha256','characters','source_ids','source_method','toc_nodes','error'])
-        fields=['id','entity_id','name','name_zh','name_en','type','ruleset','ruleset_status','legacy','classification_status','source_names','page_path','locator','start','end','fields','field_conflicts']
-        csv_write(out/'entries.csv',self.entries,fields)
-        for name,types in VIEW_TYPES.items():csv_write(out/'views'/f'{name}.csv',[e for e in self.entries if e['type'] in types or (name=='奖励' and e['type']=='feat' and e['fields'].get('feat_category')=='传奇恩惠')],fields)
-        for name,(_,match) in EXTRA_VIEWS.items():csv_write(out/'views'/f'{name}.csv',[e for e in self.entries if match(e)],fields)
-        csv_write(out/'review_queue.csv',reviews,['id','target','reason','priority','detail','evidence'])
-        csv_write(out/'identity_candidates.csv',self.identity_candidates,['group_id','type','english_key','entry_ids','names','source_names','status','body_hashes'])
-        csv_write(out/'relations.csv',self.relations,['id','subject_id','predicate','object_id','target_label','target_locator','evidence','status'])
-        jsonl_write(out/'facts.jsonl',self.facts)
-        jsonl_write(out/'index_observations.jsonl',self.observations)
         (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
         (out/'.generated').write_text('Generated by anna.catalog.build\n')
-        lines=['# 提取结果','',f"基线：`{self.commit[:12]}`；扫描 {len(self.pages)}/{total_inputs} 页。",'',
-            '| 项目 | 数量 |','|---|---:|',f"| 已分类版本候选 | {summary['typed_versions']} |",f"| 保留的未分类段落 | {summary['types'].get('section',0)} |",f"| 来源记录（含仅名录） | {len(sources)} |",f"| 索引行已关联 / 总数 | {summary['index_rows_linked']} / {len(self.observations)} |",f"| 字段证据 | {len(self.facts)} |",f"| 关系 | {len(self.relations)} |",'',
-            '**全量扫描不等于全部分类已核实。** 页面、条目、版本候选分别计数；同名不自动合并。',
-            '原文明示与上下文推断均带证据；未分类、冲突、断链及来源歧义留在审核队列。',
-            '旧版状态区分条目标记、整书归档、未见标记；未见标记不表示新版。','',
-            '数据：`catalog.sqlite`；分类表：`views/`；待核：`review_queue.csv`；统计：`summary.json`。','',
-            '校验：输入逐页登记、ID唯一、证据范围、外键与SQLite完整性。分类准确率需抽样，不能由这些检查替代。']
-        (out/'results.md').write_text('\n'.join(lines)+'\n')
         return summary
 
 
@@ -650,8 +645,14 @@ def unquote_path(href):
 
 
 def publish(stage,dest):
-    """Replace generated files only. Never delete unrelated user files."""
+    """Replace generated files and remove stale build outputs without touching unrelated user files."""
     dest.mkdir(parents=True,exist_ok=True)
+    if (dest/'.generated').exists():
+        views_dir=dest/'views'
+        if views_dir.is_dir():shutil.rmtree(views_dir)
+        keep={p.name for p in stage.iterdir()}|{'audit.json','audit.md'}
+        for item in list(dest.iterdir()):
+            if item.name not in keep and item.is_file():item.unlink()
     for p in sorted(stage.rglob('*')):
         if p.is_file():
             target=dest/p.relative_to(stage);target.parent.mkdir(parents=True,exist_ok=True);os.replace(p,target)

@@ -37,17 +37,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('--watch', result.stdout)
         self.assertNotIn('--book-port', result.stdout)
 
-    def test_status_with_and_without_search_cache(self):
+    def test_status_with_and_without_catalog(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            for cached in (False, True):
-                if cached:
-                    (root / '.cache').mkdir()
-                    (root / '.cache/5echm-search.pkl').write_bytes(b'fixture')
+            for built in (False, True):
+                if built:
+                    (root / 'data/extracted').mkdir(parents=True)
+                    (root / 'data/extracted/catalog.sqlite').write_bytes(b'fixture')
                 result = self.make(root, '-f', str(PROJECT / 'Makefile'), 'status', f'WEB_DIR={root / "missing"}')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn('not downloaded yet', result.stdout)
-                self.assertIn('fingerprint checked at start' if cached else 'make up builds it', result.stdout)
+                self.assertIn('catalog: ' if built else 'catalog: not built yet (run make build)', result.stdout)
 
     def test_workspace_delegates_and_preserves_relative_path(self):
         # The outer Makefile is an optional consumer, not an anna dependency.
@@ -137,18 +137,17 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
-        for command in ('up', 'upper', 'build', 'index'):
+        for command in ('up', 'upper', 'build'):
             result = self.make(PROJECT, '-n', command)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('git pull', result.stdout)
             self.assertNotIn(' pull ', result.stdout)
         result = self.make(PROJECT, '-n', 'update')
         self.assertIn('pull --ff-only', result.stdout)
-        self.assertIn('--rebuild', result.stdout)
 
     def test_removed_commands_are_gone(self):
         # make up is the sole HTTP service entry; the query module has no standalone server.
-        for command in ('serve','open','inventory'):
+        for command in ('serve','open','inventory','index'):
             result=self.make(PROJECT,'-n',command)
             self.assertNotEqual(result.returncode,0)
         self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())
@@ -157,43 +156,39 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse(hasattr(query,'main'))
 
 
-class SearchCacheTests(unittest.TestCase):
-    def test_cache_is_scoped_to_source_and_commit(self):
+class BookSearchIndexTests(unittest.TestCase):
+    def test_loads_sqlite_book_search_when_signature_matches_and_rescans_on_change(self):
+        import sqlite3
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            cache = root / 'cache/index.pkl'
-            first, second = root / 'first', root / 'second'
-            for web, title in ((first, 'first'), (second, 'second')):
-                (web / 'topics').mkdir(parents=True)
-                (web / 'topics/page.htm').write_text(f'<title>{title}</title><body>{title}</body>')
-            with patch.object(search, 'CACHE', cache), patch.object(search, 'web_commit', return_value='same-commit'):
-                with patch.object(search, 'WEB', first):
-                    search.build_index(quiet=True)
-                    with patch.object(search, 'load_toc_titles', side_effect=AssertionError('cache not reused')):
-                        self.assertEqual(search.build_index(quiet=True)[0]['title'], 'first')
-                with patch.object(search, 'WEB', second):
-                    self.assertEqual(search.build_index(quiet=True)[0]['title'], 'second')
-                    (second / 'topics/page.htm').write_text('<title>changed</title>')
-                    # Working-tree changes invalidate the index even without a new commit.
-                    self.assertEqual(search.build_index(quiet=True)[0]['title'], 'changed')
-                    with patch.object(search, 'web_commit', return_value='new-commit'):
-                        self.assertEqual(search.build_index(quiet=True)[0]['title'], 'changed')
-
-    def test_unversioned_source_is_rescanned(self):
-        with tempfile.TemporaryDirectory() as td:
-            web = Path(td)
-            (web / 'topics').mkdir()
+            web = root / 'web'
+            (web / 'topics').mkdir(parents=True)
             page = web / 'topics/page.htm'
-            page.write_text('<title>before</title>')
-            with patch.object(search, 'WEB', web), patch.object(search, 'CACHE', web / 'index.pkl'), patch.object(search, 'web_commit', return_value='unknown'):
-                search.build_index(quiet=True)
-                page.write_text('<title>after</title>')
-                self.assertEqual(search.build_index(quiet=True)[0]['title'], 'after')
+            page.write_text('<title>before</title><body><p>original body</p></body>')
+            db_path = root / 'catalog.sqlite'
+            conn = sqlite3.connect(db_path)
+            conn.executescript('''
+                CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                CREATE TABLE book_search(url TEXT PRIMARY KEY, src TEXT NOT NULL, title TEXT NOT NULL, cat TEXT NOT NULL, text TEXT NOT NULL);
+            ''')
+            conn.execute('INSERT INTO book_search VALUES(?,?,?,?,?)',
+                         ('topics/page.htm', 'page.htm', 'from-sqlite', 'page.htm', 'indexed body'))
+            conn.execute('INSERT INTO metadata VALUES(?,?)',
+                         ('book_search_signature', search.index_signature(web)))
+            conn.commit()
+            conn.close()
+            with patch.object(search, 'scan_entries', side_effect=AssertionError('unexpected disk rescan')):
+                entries = search.load_index(db_path, web, quiet=True)
+            self.assertEqual((entries[0]['title'], entries[0]['text']), ('from-sqlite', 'indexed body'))
+            # Modifying any source page invalidates the SQLite signature and forces a live scan.
+            page.write_text('<title>changed</title><body><p>updated body</p></body>')
+            entries = search.load_index(db_path, web, quiet=True)
+            self.assertEqual((entries[0]['title'], entries[0]['text']), ('changed', 'updated body'))
 
     def test_missing_topics_rejected(self):
         with tempfile.TemporaryDirectory() as td, patch.object(search, 'WEB', Path(td)):
             with self.assertRaises(SystemExit):
-                search.build_index(quiet=True)
+                search.load_index(None, Path(td), quiet=True)
 
 
 if __name__ == '__main__':

@@ -184,13 +184,9 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(knowledge_diff(self.db, self.db), [])
         self.db.execute("UPDATE knowledge_rule_links SET relation='wrong'")
         self.assertIn('knowledge_rule_links: projection mismatch', audit_knowledge(self.db, self.root)['errors'])
-        (self.root / 'effective_knowledge.jsonl').write_text('')
-        (self.root / 'knowledge_annotations.jsonl').write_text('')
         self.db.execute('DELETE FROM casting_options')
         self.db.execute('DELETE FROM knowledge_rule_links')
         errors = audit_knowledge(self.db, self.root)['errors']
-        self.assertIn('effective_knowledge: export mismatch', errors)
-        self.assertIn('knowledge_annotations: export mismatch', errors)
         self.assertIn('casting_options: projection mismatch', errors)
         self.assertIn('knowledge_rule_links: projection mismatch', errors)
 
@@ -470,12 +466,12 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(roles['act_1'], 'explanation')
 
     def test_exports_and_evidence_are_exact(self):
-        exported = [json.loads(s) for s in (self.root / 'effective_knowledge.jsonl').read_text().splitlines()]
-        self.assertEqual({r['id'] for r in exported}, {r[0] for r in self.db.execute('SELECT id FROM effective_knowledge')})
+        self.assertFalse((self.root / 'effective_knowledge.jsonl').exists())
+        records = [json.loads(r[0]) for r in self.db.execute('SELECT data FROM effective_knowledge')]
         context = Context(self.db)
-        for r in exported:
+        for r in records:
             validate_record(r, context)
-        changed = deepcopy(exported[0])
+        changed = deepcopy(records[0])
         changed['evidence']['raw'] = 'invented'
         with self.assertRaisesRegex(ValueError, 'evidence'):
             validate_record(changed, context)

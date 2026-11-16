@@ -32,7 +32,7 @@ class PackageLayoutTests(unittest.TestCase):
     def test_module_commands_expose_help(self):
         commands=('catalog.build','catalog.audit','catalog.query','source.search',
                   'review.commands','knowledge.repository',
-                  'snapshots.workflow','server.linked_book','server.app')
+                  'server.linked_book','server.app')
         for command in commands:
             with self.subTest(command=command):
                 result=subprocess.run([sys.executable,'-m','anna.'+command,'--help'],cwd=PROJECT,
@@ -40,14 +40,6 @@ class PackageLayoutTests(unittest.TestCase):
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertIn('usage:',result.stdout)
                 self.assertNotIn('RuntimeWarning',result.stderr)
-
-    def test_retired_snapshot_conversion_command_is_unavailable(self):
-        result=subprocess.run([sys.executable,'-m','anna.snapshots.workflow','convert','unused'],
-                              cwd=PROJECT,text=True,capture_output=True)
-        self.assertEqual(result.returncode,2)
-        self.assertIn('invalid choice',result.stderr)
-        from anna.snapshots import baseline
-        self.assertFalse(hasattr(baseline,'convert'))
 
     def test_fingerprints_follow_package_not_maintenance_scripts(self):
         self.assertIn('source/pages.py',store.EXTRACTION_MODULES)

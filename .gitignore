@@ -21,8 +21,7 @@ output/
 /annotations/*.lock
 /annotations/.annotation-*
 
-# Disposable local comparison snapshots and generated brand icons
-/baselines/
+# Generated brand icons
 /web/anna-logo.png
 /web/stella-logo.png
 /web/favicon*.png

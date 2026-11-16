@@ -24,7 +24,7 @@ class CleanTests(unittest.TestCase):
             for name in cleaner.ICONS:
                 (root / 'web' / name).write_bytes(b'generated')
             inputs = ['.git/objects/keep', 'reviews/decisions.jsonl', 'annotations/annotations.jsonl',
-                      'assets/branding/anna.png', 'anna/source.py', 'baselines/current/manifest.json']
+                      'assets/branding/anna.png', 'anna/source.py']
             for name in inputs:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)

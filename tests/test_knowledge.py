@@ -10,7 +10,7 @@ from anna.knowledge.annotations import build_annotation_event
 from anna.knowledge.context import Context
 from anna.knowledge.extract import extract_definition_roles, extract_feat_grant, extract_subclass_features
 from anna.knowledge.inspection import inspect
-from anna.knowledge.repository import build_knowledge, branches, save, validate_record
+from anna.knowledge.repository import build_knowledge, save, validate_record
 from anna.presentation.knowledge import casting_condition, chain
 from anna.review.commands import revoke
 from anna.review.store import append_event, extraction_hash, load_events, locked
@@ -232,8 +232,6 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(self.effective()['status'], 'partial')
         self.assertEqual([g['reason'] for g in self.effective()['value']['unparsed']], ['unannotated_clause'])
         self.assertEqual(len(chain(self.db, 'feat')['options']), 2)
-        # Entry-wide mode (projection_v1 compatibility) still excludes partial records.
-        self.assertEqual(list(branches(Context(self.db), [self.effective()], entry_wide=True)), [])
 
     def test_selection_grant_remains_partial_and_unprojected(self):
         self.feature = '示例 Example\n从以下法术中选择一个，但尚未指明获取方式。'

@@ -285,7 +285,7 @@ def replay(records, events, context, evaluated=None):
     return effective,list(results.values())
 
 
-def branches(context, effective, *, entry_wide=False):
+def branches(context, effective):
     by_subject={r['subject_id']:r for r in effective if r['kind']=='grant'}
     def conditions(record,grant=None,branch=None):
         value=record['value'];subject=record['subject_id'];out=[]
@@ -296,11 +296,10 @@ def branches(context, effective, *, entry_wide=False):
         return out
     def walk(root,subject,steps,inherited,restrictions,visited):
         access=by_subject.get(subject)
-        allowed_statuses = {'resolved'} if entry_wide else {'resolved', 'partial'}
-        if subject in visited or not access or access['status'] not in allowed_statuses:return
+        if subject in visited or not access or access['status'] not in {'resolved', 'partial'}:return
         visited=visited|{subject}
         for grant in access['value']['grants']:
-            if not grant_is_resolved(access, grant, entry_wide=entry_wide):continue
+            if not grant_is_resolved(access, grant):continue
             target=grant['target']
             if grant['entry_type']!='spell':
                 if target['kind']!='entry' or target['resolution']['status']!='resolved':continue

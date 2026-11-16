@@ -30,13 +30,11 @@ def target_scope(effect,by_id,saves):
     return 'area' if target.get('kind')=='area' else 'single' if target.get('count')==1 else 'not_stated'
 
 
-def resolved_effect_ids(record, *, entry_wide=False):
+def resolved_effect_ids(record):
     """Identify locally valid effects; transitive local references fail closed."""
     if record['kind'] != 'procedure':
         return set()
     effects = record['value'].get('effects', [])
-    if entry_wide:
-        return {e['id'] for e in effects} if record['status'] == 'resolved' else set()
     if record['status'] not in {'resolved', 'partial'}:
         return set()
     value = record['value']
@@ -70,10 +68,10 @@ def resolved_effect_ids(record, *, entry_wide=False):
     return valid
 
 
-def effect_rows(records, *, entry_wide=False):
+def effect_rows(records):
     for record in records:
         if record['kind']!='procedure':continue
-        allowed=resolved_effect_ids(record, entry_wide=entry_wide)
+        allowed=resolved_effect_ids(record)
         if not allowed:continue
         by_id={e['id']:e for e in record['value']['effects']}
         for effect in record['value']['effects']:

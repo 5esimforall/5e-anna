@@ -130,10 +130,8 @@ def effect_usage(value, effect):
     return {'action': action['kind'], 'evidence': [action['evidence']]} if action else {}
 
 
-def grant_is_resolved(record, grant, *, entry_wide=False):
+def grant_is_resolved(record, grant):
     """Whether a grant (and its usage branches) can project into query indexes."""
-    if entry_wide:
-        return record['status'] == 'resolved'
     if record['status'] not in {'resolved', 'partial'}:
         return False
     value = record['value']

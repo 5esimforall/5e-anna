@@ -31,7 +31,6 @@ Python 实现集中在 `anna/`，用包导入表达依赖；`scripts/` 只保存
 | `anna/knowledge/` | 规则陈述模型、纯结构提取、内容／上下文双哈希版本化标注组合、局部效果与分句级投影生成 |
 | `anna/review/` | 审核与标注事件日志、候选检索及审核命令 |
 | `anna/compare/` | 5etools 对照索引与字段核对 |
-| `anna/snapshots/` | 紧凑快照、恢复、来源对应、迁移比较及启用门禁 |
 | `anna/presentation/` | 只读查询、规则链与阅读模型、原文排版及显式响应投影；[消费契约](anna/presentation/README.md)独立于提取实现 |
 | `anna/server/` | 统一 HTTP 传输、快照发布校验与链接版生成 |
 | `anna/paths.py`、`anna/serialization.py` | 项目路径、确定性序列化与导出格式 |

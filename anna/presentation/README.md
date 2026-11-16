@@ -12,7 +12,7 @@
 | `layout.py`、`reader.py` | 如何从条目回到原文排版、目录页面与定义锚点？ |
 | `contracts.py` | 哪些存储字段进入现有的条目、知识、选项与引用响应？ |
 
-HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；规则链与引用的命令行读取也使用相同的只读消费模型。`anna/knowledge/repository.py` 保留提取、构建、审计和审核写入，CLI 的 `chain` 命令调用本包；`anna/catalog/query.py` 仍提供独立的只读数据分析查询。来源上下文与审核依据检查分别位于 `anna/knowledge/context.py`、`inspection.py`，规则关系索引生成位于 `rule_index.py`，供构建和冻结快照恢复共同使用。
+HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；规则链与引用的命令行读取也使用相同的只读消费模型。`anna/knowledge/repository.py` 保留提取、构建、审计和审核写入，CLI 的 `chain` 命令调用本包；`anna/catalog/query.py` 仍提供独立的只读数据分析查询。来源上下文与审核依据检查分别位于 `anna/knowledge/context.py`、`inspection.py`，规则关系索引生成位于 `rule_index.py`，供构建与审计共同使用。
 
 ## 保持什么稳定
 
@@ -26,6 +26,6 @@ HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；�
 
 ## 验证与后续修改
 
-`tests/fixtures/presentation-*.json` 保存边界拆分前的只读数据、查询与规则链响应，以及原文排版和阅读绑定。`tests/test_presentation_contracts.py` 直接恢复冻结的 SQLite 行，不运行提取器，核对完整响应、顺序、CSV、HTTP 错误和下载、HTML 定位及拒绝情形；另检查内部字段隔离和服务导入不加载知识提取或审核命令。夹具只固定消费行为，不代替全库整理数据的迁移核对。
+`tests/fixtures/presentation-*.json` 保存边界拆分前的只读数据、查询与规则链响应，以及原文排版和阅读绑定。`tests/test_presentation_contracts.py` 直接恢复冻结的 SQLite 行，不运行提取器，核对完整响应、顺序、CSV、HTTP 错误和下载、HTML 定位及拒绝情形；另检查内部字段隔离和服务导入不加载知识提取或审核命令。夹具只固定消费行为，不代替全库审计与实际语料检验。
 
-调整分析实现时，先在相同冻结输入上运行契约测试，再对完整候选构建执行迁移比较和项目检查。运行命令及基准操作统一见 [USAGE](../../USAGE.md)。原文更新或有依据的规则修订可以改变结果，但应先解释差异，再修改对应预期；不要用本次输出直接重录所有夹具。浏览器回归仍需验证 Anna、Stella、共享状态、键盘焦点和不同窗口宽度。
+调整分析实现时，先在相同冻结输入上运行契约测试，再运行完整构建与 `make check` 验证全库覆盖与一致性。运行命令统一见 [USAGE](../../USAGE.md)。原文更新或有依据的规则修订可以改变结果，但应先解释差异，再修改对应预期；不要用本次输出直接重录所有夹具。浏览器回归仍需验证 Anna、Stella、共享状态、键盘焦点和不同窗口宽度。

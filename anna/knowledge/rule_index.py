@@ -1,14 +1,14 @@
-"""Materialized rule relationships shared by query and snapshot consumers."""
+"""Materialized rule relationships for query consumers."""
 import json
 
 from anna.knowledge.effects import resolved_effect_ids
 from anna.knowledge.model import grant_is_resolved
 
 
-def _scope_is_resolved(record, link, resolved_effects, grants_by_id, *, entry_wide=False):
+def _scope_is_resolved(record, link, resolved_effects, grants_by_id):
     if record['status'] == 'resolved':
         return True
-    if entry_wide or record['status'] != 'partial':
+    if record['status'] != 'partial':
         return False
     value = record['value']
     if value.get('prerequisites', {}).get('status') == 'unparsed':
@@ -22,23 +22,23 @@ def _scope_is_resolved(record, link, resolved_effects, grants_by_id, *, entry_wi
         return bool(param) and param.get('kind') != 'unparsed'
     if skind == 'usage_branch':
         grant = grants_by_id.get(scope.get('grant_id'))
-        return bool(grant) and grant_is_resolved(record, grant, entry_wide=False)
+        return bool(grant) and grant_is_resolved(record, grant)
     if skind == 'effect':
         return scope.get('effect_id') in resolved_effects
     return False
 
 
-def rule_rows(records, *, entry_wide=False):
+def rule_rows(records):
     for record in records:
         rules = record['value'].get('rules', [])
         if not rules:
             continue
-        resolved_effects = resolved_effect_ids(record, entry_wide=entry_wide)
+        resolved_effects = resolved_effect_ids(record)
         grants_by_id = {g['id']: g for g in record['value'].get('grants', [])}
         for link in rules:
             target = link['target']['resolution']
             scope_resolved = _scope_is_resolved(
-                record, link, resolved_effects, grants_by_id, entry_wide=entry_wide
+                record, link, resolved_effects, grants_by_id
             )
             status = target['status'] if scope_resolved else record['status']
             for tid in target['targets'] or [None]:

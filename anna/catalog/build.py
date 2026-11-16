@@ -19,7 +19,7 @@ import time
 
 from anna.serialization import canonical
 from anna.source.pages import read_page
-from anna.source.html import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, skill_notation, VIEW_TYPES, EXTRA_VIEWS, CLASS_SHORT, CLASSES
+from anna.source.html import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, skill_notation, CLASS_SHORT, CLASSES
 from anna.catalog.types import TYPE_LABELS, classify, refine_page_types, mark_class_regions, evidence_status, type_conflicts, RULE_TYPES
 from anna.source.registry import SourceRegistry
 from anna.source.search import extract_body_text as extract_search_body, extract_title as extract_search_title, index_signature, load_toc_titles
@@ -575,7 +575,6 @@ class Build:
         CREATE INDEX fact_entry_idx ON facts(entry_id,field);
         CREATE INDEX relation_subject_idx ON relations(subject_id,predicate);
         CREATE INDEX entry_source_idx ON entry_sources(source_id,entry_id);
-        CREATE VIEW entry_text AS SELECT e.id,e.name,e.type,e.ruleset,e.legacy,p.path,substr(p.text,e.start+1,e.end-e.start) AS body FROM entries e JOIN pages p ON p.path=e.page_path;
         ''')
         sources=sorted(self.sources.values(),key=lambda s:s['id'])
         for s in sources:db.execute('INSERT INTO sources VALUES(?,?,?,?,?,?,?,?,?)',(s['id'],s['name'],s['origin'],s['ruleset_hint'],s['release_status'],s['source_type'],s['archived'],s['coverage'],canonical(s)))
@@ -590,11 +589,6 @@ class Build:
         db.executemany('INSERT INTO index_observations VALUES(?,?,?,?,?,?)',[(o['id'],o['path'],o['target_path'],o['target_anchor'],o['kind'],canonical(o)) for o in self.observations])
         db.executemany('INSERT INTO review_queue VALUES(?,?,?,?,?)',[(r['id'],r['target'],r['reason'],r['priority'],canonical(r)) for r in self.reviews])
         db.executemany('INSERT INTO identity_candidates VALUES(?,?,?,?)',[(r['group_id'],r['type'],r['status'],canonical(r)) for r in self.identity_candidates])
-        for name,types in VIEW_TYPES.items():
-            where='type IN ('+','.join("'"+x+"'" for x in sorted(types))+')'
-            if name=='奖励':where+=" OR (type='feat' AND json_extract(fields,'$.feat_category')='传奇恩惠')"
-            db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
-        for name,(where,_) in EXTRA_VIEWS.items():db.execute('CREATE VIEW "'+name+'" AS SELECT * FROM entries WHERE '+where)
         from anna.catalog.concepts import build_concepts
         concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path)
         from anna.catalog.references import build_references

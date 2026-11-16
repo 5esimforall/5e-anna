@@ -58,6 +58,19 @@
     </button><button id="close-detail" class="icon-button" data-ui-label="closeDetail" aria-keyshortcuts="Escape" autofocus>×</button></div></div>
     <div id="detail-content" tabindex="-1"></div>
   </dialog>
+  <dialog id="missing-dialog" class="missing-dialog" aria-labelledby="missing-dialog-title">
+    <div class="missing-head"><h2 id="missing-dialog-title"></h2><button type="button" id="close-missing" class="icon-button" aria-keyshortcuts="Escape">×</button></div>
+    <p id="missing-dialog-help" class="muted"></p>
+    <p id="missing-pending" class="muted" hidden></p>
+    <form id="missing-form" class="missing-toolbar">
+      <label><span id="missing-status-label"></span> <select id="missing-status"></select></label>
+      <button type="submit" id="missing-submit" class="quiet-button"></button>
+      <span id="missing-count" class="muted"></span>
+      <button type="button" id="missing-prev" class="quiet-button" disabled></button>
+      <button type="button" id="missing-next" class="quiet-button" disabled></button>
+    </form>
+    <div id="missing-results"></div>
+  </dialog>
 </div>
 <noscript>查询页需要 JavaScript；终端也可使用 query.py 查询。</noscript>
 </body></html>

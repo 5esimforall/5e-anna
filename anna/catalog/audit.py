@@ -200,10 +200,6 @@ def audit(db_path,baseline=None):
     db=connect(db_path)
     summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
     entries={r['id']:dict(r) for r in db.execute('SELECT id,name,type,page_path,fields FROM entries')}
-    view_counts={r[0]:db.execute('SELECT count(*) FROM "'+r[0].replace('"','""')+'"').fetchone()[0]
-                 for r in db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name!='entry_text'")}
-    # SQL views remain queryable directly inside catalog.sqlite.
-    mismatches=[]
     reasons=dict(db.execute('SELECT reason,count(*) FROM review_queue GROUP BY reason'))
     catalog_reviews=[json.loads(r[0]) for r in db.execute("SELECT data FROM review_queue WHERE reason IN ('animal_statblock_unresolved','mount_example_unresolved','catalog_table_unhandled','catalog_row_layout_unresolved') ORDER BY reason,target")]
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
@@ -236,8 +232,8 @@ def audit(db_path,baseline=None):
         'full_scan':summary['full_scan'],'processed_pages':summary['processed_html_files'],
         'parse_errors':summary['parse_status'].get('error',0),'same_input_as_baseline':same_manifest,
         'integrity_check':db.execute('PRAGMA integrity_check').fetchone()[0],
-        'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),'csv_sql_mismatches':mismatches,
-        'views':view_counts,'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
+        'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),
+        'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
         'review_reasons':reasons,'catalog_reviews':catalog_reviews,'knowledge':knowledge,'knowledge_changes':knowledge_changes,'concepts':concepts,'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
         'classification_gaps':gaps,'classification_gaps_before':gaps_before,
         'type_conflicts':conflicts,'type_conflicts_before':conflicts_before}
@@ -313,8 +309,8 @@ def export_report(out,result,changes,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     lines=['# 提取规则审计','',
-        '检查范围：全库分类计数和证据状态、所有导出视图；逐表检查商品表列结构，检查原载具／设施／奖励／陷阱的上下文分类结果；原文回归覆盖两版PHB、两版DMG、MM、TCE、XGE及合作内容。',
-        '这不是全库人工核验。未分类段落、待核关联和既有索引问题仍保留，不将空视图解释为原文不存在。','',
+        '检查范围：全库分类计数和证据状态、预设查询维度；逐表检查商品表列结构，检查原载具／设施／奖励／陷阱的上下文分类结果；原文回归覆盖两版PHB、两版DMG、MM、TCE、XGE及合作内容。',
+        '这不是全库人工核验。未分类段落、待核关联和既有索引问题仍保留，不将空结果解释为原文不存在。','',
         '## 本轮变化','',
         f"- 条目变化：{result['change_counts']}；未指定基线时不推断本轮修正。",
         f"- 规则陈述变化：{dict(Counter(c['change'] for c in result['knowledge_changes']))}。",'',
@@ -325,7 +321,7 @@ def export_report(out,result,changes,gaps):
         '## 分类计数（版本候选，不是去重实体）','','| 分类 | 修改前 | 修改后 |','|---|---:|---:|']
     for typ in sorted(result['after_types'].keys()|result['before_types'].keys()):
         lines.append(f"| {TYPE_LABELS.get(typ,typ)} | {result['before_types'].get(typ,'—')} | {result['after_types'].get(typ,0)} |")
-    lines+=['',f"坐骑视图：{result['views'].get('坐骑',0)} 条；动物购置：{result['views'].get('动物购置',0)} 条。",'',
+    lines+=['',
         '## 本轮仍需核对','']
     for r in result['catalog_reviews']:
         detail=json.dumps(r['detail'],ensure_ascii=False)
@@ -343,12 +339,12 @@ def main():
     p.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
     p.add_argument('--baseline',type=Path);p.add_argument('--output',type=Path)
     a=p.parse_args();result,changes,gaps=audit(a.db,a.baseline);export_report(a.output or a.db.parent,result,changes,gaps)
-    report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','csv_sql_mismatches','concepts','change_counts']}
+    report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','concepts','change_counts']}
     report['knowledge']={k:v for k,v in result['knowledge'].items() if k!='by_source'} if result['knowledge'] else None
     report['classification_gaps']={k:result['classification_gaps'][k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
     report['type_conflicts']=result['type_conflicts']['entries'] if result['type_conflicts'] else None
     report['counterparts']={k:result['counterparts'][k] for k in ('commit','outcomes','findings','errors')} if result['counterparts'] else None
     print(json.dumps(report,ensure_ascii=False,indent=2))
-    if result['parse_errors'] or result['foreign_key_errors'] or result['csv_sql_mismatches'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']) or (result['counterparts'] and result['counterparts']['errors']) or (result['knowledge'] and result['knowledge']['errors']):raise SystemExit(1)
+    if result['parse_errors'] or result['foreign_key_errors'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']) or (result['counterparts'] and result['counterparts']['errors']) or (result['knowledge'] and result['knowledge']['errors']):raise SystemExit(1)
 
 if __name__=='__main__':main()

@@ -12,7 +12,7 @@
 | `layout.py`、`reader.py` | 如何从条目回到原文排版、目录页面与定义锚点？ |
 | `contracts.py` | 哪些存储字段进入现有的条目、知识、选项与引用响应？ |
 
-HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；规则链与引用的命令行读取也使用相同的只读消费模型。`anna/knowledge/repository.py` 保留提取、构建、审计和标注写入，CLI 的 `chain` 命令调用本包；`anna/catalog/query.py` 仍提供独立的只读数据分析查询。来源上下文位于 `anna/knowledge/context.py`，规则关系索引生成位于 `rule_index.py`，供构建与审计共同使用。
+HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；规则链、引用与目录条目的命令行只读读取（包括 `anna/knowledge/repository.py` 的 `chain` 命令与 `anna/catalog/query.py`）共用同一只读消费边界，其中条目查询与导出直接调用本包的 `catalog.py`。来源上下文位于 `anna/knowledge/context.py`，规则关系索引生成位于 `rule_index.py`，供构建与审计共同使用。
 
 ## 保持什么稳定
 

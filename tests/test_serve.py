@@ -302,7 +302,8 @@ class WebTests(unittest.TestCase):
         topbar=self.request('/topbar.js')[2]
         self.assertIn(b"query:{home:'/', logo:'/anna-logo.png'}",topbar)
         self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png'}",topbar)
-        self.assertIn(b'<title>5e Anna</title>',self.request('/review')[2])
+        self.assertEqual(self.request('/review')[0],404)
+        self.assertIn(b'id="missing-dialog"',page)
         self.assertIn(b'href="/favicon.ico"',page)
         for size in (16,32,48):
             path=f'/favicon-{size}.png'
@@ -382,12 +383,14 @@ class WebTests(unittest.TestCase):
         self.assertEqual(json.loads(data[2])['versions_total'],offers['total'])
 
     def test_presets_are_one_type_and_one_facet_value(self):
-        # Each preset reproduces the catalog's SQL view of the same name through ordinary filters.
+        # Each preset combines one type with one facet value through ordinary filters.
         for preset in browse.PRESETS:
+            self.assertIn(preset['type'],browse.TYPE_ORDER,preset['name'])
+            self.assertIn(preset['field'],browse.type_conditions(preset['type']),preset['name'])
             params={'type':[preset['type']],'f_'+preset['field']:[preset['value']],'versions':['each']}
-            ids={e['id'] for e in query(self.db,params,export=True)['rows']}
-            view={r[0] for r in self.db.execute('SELECT id FROM "'+preset['name']+'"')}
-            self.assertEqual(ids,view,preset['name'])
+            rows=query(self.db,params,export=True)['rows']
+            self.assertTrue(rows,preset['name'])
+            self.assertTrue(all(r['type']==preset['type'] and preset['value'] in browse.normalized(r['fields'],preset['field']) for r in rows),preset['name'])
 
     def test_search_terms_all_match_and_rank_by_the_latest(self):
         both=query(self.db,{'q':['火','球'],'versions':['each']},export=True)['rows']
@@ -507,7 +510,7 @@ class WebTests(unittest.TestCase):
         for name in ['雪崩','奥法风暴','燃烧','流沙陷坑','薄冰','亵渎之地']:self.assertIn(name,names)
         self.assertNotIn('自然灾害',names);self.assertNotIn('魔法现象',names)
         self.assertIn('hazard',meta(self.db)['type_order'])
-        expected={r[0] for r in self.db.execute('SELECT id FROM "危害" WHERE type=\'hazard\'')}
+        expected={r[0] for r in self.db.execute("SELECT id FROM entries WHERE type='hazard'")}
         self.assertEqual({r['id'] for r in query(self.db,{'type':['hazard']},export=True)['rows']},expected)
         self.assertEqual(self.request('/api/entries?type=hazard')[0],200)
 
@@ -522,7 +525,7 @@ class WebTests(unittest.TestCase):
         dex=query(self.db,{'type':['skill'],'f_ability':['敏捷']})
         self.assertEqual(sorted(r['name_zh'] for r in dex['rows']),['巧手','特技','隐匿'])
         self.assertEqual(meta(self.db)['type_conditions']['skill'],['ability'])
-        expected={r[0] for r in self.db.execute("SELECT id FROM \"状态动作规则\" WHERE type IN ('ability','skill')")}
+        expected={r[0] for r in self.db.execute("SELECT id FROM entries WHERE type IN ('ability','skill')")}
         self.assertEqual({r['id'] for r in abilities+each['rows']},expected)
 
     def test_metadata(self):

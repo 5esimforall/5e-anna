@@ -868,21 +868,3 @@ def text_fields(text,kind):
     }
     if kind in allowed:result={k:v for k,v in result.items() if k in allowed[kind]}
     return result
-
-
-VIEW_TYPES = {
-    '职业':{'class'}, '子职':{'subclass'}, '职业能力':{'class_feature'}, '种族物种':{'species'},
-    '背景':{'background'}, '专长':{'feat'}, '法术':{'spell'}, '装备':{'equipment','magic_item'},
-    '魔法物品':{'magic_item'}, '生物数据卡':{'creature'}, '奖励':{'reward'}, '载具':{'vehicle'},
-    '动物购置':{'animal_offer'}, '设施':{'facility'}, '状态动作规则':{'ability','skill','condition','action','rule'}, '危害':{'trap','poison','disease','hazard'},
-    '扩展机制':{'subsystem'}, '资料索引':{'lore'},
-}
-
-EXTRA_VIEWS={
-    '魔法武器':("type='magic_item' AND json_extract(fields,'$.item_type')='武器'",lambda e:e['type']=='magic_item' and e['fields'].get('item_type')=='武器'),
-    '战斗风格':("type='feat' AND json_extract(fields,'$.feat_category')='战斗风格'",lambda e:e['type']=='feat' and e['fields'].get('feat_category')=='战斗风格'),
-    '传奇恩惠':("type='feat' AND json_extract(fields,'$.feat_category')='传奇恩惠'",lambda e:e['type']=='feat' and e['fields'].get('feat_category')=='传奇恩惠'),
-    'NPC':("type='creature' AND EXISTS(SELECT 1 FROM json_each(fields,'$.role') WHERE value='NPC')",lambda e:e['type']=='creature' and 'NPC' in str(e['fields'].get('role',''))),
-    '伙伴':("type='creature' AND EXISTS(SELECT 1 FROM json_each(fields,'$.role') WHERE value='伙伴')",lambda e:e['type']=='creature' and '伙伴' in str(e['fields'].get('role',''))),
-    '坐骑':("type='creature' AND EXISTS(SELECT 1 FROM json_each(fields,'$.role') WHERE value='坐骑')",lambda e:e['type']=='creature' and '坐骑' in str(e['fields'].get('role',''))),
-}

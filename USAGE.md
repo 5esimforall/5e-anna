@@ -7,21 +7,19 @@
 | 命令 | 用途 |
 | --- | --- |
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
-| `make index` | 重建原文全文搜索索引 |
-| `make build` | 从同一原文快照重建数据库与链接版不全书 |
+| `make build` | 从同一原文快照重建数据库（含全文搜索表 `book_search`）与链接版不全书 |
 | `make up` | 启动单端口查询、阅读与正文资源服务 |
 | `make upper` | 开发用：同上，重建完成后自动校验并换包 |
 | `make icons` | 从原始人物图生成界面图标 |
 | `make linked` | 由现有数据库生成链接版，并校验原文快照 |
-| `make inventory` | 盘点原文页面与目录 |
 | `make test` | 运行单元测试和浏览器回归（需先构建数据） |
 | `make test-unit` / `make test-browser` | 分别运行单元测试 / 浏览器回归 |
 | `make browser-setup` | 安装锁定的 Node 依赖与 Chromium，首次运行浏览器测试前执行 |
-| `make audit` | 审计数据库与导出文件 |
+| `make audit` | 审计数据库与生成统计 |
 | `make check` | 运行测试与审计 |
-| `make update` | 显式拉取原文与 5etools-cn 更新并重建搜索索引；之后运行 `make build` 更新数据 |
-| `make status` | 查看原文、5etools-cn 版本与搜索索引状态 |
-| `make clean` | 删除本地生成数据、缓存、报告、图标和依赖环境；保留源码、独立输入与共享镜像 |
+| `make update` | 显式拉取原文与 5etools-cn 更新；之后运行 `make build` 更新数据 |
+| `make status` | 查看原文、5etools-cn 版本与构建库状态 |
+| `make clean` | 删除本地生成数据、报告、图标和依赖环境；保留源码、独立输入与共享镜像 |
 
 命令清单集中在本页；不带目标运行 `make` 只输出本页位置。下文的 `python -m anna.…` 模块命令在 anna 仓库根目录运行；应用代码不再通过 `scripts/` 路径启动。
 
@@ -29,9 +27,9 @@
 
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `python -m anna.catalog.build` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
 
-构建、盘点和索引时，缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像与搜索索引，之后运行 `make build` 才更新数据库和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
+构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
-原文搜索缓存位于 anna 的 `.cache/`，按原文路径、目录与 HTML 内容指纹校验，同一 Git 提交内的内容变化也会使缓存失效；分析数据仍位于 `data/`，两者均不入库。默认优先使用 anna 的 `.venv/bin/python`，未创建时使用 `python3`；可用 `PYTHON=/绝对路径/解释器` 覆盖。`ANNA_PORT` 配置查询、阅读与正文资源共用的端口，仅本机访问。
+Stella 全文搜索索引作为 `book_search` 表直接随 `make build` 写入 `catalog.sqlite`，并按原文路径、目录与 HTML 内容指纹（`book_search_signature`）校验；若启动服务后原文发生未重建修改，会自动退回目录即时扫描。默认优先使用 anna 的 `.venv/bin/python`，未创建时使用 `python3`；可用 `PYTHON=/绝对路径/解释器` 覆盖。`ANNA_PORT` 配置查询、阅读与正文资源共用的端口，仅本机访问。
 
 新环境先在 anna 中创建虚拟环境并安装依赖：
 
@@ -46,9 +44,9 @@ make check
 
 ## 清理与重建
 
-清理前停止正在运行的 anna 服务，然后执行 `make clean`。命令直接删除 `data/`、`output/`、`.cache/`、`.venv/`、`node_modules/`、中断构建目录、Python 缓存和由人物原图导出的界面图标，不备份，也不遍历指向项目外的符号链接。`assets/branding/` 原图、`annotations/` 结构化标注和 `reviews/` 现行审核输入保留。
+清理前停止正在运行的 anna 服务，然后执行 `make clean`。命令直接删除 `data/`、`output/`、`.cache/`、`.venv/`、`node_modules/`、中断构建目录、Python 缓存和由人物原图导出的界面图标，不备份，也不遍历指向项目外的符号链接。`assets/branding/` 原图与 `annotations/` 结构化标注输入保留。
 
-清理后按上节重新安装依赖，执行 `make build` 恢复图标、查询库与链接版，`make index` 恢复全文索引。只有运行浏览器测试才需要 `make browser-setup`。生成文件和历史测试报告不提交 Git。
+清理后按上节重新安装依赖，执行 `make build` 恢复图标、查询库与链接版。只有运行浏览器测试才需要 `make browser-setup`。生成文件和历史测试报告不提交 Git。
 
 ## 阅读服务与正文生成
 
@@ -124,142 +122,99 @@ make upper
 
 ## 引用审核：保存、重建、撤销
 
-审核输入保存在仓库内的 `reviews/decisions.jsonl`，不属于可删除重建的 `data/`。日志采用追加事件：保存确认、确认此处非规则引用、替代旧决策及撤销均保留审核者、理由、时间和依据。本节处理具体引用；规则陈述的结构化标注见[规则链查询与审核](#规则链查询与审核)。两者均不提供补定义、来源裁定、全局别名或批量规则批准；浏览器服务保持只读。
+所有规则标注（`grant`、`procedure`）与具体引用裁定（`reference`：`confirm`、`non_reference`、`missing_definition`）统一追加保存在仓库内的 `annotations/annotations.jsonl`，不属于可删除重建的 `data/`。日志保留作者、理由、时间、内容／上下文双哈希依据以及 `supersedes`／`revoke` 历史，通过 `python -m anna.knowledge.repository` 读取与写入；浏览器服务保持只读。
 
-先运行 `make build`，然后查询和检查一处引用：
+先运行 `make build`，然后查询并检查一处引用：
 
 ```sh
 # 列出普通正文中的待核引用；也可使用 --signal explicit / index / format / table
-.venv/bin/python -m anna.review.commands list --signal plain --status review --limit 10
+.venv/bin/python -m anna.knowledge.repository references --signal plain --status review --limit 10
 
-# 从查询结果取 id，从 candidates 或 anna 条目详情取目标 ID
-.venv/bin/python -m anna.review.commands inspect 引用ID --target 目标条目ID
+# 查看引用上下文、可迁移锚点、目标选择器、候选与双哈希依据
+.venv/bin/python -m anna.knowledge.repository ref-inspect 引用ID --target 目标条目ID
 ```
 
-`inspect` 展示原文上下文、机器候选、所选目标、依赖依据及 `basis_sha256`。核对后用这次查看得到的指纹保存，避免把旧页面上的结论应用到已变化的数据库：
+`ref-inspect` 返回引用锚点（`within`、`quote`）、目标条目选择器以及 `content_sha256`、`context_sha256` 双哈希。核对后用这组指纹写入确认裁定：
 
 ```sh
-.venv/bin/python -m anna.review.commands confirm 引用ID \
-  --target 目标条目ID --basis 查看得到的basis_sha256 \
+.venv/bin/python -m anna.knowledge.repository annotate 引用ID \
+  --kind reference --ruling confirm --target 目标条目ID \
+  --expected-content-sha256 查看得到的content_sha256 \
+  --expected-context-sha256 查看得到的context_sha256 \
   --reviewer 审核者 --reason '说明此处引用该定义的原文与上下文依据'
 make build
 # 停止旧服务，再重新运行
 make up
 ```
 
-一次保存只作用于该引用范围；目标可以是候选外的现有可定位条目，但必须提供审核依据。保存不直接修改数据库，须重建才生效；同一固定输入快照允许连续保存；保存会结合尚未重放的日志检查活跃决策，发布前仍须统一重放。
+一次裁定锚定于该引用所在上下文及文本片段；目标可以是候选外的现有可定位条目，但须提供核对理由。保存只写入 `annotations/annotations.jsonl`，须重建才生效；同一固定输入快照允许连续保存多项裁定，发布前由 `require_current_annotations` 校验日志已完整重放。
 
-anna 详情的“概念线索”保留原始观察，“有效引用”展示重放后的目标、审核状态、原始自动结果和点击层状态。`effective_references` 是查询与链接版的共同消费表，原有链接不再由链接版单独消歧。原有链接与相同范围的索引或格式观察合并为一个有效引用，其 `observation_ids` 保留发现入口；审核时使用有效引用 ID。
+anna 详情的“概念线索”保留原始发现信号，“有效引用”展示重放后的目标、审核状态、原始自动结果 `automatic` 和点击层状态。`catalog.sqlite` 用同一张 `effective_references` 表保存全部发现记录（`is_effective=0` 为纯发现或被显式链接覆盖的观察，`is_effective=1` 为有效引用与点击层输入）；审核与 CLI 检查时使用有效引用 ID。
 
 - `status` 表示有效语义结果；`review_status` 区分未经人工审核、决策已采用、失效、冲突和已撤销。
 - `can_link` 与 `presentation` 表示能否添加点击层及不能添加的原因。定义标题优先，原有链接范围不被其他提及覆盖，竞争的引用范围不按顺序取胜。
 - 普通正文确认后可以生成定义跳转；“已关联”仍可能是自动推断，不等于人工核准。
 - 对原有 `<a>` 的非引用结论、撤销或失效只影响 anna 新增的跳转层，原 HTML 链接保持原样；这类结果显示“保留原文链接，不添加跳转”。
 
-若确认此处不是规则引用，先不带 `--target` 运行 `inspect 引用ID`，再使用该指纹：
+若确认此处不是规则引用或记录缺少独立定义，先不带 `--target` 运行 `ref-inspect 引用ID`（登记缺失定义时加 `--missing-definition`），再写入 `non_reference` 或 `missing_definition` 裁定：
 
 ```sh
-.venv/bin/python -m anna.review.commands non-reference 引用ID \
-  --basis 查看得到的basis_sha256 --reviewer 审核者 --reason '说明此处的非规则语境'
+.venv/bin/python -m anna.knowledge.repository annotate 引用ID \
+  --kind reference --ruling non_reference \
+  --expected-content-sha256 查看得到的content_sha256 \
+  --expected-context-sha256 查看得到的context_sha256 \
+  --reviewer 审核者 --reason '说明此处的非规则语境'
 make build
 ```
 
-保存返回 `review_…` 事件 ID。撤销时保留旧记录，追加撤销事件，并在重建后恢复当前自动结果；不会自动恢复更早、已被替代的人工决策：
+撤销时追加一条 `revoke` 事件，保留历史并在重建后恢复自动结果：
 
 ```sh
-.venv/bin/python -m anna.review.commands revoke 审核事件ID \
+.venv/bin/python -m anna.knowledge.repository revoke ann_ref_事件ID \
   --reviewer 审核者 --reason '说明撤销原因'
 make build
 ```
 
-重新裁定同一引用时，重新 `inspect` 并在 `confirm` 或 `non-reference` 命令增加 `--supersedes 旧审核事件ID`。同一引用有多个活跃决策时，不选择最后一行；须先明确撤销竞争决策。原引用 ID 因范围变化而消失时，先撤销旧决策，再依据新引用重新确认。
+重新裁定同一引用时，重新 `ref-inspect` 并在 `annotate` 命令增加 `--supersedes 旧事件ID`。同一引用范围内存在多个竞争决策时，不按后写覆盖前写，必须显式替代或撤销。
 
-### 搜索候选与登记缺失定义
+### 核对模式下的候选搜索与缺失定义队列
 
-查询页顶部的“引用审核工作台”进入 `/review`；条目“有效引用”中的“候选搜索”可携带具体引用进入。工作台只读，显示引用上下文、候选正文摘录、匹配理由、版本／类型警告与缺失定义队列。无结果只表示本次搜索未找到候选，不能据此判为非引用。
-
-```sh
-.venv/bin/python -m anna.review.commands candidates 引用ID
-.venv/bin/python -m anna.review.commands candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
-```
-
-搜索复用名称归一化与已提取别名，结合原路径、同文件名、锚点、来源和规则代际排序；`--type`、`--ruleset`、`--source 来源ID` 可进一步筛选。所有匹配理由会返回，冲突候选不会被偷偷批准或合并。搜索不会改变自动解析结果或生成链接。命中合适目标后，仍须执行 `inspect --target` 并逐处 `confirm`。
-
-经核对确实缺少合适的独立定义时，先按缺失定义模式核对，再登记：
+开启 anna 的核对模式后，条目详情中每条“有效引用”和“待核／缺失定义”均可原地展开“候选搜索”抽屉，按关键词与页码浏览候选、匹配理由、警告和正文摘录，点击候选条目直接阅读；顶栏同时提供“缺失定义队列”对话框查看全库缺失定义状态并就地重新搜索候选。浏览器保持只读；命令行也可直接调用：
 
 ```sh
-.venv/bin/python -m anna.review.commands inspect 引用ID --missing-definition
-.venv/bin/python -m anna.review.commands missing-definition 引用ID \
-  --basis 查看得到的basis_sha256 --reviewer 审核者 --reason '说明核对范围、缺少的定义及现有候选为何不适用'
-make build
-.venv/bin/python -m anna.review.commands missing --status open
+.venv/bin/python -m anna.knowledge.repository candidates 引用ID
+.venv/bin/python -m anna.knowledge.repository candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
+.venv/bin/python -m anna.knowledge.repository missing --status open
 ```
 
-可在两步中使用一致的 `--query` 保存特定搜索条件；默认空条件执行名称／原定位的全库结构搜索。登记保存全部检索命中的 ID 及其定义依赖，展示快照保留前 20 项、总数与页码；搜索版本或候选变化后重新待核，不静默沿用“缺失”的判断。登记与引用确认共用追加日志、批次、撤销和发布检查，不生成虚构条目，也不把具名角色合并到通用数据卡。
+登记缺失定义时先 `ref-inspect 引用ID --missing-definition`，再用 `--kind reference --ruling missing_definition` 写入（可通过 `--query` 保留搜索关键词）；队列结果保存在 `catalog.sqlite` 的 `missing_definitions` 表，状态变化均由统一评估写入 `knowledge_annotations` 与 `review_queue`。定义补齐后重新 `ref-inspect --target` 并用 `annotate --kind reference --ruling confirm --supersedes 缺失登记事件ID` 显式解决，问题状态随之变为 `resolved`。
 
-缺失定义队列保存在 `missing_definitions` 表及 `data/extracted/missing_definitions.jsonl`。`open` 表示待补齐；原文或候选变化产生 `stale`，原引用消失为 `missing`。补齐后重新 `inspect --target`，以 `confirm --supersedes 缺失登记事件ID` 显式关联；成功重放后为 `resolved`。改判非引用须用 `non-reference --supersedes`，重放后为 `dismissed`。撤销登记为 `revoked`，替换登记保留 `superseded` 历史；后续修复失效或被撤销时，旧问题显示 `needs_review`，不会被误报已解决或隐式恢复旧批准。定义提升／提取修复本身仍需独立实现有证据的内容边界。
+只读 API：`/api/reference-candidates?id=引用ID` 支持 `q`、`type`、`ruleset`、`source`、`limit`、`offset`；`/api/missing-definitions` 支持 `status`、`path`、`limit`、`offset`。
 
-只读 API：`/api/reference-candidates?id=引用ID` 支持 `q`、`type`、`ruleset`、`source`、`limit`、`offset`；`/api/missing-definitions` 支持 `status`、`path`、`limit`、`offset`。工作台可分页查看所有状态的历史；条目待核栏目也显示当前页面尚待处理的缺失登记。
+### 依据变化后的迁移与重新待核
 
-### 连续保存与原子批次
+规则标注与引用裁定共用内容／上下文双哈希模型：保存锚点文段、最小上下文窗口、目标条目选择器、竞争定义状态、作用域与适用局部定义，不绑定易变的字节偏移和 `ver_...` 临时 ID。
 
-同一构建快照允许连续保存多个不同引用，统一执行一次 `make build`；保存仍核对该引用的依据和当前日志中的活跃决策。发布要求不变：待重放的日志不能用旧数据库生成正文或启动阅读服务。
-
-需要整批成功或失败时，先分别 `inspect 引用ID --target 目标ID`，核对输出中的原文和目标，再准备 JSON 文件：
-
-```json
-{
-  "snapshot_sha256": "inspect 返回的构建快照指纹",
-  "log_sha256": "inspect 返回的审核日志指纹",
-  "items": [
-    {
-      "operation": "confirm",
-      "reference_id": "引用ID",
-      "target": "目标ID",
-      "expected_basis": "该引用 inspect 返回的 basis_sha256",
-      "reviewer": "审核者",
-      "reason": "基于原文和候选比较的理由"
-    }
-  ]
-}
-```
+- 原文仅发生无关邻段增删、注释变化或条目 ID 重新生成时，只要被标注引用语句、目标语义和局部竞争集合不变，裁定保持 `applied`。
+- 引用语句或目标语义改写、目标无法定位或出现新增同名竞争时，裁定进入 `stale`、`missing` 或 `conflict`，结构化差异记入 `changes`，并在修正前阻止新增错误跳转。
 
 ```sh
-.venv/bin/python -m anna.review.commands batch 审核批次.json
-make build
+.venv/bin/python -m anna.knowledge.repository annotations --kind reference --status stale
+.venv/bin/python -m anna.knowledge.repository annotations --kind reference --status missing
+.venv/bin/python -m anna.knowledge.repository annotations --kind reference --status conflict
 ```
 
-所有条目须基于同一 `snapshot_sha256`；准备期间日志有变化时先重新核对，更新 `log_sha256`。`non_reference` 与 `missing_definition` 操作省略 `target`；后者使用 `inspect --missing-definition` 的指纹，并可填写与核对一致的 `search_query`。替代已有决策时为该项添加 `supersedes`。重复引用、过期依据、日志／构建快照变化或任一无效项都会拒绝整批，日志保持原样。追加历史校验与文件锁保护并发保存，构建／发布仍严格校验完整日志。批次只保存审核，不新增全局别名或修改原文。
+重放评估统一写入 `catalog.sqlite` 的 `knowledge_annotations`（`kind='reference'`）与 `review_queue`；`/api/meta` 的 `review_snapshot.pending_rebuild` 在修改了 `annotations/annotations.jsonl` 但尚未 `make build` 时提示有待重建输入，构建门禁也会拒绝以未重放日志生成链接版或启动服务。
 
-### 依据变化后的重新待核
-
-新版依据（`schema: 2`）按引用保存：范围及上下文、最小所属条目的正文指纹、目标与同名竞争定义的语义字段和正文指纹、所属作用域、自动候选、实际格式约定、适用的局部定义及相关来源事实。原始整页字节、全局目录指纹、无关来源路径清单和整个脚本目录不再作为逐条决策的失效条件。位置或定义边界仍严格核对，不自动迁移。
-
-保存前仍校验提取模块指纹：解析代码变化必须先重建。重建后以新提取的实际依据判断旧决策是否失效；服务、图标或界面代码的修改不直接使决策失效。`REVIEW_SEMANTICS_VERSION` 表示审核依据解释方式，改变这种含义时须升级。旧版决策缺少新版依赖证据，保留日志并报告 `dependency_schema_changed`，必须重新 `inspect` 后显式替代，不静默恢复批准。
-
-重放结果的 `changes` 为结构化差异：`path` 标识依据字段，`kind` 区分新增、移除、改变，`before`／`after` 保存前后值。正文指纹变化表明需重新核对内容，并非自动判定原结论错误。anna 的待核栏目展示差异类别和前后值，完整记录保留在可展开证据中。
-
-引用变动、拆分或移动时不会自动迁移批准。系统在旧范围与同页相同文本范围查找受影响的新引用并阻止其新增跳转，直到重核或撤销旧决策；保守匹配可能覆盖额外范围。原文消失时仍保留 `missing` 决策及待核记录。目标内容、候选集合或来源依据变化也会使原决策失效，即使机器仍能得到唯一目标，也先显示重新待核。
-
-```sh
-.venv/bin/python -m anna.review.commands decisions --status stale
-.venv/bin/python -m anna.review.commands decisions --status missing
-.venv/bin/python -m anna.review.commands decisions --status conflict
-```
-
-重放结果保存于 `review_decisions` 表及 `data/extracted/review_decisions.jsonl`；失效、消失和冲突同步进入 `review_queue`。`reference_coverage.json` 汇总有效语义、审核和点击层状态。
-
-审核日志尚未重放时，`make linked` 和新启动的 `make up` 会拒绝使用旧审核快照；已经运行的查询仍展示其构建快照，`/api/meta` 的 `review_snapshot.pending_rebuild` 提示有待重建输入。构建替换数据库或链接版后，运行中的服务拒绝继续混用产物，必须重启。
-
-需要隔离试验时，`python -m anna.review.commands --db 数据库路径 --decisions 审核日志路径 …` 与 `python -m anna.catalog.build --decisions 审核日志路径 --output 输出目录` 可使用独立输入输出。链接版从数据库保存的审核快照读取对应日志路径。不要把实验批准写入正式审核日志，也不要把构建后的数据库作为审核结论的唯一保存位置。
+隔离试验时可传入 `--annotations 临时日志路径` 与 `--db 临时数据库路径`；不要把实验裁定写入仓库的 `annotations/annotations.jsonl`。
 
 ## 概念发现与覆盖核对
 
-`make build` 同时生成概念定义及发现记录。anna 详情中的“概念线索”列出条目范围内的发现信号、内容角色和处理状态，可查看原文范围、格式结构及其样式表哈希；已关联的提及可打开目标条目，歧义记录可展开候选供比较。
+`make build` 同时生成概念发现线索与有效引用。anna 详情中的“概念线索”列出条目范围内的发现信号、内容角色和处理状态，可查看原文范围、格式结构及其样式表哈希；已关联的提及可打开目标条目，歧义记录可展开候选供比较。
 
-- `catalog.sqlite` 的 `concepts` 表保存规则、属性、技能、动作、状态、环境危害及扩展机制的临时概念身份，当前与具体定义逐一对应，不按同名合并。`concept_observations` 表保存各发现入口的结果；格式标记也可指向法术、物品与生物条目。
-- `concept_observations.jsonl` 导出逐处证据、候选与状态。`resolved` 表示在当前解析规则内唯一关联；`ambiguous` 表示适用范围内有多个目标；`unresolved` 表示未找到目标；`review` 表示需要核对语义或上下文；`excluded` 表示本次不参与自动关联，例如定义标题或已有链接，并非宣称它不是概念。
-- `concept_coverage.json` 汇总按书籍、发现信号和状态的结果，包含未关联索引、未关联格式标记、未分类定义边界、歧义目标及未进入索引的定义清单。没有格式标记的已扫描来源也保留计数，避免把“没有发现”误读为“没有内容”。
+- `catalog.sqlite` 的 `effective_references` 表统一保存所有发现信号与有效引用：`is_effective=0` 保留未转化为提及链接的标题／定义句候选或被显式链接合并的观察，`is_effective=1` 保存可消费有效引用（其中 `automatic` 字段保留重放审核前的发现结果）。
+- `resolved` 表示当前解析规则下唯一关联；`ambiguous` 表示适用范围内有多个目标；`unresolved` 表示未找到目标；`review` 表示需核对语义或上下文；`excluded` 表示本次不自动关联。
+- `metadata.concept_coverage`（同时写入 `summary.json`）汇总按书籍、发现信号和状态的结果，以及未关联索引、未关联格式标记、未分类定义边界与歧义清单。
 
 “本书速查”按导航子树收集，覆盖不同目录中的页面；已有术语索引继续作为入口。正文扫描同时登记下划线组合、未分类标题、定义句候选，并用已提取规则定义的名称反扫普通正文。格式证据保存标签嵌套结构、原始标记及约定来源；定义标题与已有引用不重复生成引用入口。同来源同名多目标保留歧义，不因某条进入速查就任意排除其他定义。
 
@@ -268,20 +223,20 @@ make build
 - **核心规则子定义**：在来源名录已识别的核心规则中，从已识别的规则段落提取两类结构：明确引出的并列术语及各自的括号内释义；成组的双语行首小标题或并列规则句中的具名变体。后者要求子名能辨认出所属规则，通用的“攻击影响”等说明标签不独立成条目。子定义只保存自身原文范围，通过父条目保留规则、来源与规则代际；同名不合并，不从另一版补写原文没有的译名。
 - **普通正文引用**：名称须处在可辨认的规则用语中，例如“获得〔规则术语〕”或其紧随的并列项；动作条目还要求执行动作的语境。检定写法本身也是规则用语，其中每个部分分别引用，并且只关联自己那一种定义：以“检定”“豁免”结尾的名称是检定本身（力量检定、死亡豁免检定）；紧接“检定／豁免”之前、可用顿号或“或”并列的短名称是受检的属性或技能（体质豁免、力量或敏捷豁免、隐匿检定）；括号写法之前是属性（感知（察觉）检定），括号里的各项是技能（魅力（欺瞒或游说）检定）。写法本身标明了种类，因此同名的表格或其他类型不与之竞争；名称没有该种定义时（“死亡豁免”中的“死亡”），写法不适用，仍按它所在的规则用语处理。较长的名称只在另一规则代际有定义时（2014 的“力量检定”出现在 2024 正文中），改用其中本代际有定义的最长名称，证据保留原先的较长名称。系统用所在最小条目的来源和规则代际约束候选，仅在核心规则目标唯一且无相关同名异类候选时自动关联。裸词匹配、定义自称、表格与有标记的示例仍待核。证据保留触发用语的范围、所属条目与解析依据；已有链接和格式标记的范围不重复反扫。
 - **跨书引用**：来源已有明确规则代际时，在同来源没有目标的情况下查找该代际的核心规则来源；核心来源由资源名录的核心出版物及出版物族证据识别：英文出版物名与缩写词干共同对应，归档后的旧版仍保留对应代际的核心身份；不配置具体书名或条目名。类型与名称匹配后仍须唯一。结果标记为“按来源规则代际引用核心规则（推断）”，保留来源代际证据，不冒充原文明确指定了某一版书。
-- **本地定义**：在已识别的子能力段落中，结合“名为／称为／称作”、格式类型及后续对象描述建立局部命名定义。提及指向承载规则的子能力条目，作用域为所属特性；`local_definitions` 表及 `local_definitions.jsonl` 保存命名范围、定义条目与作用域，不将被比较的外部物品合并为别名。
+- **本地定义**：在已识别的子能力段落中，结合“名为／称为／称作”、格式类型及后续对象描述建立局部命名定义。提及指向承载规则的子能力条目，作用域为所属特性；`local_definitions` 表保存命名范围、定义条目与作用域，不将被比较的外部物品合并为别名。
 - **特性边界**：职业上下文中，段落起始的“等级＋双语名称”识别为特性标题；该段内行首的加粗双语小标题识别为子能力，止于下一子能力或段落末尾。特性及子能力通过既有条目模型生成定义入口。
 
 - **表格标题**：识别表内明确的 `caption`，以及紧邻数据表格的独立下划线、加粗或标题行；要求表格至少两行且具有多列内容，跳过嵌套表、数据卡容器、列内标记和纯骰点／数字标题。已有同位置标题复用原条目；新表题条目范围止于表格末尾，以“资料索引”分类保存，`table_span` 记录原表范围。表内商品或其他独立条目仍按既有规则提取，不与表格索引混为一条；表格排版本身不说明表内内容属于法术、装备或其他类型。表题可以打开 anna，已唯一解析的高亮表名引用可以在本页定位；同名表格依来源与上下文消歧，不按显示名建立全局唯一目标。
 
-- **样式来源**：逐页检查实际链接的本地样式表，保存受支持约定的选择器、注释及文件哈希。`concept_coverage.json` 记录相关样式表和发现输入；仅重建链接版时会校验这些输入是否过期。页面仍有未知格式时继续待核。
+- **样式来源**：逐页检查实际链接的本地样式表，保存受支持约定的选择器、注释及文件哈希。`metadata.concept_coverage` 记录相关样式表和发现输入；仅重建链接版时会校验这些输入是否过期。页面仍有未知格式时继续待核。
 - **高亮内多个引用**：对整个名称先做匹配，保留名称内的标点和限定；其余片段按顶层列表标点及双语名称间的空白边界拆分，在至少两个片段能匹配已有名称时才采用拆分。各片段分别消歧、保留未解析结果，共享原始格式标记的 ID 和范围；不把整段链接到最后一个名称。括号内内容、加值等限定不单独剥离。
 - **职业能力作用域**：依据条目父子关系确定所属职业／子职范围，同名职业能力只有在该范围内才进入未限定术语引用的候选池。范围外的能力仍可检索和点击标题，但不会与全书通用术语竞争；原有显式局部命名定义继续优先。
 
-`concept_coverage.json` 的 `format_marks` 统计原始格式标记，`outcomes.format` 统计逐个引用片段，两者在拆分后不再相等。没有可点击内容的空格式标记与真实的未关联高亮分开统计。阻塞原因记录的是当前解析阶段的结果，不是永久定性：解除一种阻塞后仍可能遇到版本或目标问题，不将新增可识别格式数视为新增正确链接数，各类阻塞数量也不能相加作为预计新增链接数。示例中的具体提及同样逐处判断，虚构人物不妨碍其中的真实法术或动作拥有引用目标。
+`concept_coverage` 的 `format_marks` 统计原始格式标记，`outcomes.format` 统计逐个引用片段，两者在拆分后不再相等。没有可点击内容的空格式标记与真实的未关联高亮分开统计。阻塞原因记录的是当前解析阶段的结果，不是永久定性：解除一种阻塞后仍可能遇到版本或目标问题，不将新增可识别格式数视为新增正确链接数，各类阻塞数量也不能相加作为预计新增链接数。示例中的具体提及同样逐处判断，虚构人物不妨碍其中的真实法术或动作拥有引用目标。
 
 上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。回归样例由 `tests/browser/links.spec.cjs` 覆盖。
 
-未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性、导出 ID 和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make linked` 会拒绝沿用过期的概念发现依据。
+未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make linked` 会拒绝沿用过期的概念发现依据。
 
 ## 来源对照（5etools-cn）
 
@@ -307,7 +262,7 @@ make build
 - `reprinted_as`：5etools-cn 的 `reprintedAs` 两端都唯一对应 anna 条目时，列出这对条目，作为重印或修订关系候选。
 - `unclaimed_record`：已对齐来源中标明译自不全书、却没有任何 anna 条目对应或列为候选的记录，提示可能漏提或名称解析差异。
 
-**产物。** `catalog.sqlite` 新增 `counterpart_records`、`counterpart_sources`、`counterparts` 与 `counterpart_findings` 表，元数据 `counterpart_coverage` 汇总镜像提交、输入指纹与各类计数；`summary.json` 的 `counterparts` 记录同一快照。导出文件为 `counterparts.csv`、`counterpart_findings.csv`（含 5etools-cn 记录在 JSON 中的位置）、`counterpart_sources.csv` 与 `counterpart_coverage.json`。`make audit` 校验结果与候选、外键、导出及计数一致，并在[提取审计](data/extracted/audit.md)中按类型列出对照结果与线索数量。
+**产物。** `catalog.sqlite` 保存 `counterpart_records`、`counterpart_sources`、`counterparts` 与 `counterpart_findings` 表（其中包含 5etools-cn 记录在 JSON 中的位置），元数据 `counterpart_coverage` 汇总镜像提交、输入指纹与各类计数；`summary.json` 的 `counterparts` 记录同一快照。`make audit` 校验结果与候选、外键及计数一致，并在[提取审计](data/extracted/audit.md)中按类型列出对照结果与线索数量。
 
 5etools-cn 的中文数据采用 CC BY-NC-SA 4.0。对照结果用于本机核对；若对外发布包含其中文内容的派生数据，需署名、非商用并以相同许可共享。
 
@@ -359,17 +314,17 @@ make up
 /Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m anna.catalog.build
 ```
 
-查询（无需第三方库）：
+查询（复用 `anna.presentation.catalog` 只读消费层）：
 
 ```sh
 python3 -m anna.catalog.query --type feat --source PHB24
-python3 -m anna.catalog.query --view 魔法武器 --ruleset 5r
-python3 -m anna.catalog.query --type spell --field school=塑能
+python3 -m anna.catalog.query --preset 魔法武器 --ruleset 5r
+python3 -m anna.catalog.query --type spell --field school=塑能 --csv > evocation.csv
 ```
 
-`--show 版本ID` 查看正文、证据和关系；`--stats` 查看覆盖与异常统计。来源多选取并集，其余条件取交集。
+`--preset` 支持 `NPC`、`伙伴`、`坐骑`、`魔法武器`、`战斗风格` 与 `传奇恩惠`；`--csv` 输出 UTF-8 CSV，`--show 版本ID` 查看正文、证据、引用与规则链，`--stats` 查看覆盖与异常统计。来源多选取并集，其余条件取交集。
 
-[结果](data/extracted/results.md) · [来源](data/extracted/sources.csv) · [分类表](data/extracted/views) · [审核队列](data/extracted/review_queue.csv)
+构建产物集中在 [catalog.sqlite](data/extracted/catalog.sqlite)、[summary.json](data/extracted/summary.json)，审计后另生成 [audit.md](data/extracted/audit.md) 与 [audit.json](data/extracted/audit.json)。
 
 `entry_marked`＝条目标旧；`source_archived`＝整书归档；`unmarked`＝未见标记，不代表新版。实体身份暂按定位区分，同名与同文匹配仅生成候选，不自动合并。未分类段落和原始表格保留在数据库中；恢复的断链仍保留原链接。
 
@@ -379,7 +334,7 @@ python3 -m anna.catalog.query --type spell --field school=塑能
 /Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m unittest discover -s /Users/arctic/Loom/Streamer/DnD/5e-anna/tests
 ```
 
-结构审计（只读数据库，校验所有 CSV／SQL 视图一致性）：
+结构审计（只读数据库，校验表结构、外键与统计一致性）：
 
 ```sh
 /Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m anna.catalog.audit
@@ -387,7 +342,7 @@ python3 -m anna.catalog.query --type spell --field school=塑能
 
 可用 `--baseline /绝对路径/旧版catalog.sqlite --output /报告目录` 生成逐条增删及分类／字段差异。审计不等于全库人工核验；未支持表格和无法唯一关联的动物保留在审核队列。
 
-审计同时列出分类缺口，供补充识别规则时决定先读哪里。`untyped_pages.csv` 列出没有任何已分类条目的正文页及其来源和目录。`classification_gaps.csv` 列出位于已分类条目之外、自身正文出现豁免 DC、骰子伤害或骰值表的未分类段落，并给出每个信号的原文位置；数据卡内的“动作”等段落属于该数据卡，不计入。标题中的【标注】按条目所得分类汇总，同一标注分属多类时在报告中列出。缺口是线索，不作为审计失败条件；带 `--baseline` 时，[提取审计](data/extracted/audit.md)对照修改前后的缺口数量。`type_conflicts.csv` 列出原文明示证据指向另一类型的条目（判定顺序见[数据结构与提取规则](MODEL.md)），报告按所得分类与另有证据汇总；冲突同样是线索，不作为失败条件。
+审计同时汇总分类缺口与类型冲突，供补充识别规则时决定先读哪里。缺口涵盖没有任何已分类条目的正文页、位于已分类条目之外且自身正文出现豁免 DC／骰子伤害／骰值表的未分类段落，以及每个信号的原文位置；数据卡内的“动作”等段落属于该数据卡，不计入。缺口与冲突均为线索，不作为审计失败条件；明细保存在 [audit.json](data/extracted/audit.json) 与 `catalog.sqlite`，带 `--baseline` 时[提取审计](data/extracted/audit.md)对照修改前后的变化。类型冲突判定顺序见[数据结构与提取规则](MODEL.md)。
 
 ## 规则链查询与审核
 
@@ -446,4 +401,4 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID` 和 `/
 
 知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方读取 `value.grants`、`value.parameters` 和 `value.effects`。标注基线依据与事件封装各自使用独立的版本 `1`。
 
-构建目录的 `effective_knowledge.jsonl` 与 `knowledge_annotations.jsonl` 分别保存合并后的有效记录及标注评估结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。
+有效知识记录（`effective_knowledge`）与统一标注评估结果（`knowledge_annotations`，涵盖 `grant`、`procedure` 与 `reference`）均保存在 `catalog.sqlite`。`make audit` 校验它们与投影表及原文切片的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 在 `audit.json` 中额外记录前后知识变化明细。

@@ -38,7 +38,7 @@ def fixture():
 def cases(manifest):
     with closing(sqlite3.connect(DB)) as db:
         spell=json.loads(db.execute("SELECT data FROM entries WHERE name_en='Shield' AND ruleset='5r' AND page_path='topics/玩家手册2024/法术详述/1环.htm'").fetchone()[0])
-        row=db.execute("SELECT m.data,e.id FROM concept_observations m JOIN entries e ON e.page_path=m.page_path AND m.start>=e.start AND m.end<=e.end WHERE m.status='resolved' AND m.signal='format' AND e.type='spell' AND m.page_path='topics/玩家手册2024/法术详述/1环.htm' ORDER BY m.start LIMIT 1").fetchone()
+        row=db.execute("SELECT m.data,e.id FROM effective_references m JOIN entries e ON e.page_path=m.page_path AND m.start>=e.start AND m.end<=e.end WHERE m.is_effective=1 AND m.status='resolved' AND m.signal='format' AND e.type='spell' AND m.page_path='topics/玩家手册2024/法术详述/1环.htm' ORDER BY m.start LIMIT 1").fetchone()
         mention=json.loads(row[0]);mention['entry_id']=row[1]
         mention['target']=manifest['entries'][mention['target_id']]
         core=[]

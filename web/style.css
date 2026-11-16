@@ -606,3 +606,13 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 
 .chain-effect:focus{outline:2px solid var(--anna-focus);outline-offset:4px}
 .effect-links{font-size:13px;border-inline-start:2px solid var(--anna-line);padding-inline-start:.65rem}
+.candidate-trigger{margin:.45rem 0}
+.inline-candidates{margin:.5rem 0;padding:.65rem .75rem;border:1px solid var(--anna-line);border-radius:8px;background:var(--anna-paper-alt,var(--anna-paper))}
+.candidate-policy{margin:0 0 .45rem;font-size:.85rem}
+.inline-candidate-form{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;margin-bottom:.6rem}
+.inline-candidate-form input[type=search]{flex:1 1 12rem;min-width:0}
+.missing-dialog{width:min(54rem,94vw);max-height:86vh;padding:1.1rem 1.25rem;border:1px solid var(--anna-line);border-radius:10px;background:var(--anna-paper);color:var(--anna-ink)}
+.missing-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.4rem}
+.missing-head h2{margin:0;font-size:1.15rem}
+.missing-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.75rem 0}
+.missing-dialog .fact{margin:.65rem 0}

@@ -265,6 +265,70 @@ function closeEntry({update=true,restoreFocus=true}={}) {
 }
 
 
+function toggleInlineCandidates(button) {
+  const refId = button?.dataset.candidateRef;
+  const panel = button?.parentElement?.querySelector('.inline-candidates');
+  if (!refId || !panel) return;
+  if (!panel.hidden) {
+    panel.hidden = true;
+    button.setAttribute('aria-expanded', 'false');
+    return;
+  }
+  panel.hidden = false;
+  button.setAttribute('aria-expanded', 'true');
+  if (panel.dataset.initialized === refId) return;
+  panel.dataset.initialized = refId;
+  const labels = annaLinkLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+  const l = labels.reviewSearch;
+  panel.innerHTML = `<p class="muted candidate-policy">${esc(l.policy)}</p>
+    <form class="inline-candidate-form">
+      <input type="search" name="q" placeholder="${esc(l.query)}" aria-label="${esc(l.query)}" autocomplete="off">
+      <button type="submit" class="quiet-button">${esc(l.search)}</button>
+      <span class="muted" data-candidate-count></span>
+      <button type="button" class="quiet-button" data-candidate-prev disabled>${esc(l.prev)}</button>
+      <button type="button" class="quiet-button" data-candidate-next disabled>${esc(l.next)}</button>
+    </form>
+    <div data-candidate-list></div>`;
+  let offset = 0, queryText = '', generation = 0;
+  const form = panel.querySelector('.inline-candidate-form');
+  const count = panel.querySelector('[data-candidate-count]');
+  const prev = panel.querySelector('[data-candidate-prev]');
+  const next = panel.querySelector('[data-candidate-next]');
+  const list = panel.querySelector('[data-candidate-list]');
+  async function load() {
+    const gen = ++generation;
+    list.innerHTML = `<p class="muted">${esc(l.loading)}</p>`;
+    prev.disabled = true;
+    next.disabled = true;
+    try {
+      const data = await api('/api/reference-candidates?' + new URLSearchParams({id: refId, q: queryText, limit: 20, offset}));
+      if (gen !== generation) return;
+      count.textContent = `${data.offset + 1 > data.total ? 0 : data.offset + 1}–${Math.min(data.total, data.offset + data.rows.length)} / ${data.total}`;
+      prev.disabled = data.offset === 0;
+      next.disabled = data.offset + data.rows.length >= data.total;
+      list.innerHTML = data.rows.length ? data.rows.map(r => `<article class="fact">
+        <div class="fact-head"><button type="button" class="link-button" data-entry="${esc(r.id)}">${esc(r.name)}</button><span>${esc(r.type)} · ${esc(r.ruleset)}</span></div>
+        <div><small>${esc((r.source_names || []).join('；'))}</small></div>
+        <p>${r.reasons.map(reason => `<span class="badge">${esc(l.reasons[reason.code] || reason.code)}</span>`).join(' ')}</p>
+        ${r.warnings.length ? `<p class="muted">${r.warnings.map(w => esc(l.warnings[w] || w)).join('；')}</p>` : ''}
+        <div><code>${esc(r.id)}</code> · <a href="${esc(sourceURL(r.page_path, r.start, r.end))}" target="_blank" rel="noopener">${esc(r.page_path)} ↗</a></div>
+        <details><summary>${esc(l.excerpt)}</summary><pre class="body-text">${esc(r.excerpt)}${r.excerpt_truncated ? '…' : ''}</pre></details>
+      </article>`).join('') : `<p class="muted">${esc(l.empty)}</p>`;
+    } catch (err) {
+      if (gen === generation) list.innerHTML = `<p role="alert">${esc(err.message || l.error)}</p>`;
+    }
+  }
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    offset = 0;
+    queryText = form.elements.q.value.trim();
+    load();
+  });
+  prev.addEventListener('click', () => { offset = Math.max(0, offset - 20); load(); });
+  next.addEventListener('click', () => { offset += 20; load(); });
+  load();
+}
+
 function renderConceptObservation(o,labels) {
   const title=o.target_id
     ? `<button data-entry="${esc(o.target_id)}">${esc(o.text)}</button>`
@@ -279,7 +343,7 @@ function renderConceptObservation(o,labels) {
     <div><a target="_blank" rel="noopener" href="${esc(sourceURL(o.path,o.start,o.end))}">${esc(labels.extractedRange)} ↗</a></div>
     ${o.automatic?`<div><small>${esc(labels.reviewStates[o.review_status]||o.review_status)} · ${esc(labels.presentations[o.presentation]||o.presentation)}</small></div><div><code>${esc(o.id)}</code></div><details><summary>${esc(labels.automaticResult)}</summary><pre class="body-text">${esc(JSON.stringify({automatic:o.automatic,decision_ids:o.decision_ids},null,2))}</pre></details>`:''}
     ${candidates}
-    ${o.automatic?`<p><a href="/review?reference=${encodeURIComponent(o.id)}" target="_blank" rel="noopener">${esc(labels.reviewSearch.candidates)} ↗</a></p>`:''}
+    ${o.automatic?`<div class="candidate-trigger"><button type="button" class="quiet-button" data-candidate-ref="${esc(o.id)}" aria-expanded="false">${esc(labels.reviewSearch.candidates)}</button><div class="inline-candidates" data-candidates-for="${esc(o.id)}" hidden></div></div>`:''}
     <details><summary>${esc(labels.evidence)}</summary><pre class="body-text">${esc(JSON.stringify(o.evidence,null,2))}</pre></details>
   </article>`;
 }
@@ -289,9 +353,10 @@ function renderReview(record, labels) {
   const title=labels.reasons[record.reason]||reasonNames[record.reason]||record.reason;
   if(!event)return `<article class="fact"><strong>${esc(title)}</strong><pre class="body-text">${esc(pretty(result))}</pre></article>`;
   const l=labels.reviewDiff;
+  const refId=event.binding?.reference_id||'';
   return `<article class="fact"><strong>${esc(title)}</strong>
     <blockquote>${esc(event.binding?.before||'')}<mark>${esc(event.binding?.text||'')}</mark>${esc(event.binding?.after||'')}</blockquote>
-    <p>${esc(event.reason)}</p>${event.operation==='missing_definition'?`<p><a href="/review?reference=${encodeURIComponent(event.binding.reference_id)}" target="_blank" rel="noopener">${esc(labels.reviewSearch.missing)} ↗</a></p>`:''}<small>${esc(event.reviewer)} · ${esc(event.created_at)}</small>
+    <p>${esc(event.reason)}</p>${event.operation==='missing_definition'&&refId?`<div class="candidate-trigger"><button type="button" class="quiet-button" data-candidate-ref="${esc(refId)}" aria-expanded="false">${esc(labels.reviewSearch.candidates)}</button><div class="inline-candidates" data-candidates-for="${esc(refId)}" hidden></div></div>`:''}<small>${esc(event.reviewer)} · ${esc(event.created_at)}</small>
     <h3>${esc(l.title)} (${changes.length})</h3>
     ${changes.map(c=>`<section class="fact"><strong>${esc(l.fields[c.path[0]]||c.path[0])}</strong>
       <div><code>${esc(c.path.slice(1).join(' / '))}</code> · ${esc(l[c.kind]||c.kind)}</div>

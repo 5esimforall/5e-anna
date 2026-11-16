@@ -1,14 +1,17 @@
 """Regression fixtures for catalog rows, roles, and over-broad context inference."""
-import csv
 import json
 import re
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from collections import Counter
 from pathlib import Path
 
+from anna.catalog import views as browse
 from anna.catalog.build import Build,parse_one
+from anna.presentation import catalog
 from anna.source.html import split_name
 from anna.catalog.types import NO_TOC_PLACE
 from anna.catalog.views import schema_for
@@ -203,18 +206,34 @@ class AnimalLinkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             b.export(Path(td),validation,len(self.paths),0)
             db=sqlite3.connect(Path(td)/'catalog.sqlite')
-            self.assertEqual(db.execute('select count(*) from "坐骑"').fetchone()[0],5)
-            self.assertEqual(db.execute('select count(*) from "动物购置"').fetchone()[0],19)
+            db.row_factory=sqlite3.Row
+            browse.register(db)
+            mounts=catalog.query(db,{'type':['creature'],'f_role':['坐骑'],'versions':['each']},export=True)
+            self.assertEqual(mounts['total'],5)
+            offers=catalog.query(db,{'type':['animal_offer'],'versions':['each']},export=True)
+            self.assertEqual(offers['total'],19)
+            self.assertEqual(db.execute("SELECT count(*) FROM sqlite_master WHERE type='view'").fetchone()[0],0)
             self.assertFalse((Path(td)/'views').exists())
             self.assertFalse((Path(td)/'entries.csv').exists())
             self.assertTrue((Path(td)/'summary.json').exists())
             self.assertEqual(db.execute('pragma integrity_check').fetchone()[0],'ok')
             db.close()
             result,_,gaps=audit(Path(td)/'catalog.sqlite')
-            self.assertEqual(result['csv_sql_mismatches'],[])
             self.assertEqual(result['foreign_key_errors'],0)
             self.assertEqual(result['classification_gaps']['untyped_pages'],len(gaps['pages']))
             self.assertEqual(result['classification_gaps']['flagged_sections'],len(gaps['sections']))
             self.assertIsNone(result['classification_gaps_before'])
+            project=Path(__file__).resolve().parents[1]
+            qjson=subprocess.run([sys.executable,'-m','anna.catalog.query','--db',str(Path(td)/'catalog.sqlite'),'--preset','坐骑','--json'],cwd=project,text=True,capture_output=True,check=True)
+            parsed=json.loads(qjson.stdout)
+            self.assertEqual(parsed['count'],5)
+            qcsv=subprocess.run([sys.executable,'-m','anna.catalog.query','--db',str(Path(td)/'catalog.sqlite'),'--preset','坐骑','--csv','--limit','2'],cwd=project,capture_output=True,check=True)
+            csv_lines=qcsv.stdout.decode('utf-8-sig').splitlines()
+            self.assertEqual(len(csv_lines),3)
+            qstats=subprocess.run([sys.executable,'-m','anna.catalog.query','--db',str(Path(td)/'catalog.sqlite'),'--stats'],cwd=project,text=True,capture_output=True,check=True)
+            self.assertEqual(json.loads(qstats.stdout)['versions'],len(b.entries))
+            sample_id=parsed['rows'][0]['id']
+            qshow=subprocess.run([sys.executable,'-m','anna.catalog.query','--db',str(Path(td)/'catalog.sqlite'),'--show',sample_id],cwd=project,text=True,capture_output=True,check=True)
+            self.assertEqual(json.loads(qshow.stdout)['id'],sample_id)
 
 if __name__=='__main__':unittest.main()

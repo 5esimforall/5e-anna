@@ -43,8 +43,6 @@ class Handler(BaseHTTPRequestHandler):
                 if (stat.st_ino,stat.st_size,stat.st_mtime_ns)!=self.db_signature:
                     self.send({'error':'数据库已重建，请重启 make up 以同步链接版。'},status=409);return
             static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
-            static['/review']=('review.html','text/html; charset=utf-8')
-            static['/review-ui.js']=('review-ui.js','text/javascript; charset=utf-8')
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
             static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace','companions','knowledge')})

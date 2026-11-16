@@ -387,7 +387,7 @@ test('spell components read as glyph strips while filters and export keep every 
 test('reading mode folds review apparatus and audit mode persists per browser',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,'/');
   expect((await page.locator('#columns th').allTextContents()).some(h=>h.includes('分类依据'))).toBeFalsy();
-  await expect(page.locator('.topbar-actions a[href="/review"]')).toBeHidden();
+  await expect(page.locator('#missing-queue-toggle')).toBeHidden();
   await page.locator('#toggle-filters').click();await expect(page.locator('#audit-details')).toBeHidden();
   const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
   await expect(page.getByRole('tab',{name:/^证据/})).toHaveCount(0);
@@ -395,7 +395,7 @@ test('reading mode folds review apparatus and audit mode persists per browser',a
   await expect(page.locator('#audit-mode')).toHaveAttribute('aria-pressed','true');
   await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
   await expect(page.getByRole('tab',{name:/^证据/})).toBeFocused();
-  await expect(page.locator('.topbar-actions a[href="/review"]')).toBeVisible();await expect(page.locator('#audit-details')).toBeVisible();
+  await expect(page.locator('#missing-queue-toggle')).toBeVisible();await expect(page.locator('#audit-details')).toBeVisible();
   expect((await page.locator('#columns th').allTextContents()).some(h=>h.includes('分类依据'))).toBeTruthy();
   // The mode belongs to this browser, not to the shared query URL.
   expect([...new URL(page.url()).searchParams.keys()].some(k=>k.includes('audit'))).toBeFalsy();
@@ -413,6 +413,25 @@ test('reading mode folds review apparatus and audit mode persists per browser',a
   await page.locator('#toggle-filters').click();await expect(page.locator('#audit-details')).toBeVisible();
   await page.getByRole('button',{name:/^移除 字段冲突/}).click();await ready(page);
   await expect(page.locator('#audit-details')).toBeHidden();
+});
+
+test('audit mode inline candidate search and missing-definitions queue replace /review',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await auditMode(page);
+  await visit(page,'/?type=spell&q='+encodeURIComponent('火球术'));
+  await page.locator('#missing-queue-toggle').click();
+  await expect(page.locator('#missing-dialog')).toBeVisible();
+  await expect(page.locator('#missing-count')).toContainText('/');
+  await page.locator('#close-missing').click();
+  await expect(page.locator('#missing-dialog')).toBeHidden();
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
+  await page.locator('#tab-references').click();
+  const trigger=page.locator('#detail-panel [data-candidate-ref]').first();
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const panel=page.locator('#detail-panel .inline-candidates').first();
+  await expect(panel).toBeVisible();
+  await expect(panel.locator('[data-candidate-count]')).toContainText('/');
+  await expect(panel.locator('[data-candidate-list] .fact').first()).toBeVisible();
 });
 
 test('narrow results read as labelled lists without horizontal scrolling',async({page},testInfo)=>{

@@ -658,6 +658,7 @@ $('#detail-content').addEventListener('click',e=>{
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   if(e.target.closest('[data-audit-summary]')){setAuditMode(true);renderDetail('facts');$('#tab-facts').focus();saveUiState();}
   if(e.target.closest('[data-reader-full]')){setReaderFull(true);$('#reader-full').focus();}
+  const candBtn=e.target.closest('[data-candidate-ref]');if(candBtn)toggleInlineCandidates(candBtn);
 });
 for(const [type,on] of [['mouseover',true],['focusin',true],['mouseout',false],['focusout',false]])
   $('#detail-content').addEventListener(type,e=>{const el=e.target.closest('.field-note[data-note],mark.note');if(!el)return;
@@ -808,6 +809,7 @@ function applyAuditMode(){
   document.documentElement.dataset.audit=auditMode?'on':'off';
   const toggle=$('#audit-mode');toggle.setAttribute('aria-pressed',String(auditMode));toggle.title=auditMode?ui.auditOn:ui.auditOff;
   $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
+  if(!auditMode&&$('#missing-dialog')?.open)$('#missing-dialog').close();
   if(schema&&currentData)renderResults();else if(schema)renderColumns();
   if(currentEntry)renderDetail(AUDIT_TABS.has(detailTab)&&!auditMode?'body':detailTab);
 }
@@ -850,4 +852,65 @@ async function init(){
 applyAuditMode();
 init();
 
-const reviewLink=document.createElement("a");reviewLink.href="/review";reviewLink.className="audit-only";reviewLink.textContent=annaLinkLabels[document.documentElement.lang.startsWith("en")?"en":"zh"].reviewSearch.title;document.querySelector(".topbar-actions").prepend(reviewLink);
+const linkLabels=annaLinkLabels[document.documentElement.lang.startsWith('en')?'en':'zh'];
+const ml=linkLabels.reviewSearch;
+const missingToggle=document.createElement('button');
+missingToggle.type='button';missingToggle.id='missing-queue-toggle';missingToggle.className='audit-only quiet-button';
+missingToggle.textContent=ml.missing;missingToggle.setAttribute('aria-controls','missing-dialog');
+document.querySelector('.topbar-actions').prepend(missingToggle);
+
+(() => {
+  const dialog=$('#missing-dialog');if(!dialog)return;
+  const select=$('#missing-status'),results=$('#missing-results'),pending=$('#missing-pending');
+  let offset=0,generation=0;
+  $('#missing-dialog-title').textContent=ml.missing;
+  $('#missing-dialog-help').textContent=ml.missingHelp;
+  $('#missing-status-label').textContent=ml.status;
+  $('#missing-submit').textContent=ml.refresh;
+  $('#missing-prev').textContent=ml.prev;
+  $('#missing-next').textContent=ml.next;
+  $('#close-missing').setAttribute('aria-label',ml.close);
+  select.innerHTML=`<option value="">${esc(ml.all)}</option>`+Object.entries(ml.states).map(([v,t])=>`<option value="${v}">${esc(t)}</option>`).join('');
+  select.value='open';
+  async function loadMissing(){
+    const gen=++generation;
+    results.innerHTML=`<p class="muted">${esc(ml.loading)}</p>`;
+    $('#missing-prev').disabled=true;$('#missing-next').disabled=true;
+    try{
+      const data=await api('/api/missing-definitions?'+new URLSearchParams({status:select.value,limit:20,offset}));
+      if(gen!==generation)return;
+      $('#missing-count').textContent=`${data.offset+1>data.total?0:data.offset+1}–${Math.min(data.total,data.offset+data.rows.length)} / ${data.total}`;
+      $('#missing-prev').disabled=data.offset===0;$('#missing-next').disabled=data.offset+data.rows.length>=data.total;
+      results.innerHTML=data.rows.length?data.rows.map(r=>{
+        const b=r.event.binding||{};
+        return `<article class="fact">
+          <div class="fact-head"><strong>${esc(r.text)}</strong>${badge(ml.states[r.status]||r.status,'amber')}</div>
+          <blockquote>${esc(b.before||'')}<mark>${esc(r.text)}</mark>${esc(b.after||'')}</blockquote>
+          <p>${esc(r.event.reason||'')}</p>
+          <small>${esc(r.event.reviewer||'')} · ${esc(r.event.created_at||'')}</small>
+          <div><code>${esc(r.id)}</code> · ${esc(ml.latest)} <code>${esc(r.latest_decision_id)}</code> · ${esc(r.latest_status)}</div>
+          <div><a href="${esc(sourceURL(b.path||r.path,b.start||0,b.end||0))}" target="_blank" rel="noopener">${esc(linkLabels.extractedRange)} ↗</a>${r.target_id?` · <button type="button" class="link-button" data-entry="${esc(r.target_id)}">${esc(ml.target)}</button>`:''}</div>
+          ${r.reference_id?`<div class="candidate-trigger"><button type="button" class="quiet-button" data-candidate-ref="${esc(r.reference_id)}" aria-expanded="false">${esc(ml.searchAgain)}</button><div class="inline-candidates" data-candidates-for="${esc(r.reference_id)}" hidden></div></div>`:''}
+          <details><summary>${esc(linkLabels.evidence)}</summary><pre class="body-text">${esc(JSON.stringify({search:r.event.candidate_search,changes:r.changes},null,2))}</pre></details>
+        </article>`;
+      }).join(''):`<p class="muted">${esc(ml.emptyQueue)}</p>`;
+    }catch(e){if(gen===generation)results.innerHTML=`<p role="alert">${esc(e.message||ml.error)}</p>`;}
+  }
+  const closeMissing=()=>{if(dialog.open)dialog.close();if(auditMode)missingToggle.focus();};
+  missingToggle.addEventListener('click',()=>{
+    const hasPending=Boolean(metadata?.review_snapshot?.pending_rebuild);
+    pending.hidden=!hasPending;if(hasPending)pending.textContent=linkLabels.pendingReview;
+    offset=0;dialog.showModal();loadMissing();$('#close-missing').focus();
+  });
+  $('#close-missing').addEventListener('click',closeMissing);
+  dialog.addEventListener('cancel',e=>{e.preventDefault();closeMissing();});
+  dialog.addEventListener('click',e=>{if(e.target===dialog)closeMissing();});
+  $('#missing-form').addEventListener('submit',e=>{e.preventDefault();offset=0;loadMissing();});
+  select.addEventListener('change',()=>{offset=0;loadMissing();});
+  $('#missing-prev').addEventListener('click',()=>{offset=Math.max(0,offset-20);loadMissing();});
+  $('#missing-next').addEventListener('click',()=>{offset+=20;loadMissing();});
+  results.addEventListener('click',e=>{
+    const candBtn=e.target.closest('[data-candidate-ref]');if(candBtn){toggleInlineCandidates(candBtn);return;}
+    const entryBtn=e.target.closest('[data-entry]');if(entryBtn){if(dialog.open)dialog.close();openEntry(entryBtn.dataset.entry,true,'body');}
+  });
+})();

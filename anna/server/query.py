@@ -62,7 +62,6 @@ class Handler(BaseHTTPRequestHandler):
                 elif url.path=='/api/entries': self.send(catalog.query(db,p))
                 elif url.path=='/api/entry': self.send(catalog.detail(db,catalog.first(p,'id'),catalog.first(p,'chain_spell') or None,catalog.first(p,'chain_path') or None,catalog.first(p,'chain_effect') or None))
                 elif url.path=='/api/knowledge-chain': self.send(knowledge.chain(db,catalog.first(p,'id'),catalog.first(p,'spell') or None,catalog.first(p,'path') or None,catalog.first(p,'effect') or None))
-                elif url.path=='/api/knowledge-inspect': self.send(knowledge.inspect(db,catalog.first(p,'id')))
                 elif url.path=='/api/knowledge-export': self.send(knowledge.export(db,catalog.first(p,'id'),catalog.first(p,'spell') or None,catalog.first(p,'path') or None,catalog.first(p,'effect') or None),download='anna-rule-chain.json')
                 elif url.path=='/api/casting-facets': self.send(catalog.casting_facets(db,p))
                 elif url.path=='/api/entry-layout': self.send(entry_layout(db,catalog.first(p,'id'),Path(self.source_root)))

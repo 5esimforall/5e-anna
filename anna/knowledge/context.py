@@ -1,9 +1,7 @@
-"""Read-only source context, target traversal and review dependency evidence."""
+"""Read-only source context and target traversal."""
 import json
 from anna.catalog.concepts import Resolver
 from anna.knowledge.conditions import CLASSES
-from anna.knowledge.model import SCHEMA
-from anna.serialization import digest
 
 
 class Context:
@@ -56,23 +54,6 @@ class Context:
             if classes and not set(classes) & set(browse.normalized(e['fields'],'spell_classes')):continue
             options.append(e['id'])
         return sorted(options)
-
-    def basis(self, record):
-        entry=self.entries[record['subject_id']]
-        ids=set(record.get('dependencies',[]))
-        ids.add(entry['id'])
-        if any(t.get('owner_id') for t in nested_values(record['value'])):
-            parent=self.entries.get(entry.get('parent_id'));seen=set()
-            while parent and parent['id'] not in seen:
-                seen.add(parent['id']);ids.add(parent['id']);parent=self.entries.get(parent.get('parent_id'))
-        def definition(e):
-            return {k:e.get(k) for k in ('id','name','name_en','name_zh','type','ruleset','source_ids','parent_id','fields','page_path','start','title_end','end')} | {
-                'body_sha256':digest(self.pages[e['page_path']][e['start']:e['end']])}
-        source_ids={s for i in ids if i in self.entries for s in self.entries[i]['source_ids']}
-        return {'schema':SCHEMA,'record':record,
-            'definitions':{i:definition(self.entries[i]) if i in self.entries else None for i in sorted(ids)},
-            'class_ownership':[r for r in self.class_links if r['subject_id'] in ids],
-            'sources':{s:{k:self.source_by_id.get(s,{}).get(k) for k in ('name','ruleset_hint','reference_role','origin','archived')} for s in sorted(source_ids)}}
 
 
 def walk_targets(value):

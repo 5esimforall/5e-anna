@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build, inspect and review source-bounded rule knowledge and casting chains."""
+"""Build, query and annotate source-bounded rule knowledge and casting chains."""
 from __future__ import annotations
-from collections import Counter, defaultdict
+from collections import Counter
 from copy import deepcopy
 import argparse
 from hashlib import sha256
@@ -10,18 +10,11 @@ from pathlib import Path
 import sqlite3
 
 from anna.knowledge.values import evidence
-from anna.knowledge.model import SCHEMA, KINDS, rule_value, validate_structure, grant_is_resolved
+from anna.knowledge.model import SCHEMA, KINDS, validate_structure, grant_is_resolved
 from anna.serialization import canonical, digest
-from anna.source.html import key
 from anna.review.store import (
-    DEFAULT_DECISIONS,
     DEFAULT_ANNOTATIONS,
-    lifecycle,
-    load_events,
-    append_event,
     locked,
-    require_appendable,
-    KNOWLEDGE_OPERATIONS,
     load_annotations,
     annotation_lifecycle,
     append_annotation_events,
@@ -29,21 +22,14 @@ from anna.review.store import (
 )
 from anna.paths import PROJECT
 from anna.knowledge.context import Context, walk_targets, nested_values
-from anna.knowledge.inspection import inspect
 from anna.knowledge.conditions import ABILITIES, CLASSES, validate_conditions, condition_terms, conjunction
 from anna.knowledge.effects import build_effect_index, audit_effect_index
 from anna.knowledge.extract import extract_feat_grant, extract_subclass_features, extract_definition_roles
 from anna.knowledge.annotations import evaluate_annotations, compose_records, inspect_clauses, build_annotation_event
 
-REVIEW_OPERATIONS = KNOWLEDGE_OPERATIONS
-
 
 def exists(db):
     return bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_knowledge'").fetchone())
-
-
-def is_knowledge(event):
-    return event['operation'] in REVIEW_OPERATIONS
 
 
 
@@ -172,23 +158,16 @@ def rule_links(entry, value, context):
     return links
 
 
-def record_for(entry, kind, value, context):
+def record_for(entry, kind, value, context, *, review_status='unreviewed'):
     pre=value.get('prerequisites',{})
     for term in condition_terms(pre.get('expression')):
         if term.get('kind')=='requirement':
             term['target']={'kind':'entry','name':term['name'],'resolution':context.resolve(entry,term['name'],term['entry_type']),
                             'evidence':pre['evidence']}
     value['rules']=rule_links(entry,value,context)
-    dependencies={t['owner_id'] for t in nested_values(value) if t.get('owner_id')}
-    for t in walk_targets(value): dependencies.update(t['resolution']['targets'])
     for g in [*value.get('grants',[]),*value.get('modifiers',[])]:
         if g.get('target',{}).get('kind')=='choice':
             g['target']['options']=context.choice_options(entry,g['target'])
-            dependencies.update(g['target']['options'])
-    # Bind every competing name, including currently inapplicable editions: a change
-    # to generation/type/source must reopen an approved target selection.
-    for t in walk_targets(value):
-        for name in [t.get('name',''),*t.get('lookup_names',[])]:dependencies.update(context.resolver.names.get(key(name),()))
     gaps=value.get('unparsed',[])
     unresolved=any(t['resolution']['status']!='resolved' for k,v in value.items() if k!='rules' for t in walk_targets(v))
     choices=[g['target'] for g in [*value.get('grants',[]),*value.get('modifiers',[])] if g.get('target',{}).get('kind')=='choice']
@@ -199,7 +178,7 @@ def record_for(entry, kind, value, context):
         'subject_id':entry['id'],'kind':kind,'ruleset':entry['ruleset'],
         'evidence':evidence(entry['page_path'],context.pages[entry['page_path']],entry['start'],entry['end']),
         'value':value,'status':'partial' if gaps or unresolved or unfinished else 'resolved',
-        'dependencies':sorted(dependencies)}
+        'review_status':review_status}
     validate_record(record,context)
     return record
 
@@ -220,69 +199,9 @@ def discover(context, ann_events=(), evaluated=None):
     structural_keys = {(r['subject_id'], r['kind']) for r in records}
     if evaluated is None:
         evaluated = evaluate_annotations(context, ann_events)
-    for entry, kind, value, _ in compose_records(context, evaluated, structural_keys=structural_keys):
-        records.append(record_for(entry, kind, value, context))
+    for entry, kind, value, ann_status in compose_records(context, evaluated, structural_keys=structural_keys):
+        records.append(record_for(entry, kind, value, context, review_status=ann_status))
     return records
-
-
-def binding(record):
-    return {'knowledge_id':record['id'],'subject_id':record['subject_id'],'kind':record['kind'],**record['evidence']}
-
-
-def _annotation_statuses(evaluated):
-    grouped = defaultdict(list)
-    for row in evaluated or ():
-        sid = row.get('subject_id')
-        if sid and row['lifecycle_state'] not in {'revoked', 'superseded'}:
-            grouped[(sid, row['event']['kind'])].append(row['status'])
-    statuses = {}
-    for key_pair, group in grouped.items():
-        if 'conflict' in group:
-            statuses[key_pair] = 'conflict'
-        elif 'stale' in group or 'ambiguous' in group:
-            statuses[key_pair] = 'stale'
-        else:
-            statuses[key_pair] = 'applied'
-    return statuses
-
-
-def replay(records, events, context, evaluated=None):
-    states=lifecycle(events);results={};claims=defaultdict(list);by_id={r['id']:r for r in records}
-    ann_statuses = _annotation_statuses(evaluated)
-    for event in events:
-        if not is_knowledge(event):continue
-        rid=event['binding']['knowledge_id'];record=by_id.get(rid)
-        result={'event':event,'status':states[event['id']], 'knowledge_id':rid}
-        if states[event['id']]=='active':
-            current=context.basis(record) if record else None
-            valid=record is not None and event['binding']==binding(record) and event['basis_sha256']==digest(current)
-            result.update(status='applied' if valid else 'stale' if record else 'missing',
-                          basis_sha256=digest(current) if current else None)
-            if record:claims[rid].append((event,valid))
-        results[event['id']]=result
-    effective=[]
-    for record in records:
-        row=deepcopy(record)
-        default_review = ann_statuses.get((row['subject_id'], row['kind']))
-        if not default_review:
-            reasons = {g.get('reason') for g in row['value'].get('unparsed', [])}
-            default_review = 'conflict' if 'conflicting_annotation' in reasons else 'stale' if 'stale_annotation' in reasons else 'unreviewed'
-        row.update(review_status=default_review, decision_ids=[])
-        choices=claims[record['id']]
-        if len(choices)>1:
-            row.update(status='review',review_status='conflict')
-            for e,_ in choices:results[e['id']]['status']='conflict'
-        elif choices:
-            e,valid=choices[0]
-            if not valid:row.update(status='review',review_status='stale')
-            elif e['operation']=='knowledge_reject':row.update(status='rejected',review_status='applied')
-            elif default_review not in {'stale', 'conflict'}:row['review_status']='applied'
-        elif any(e['binding']['knowledge_id']==record['id'] and states[e['id']]=='revoked' for e in events if is_knowledge(e)):
-            if default_review not in {'stale', 'conflict'}:
-                row['review_status']='revoked'
-        row['decision_ids']=[e['id'] for e,_ in choices]
-        effective.append(row)
-    return effective,list(results.values())
 
 
 def branches(context, effective):
@@ -350,7 +269,7 @@ def _annotation_row(result):
     }
 
 
-def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS, annotations_path=DEFAULT_ANNOTATIONS):
+def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS):
     context=Context(db)
     annotations_file = Path(annotations_path).resolve()
     raw_annotations = annotations_file.read_bytes() if annotations_file.exists() else b''
@@ -362,14 +281,10 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS, annotations_path=D
         'events': len(ann_events),
     }
     evaluated = evaluate_annotations(context, ann_events)
-    records=discover(context, ann_events, evaluated=evaluated)
-    events,_=load_events(decision_path)
-    effective,decisions=replay(records,events,context,evaluated=evaluated)
+    records = discover(context, ann_events, evaluated=evaluated)
     db.executescript('''
-        CREATE TABLE rule_knowledge(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
-        CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY REFERENCES rule_knowledge(id),subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,review_status TEXT,data TEXT NOT NULL);
+        CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,review_status TEXT,data TEXT NOT NULL);
         CREATE INDEX knowledge_subject ON effective_knowledge(subject_id,kind);
-        CREATE TABLE knowledge_decisions(id TEXT PRIMARY KEY,knowledge_id TEXT,status TEXT,data TEXT NOT NULL);
         CREATE TABLE knowledge_annotations(id TEXT PRIMARY KEY,annotation_id TEXT,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
         CREATE INDEX knowledge_annotation_subject ON knowledge_annotations(subject_id,annotation_id,status);
         CREATE TABLE casting_options(id TEXT PRIMARY KEY,root_id TEXT REFERENCES entries(id),subject_id TEXT REFERENCES entries(id),
@@ -377,14 +292,8 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS, annotations_path=D
         CREATE INDEX casting_root ON casting_options(root_id);
         CREATE INDEX casting_query ON casting_options(mode,resource,recovery,root_id);
     ''')
-    for r in records:db.execute('INSERT INTO rule_knowledge VALUES(?,?,?,?,?)',(r['id'],r['subject_id'],r['kind'],r['status'],canonical(r)))
-    for r in effective:db.execute('INSERT INTO effective_knowledge VALUES(?,?,?,?,?,?)',(r['id'],r['subject_id'],r['kind'],r['status'],r['review_status'],canonical(r)))
-    for r in decisions:
-        db.execute('INSERT INTO knowledge_decisions VALUES(?,?,?,?)',(r['event']['id'],r['knowledge_id'],r['status'],canonical(r)))
-        if r['status'] in {'stale','missing','conflict'}:
-            review={'id':'knowledge_review_'+r['event']['id'],'target':r['event']['binding']['subject_id'],
-                    'reason':'knowledge_decision_'+r['status'],'priority':'high','detail':r,'evidence':r['event']['binding']}
-            db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)',(review['id'],review['target'],review['reason'],review['priority'],canonical(review)))
+    for r in records:
+        db.execute('INSERT INTO effective_knowledge VALUES(?,?,?,?,?,?)',(r['id'],r['subject_id'],r['kind'],r['status'],r['review_status'],canonical(r)))
     ann_rows = [_annotation_row(r) for r in evaluated]
     for row in ann_rows:
         db.execute(
@@ -408,20 +317,21 @@ def build_knowledge(db, out, decision_path=DEFAULT_DECISIONS, annotations_path=D
             }
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)', (review['id'], review['target'], review['reason'], review['priority'], canonical(review)))
     db.execute('INSERT INTO metadata VALUES(?,?)', ('annotation_snapshot', canonical(ann_snapshot)))
+    usable = [r for r in records if r['review_status'] != 'conflict']
     from anna.knowledge.rule_index import build_rule_index
-    build_rule_index(db,effective)
-    build_effect_index(db,effective)
+    build_rule_index(db, usable)
+    build_effect_index(db, usable)
     count=0
-    for option in branches(context,effective):
+    for option in branches(context, usable):
         db.execute('INSERT INTO casting_options VALUES(?,?,?,?,?,?,?,?,?)',tuple(option[k] for k in ('id','root_id','subject_id','spell_id','mode','resource','recovery','selection'))+(canonical(option),));count+=1
     coverage={'schema':SCHEMA,'observations':len(records),'casting_options':count,
         'by_kind':dict(Counter(r['kind'] for r in records)),
-        'outcomes':dict(Counter(r['status'] for r in effective)),
-        'reviews':dict(Counter(r['review_status'] for r in effective)),
+        'outcomes':dict(Counter(r['status'] for r in records)),
+        'reviews':dict(Counter(r['review_status'] for r in records)),
         'annotations':dict(Counter(row['status'] for row in ann_rows)),
         'unparsed':dict(Counter(g['reason'] for r in records for g in r['value'].get('unparsed',[])))}
     db.execute('INSERT INTO metadata VALUES(?,?)',('knowledge_coverage',canonical(coverage)))
-    for name,rows in [('rule_knowledge',records),('effective_knowledge',effective),('knowledge_decisions',decisions),('knowledge_annotations',ann_rows)]:
+    for name,rows in [('effective_knowledge',records),('knowledge_annotations',ann_rows)]:
         (Path(out)/(name+'.jsonl')).write_text(''.join(canonical(r)+'\n' for r in rows))
     (Path(out)/'knowledge_coverage.json').write_text(json.dumps(coverage,ensure_ascii=False,indent=2)+'\n')
     return coverage
@@ -438,26 +348,27 @@ def audit_knowledge(db, folder):
         except ValueError as exc:errors.append(record['id']+': '+str(exc))
         for sid in context.entries[record['subject_id']]['source_ids'] or ['unknown']:
             matrix[(sid,record['kind'],record['status'])]+=1
-    exports = ['rule_knowledge','effective_knowledge','knowledge_decisions']
+    exports = ['effective_knowledge']
     if 'knowledge_annotations' in present:
         exports.append('knowledge_annotations')
     for name in exports:
         path=Path(folder)/(name+'.jsonl')
         expected={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM '+name)}
         exported=[json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
-        actual={r['event']['id'] if name=='knowledge_decisions' else r['id']:r for r in exported}
+        actual={r['id']:r for r in exported}
         if actual!=expected or len(actual)!=len(exported):errors.append(name+': export mismatch')
-    expected={r['id']:r for r in branches(context,records)}
+    usable = [r for r in records if r['review_status'] != 'conflict']
+    expected={r['id']:r for r in branches(context,usable)}
     actual={r[0]:json.loads(r[1]) for r in db.execute('SELECT id,data FROM casting_options')}
     if expected!=actual:errors.append('casting_options: projection mismatch')
     from anna.knowledge.rule_index import rule_rows
-    expected_rules={r['id']:r for r in rule_rows(records)}
+    expected_rules={r['id']:r for r in rule_rows(usable)}
     rule_columns=('id','source_id','target_id','relation','status')
     actual_rules={r[0]:dict(zip(rule_columns,r[:-1]))|{'data':json.loads(r[-1])}
                   for r in db.execute('SELECT id,source_id,target_id,relation,status,data FROM knowledge_rule_links')}
     expected_rules={key:{k:row[k] for k in rule_columns}|{'data':row} for key,row in expected_rules.items()}
     if expected_rules!=actual_rules:errors.append('knowledge_rule_links: projection mismatch')
-    errors.extend(audit_effect_index(db,records))
+    errors.extend(audit_effect_index(db,usable))
     return {'records':len(records),'casting_options':len(actual),'errors':errors,
         'by_source':[{'source_id':sid,'kind':kind,'status':status,'count':count}
                      for (sid,kind,status),count in sorted(matrix.items())]}
@@ -529,11 +440,9 @@ def revoke_annotation(path, rev_id, reviewer, reason):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
-    parser.add_argument('--decisions',type=Path,default=DEFAULT_DECISIONS)
     parser.add_argument('--annotations',type=Path,default=DEFAULT_ANNOTATIONS)
     commands=parser.add_subparsers(dest='command',required=True)
     listing=commands.add_parser('list');listing.add_argument('--kind',choices=sorted(KINDS));listing.add_argument('--status');listing.add_argument('--limit',type=int,default=20)
-    viewing=commands.add_parser('inspect');viewing.add_argument('id')
     clauses_cmd=commands.add_parser('clauses');clauses_cmd.add_argument('id')
     ann_list=commands.add_parser('annotations');ann_list.add_argument('--status');ann_list.add_argument('--limit',type=int,default=50)
     ann_cmd=commands.add_parser('annotate')
@@ -547,22 +456,15 @@ def main():
     ann_cmd.add_argument('--reviewer',required=True)
     ann_cmd.add_argument('--reason',required=True)
     ann_cmd.add_argument('--supersedes')
-    for name in ('accept','reject'):
-        cmd=commands.add_parser(name);cmd.add_argument('id');cmd.add_argument('--basis',required=True);cmd.add_argument('--reviewer',required=True);cmd.add_argument('--reason',required=True);cmd.add_argument('--supersedes')
     reading=commands.add_parser('chain');reading.add_argument('id')
     undo=commands.add_parser('revoke');undo.add_argument('id');undo.add_argument('--reviewer',required=True);undo.add_argument('--reason',required=True)
     args=parser.parse_args()
     try:
         if args.command=='revoke':
-            if args.id.startswith('ann_rev_'):
-                result = revoke_annotation(args.annotations, args.id, args.reviewer, args.reason)
-            else:
-                from anna.review.commands import revoke
-                result=revoke(args.decisions,args.id,args.reviewer,args.reason)
+            result = revoke_annotation(args.annotations, args.id, args.reviewer, args.reason)
         else:
             with sqlite3.connect(args.db.resolve().as_uri()+'?mode=ro',uri=True) as db:
-                if args.command=='inspect':result=inspect(db,args.id)
-                elif args.command=='clauses':
+                if args.command=='clauses':
                     result=inspect_clauses(Context(db),args.id)
                 elif args.command=='annotations':
                     if not 1<=args.limit<=500:raise ValueError('Limit must be between 1 and 500')
@@ -590,7 +492,6 @@ def main():
                     for k in ('kind','status'):
                         if getattr(args,k):filters.append(k+'=?');values.append(getattr(args,k))
                     result=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge'+(' WHERE '+' AND '.join(filters) if filters else '')+' ORDER BY subject_id,kind LIMIT ?',values+[args.limit])]
-                else:result=save(db,args.decisions,args.id,'knowledge_'+args.command,args.basis,args.reviewer,args.reason,args.supersedes)
         print(json.dumps(result,ensure_ascii=False,indent=2))
     except (ValueError,sqlite3.Error,OSError) as exc:parser.exit(1,str(exc)+'\n')
 

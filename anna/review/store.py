@@ -14,7 +14,6 @@ from anna.serialization import canonical, digest
 
 DEFAULT_DECISIONS = PROJECT / 'reviews/decisions.jsonl'
 DEFAULT_ANNOTATIONS = PROJECT / 'annotations/annotations.jsonl'
-KNOWLEDGE_OPERATIONS = {'knowledge_accept', 'knowledge_reject'}
 ANNOTATION_OPERATIONS = {'annotate', 'revoke'}
 
 
@@ -25,7 +24,7 @@ def pipeline_hash():
 # Bump when the meaning of stored review dependencies changes, not for UI edits.
 REVIEW_SEMANTICS_VERSION = 1
 EXTRACTION_MODULES = ('serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py', 'catalog/types.py', 'source/registry.py', 'source/tables.py',
-                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/extract.py', 'knowledge/annotations.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py', 'knowledge/inspection.py', 'knowledge/query_schema.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py')
+                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/extract.py', 'knowledge/annotations.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py', 'knowledge/query_schema.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py')
 
 
 def extraction_hash():
@@ -60,7 +59,7 @@ def load_events(path=DEFAULT_DECISIONS):
         if not line.strip(): continue
         try:
             event = json.loads(line)
-            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'missing_definition', 'revoke'} | KNOWLEDGE_OPERATIONS:
+            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'missing_definition', 'revoke'}:
                 raise ValueError('未知审核事件版本或操作')
             for field in ('id', 'reviewer', 'reason', 'created_at'):
                 if not isinstance(event.get(field), str) or not event[field].strip():
@@ -69,22 +68,6 @@ def load_events(path=DEFAULT_DECISIONS):
             if event['operation'] == 'revoke':
                 previous = known.get(event.get('decision_id'))
                 if not previous or previous['operation'] == 'revoke': raise ValueError('撤销对象不存在')
-            elif event['operation'] in KNOWLEDGE_OPERATIONS:
-                binding = event['binding']
-                for field in ('knowledge_id', 'subject_id', 'kind', 'path', 'raw'):
-                    if not isinstance(binding.get(field), str) or not binding[field].strip():
-                        raise ValueError('Invalid knowledge binding: '+field)
-                span = binding.get('span')
-                if not isinstance(span, list) or len(span)!=2 or not all(type(n) is int for n in span) or not 0<=span[0]<span[1]:
-                    raise ValueError('Invalid knowledge evidence range')
-                if not isinstance(event.get('basis'), dict) or event['basis'].get('schema') != 2:
-                    raise ValueError('Unsupported review basis schema')
-                if event.get('basis_sha256') != digest(event['basis']):
-                    raise ValueError('Knowledge basis fingerprint mismatch')
-                if event.get('supersedes'):
-                    previous = known.get(event['supersedes'])
-                    if not previous or previous['operation'] not in KNOWLEDGE_OPERATIONS or previous['binding']['knowledge_id'] != binding['knowledge_id']:
-                        raise ValueError('Superseded decision must concern the same knowledge record')
             else:
                 binding = event['binding']
                 for field in ('reference_id', 'path', 'text', 'signal', 'kind', 'role'):

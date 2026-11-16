@@ -591,7 +591,7 @@ class Build:
         from anna.catalog.references import build_references
         reference_coverage=build_references(db,self.web,out,decision_path)
         from anna.knowledge.repository import build_knowledge
-        knowledge_coverage=build_knowledge(db,out,decision_path,annotations_path=annotations_path)
+        knowledge_coverage=build_knowledge(db,out,annotations_path=annotations_path)
         counterpart_coverage=None
         if fivetools:
             from anna.compare.catalog import build_counterparts

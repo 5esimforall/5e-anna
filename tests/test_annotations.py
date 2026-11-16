@@ -24,7 +24,6 @@ class AnnotationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.log = self.root / 'reviews.jsonl'
         self.ann = self.root / 'annotations.jsonl'
         self.db_path = self.root / 'catalog.sqlite'
         self.db = None
@@ -86,10 +85,8 @@ class AnnotationTests(unittest.TestCase):
                 'INSERT INTO raw_tables VALUES(?,?,?,?,?)',
                 (tbl['id'], tbl['page_path'], tbl['start'], tbl['end'], canonical(tbl)),
             )
-        self.coverage = build_knowledge(self.db, self.root, self.log, annotations_path=self.ann)
-        events, log_hash = ([], 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855')
+        self.coverage = build_knowledge(self.db, self.root, annotations_path=self.ann)
         self.db.execute('INSERT INTO metadata VALUES(?,?)', ('summary', canonical({'extraction_sha256': extraction_hash()})))
-        self.db.execute('INSERT INTO metadata VALUES(?,?)', ('review_snapshot', canonical({'path': str(self.log), 'sha256': log_hash, 'events': 0, 'bytes': 0})))
         self.db.commit()
 
     def base_specs(self, *, prefix='', extra_feat_tail='', spell_body=None, feat_page='feat.htm', feat_id='ver_feat_1', spell_id='ver_spell_1', second_spell=False):

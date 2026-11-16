@@ -6,7 +6,7 @@ from pathlib import Path
 from anna.catalog.concepts import aliases
 from anna.source.html import Document, compact, key, resolve_link
 from anna.serialization import canonical, digest
-from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events, REVIEW_SEMANTICS_VERSION, KNOWLEDGE_OPERATIONS
+from anna.review.store import DEFAULT_DECISIONS, lifecycle, load_events, REVIEW_SEMANTICS_VERSION
 
 
 class ReviewContext:
@@ -253,7 +253,7 @@ def build_references(db, source, out, decision_path=DEFAULT_DECISIONS):
     events, log_hash = load_events(decision_path)
     states = lifecycle(events)
     all_event_count = len(events)
-    reference_ids = {e['id'] for e in events if e['operation'] not in KNOWLEDGE_OPERATIONS and e['operation'] != 'revoke'}
+    reference_ids = {e['id'] for e in events if e['operation'] != 'revoke'}
     events = [e for e in events if e['id'] in reference_ids or e['operation']=='revoke' and e['decision_id'] in reference_ids]
     context = ReviewContext(db)
     originals = discover_originals(source, context)

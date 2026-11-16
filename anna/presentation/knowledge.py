@@ -2,7 +2,6 @@
 import json
 from anna.serialization import canonical
 from anna.knowledge.context import walk_targets
-from anna.knowledge.inspection import inspect as inspect_knowledge
 from anna.presentation import contracts
 from anna.knowledge.query_schema import EFFECT_QUERY_VALUES, EFFECT_QUERY_PARAMETERS
 from anna.presentation.contracts import KNOWLEDGE_SCHEMA as SCHEMA
@@ -114,16 +113,6 @@ def chain(db, entry_id, spell_id=None, reading_path=None, effect_id=None):
         if len(paths)==1:reading_path=list(next(iter(paths)))
     from anna.presentation.reading import reading
     return reading(db,entry_id,{'schema':SCHEMA,'records':records,'nodes':nodes,'options':options,'references':references,'incoming':incoming,'selected_spell_id':selected},reading_path,effect_id)
-
-
-
-
-def inspect(db, rid):
-    # The basis is intentionally an exact audit payload: its digest must remain
-    # verifiable. Observation/effective records use the ordinary consumer model.
-    result = inspect_knowledge(db, rid)
-    return {**result, 'observation': contracts.record(result['observation']),
-            'effective': contracts.record(result['effective'])}
 
 
 def export(db, entry_id, spell_id=None, reading_path=None, effect_id=None):

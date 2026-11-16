@@ -122,8 +122,6 @@ class KnowledgeContractTests(unittest.TestCase):
         for case in self.data['chains']:
             with self.subTest(subject=case['subject'], path=case['path']):
                 self.assertEqual(knowledge.chain(self.db, case['subject'], reading_path=case['path'], effect_id=case['effect']), case['expected'])
-        for case in self.data['inspection']:
-            self.assertEqual(knowledge.inspect(self.db, case['id']), case['expected'])
 
     def test_filters_remain_correlated_to_one_branch_or_effect(self):
         for case in self.data['queries']:
@@ -147,8 +145,6 @@ class KnowledgeContractTests(unittest.TestCase):
             knowledge.chain(self.db, 'background', effect_id='effect_1')
         with self.assertRaises(LookupError):
             knowledge.chain(self.db, 'missing')
-        with self.assertRaisesRegex(ValueError, 'not found'):
-            knowledge.inspect(self.db, 'missing')
 
     def test_missing_knowledge_keeps_the_existing_empty_contract(self):
         db = sqlite3.connect(':memory:')
@@ -196,9 +192,6 @@ class KnowledgeContractTests(unittest.TestCase):
                 self.assertEqual(status, 200)
                 self.assertEqual(headers['Content-Disposition'], 'attachment; filename="anna-rule-chain.json"')
                 self.assertEqual(json.loads(body), {'schema': 2, 'snapshot': {'fixture': 'presentation-v1'}, 'chain': case['expected']})
-            for case in self.data['inspection']:
-                status, _, body = request('/api/knowledge-inspect?' + urlencode({'id': case['id']}))
-                self.assertEqual((status, json.loads(body)), (200, case['expected']))
             status, _, body = request('/api/knowledge-chain?' + urlencode({'id': 'background', 'path': '["background","other"]'}))
             self.assertEqual((status, json.loads(body)), (400, {'error': 'Reading path has no evidenced relationship'}))
 
@@ -216,7 +209,7 @@ class ProjectionContractTests(unittest.TestCase):
         self.assertEqual(value['candidates'], ['version_b', 'version_a'])
 
     def test_explicit_states_missing_values_and_input_ownership(self):
-        original = fixture('knowledge')['inspection'][0]['expected']['effective']
+        original = fixture('knowledge')['chains'][0]['expected']['records'][0]
         for status in ('resolved', 'partial', 'review', 'rejected'):
             for review in ('unreviewed', 'applied', 'revoked', 'stale', 'conflict'):
                 value = deepcopy(original)

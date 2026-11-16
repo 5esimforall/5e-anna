@@ -124,7 +124,7 @@ make upper
 
 ## 引用审核：保存、重建、撤销
 
-审核输入保存在仓库内的 `reviews/decisions.jsonl`，不属于可删除重建的 `data/`。日志采用追加事件：保存确认、确认此处非规则引用、替代旧决策及撤销均保留审核者、理由、时间和依据。本节处理具体引用；施法规则陈述的采用与否决见[规则链查询与审核](#规则链查询与审核)。两者均不提供补定义、来源裁定、全局别名或批量规则批准；浏览器服务保持只读。
+审核输入保存在仓库内的 `reviews/decisions.jsonl`，不属于可删除重建的 `data/`。日志采用追加事件：保存确认、确认此处非规则引用、替代旧决策及撤销均保留审核者、理由、时间和依据。本节处理具体引用；规则陈述的结构化标注见[规则链查询与审核](#规则链查询与审核)。两者均不提供补定义、来源裁定、全局别名或批量规则批准；浏览器服务保持只读。
 
 先运行 `make build`，然后查询和检查一处引用：
 
@@ -411,7 +411,7 @@ python3 -m anna.catalog.query --type spell --field school=塑能
 
 导出的 JSON 携带 `schema` 与构建快照，记录保留解析状态、审核状态和未解析原文，另带 `reading` 路径、`segments` 逐段状态及 `bindings` 变量供给。解析状态为已解析、部分解析、待核或已否决；审核状态为未人工核准、已采用、已撤销、依据变化或审核冲突。两套状态分开显示，不以空值代替未解析。未提取、明确没有、不适用等区分属于覆盖与验收，不混入单条记录的状态。条目身份以稳定 ID 连接；跨快照的移动、拆分、合并和删除尚未自动迁移旧标识，导出只携带当前有效身份与构建快照。
 
-核对模式显示记录 ID、结构化结果及检查入口。浏览器保持只读；分句级标注通过 `annotations/annotations.jsonl` 维护，记录级核准或否决仍追加到 `reviews/decisions.jsonl`：
+核对模式显示记录 ID 及结构化结果。浏览器保持只读；分句级标注通过 `annotations/annotations.jsonl` 维护：
 
 ```sh
 # 查看条目的结构头部、表格锚点与可选正文子句（用于编写锚点）
@@ -421,19 +421,16 @@ python3 -m anna.catalog.query --type spell --field school=塑能
 # 追加一条标注（--file 传入含 anchors / statements / 可选 scope 的 JSON；替代旧修订加 --supersedes 旧ann_rev_ID）
 .venv/bin/python -m anna.knowledge.repository annotate 条目ID \
   --kind grant --file payload.json --reviewer 标注者 --reason '说明原文依据'
-# 查看有效知识记录、做记录级接受／否决，或按事件 ID 前缀撤销（ann_rev_ 撤标注，review_ 撤决策）
+# 查看有效知识记录，或按标注修订 ID 撤销标注
 .venv/bin/python -m anna.knowledge.repository list --kind grant --status resolved --limit 10
-.venv/bin/python -m anna.knowledge.repository inspect 记录ID
-.venv/bin/python -m anna.knowledge.repository accept 记录ID \
-  --basis 查看所得basis_sha256 --reviewer 审核者 --reason '说明原文依据'
-.venv/bin/python -m anna.knowledge.repository revoke ann_rev_事件ID或review_事件ID \
+.venv/bin/python -m anna.knowledge.repository revoke ann_rev_事件ID \
   --reviewer 维护者 --reason '说明撤销原因'
 make build
 ```
 
-`accept` 表示核准当前记录，不补写缺失语义，也不消除目标歧义。原文或候选变化后，依据失效的记录或标注不继续进入有效选项；重新检查后才能替代旧决定。无需修改日志即可只读检查：`python -m anna.knowledge.repository chain 条目ID`。
+原文或候选变化后，失效或冲突的标注不再进入有效选项；须重新核对后再替代旧修订。无需修改日志即可只读检查：`python -m anna.knowledge.repository chain 条目ID`。
 
-HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/api/knowledge-inspect?id=记录ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；指定时必须属于起点条目的有效选项，否则返回 400。
+HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；指定时必须属于起点条目的有效选项，否则返回 400。
 
 两个规则链接口另接受 `path`，值为 URL 编码的条目 ID 数组 JSON，须以起点开头、无重复且最多 16 项；每一跳必须有关系依据，否则返回 400。可选的 `effect` 指定路径末端条目的局部效果 ID；不存在或属于其他条目的效果返回 400。`/api/entry` 使用同义参数 `chain_spell`、`chain_path`、`chain_effect`，页面地址也使用这三个参数。沿通则反查能力后继续看法术，使用路径而不改变起点的选项域。
 
@@ -447,6 +444,6 @@ HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID`、`/ap
 
 “本效果的动作成本”与效果条件绑定。例如 `{"query_subject":"entry","effect":"healing"}` 可一起检索法术治疗和回气；再添加 `"use_action":"bonus_action"` 可筛出使用附赠动作的治疗过程，`{"query_subject":"entry","effect":"modifier","use_action":"reaction"}` 可检索直觉闪避的减伤。`use_action` 可选 `action`、`bonus_action`、`reaction`、`timed` 或 `not_stated`。重复豁免不消耗初次施法动作；未明示动作不能当成无需动作。既有分享链接和最近查询沿用 `casting` 参数及 `/api/casting-facets` 路径，内部共用规则效果索引，不分设非施法查询逻辑。
 
-知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方读取 `value.grants`、`value.parameters` 和 `value.effects`。审核依赖依据只接受结构 2，事件封装仍使用独立的事件版本 1；不转换旧记录身份或旧批准。
+知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方读取 `value.grants`、`value.parameters` 和 `value.effects`。标注基线依据与事件封装各自使用独立的版本 `1`。
 
-构建目录的 `rule_knowledge.jsonl`、`effective_knowledge.jsonl`、`knowledge_decisions.jsonl` 与 `knowledge_annotations.jsonl` 分别保存合并后的基础记录、重放后的有效结果、记录决策重放以及标注评估结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。
+构建目录的 `effective_knowledge.jsonl` 与 `knowledge_annotations.jsonl` 分别保存合并后的有效记录及标注评估结果。`make audit` 校验它们与数据库的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 额外输出 `knowledge_changes.jsonl`，逐条记录前后差异。

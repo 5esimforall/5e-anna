@@ -9,11 +9,8 @@ import unittest
 from anna.knowledge.annotations import build_annotation_event
 from anna.knowledge.context import Context
 from anna.knowledge.extract import extract_definition_roles, extract_feat_grant, extract_subclass_features
-from anna.knowledge.inspection import inspect
-from anna.knowledge.repository import build_knowledge, save, validate_record
+from anna.knowledge.repository import build_knowledge, validate_record
 from anna.presentation.knowledge import casting_condition, chain
-from anna.review.commands import revoke
-from anna.review.store import append_event, extraction_hash, load_events, locked
 from anna.serialization import canonical
 
 
@@ -21,7 +18,6 @@ class KnowledgeTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.log = self.root / 'reviews.jsonl'
         self.annotations = self.root / 'annotations.jsonl'
         self.db = None
         self.feature = (
@@ -143,79 +139,13 @@ class KnowledgeTests(unittest.TestCase):
         self._init_schema_and_entries()
         if reseed_annotations:
             self._seed_annotations()
-        self.coverage = build_knowledge(self.db, self.root, self.log, annotations_path=self.annotations)
-        events, log_hash = load_events(self.log)
-        self.db.execute('INSERT INTO metadata VALUES(?,?)', ('summary', canonical({'extraction_sha256': extraction_hash()})))
-        self.db.execute(
-            'INSERT INTO metadata VALUES(?,?)',
-            ('review_snapshot', canonical({'path': str(self.log), 'sha256': log_hash, 'events': len(events), 'bytes': self.log.stat().st_size if self.log.exists() else 0})),
-        )
+        self.coverage = build_knowledge(self.db, self.root, annotations_path=self.annotations)
         self.db.commit()
-        row = self.db.execute("SELECT id FROM rule_knowledge WHERE subject_id='feat' AND kind='grant'").fetchone()
+        row = self.db.execute("SELECT id FROM effective_knowledge WHERE subject_id='feat' AND kind='grant'").fetchone()
         self.rid = row[0] if row else None
-
-    def accept(self, operation='knowledge_accept', supersedes=None):
-        view = inspect(self.db, self.rid)
-        return save(self.db, self.log, self.rid, operation, view['basis_sha256'], 'fixture', 'source checked', supersedes)
 
     def effective(self):
         return json.loads(self.db.execute('SELECT data FROM effective_knowledge WHERE id=?', (self.rid,)).fetchone()[0])
-
-    def test_accept_reject_revoke_replay_without_mutating_observations(self):
-        original = self.db.execute('SELECT data FROM rule_knowledge WHERE id=?', (self.rid,)).fetchone()[0]
-        event = self.accept()
-        self.rebuild()
-        self.assertEqual(self.effective()['review_status'], 'applied')
-        self.assertEqual(len(chain(self.db, 'feat')['options']), 2)
-        rejected = self.accept('knowledge_reject', event['id'])
-        self.rebuild()
-        self.assertEqual(self.effective()['status'], 'rejected')
-        self.assertFalse(chain(self.db, 'feat')['options'])
-        self.assertEqual(self.db.execute('SELECT data FROM rule_knowledge WHERE id=?', (self.rid,)).fetchone()[0], original)
-        revoke(self.log, rejected['id'], 'fixture', 'undo rejection')
-        self.rebuild()
-        self.assertEqual(self.effective()['review_status'], 'revoked')
-        self.assertEqual(len(chain(self.db, 'feat')['options']), 2)
-        self.assertEqual(len(load_events(self.log)[0]), 3)
-
-    def test_relevant_changes_reopen_and_unrelated_changes_do_not(self):
-        self.accept()
-        self.other += ' unrelated update'
-        self.rebuild()
-        self.assertEqual(self.effective()['review_status'], 'applied')
-        self.spell = self.spell.replace('30尺', '60尺')
-        self.rebuild()
-        self.assertEqual(self.effective()['review_status'], 'stale')
-        self.assertFalse(chain(self.db, 'feat')['options'])
-        self.assertEqual(self.db.execute("SELECT count(*) FROM review_queue WHERE reason='knowledge_decision_stale'").fetchone()[0], 1)
-
-    def test_new_competing_identity_reopens_approval(self):
-        self.accept()
-        self.competitor = True
-        self.rebuild()
-        self.assertEqual(self.effective()['review_status'], 'stale')
-        target = self.effective()['value']['grants'][0]['target']['resolution']
-        self.assertEqual(target['status'], 'ambiguous')
-        self.assertEqual(set(target['targets']), {'spell', 'competitor'})
-        self.assertFalse(chain(self.db, 'feat')['options'])
-
-    def test_competing_reviews_block_consumption(self):
-        first = self.accept()
-        with locked(self.log):
-            _, version = load_events(self.log)
-            append_event(self.log, {k: v for k, v in first.items() if k not in {'id', 'schema', 'created_at'}}, version)
-        self.rebuild()
-        self.assertEqual(self.effective()['review_status'], 'conflict')
-        self.assertFalse(chain(self.db, 'feat')['options'])
-        self.assertEqual(self.db.execute("SELECT count(*) FROM knowledge_decisions WHERE status='conflict'").fetchone()[0], 2)
-
-    def test_inspection_basis_is_required_for_writes(self):
-        with self.assertRaisesRegex(ValueError, 'basis'):
-            save(self.db, self.log, self.rid, 'knowledge_accept', 'wrong', 'fixture', 'source')
-        self.assertFalse(self.log.exists())
-        self.accept()
-        with self.assertRaisesRegex(ValueError, 'Supersede'):
-            self.accept()
 
     def test_same_branch_query_does_not_mix_free_recovery_with_slots(self):
         def count(q):
@@ -299,8 +229,8 @@ class KnowledgeTests(unittest.TestCase):
         extended = chain(self.db, 'slots', reading_path=['slots', 'feat', 'spell'])
         self.assertEqual(extended['reading']['focus_id'], 'spell')
         self.assertEqual(extended['bindings'][0]['subject_id'], 'feat')
-        self.accept('knowledge_reject')
-        self.rebuild()
+        self.feature = self.feature.replace('习得测试法术', '获得测试法术')
+        self.rebuild(reseed_annotations=False)
         with self.assertRaises(ValueError):
             chain(self.db, 'slots', reading_path=['slots', 'feat'])
 

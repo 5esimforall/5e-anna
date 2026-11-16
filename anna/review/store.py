@@ -25,7 +25,7 @@ def pipeline_hash():
 
 EXTRACTION_MODULES = (
     'serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py',
-    'catalog/signatures.py', 'catalog/frames.py', 'catalog/types.py', 'source/registry.py', 'source/tables.py',
+    'catalog/signatures.py', 'catalog/frames.py', 'catalog/types.py', 'source/registry.py',
     'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py',
     'review/anchors.py', 'review/context.py',
 )

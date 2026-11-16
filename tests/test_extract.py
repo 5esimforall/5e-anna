@@ -2,12 +2,11 @@ from pathlib import Path
 import unittest
 
 from anna.source.html import Document,resolve_link,split_name,key
-from anna.catalog.frames import candidates,quickref_rows
+from anna.catalog.frames import candidates,extract_tables,quickref_rows
 from anna.catalog.signatures import printed_type
 from anna.catalog.types import hazard_member,NO_TOC_PLACE
 from anna.catalog.build import Build,parse_one,normalize_value,observation_fields
 from anna.source.registry import SourceRegistry
-from anna.source.tables import extract_tables
 
 from anna.paths import WEB
 

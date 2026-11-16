@@ -1,7 +1,8 @@
-"""Page-level candidate assembly and sub-entry container frames over the domain-free layout IR."""
+"""Unified page-entry discovery and container frames (headings, leads, lists, and tables)."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 import re
 
 from bs4 import Tag
@@ -17,12 +18,39 @@ from anna.catalog.signatures import (
     STANDALONE_SPELL_META_RE,
     STANDALONE_STATS_RE,
     class_structure,
+    clean_entry_name,
+    extract_entry_fields,
     matches_feat_descriptor,
     skill_notation,
 )
-from anna.source.html import Document, compact, key, split_name
+from anna.catalog.types import RULE_TYPES, classify, mark_class_regions, refine_page_types
+from anna.source.html import Document, compact, digest, key, split_name
 
 STRUCTURAL_HEADING_METHODS = {'heading', 'word_heading', 'colored_heading'}
+
+# Catalog and definition table vocabularies.
+TABLE_HEADERS = {
+    '价格': 'price', '费用': 'price', '市场价格': 'price', '重量': 'weight',
+    '载重': 'carrying_capacity', '速度': 'speed', '伤害': 'damage',
+    '属性': 'properties', '词条': 'properties', '精通': 'mastery',
+    '护甲等级（AC）': 'armor_class', '护甲等级（ AC ）': 'armor_class', '护甲等级': 'armor_class',
+    '力量': 'strength_requirement', '隐匿': 'stealth', '特殊': 'special',
+    '份量': 'quantity', '数量': 'quantity', '容器': 'container', '存放容器': 'container',
+    '船员': 'crew', '乘客': 'passengers', '货物（吨）': 'cargo_tons',
+    'AC': 'ac', 'HP': 'hp', '伤害阈值': 'damage_threshold',
+}
+TABLE_NAME_HEADERS = {
+    '物品', '项目', '名称', '商品', '船只类型', '护甲', '护甲名称', '法器', '徽章',
+    '种类', '类型', '大小', '水晶大小', '死亡象征', '货物',
+}
+VEHICLE_NAMES_RE = re.compile(
+    r'Carriage|Wagon|Cart|Chariot|Sled\b|Galley|Keelboat|Longship|Rowboat|Sailing Ship|Warship|Airship',
+    re.I,
+)
+DEFINITION_TABLE_KINDS = {'技能': 'skill', '属性': 'ability'}
+DEFINITION_TABLE_FIELDS = {'skill': {'属性': 'ability'}}
+BASIC_FACILITIES_CAPTION_RE = re.compile(r'基础设施\s*Basic Facilities', re.I)
+CORE_SPELL_CHAPTER_RE = re.compile(r'/(?:魔法|法术)/')
 
 
 @dataclass
@@ -41,6 +69,54 @@ class Candidate:
     parent: int | None = None
     local_legacy: bool = False
     fields: dict = field(default_factory=dict)
+
+
+def entry_draft(
+    name: str,
+    start: int,
+    title_end: int,
+    end: int,
+    body_text: str,
+    *,
+    kind: str,
+    classification_rule: str,
+    boundary_rule: str,
+    level: int,
+    is_primary: bool = False,
+    parent_index: int | None = None,
+    anchors: list[str] | None = None,
+    printed_types: list[list[str]] | None = None,
+    legacy_direct: bool = False,
+    fields: dict | None = None,
+    extra_facts: list | None = None,
+    observation_ids: list[str] | None = None,
+    table_span: list[int] | None = None,
+) -> dict:
+    """Construct the uniform page-entry record emitted by all heading, lead, list, and table frames."""
+    draft = {
+        'name': name,
+        'start': start,
+        'title_end': title_end,
+        'end': end,
+        'anchors': anchors if anchors is not None else [],
+        'parent_index': parent_index,
+        'type': kind,
+        'classification_rule': classification_rule,
+        'boundary_rule': boundary_rule,
+        'legacy_direct': legacy_direct,
+        'fields': fields if fields is not None else {},
+        'observation_ids': observation_ids if observation_ids is not None else [],
+        'body_hash': sha256(compact(body_text).encode()).hexdigest(),
+        'level': level,
+        'is_primary': is_primary,
+    }
+    if printed_types is not None:
+        draft['printed_types'] = printed_types
+    if extra_facts is not None:
+        draft['extra_facts'] = extra_facts
+    if table_span is not None:
+        draft['table_span'] = table_span
+    return draft
 
 
 def quickref_rows(doc: Document) -> list[dict]:
@@ -306,3 +382,270 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
         c.local_legacy = doc.has_local_legacy(c.name, c.start, c.title_end, marker_limit, legacy_markers, c.tag)
 
     return merged
+
+
+# ---------------------------------------------------------------------------------------------------
+# List and Table Container Frames.
+
+def facility_list_entries(doc: Document) -> list[dict]:
+    """Extract list-encoded facility catalogs (e.g. DMG 基础设施 Basic Facilities)."""
+    entries: list[dict] = []
+    for tlist in doc.titled_lists():
+        if not BASIC_FACILITIES_CAPTION_RE.fullmatch(tlist.caption):
+            continue
+        caption_evidence = {'path': doc.path, 'span': list(tlist.caption_span)}
+        for name, (a, b) in tlist.items:
+            if not name or len(name) > 30:
+                continue
+            entries.append(
+                entry_draft(
+                    name, a, b, b, doc.text[a:b],
+                    kind='facility',
+                    classification_rule='facility_list_signature',
+                    boundary_rule='list_item',
+                    level=9,
+                    extra_facts=[('facility_kind', '基础', caption_evidence, 'facility_list', '原文明示')],
+                )
+            )
+    return entries
+
+
+def _header_field(header: str) -> str | None:
+    cleaned = re.sub(r'\s+', '', header)
+    if cleaned.startswith('护甲等级'):
+        return 'armor_class'
+    return TABLE_HEADERS.get(cleaned)
+
+
+def _definition_table_entries(doc: Document, table: dict) -> list[dict]:
+    """Entries for tables whose first header names a definition kind and whose rows all carry bilingual names."""
+    rows = table['rows']
+    headers = [re.sub(r'\s+', '', h) for h in rows[0]['cells']]
+    kind = DEFINITION_TABLE_KINDS.get(headers[0]) if headers else None
+    body = rows[1:]
+    if not kind or len(body) < 2:
+        return []
+    if any(
+        len(r['cells']) != len(headers)
+        or any(s != '1' for s in r['rowspan'] + r['colspan'])
+        or not all(split_name(r['cells'][0]))
+        for r in body
+    ):
+        return []
+    columns = {
+        j: field_name
+        for j, h in enumerate(headers)
+        for label, field_name in DEFINITION_TABLE_FIELDS.get(kind, {}).items()
+        if h == label
+    }
+    entries: list[dict] = []
+    for row in body:
+        left, right = row['cell_spans'][0][0], row['cell_spans'][-1][1]
+        fields = {
+            field_name: [(row['cells'][j], row['cell_spans'][j][0] - left, row['cell_spans'][j][1] - left)]
+            for j, field_name in columns.items()
+            if row['cells'][j]
+        }
+        entries.append(
+            entry_draft(
+                row['cells'][0], left, row['cell_spans'][0][1], right, doc.text[left:right],
+                kind=kind,
+                classification_rule='definition_table',
+                boundary_rule='table_row',
+                level=9,
+                fields=fields,
+                extra_facts=[],
+            )
+        )
+    return entries
+
+
+def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[list[dict], list[dict], list[dict]]:
+    """Extract raw table records alongside definition-table and catalog-table row entries."""
+    entries: list[dict] = []
+    tables: list[dict] = []
+    issues: list[dict] = []
+
+    for ti, t in enumerate(doc.tables()):
+        rows = t['rows']
+        a, b = t['span']
+        tables.append({
+            'id': 'tbl_' + digest(doc.path, ti),
+            'page_path': doc.path,
+            'start': a,
+            'end': b,
+            'headers': rows[0]['cells'],
+            'rows': [{k: r[k] for k in ('cells', 'cell_spans', 'span', 'rowspan', 'colspan')} for r in rows],
+            'layout_warning': any(any(x != '1' for x in r['rowspan'] + r['colspan']) for r in rows),
+        })
+
+        defined = _definition_table_entries(doc, t)
+        if defined:
+            entries.extend(defined)
+            continue
+
+        hi = next(
+            (
+                i for i, r in enumerate(rows[:4])
+                if any(_header_field(h) == 'price' for h in r['cells'])
+                and any(h in TABLE_NAME_HEADERS for h in r['cells'])
+            ),
+            None,
+        )
+        if hi is None:
+            continue
+
+        headers = rows[hi]['cells']
+        namecols = [i for i, h in enumerate(headers) if h in TABLE_NAME_HEADERS]
+        before = [c for c in page_candidates if c.start < a]
+        title = max(before, key=lambda c: c.start).name if before else doc.title
+        caption_text = t.get('preceding_text', '')
+        if caption_text and len(caption_text) <= 100:
+            title = caption_text
+
+        groups = []
+        for i, nc in enumerate(namecols):
+            lo = 0 if len(namecols) == 1 else (nc if nc else 0)
+            end = namecols[i + 1] if i + 1 < len(namecols) else len(headers)
+            cols = list(range(lo, end))
+            if not any(_header_field(headers[j]) == 'price' for j in cols):
+                continue
+            mapped = {_header_field(headers[j]) for j in cols}
+            animal = 'carrying_capacity' in mapped and bool(re.search(r'坐骑.*动物', title))
+            vehicle = (
+                ('speed' in mapped and bool(re.search('载具|船', doc.path + title)))
+                or ('carrying_capacity' in mapped and not animal and '载具' in doc.path)
+            )
+            equipment = 'weight' in mapped or ('price' in mapped and title.startswith('机巧奇具'))
+            goods = len(headers) == 2 and headers[nc] in {'货物', '商品'} and bool(re.search('商业货物|其他开支', doc.path))
+            if not (animal or vehicle or equipment or goods):
+                issues.append({'reason': 'catalog_table_unhandled', 'detail': {'headers': headers, 'title': title}, 'span': [a, b]})
+                continue
+            groups.append((nc, cols, 'animal_offer' if animal else 'vehicle' if vehicle else 'equipment'))
+
+        group_label = ''
+        for row in rows[hi + 1:]:
+            vals = row['cells']
+            if len(vals) == 1 and row['colspan'][0] != '1':
+                group_label = vals[0]
+                continue
+            if len(vals) != len(headers) or any(s != '1' for s in row['rowspan'] + row['colspan']):
+                if groups:
+                    issues.append({'reason': 'catalog_row_layout_unresolved', 'detail': vals, 'span': list(row['span'])})
+                continue
+            for nc, cols, kind in groups:
+                name = vals[nc]
+                if not name or len(name) > 100:
+                    continue
+                price = next((vals[j] for j in cols if _header_field(headers[j]) == 'price'), '')
+                if not re.search(r'\d|×|多[种类]|不等|—|－', price):
+                    continue
+                actual = 'vehicle' if kind == 'equipment' and '坐骑' in doc.path and VEHICLE_NAMES_RE.search(name) else kind
+                left = min(row['cell_spans'][j][0] for j in cols)
+                right = max(row['cell_spans'][j][1] for j in cols)
+                fields = {
+                    field_name: [(vals[j], row['cell_spans'][j][0] - left, row['cell_spans'][j][1] - left)]
+                    for j in cols
+                    if (field_name := _header_field(headers[j])) and vals[j]
+                }
+                extra = []
+                if actual == 'animal_offer':
+                    if doc.path.startswith(('topics/玩家手册/', 'topics/玩家手册2024/')):
+                        extra.append(('role', '坐骑', {'path': doc.path, 'span': [a, b], 'table_title': title}, 'mount_catalog_context', '上下文推得'))
+                    zh, _ = split_name(name)
+                    matching = [c for c in page_candidates if key(split_name(re.sub(r'[（(].*', '', c.name))[0]) == key(zh)]
+                    if len(matching) == 1:
+                        c = matching[0]
+                        body = doc.text[c.start:c.end]
+                        role = '宠物' if re.search('宠物|送信', body) else '役畜' if re.search('拉动.*雪橇|拉一辆雪橇', body) else None
+                        if role:
+                            extra.append(('role', role, {'path': doc.path, 'span': [c.start, c.end]}, 'animal_description', '原文明示'))
+                        m = re.search(r'使用\s*(.*?)\s*数据卡', body, re.S)
+                        if m:
+                            extra.append(('statblock_name', compact(m[1]), {'path': doc.path, 'span': [c.start + m.start(), c.start + m.end()]}, 'statblock_reference', '原文明示'))
+                if group_label:
+                    extra.append(('table_group', group_label, {'path': doc.path, 'span': [a, b]}, 'table_group', '原文明示'))
+
+                entries.append(
+                    entry_draft(
+                        name, left, row['cell_spans'][nc][1], right, doc.text[left:right],
+                        kind=actual,
+                        classification_rule=actual + '_table',
+                        boundary_rule='table_row',
+                        level=9,
+                        fields=fields,
+                        extra_facts=extra,
+                    )
+                )
+    return entries, tables, issues
+
+
+# ---------------------------------------------------------------------------------------------------
+# Whole-page extraction pipeline over Document's domain-free layout IR.
+
+def extract_page_entries(
+    doc: Document,
+    observations: list[dict],
+    context: str,
+    toc_place: dict,
+    core_rule_source: bool,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Run candidate discovery, signature typing, field extraction, and container frames for one page."""
+    path = doc.path
+    cs = candidates(doc, observations)
+    mark_class_regions(cs, doc.text)
+
+    entries: list[dict] = []
+    subrules: list[dict] = []
+    is_core_magic_chapter = bool(core_rule_source and CORE_SPELL_CHAPTER_RE.search(path) and '/法术详述/' not in path)
+
+    for i, c in enumerate(cs):
+        full = doc.text[c.start:c.end]
+        c.fields['core_rule_chapter'] = is_core_magic_chapter
+        next_start = cs[i + 1].start if i + 1 < len(cs) else c.end
+        own = doc.text[c.start:min(c.end, next_start)]
+        primary = i == 0 or (i == 1 and cs[0].method == 'page_intro')
+
+        typing = classify(c, own, full, context + ' | ' + path, primary)
+        kind, rule = typing.type, typing.rule
+        full_for_fields = full if (kind == 'class' or c.explicit_end) else own
+        fields = extract_entry_fields(full_for_fields, kind, max(0, c.title_end - c.start))
+
+        entries.append(
+            entry_draft(
+                clean_entry_name(c.name, kind),
+                c.start, c.title_end, c.end, full,
+                kind=kind,
+                classification_rule=rule,
+                boundary_rule=c.method,
+                level=c.rank,
+                is_primary=primary,
+                parent_index=c.parent,
+                anchors=c.anchors,
+                printed_types=[list(t) for t in typing.printed_types],
+                legacy_direct=c.local_legacy,
+                fields=fields,
+                observation_ids=[o['id'] for o in c.observations],
+                table_span=c.fields.get('table_span'),
+            )
+        )
+        if core_rule_source and kind in RULE_TYPES:
+            for a, b, end, name, method in rule_children(doc, c.title_end, min(c.end, next_start), c.name):
+                subrules.append(
+                    entry_draft(
+                        name, a, b, end, doc.text[a:end],
+                        kind='rule',
+                        classification_rule='rule_subdefinition',
+                        boundary_rule=method,
+                        level=c.rank + 1,
+                        parent_index=i,
+                        legacy_direct=c.local_legacy,
+                    )
+                )
+
+    entries.extend(subrules)
+    refine_page_types(entries, doc.text, toc_place)
+    entries.extend(facility_list_entries(doc))
+    table_entries, tables, table_issues = extract_tables(doc, cs)
+    entries.extend(table_entries)
+    return entries, tables, table_issues

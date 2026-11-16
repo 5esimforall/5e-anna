@@ -84,6 +84,7 @@ class PackageLayoutTests(unittest.TestCase):
         # 'class' is the HTML attribute name; 'rule' is parse_name's segmentation rule key.
         rule_types=set(TYPE_LABELS)-{'section','class','rule'}
         self.assertEqual(string_literals&rule_types,set())
+        self.assertFalse((PROJECT/'anna/source/tables.py').exists())
 
 
 if __name__=='__main__':unittest.main()

@@ -20,19 +20,11 @@ import time
 from anna.serialization import canonical
 from anna.source.pages import read_page
 from anna.source.html import Document, compact, key, digest, parse_name, split_name, resolve_link
-from anna.catalog.frames import candidates, quickref_rows, rule_children
-from anna.catalog.signatures import (
-    CLASSES,
-    CLASS_SHORT,
-    clean_entry_name,
-    extract_entry_fields,
-    printed_generation,
-    skill_notation,
-)
-from anna.catalog.types import TYPE_LABELS, classify, refine_page_types, mark_class_regions, evidence_status, type_conflicts, RULE_TYPES
+from anna.catalog.frames import extract_page_entries, quickref_rows
+from anna.catalog.signatures import CLASSES, CLASS_SHORT, printed_generation, skill_notation
+from anna.catalog.types import TYPE_LABELS, evidence_status, type_conflicts
 from anna.source.registry import SourceRegistry
 from anna.source.search import extract_body_text as extract_search_body, extract_title as extract_search_title, index_signature, load_toc_titles
-from anna.source.tables import extract_tables
 
 from anna.paths import PROJECT, WEB as DEFAULT_WEB, FIVETOOLS as DEFAULT_FIVETOOLS
 from anna.review.store import DEFAULT_ANNOTATIONS, require_current_annotations, pipeline_hash, extraction_hash
@@ -91,90 +83,39 @@ def observation_fields(ob):
 
 
 def parse_one(args):
-    web,path,observations,context,toc_place,core_rule_source=args
-    page={'path':path,'role':page_role(path),'parse_status':'ok','error':'','title':'','text':'','encoding':'','sha256':''}
+    web, path, observations, context, toc_place, core_rule_source = args
+    page = {'path': path, 'role': page_role(path), 'parse_status': 'ok', 'error': '', 'title': '', 'text': '', 'encoding': '', 'sha256': ''}
     try:
-        raw,encoding,h=read_page(Path(web)/path)
-        page.update(encoding=encoding,sha256=h)
-        search_doc={'url':path,'html_title':extract_search_title(raw),'text':extract_search_body(raw)}
-        if page['role'] in {'excluded_template_or_copy','editorial'}:
-            page['parse_status']='excluded';return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'search':search_doc,'issues':[]}
-        doc=Document(path,raw)
-        page.update(title=doc.title,text=doc.text)
-        dom=doc.dom_snapshot()
-        if page['role']=='index':
-            out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':dom['anchors'],'dom':dom,'search':search_doc,'issues':[]}
-            doc.close();return out
-        cs = candidates(doc, observations)
-        mark_class_regions(cs, doc.text)
-        output = []
-        subrules = []
-        for i, c in enumerate(cs):
-            full=doc.text[c.start:c.end]
-            c.fields['core_rule_chapter']=bool(core_rule_source and re.search(r'/(?:魔法|法术)/',path) and '/法术详述/' not in path)
-            next_start=cs[i+1].start if i+1<len(cs) else c.end
-            own=doc.text[c.start:min(c.end,next_start)]
-            primary=i==0 or (i==1 and cs[0].method=='page_intro')
-            typing = classify(c, own, full, context + ' | ' + path, primary)
-            kind, rule = typing.type, typing.rule
-            full_for_fields = full if (kind == 'class' or c.explicit_end) else own
-            title_offset = max(0, c.title_end - c.start)
-            fields = extract_entry_fields(full_for_fields, kind, title_offset)
-            output.append({
-                'name': clean_entry_name(c.name, kind),
-                'start': c.start,
-                'title_end': c.title_end,
-                'end': c.end,
-                'anchors': c.anchors,
-                'parent_index': c.parent,
-                'type': kind,
-                'classification_rule': rule,
-                'printed_types': [list(t) for t in typing.printed_types],
-                'boundary_rule': c.method,
-                'legacy_direct': c.local_legacy,
-                'fields': fields,
-                'observation_ids': [o['id'] for o in c.observations],
-                'body_hash': sha256(compact(full).encode()).hexdigest(),
-                'level': c.rank,
-                'is_primary': primary,
-                'table_span': c.fields.get('table_span'),
-            })
-            if core_rule_source and kind in RULE_TYPES:
-                for a, b, end, name, method in rule_children(doc, c.title_end, min(c.end, next_start), c.name):
-                    subrules.append({'name':name,'start':a,'title_end':b,'end':end,'anchors':[],'parent_index':i,
-                        'type':'rule','classification_rule':'rule_subdefinition','boundary_rule':method,'legacy_direct':c.local_legacy,
-                        'fields':{},'observation_ids':[],'body_hash':sha256(compact(doc.text[a:end]).encode()).hexdigest(),
-                        'level':c.rank+1,'is_primary':False})
-        output.extend(subrules)
-        refine_page_types(output,doc.text,toc_place)
-        # PHB/DMG calls this a table but the HTML encodes it as a simple list.
-        for ul in doc.body.find_all('ul'):
-            caption=ul.find_previous_sibling()
-            if not caption or not re.fullmatch(r'基础设施\s*Basic Facilities',compact(caption.get_text(' ',strip=True)),re.I):continue
-            for li in ul.find_all('li',recursive=False):
-                name=compact(li.get_text(' ',strip=True));a,b=doc.span(li)
-                if not name or len(name)>30:continue
-                output.append({'name':name,'start':a,'title_end':b,'end':b,'anchors':[],'parent_index':None,
-                    'type':'facility','classification_rule':'facility_list_signature','boundary_rule':'list_item',
-                    'legacy_direct':False,'fields':{},'observation_ids':[],
-                    'extra_facts':[('facility_kind','基础',{'path':path,'span':list(doc.span(caption))},'facility_list','原文明示')],
-                    'body_hash':sha256(compact(doc.text[a:b]).encode()).hexdigest(),'level':9,'is_primary':False})
-        table_entries,tables,table_issues=extract_tables(doc,cs)
-        output.extend(table_entries)
-        links=[]
-        for a in doc.body.find_all('a',href=True):
-            target=resolve_link(path,a['href'])
-            if target and target[0].startswith('topics/'):
-                links.append({'label':compact(a.get_text(' ',strip=True)), 'target_path':target[0],'target_anchor':target[1],'span':doc.span(a)})
-        anchors=dom['anchors']
-        issues=list(table_issues)
-        for a,spans in anchors.items():
-            if len(spans)>1:issues.append({'reason':'duplicate_anchor','detail':a,'span':spans[0]})
-        out={'page':page,'candidates':output,'tables':tables,'links':links,'anchors':anchors,'dom':dom,'search':search_doc,'issues':issues}
-        doc.close();return out
+        raw, encoding, h = read_page(Path(web) / path)
+        page.update(encoding=encoding, sha256=h)
+        search_doc = {'url': path, 'html_title': extract_search_title(raw), 'text': extract_search_body(raw)}
+        if page['role'] in {'excluded_template_or_copy', 'editorial'}:
+            page['parse_status'] = 'excluded'
+            return {'page': page, 'candidates': [], 'tables': [], 'links': [], 'anchors': {}, 'dom': None, 'search': search_doc, 'issues': []}
+        doc = Document(path, raw)
+        try:
+            page.update(title=doc.title, text=doc.text)
+            dom = doc.dom_snapshot()
+            if page['role'] == 'index':
+                return {'page': page, 'candidates': [], 'tables': [], 'links': [], 'anchors': dom['anchors'], 'dom': dom, 'search': search_doc, 'issues': []}
+            entries, tables, table_issues = extract_page_entries(doc, observations, context, toc_place, core_rule_source)
+        finally:
+            doc.close()
+        links = [
+            {'label': link['link_text'], 'target_path': target[0], 'target_anchor': target[1], 'span': tuple(link['span'])}
+            for link in dom['body_links']
+            if (target := resolve_link(path, link['href'])) and target[0].startswith('topics/')
+        ]
+        anchors = dom['anchors']
+        issues = list(table_issues) + [
+            {'reason': 'duplicate_anchor', 'detail': a, 'span': spans[0]}
+            for a, spans in anchors.items()
+            if len(spans) > 1
+        ]
+        return {'page': page, 'candidates': entries, 'tables': tables, 'links': links, 'anchors': anchors, 'dom': dom, 'search': search_doc, 'issues': issues}
     except Exception as e:
-        page.update(parse_status='error',error=f'{type(e).__name__}: {e}')
-        return {'page':page,'candidates':[],'tables':[],'links':[],'anchors':{},'dom':None,'search':None,'issues':[]}
+        page.update(parse_status='error', error=f'{type(e).__name__}: {e}')
+        return {'page': page, 'candidates': [], 'tables': [], 'links': [], 'anchors': {}, 'dom': None, 'search': None, 'issues': []}
 
 
 class Build:

@@ -488,6 +488,12 @@ class Document:
     def tables(self) -> list[dict]:
         out = []
         for table in self.body.find_all('table'):
+            a, b = self.span(table)
+            caption = table.find_previous(['p', *HEADINGS])
+            caption_text = ''
+            if caption:
+                ca, cb = self.span(caption)
+                caption_text = compact(self.text[ca:min(a, cb)])
             rows = []
             for tr in table.find_all('tr'):
                 if tr.find_parent('table') is not table:
@@ -505,7 +511,7 @@ class Document:
                     'tag': tr,
                 })
             if rows:
-                out.append({'span': self.span(table), 'rows': rows, 'tag': table})
+                out.append({'span': (a, b), 'rows': rows, 'tag': table, 'preceding_text': caption_text})
         return out
 
     def tagged_rows(self, attributes: tuple[str, ...]) -> list[dict]:

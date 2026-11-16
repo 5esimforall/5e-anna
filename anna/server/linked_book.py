@@ -15,7 +15,7 @@ from anna.source.html import Document
 from anna.source.pages import read_page
 from anna.paths import PROJECT, WEB
 from anna.presentation import contracts
-from anna.review.store import require_current, load_events, require_current_annotations, load_annotations
+from anna.review.store import require_current_annotations, load_annotations
 from anna.presentation.reader import SCHEMA, build_navigation, content_file, strip_reader_scripts
 
 BOOK=PROJECT/'data/5echm-anna'
@@ -65,8 +65,8 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             e=contracts.entry(json.loads(raw))
             if 'title_end' not in e:raise ValueError('Rebuild the database first: title_end is missing')
             entries[e['id']]=e;by_page[e['page_path']].append(e)
-        review_snapshot=require_current(db)
         ann_snapshot=require_current_annotations(db)
+        if ann_snapshot is None:raise ValueError('Database is missing annotation snapshot; run make build')
         mentions=defaultdict(list)
         if db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone():
             coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='concept_coverage'").fetchone()[0])
@@ -83,11 +83,9 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
     report={'definitions':len(entries),'clickable_definitions':0,'linked_references':0,'empty_definitions':[],'unlocatable_definitions':[],'unresolved':[]}
     report['unresolved']=[{'path':r['path'],'href':r['evidence']['href'],'label':r['text'],'reference_id':r['id'],'reason':r['reason']} for r in unresolved]
     report['reference_coverage']=reference_coverage
-    manifest={'reader_schema':SCHEMA,'review_snapshot':review_snapshot,'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
-    if ann_snapshot is not None:manifest['annotation_snapshot']=ann_snapshot
+    manifest={'reader_schema':SCHEMA,'annotation_snapshot':ann_snapshot,'database_sha256':fingerprint(db_path),'source_root':str(source),'inputs':inputs,'entries':{},'outputs':{}}
     reader=build_navigation(source,pages)
-    snap_input={'inputs':inputs,'database':manifest['database_sha256'],'review':review_snapshot['sha256']}
-    if ann_snapshot is not None:snap_input['annotations']=ann_snapshot['sha256']
+    snap_input={'inputs':inputs,'database':manifest['database_sha256'],'annotations':ann_snapshot['sha256']}
     reader['snapshot']=sha256(json.dumps(snap_input,sort_keys=True).encode()).hexdigest()
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.linked-',dir=output.parent) as tmp:
@@ -135,9 +133,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             if p.is_file():manifest['outputs'][p.relative_to(stage).as_posix()]=fingerprint(p)
         (stage/'anna-manifest.json').write_text(json.dumps(manifest,ensure_ascii=False))
         (stage/'anna-report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2))
-        if load_events(review_snapshot['path'])[1]!=review_snapshot['sha256']:
-            raise ValueError('Review log changed during generation; run make build')
-        if ann_snapshot is not None and load_annotations(ann_snapshot['path'])[1]!=ann_snapshot['sha256']:
+        if load_annotations(ann_snapshot['path'])[1]!=ann_snapshot['sha256']:
             raise ValueError('Annotation log changed during generation; run make build')
         # Only replace a known generated directory; leave arbitrary user directories alone.
         if output.exists() and not (output/'anna-manifest.json').is_file():raise ValueError('Refusing to overwrite a non-generated directory: '+str(output))

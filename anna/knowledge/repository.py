@@ -18,6 +18,7 @@ from anna.review.store import (
     load_annotations,
     annotation_lifecycle,
     append_annotation_events,
+    partition_annotations,
     require_annotations_appendable,
 )
 from anna.paths import PROJECT
@@ -274,19 +275,21 @@ def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS):
     annotations_file = Path(annotations_path).resolve()
     raw_annotations = annotations_file.read_bytes() if annotations_file.exists() else b''
     ann_events, ann_hash = load_annotations(annotations_file)
+    rule_events, _ = partition_annotations(ann_events)
     ann_snapshot = {
         'path': str(annotations_file),
         'sha256': ann_hash,
         'bytes': len(raw_annotations),
         'events': len(ann_events),
     }
-    evaluated = evaluate_annotations(context, ann_events)
-    records = discover(context, ann_events, evaluated=evaluated)
+    evaluated = evaluate_annotations(context, rule_events)
+    records = discover(context, rule_events, evaluated=evaluated)
     db.executescript('''
         CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,review_status TEXT,data TEXT NOT NULL);
         CREATE INDEX knowledge_subject ON effective_knowledge(subject_id,kind);
-        CREATE TABLE knowledge_annotations(id TEXT PRIMARY KEY,annotation_id TEXT,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
-        CREATE INDEX knowledge_annotation_subject ON knowledge_annotations(subject_id,annotation_id,status);
+        CREATE TABLE IF NOT EXISTS knowledge_annotations(id TEXT PRIMARY KEY,annotation_id TEXT,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,data TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS knowledge_annotation_subject ON knowledge_annotations(subject_id,annotation_id,status);
+        DELETE FROM knowledge_annotations WHERE kind IN ('grant','procedure');
         CREATE TABLE casting_options(id TEXT PRIMARY KEY,root_id TEXT REFERENCES entries(id),subject_id TEXT REFERENCES entries(id),
             spell_id TEXT REFERENCES entries(id),mode TEXT,resource TEXT,recovery TEXT,selection TEXT,data TEXT NOT NULL);
         CREATE INDEX casting_root ON casting_options(root_id);
@@ -316,7 +319,7 @@ def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS):
                 'evidence': row['subject'],
             }
             db.execute('INSERT INTO review_queue VALUES(?,?,?,?,?)', (review['id'], review['target'], review['reason'], review['priority'], canonical(review)))
-    db.execute('INSERT INTO metadata VALUES(?,?)', ('annotation_snapshot', canonical(ann_snapshot)))
+    db.execute('INSERT OR REPLACE INTO metadata VALUES(?,?)', ('annotation_snapshot', canonical(ann_snapshot)))
     usable = [r for r in records if r['review_status'] != 'conflict']
     from anna.knowledge.rule_index import build_rule_index
     build_rule_index(db, usable)
@@ -331,8 +334,8 @@ def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS):
         'annotations':dict(Counter(row['status'] for row in ann_rows)),
         'unparsed':dict(Counter(g['reason'] for r in records for g in r['value'].get('unparsed',[])))}
     db.execute('INSERT INTO metadata VALUES(?,?)',('knowledge_coverage',canonical(coverage)))
-    for name,rows in [('effective_knowledge',records),('knowledge_annotations',ann_rows)]:
-        (Path(out)/(name+'.jsonl')).write_text(''.join(canonical(r)+'\n' for r in rows))
+    (Path(out)/'effective_knowledge.jsonl').write_text(''.join(canonical(r)+'\n' for r in records))
+    (Path(out)/'knowledge_annotations.jsonl').write_text(''.join(r[0]+'\n' for r in db.execute('SELECT data FROM knowledge_annotations ORDER BY annotation_id,id')))
     (Path(out)/'knowledge_coverage.json').write_text(json.dumps(coverage,ensure_ascii=False,indent=2)+'\n')
     return coverage
 
@@ -385,19 +388,6 @@ def knowledge_diff(before, after):
 
 
 
-def save(db,path,rid,operation,expected_basis,reviewer,reason,supersedes=None):
-    if operation not in REVIEW_OPERATIONS:raise ValueError('Invalid knowledge operation')
-    if not reviewer.strip() or not reason.strip():raise ValueError('Reviewer and reason are required')
-    with locked(path):
-        require_appendable(db,path);view=inspect(db,rid)
-        if view['basis_sha256']!=expected_basis:raise ValueError('Knowledge basis changed; inspect again')
-        events,log_hash=load_events(path);states=lifecycle(events)
-        active=[e['id'] for e in events if is_knowledge(e) and e['binding']['knowledge_id']==rid and states[e['id']]=='active']
-        if active!=([supersedes] if supersedes else []):raise ValueError('Supersede the active decision or revoke competing decisions')
-        return append_event(path,{'operation':operation,'binding':binding(view['observation']),
-            'basis':view['basis'],'basis_sha256':expected_basis,'reviewer':reviewer.strip(),'reason':reason.strip(),'supersedes':supersedes},log_hash)
-
-
 def save_annotation(db, path, entry_id, kind, anchors, statements, reviewer, reason, *,
                     annotation_id=None, scope=None, supersedes=None):
     if not reviewer.strip() or not reason.strip():
@@ -444,10 +434,15 @@ def main():
     commands=parser.add_subparsers(dest='command',required=True)
     listing=commands.add_parser('list');listing.add_argument('--kind',choices=sorted(KINDS));listing.add_argument('--status');listing.add_argument('--limit',type=int,default=20)
     clauses_cmd=commands.add_parser('clauses');clauses_cmd.add_argument('id')
-    ann_list=commands.add_parser('annotations');ann_list.add_argument('--status');ann_list.add_argument('--limit',type=int,default=50)
+    ann_list=commands.add_parser('annotations');ann_list.add_argument('--kind',choices=('grant','procedure','reference'));ann_list.add_argument('--status');ann_list.add_argument('--limit',type=int,default=50)
     ann_cmd=commands.add_parser('annotate')
     ann_cmd.add_argument('id')
-    ann_cmd.add_argument('--kind',required=True,choices=('grant','procedure'))
+    ann_cmd.add_argument('--kind',required=True,choices=('grant','procedure','reference'))
+    ann_cmd.add_argument('--ruling',choices=('confirm','non_reference','missing_definition'))
+    ann_cmd.add_argument('--target')
+    ann_cmd.add_argument('--query',default='')
+    ann_cmd.add_argument('--expected-content-sha256')
+    ann_cmd.add_argument('--expected-context-sha256')
     ann_cmd.add_argument('--anchors')
     ann_cmd.add_argument('--statements')
     ann_cmd.add_argument('--scope')
@@ -456,6 +451,10 @@ def main():
     ann_cmd.add_argument('--reviewer',required=True)
     ann_cmd.add_argument('--reason',required=True)
     ann_cmd.add_argument('--supersedes')
+    refs_cmd=commands.add_parser('references');refs_cmd.add_argument('--path',default='');refs_cmd.add_argument('--status',default='');refs_cmd.add_argument('--signal',default='');refs_cmd.add_argument('--review-status',default='');refs_cmd.add_argument('--limit',type=int,default=30);refs_cmd.add_argument('--offset',type=int,default=0)
+    ref_inspect=commands.add_parser('ref-inspect');ref_inspect.add_argument('id');ref_inspect.add_argument('--target');ref_inspect.add_argument('--missing-definition',action='store_true');ref_inspect.add_argument('--query',default='')
+    cand_cmd=commands.add_parser('candidates');cand_cmd.add_argument('id');cand_cmd.add_argument('--query',default='');cand_cmd.add_argument('--type',default='');cand_cmd.add_argument('--ruleset',default='');cand_cmd.add_argument('--source',default='');cand_cmd.add_argument('--limit',type=int,default=20);cand_cmd.add_argument('--offset',type=int,default=0)
+    miss_cmd=commands.add_parser('missing');miss_cmd.add_argument('--status',default='');miss_cmd.add_argument('--path',default='');miss_cmd.add_argument('--limit',type=int,default=30);miss_cmd.add_argument('--offset',type=int,default=0)
     reading=commands.add_parser('chain');reading.add_argument('id')
     undo=commands.add_parser('revoke');undo.add_argument('id');undo.add_argument('--reviewer',required=True);undo.add_argument('--reason',required=True)
     args=parser.parse_args()
@@ -469,20 +468,45 @@ def main():
                 elif args.command=='annotations':
                     if not 1<=args.limit<=500:raise ValueError('Limit must be between 1 and 500')
                     filters=[];values=[]
+                    if args.kind:filters.append('kind=?');values.append(args.kind)
                     if args.status:filters.append('status=?');values.append(args.status)
                     result=[json.loads(r[0]) for r in db.execute('SELECT data FROM knowledge_annotations'+(' WHERE '+' AND '.join(filters) if filters else '')+' ORDER BY annotation_id,id LIMIT ?',values+[args.limit])]
                 elif args.command=='annotate':
-                    payload = json.loads(args.file.read_text()) if args.file else {}
-                    anchors = json.loads(args.anchors) if args.anchors else payload.get('anchors')
-                    statements = json.loads(args.statements) if args.statements else payload.get('statements')
-                    scope = json.loads(args.scope) if args.scope else payload.get('scope')
-                    aid = args.annotation_id or payload.get('annotation_id')
-                    if not isinstance(anchors, list) or not isinstance(statements, dict):
-                        raise ValueError('Both anchors (list) and statements (object) are required')
-                    result = save_annotation(
-                        db, args.annotations, args.id, args.kind, anchors, statements,
-                        args.reviewer, args.reason, annotation_id=aid, scope=scope, supersedes=args.supersedes,
-                    )
+                    if args.kind=='reference':
+                        from anna.catalog.references import save_reference_annotation
+                        if not args.ruling:
+                            raise ValueError('--ruling is required when --kind reference')
+                        result=save_reference_annotation(
+                            db,args.annotations,ruling=args.ruling,reference_id=args.id,
+                            target=args.target,expected_content_sha256=args.expected_content_sha256,
+                            expected_context_sha256=args.expected_context_sha256,reviewer=args.reviewer,
+                            reason=args.reason,supersedes=args.supersedes,search_query=args.query,
+                            annotation_id=args.annotation_id,
+                        )
+                    else:
+                        payload = json.loads(args.file.read_text()) if args.file else {}
+                        anchors = json.loads(args.anchors) if args.anchors else payload.get('anchors')
+                        statements = json.loads(args.statements) if args.statements else payload.get('statements')
+                        scope = json.loads(args.scope) if args.scope else payload.get('scope')
+                        aid = args.annotation_id or payload.get('annotation_id')
+                        if not isinstance(anchors, list) or not isinstance(statements, dict):
+                            raise ValueError('Both anchors (list) and statements (object) are required')
+                        result = save_annotation(
+                            db, args.annotations, args.id, args.kind, anchors, statements,
+                            args.reviewer, args.reason, annotation_id=aid, scope=scope, supersedes=args.supersedes,
+                        )
+                elif args.command=='references':
+                    from anna.presentation.references import query_references
+                    result=query_references(db,path=args.path,status=args.status,signal=args.signal,review_status=args.review_status,limit=args.limit,offset=args.offset)
+                elif args.command=='ref-inspect':
+                    from anna.catalog.references import inspect_reference
+                    result=inspect_reference(db,args.id,args.target,path=args.annotations,missing_definition=args.missing_definition,query=args.query)
+                elif args.command=='candidates':
+                    from anna.review.search import search_candidates
+                    result=search_candidates(db,args.id,query=args.query,entry_type=args.type,ruleset=args.ruleset,source_id=args.source,limit=args.limit,offset=args.offset)
+                elif args.command=='missing':
+                    from anna.presentation.references import query_missing_definitions
+                    result=query_missing_definitions(db,status=args.status,path=args.path,limit=args.limit,offset=args.offset)
                 elif args.command=='chain':
                     from anna.presentation.knowledge import chain
                     result=chain(db,args.id)
@@ -493,7 +517,7 @@ def main():
                         if getattr(args,k):filters.append(k+'=?');values.append(getattr(args,k))
                     result=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_knowledge'+(' WHERE '+' AND '.join(filters) if filters else '')+' ORDER BY subject_id,kind LIMIT ?',values+[args.limit])]
         print(json.dumps(result,ensure_ascii=False,indent=2))
-    except (ValueError,sqlite3.Error,OSError) as exc:parser.exit(1,str(exc)+'\n')
+    except (ValueError,LookupError,sqlite3.Error,OSError) as exc:parser.exit(1,str(exc)+'\n')
 
 
 if __name__=='__main__':main()

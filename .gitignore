@@ -15,9 +15,7 @@ __pycache__/
 node_modules/
 output/
 
-# Local advisory locks; review decisions themselves are versioned inputs.
-/reviews/*.lock
-/reviews/.review-*
+# Local advisory locks; annotations themselves are versioned inputs.
 /annotations/*.lock
 /annotations/.annotation-*
 

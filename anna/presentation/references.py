@@ -17,9 +17,11 @@ def query_references(db, *, path='', reference_id='', status='', signal='', revi
 
 def query_decisions(db, *, status='', limit=50, offset=0):
     if not 1 <= limit <= 300 or offset < 0: raise ValueError('审核查询范围无效')
-    where = ' WHERE status=?' if status else ''; values = [status] if status else []
-    total = db.execute('SELECT count(*) FROM review_decisions'+where, values).fetchone()[0]
-    rows = [json.loads(row[0]) for row in db.execute('SELECT data FROM review_decisions'+where+' ORDER BY id LIMIT ? OFFSET ?', values+[limit, offset])]
+    clauses = ["kind='reference'"]; values = []
+    if status: clauses.append('status=?'); values.append(status)
+    where = ' WHERE '+' AND '.join(clauses)
+    total = db.execute('SELECT count(*) FROM knowledge_annotations'+where, values).fetchone()[0]
+    rows = [json.loads(row[0]) for row in db.execute('SELECT data FROM knowledge_annotations'+where+' ORDER BY annotation_id,id LIMIT ? OFFSET ?', values+[limit, offset])]
     return {'total': total, 'offset': offset, 'limit': limit, 'rows': rows}
 
 

@@ -1,4 +1,4 @@
-"""Versioned, append-only review events. Generated databases are never the authority."""
+"""Versioned, append-only structured annotations. Generated databases are never the authority."""
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
@@ -12,152 +12,56 @@ from uuid import uuid4
 from anna.paths import PROJECT
 from anna.serialization import canonical, digest
 
-DEFAULT_DECISIONS = PROJECT / 'reviews/decisions.jsonl'
 DEFAULT_ANNOTATIONS = PROJECT / 'annotations/annotations.jsonl'
 ANNOTATION_OPERATIONS = {'annotate', 'revoke'}
+ANNOTATION_KINDS = {'grant', 'procedure', 'reference'}
+REFERENCE_RULINGS = {'confirm', 'non_reference', 'missing_definition'}
+REFERENCE_SIGNALS = {'explicit', 'index', 'format', 'plain', 'table'}
 
 
 def pipeline_hash():
-    return sha256(b''.join(p.read_bytes() for p in sorted((PROJECT/'anna').rglob('*.py')))).hexdigest()
+    return sha256(b''.join(p.read_bytes() for p in sorted((PROJECT / 'anna').rglob('*.py')))).hexdigest()
 
 
-# Bump when the meaning of stored review dependencies changes, not for UI edits.
-REVIEW_SEMANTICS_VERSION = 1
-EXTRACTION_MODULES = ('serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py', 'catalog/types.py', 'source/registry.py', 'source/tables.py',
-                      'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py', 'knowledge/extract.py', 'knowledge/annotations.py', 'knowledge/repository.py', 'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py', 'knowledge/query_schema.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py')
+EXTRACTION_MODULES = (
+    'serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py',
+    'catalog/types.py', 'source/registry.py', 'source/tables.py',
+    'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py',
+    'knowledge/extract.py', 'knowledge/annotations.py', 'knowledge/repository.py',
+    'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py',
+    'knowledge/query_schema.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py',
+)
 
 
 def extraction_hash():
-    return digest({name: sha256((PROJECT/'anna'/name).read_bytes()).hexdigest()
+    return digest({name: sha256((PROJECT / 'anna' / name).read_bytes()).hexdigest()
                    for name in EXTRACTION_MODULES})
 
 
 def input_snapshot(db):
     summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
-    return digest({'summary': summary, 'reviews': snapshot(db)})
-
-
-def require_appendable(db, path):
-    """Pending events may extend, but never replace, the published log prefix."""
-    saved = snapshot(db)
-    raw = Path(path).read_bytes() if Path(path).exists() else b''
-    events, _ = load_events(path)
-    prefix = raw[:saved['bytes']]
-    if len(events) < saved['events'] or sha256(prefix).hexdigest() != saved['sha256']:
-        raise ValueError('Review log is not an append-only extension of the build snapshot; rebuild')
-    summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
-    if summary.get('extraction_sha256') != extraction_hash():
-        raise ValueError('Extraction implementation changed or the snapshot is stale; run make build')
-
-
-def load_events(path=DEFAULT_DECISIONS):
-    path = Path(path)
-    raw = path.read_bytes() if path.exists() else b''
-    events = []
-    known = {}
-    for number, line in enumerate(raw.decode('utf-8').splitlines(), 1):
-        if not line.strip(): continue
-        try:
-            event = json.loads(line)
-            if event.get('schema') != 1 or event.get('operation') not in {'confirm', 'non_reference', 'missing_definition', 'revoke'}:
-                raise ValueError('未知审核事件版本或操作')
-            for field in ('id', 'reviewer', 'reason', 'created_at'):
-                if not isinstance(event.get(field), str) or not event[field].strip():
-                    raise ValueError('缺少字段：'+field)
-            if event['id'] in known: raise ValueError('重复事件 ID')
-            if event['operation'] == 'revoke':
-                previous = known.get(event.get('decision_id'))
-                if not previous or previous['operation'] == 'revoke': raise ValueError('撤销对象不存在')
-            else:
-                binding = event['binding']
-                for field in ('reference_id', 'path', 'text', 'signal', 'kind', 'role'):
-                    if not isinstance(binding.get(field), str): raise ValueError('无效绑定：'+field)
-                if not (isinstance(binding['start'], int) and isinstance(binding['end'], int)
-                        and 0 <= binding['start'] < binding['end'] and binding['text'].strip()):
-                    raise ValueError('无效审核范围')
-                if not isinstance(event.get('basis'), dict) or event['basis'].get('schema') != 2:
-                    raise ValueError('Unsupported review basis schema')
-                if event.get('basis_sha256') != digest(event['basis']):
-                    raise ValueError('审核依据指纹不符')
-                target = event.get('target_id')
-                if event['operation'] == 'confirm' and (not isinstance(target, str) or not target):
-                    raise ValueError('确认引用需要目标')
-                if event['operation'] in {'non_reference', 'missing_definition'} and target is not None:
-                    raise ValueError('非引用或缺失定义决策不能有目标')
-                if event['operation'] == 'missing_definition' and not isinstance(event.get('search_query'), str):
-                    raise ValueError('缺失定义决策须保存候选搜索条件')
-                if event.get('supersedes'):
-                    previous = known.get(event['supersedes'])
-                    if (not previous or previous['operation'] == 'revoke'
-                            or previous['binding'].get('reference_id') != binding['reference_id']):
-                        raise ValueError('替代决策必须属于同一引用')
-            known[event['id']] = event
-            events.append(event)
-        except (KeyError, TypeError, ValueError) as exc:
-            raise ValueError(f'审核日志第 {number} 行无效：{exc}') from exc
-    return events, sha256(raw).hexdigest()
-
-
-def lifecycle(events):
-    """Superseding/revoking never resurrects an older decision implicitly."""
-    states = {e['id']: 'active' for e in events if e['operation'] != 'revoke'}
-    for event in events:
-        if event['operation'] == 'revoke': states[event['decision_id']] = 'revoked'
-        elif event.get('supersedes'): states[event['supersedes']] = 'superseded'
-    return states
+    return digest({'summary': summary, 'annotations': annotation_snapshot(db)})
 
 
 @contextmanager
 def locked(path):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.with_suffix(path.suffix+'.lock').open('a') as lock:
+    with path.with_suffix(path.suffix + '.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         yield
 
 
-def append_event(path, event, expected_hash):
-    """Caller holds locked(path); compare-and-swap protects concurrent saves."""
-    return append_events(path, [event], expected_hash)[0]
-
-
-def append_events(path, pending, expected_hash):
-    """Atomically publish the entire validated batch under the caller's lock."""
-    path = Path(path)
-    _, current = load_events(path)
-    if current != expected_hash: raise ValueError('Review log changed; reload before saving')
-    events = [{'schema': 1, 'id': 'review_'+uuid4().hex,
-               'created_at': datetime.now(timezone.utc).isoformat(), **event} for event in pending]
-    raw = path.read_bytes() if path.exists() else b''
-    if raw and not raw.endswith(b'\n'): raw += b'\n'
-    raw += ''.join(canonical(event)+'\n' for event in events).encode()
-    temp = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.review-', delete=False) as stream:
-            temp = Path(stream.name)
-            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
-        load_events(temp)  # Validate before replacing the durable input.
-        os.replace(temp, path)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try: os.fsync(directory)
-        finally: os.close(directory)
-    finally:
-        if temp and temp.exists(): temp.unlink()
-    return events
-
-
-def snapshot(db):
-    row = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
-    if not row: raise ValueError('Database is missing review results; run make build')
-    return json.loads(row[0])
-
-
-def require_current(db, path=None):
-    saved = snapshot(db)
-    _, current = load_events(path or saved['path'])
-    if current != saved['sha256']:
-        raise ValueError('Review log has not been replayed; run make build')
-    return saved
+def _validate_target_selector(target):
+    if not isinstance(target, dict):
+        raise ValueError('Confirm ruling requires target selector')
+    for field in ('type', 'ruleset', 'page_path'):
+        if not isinstance(target.get(field), str) or not target[field].strip():
+            raise ValueError('Invalid target selector: ' + field)
+    zh = target.get('name_zh', '')
+    en = target.get('name_en', '')
+    if not isinstance(zh, str) or not isinstance(en, str) or not (zh.strip() or en.strip()):
+        raise ValueError('Invalid target selector name')
 
 
 def load_annotations(path=DEFAULT_ANNOTATIONS):
@@ -184,16 +88,21 @@ def load_annotations(path=DEFAULT_ANNOTATIONS):
             else:
                 if not isinstance(event.get('annotation_id'), str) or not event['annotation_id'].strip():
                     raise ValueError('Missing annotation_id')
-                if event.get('kind') not in {'grant', 'procedure'}:
+                kind = event.get('kind')
+                if kind not in ANNOTATION_KINDS:
                     raise ValueError('Invalid annotation kind')
                 subject = event.get('subject')
                 if not isinstance(subject, dict):
                     raise ValueError('Missing subject selector')
-                for field in ('type', 'ruleset', 'page_path'):
-                    if not isinstance(subject.get(field), str) or not subject[field].strip():
-                        raise ValueError('Invalid annotation subject: ' + field)
-                if not isinstance(subject.get('name_zh'), str) or not isinstance(subject.get('name_en', ''), str) or not (subject['name_zh'].strip() or subject.get('name_en', '').strip()):
-                    raise ValueError('Invalid annotation subject name')
+                if kind == 'reference':
+                    if subject.get('kind') != 'page' or not isinstance(subject.get('page_path'), str) or not subject['page_path'].strip():
+                        raise ValueError('Invalid reference annotation subject')
+                else:
+                    for field in ('type', 'ruleset', 'page_path'):
+                        if not isinstance(subject.get(field), str) or not subject[field].strip():
+                            raise ValueError('Invalid annotation subject: ' + field)
+                    if not isinstance(subject.get('name_zh'), str) or not isinstance(subject.get('name_en', ''), str) or not (subject['name_zh'].strip() or subject.get('name_en', '').strip()):
+                        raise ValueError('Invalid annotation subject name')
                 anchors = event.get('anchors')
                 if not isinstance(anchors, list) or not anchors:
                     raise ValueError('Annotation requires at least one anchor')
@@ -205,16 +114,36 @@ def load_annotations(path=DEFAULT_ANNOTATIONS):
                         raise ValueError('Duplicate anchor id: ' + anchor['id'])
                     anchor_ids.add(anchor['id'])
                     akind = anchor.get('kind')
+                    if kind == 'reference' and akind != 'span':
+                        raise ValueError('Reference annotation requires span anchor')
                     if akind in {'clause', 'span'}:
-                        if not isinstance(anchor.get('quote'), str) or not anchor['quote']:
+                        if not isinstance(anchor.get('quote'), str) or not anchor['quote'] or (kind == 'reference' and not anchor['quote'].strip()):
                             raise ValueError('Clause/span anchor requires quote')
+                        if 'within' in anchor and anchor['within'] is not None and not isinstance(anchor['within'], str):
+                            raise ValueError('Anchor within must be a string')
+                        if 'signal' in anchor and anchor['signal'] is not None and anchor['signal'] not in REFERENCE_SIGNALS:
+                            raise ValueError('Invalid anchor signal')
                     elif akind == 'table':
                         if not isinstance(anchor.get('caption_zh'), str) or not anchor['caption_zh'].strip():
                             raise ValueError('Table anchor requires caption_zh')
                     else:
                         raise ValueError('Unsupported anchor kind')
-                if not isinstance(event.get('statements'), dict):
+                statements = event.get('statements')
+                if not isinstance(statements, dict):
                     raise ValueError('Annotation statements must be an object')
+                if kind == 'reference':
+                    if len(anchors) != 1:
+                        raise ValueError('Reference annotation requires exactly one anchor')
+                    ruling = statements.get('ruling')
+                    if ruling not in REFERENCE_RULINGS:
+                        raise ValueError('Invalid reference ruling')
+                    if ruling == 'confirm':
+                        _validate_target_selector(statements.get('target'))
+                    else:
+                        if statements.get('target') is not None:
+                            raise ValueError('Non-reference or missing-definition ruling cannot have a target')
+                        if ruling == 'missing_definition' and not isinstance(statements.get('search_query'), str):
+                            raise ValueError('Missing-definition ruling requires search_query')
                 basis = event.get('basis')
                 if not isinstance(basis, dict) or basis.get('schema') != 1:
                     raise ValueError('Unsupported annotation basis schema')
@@ -231,6 +160,16 @@ def load_annotations(path=DEFAULT_ANNOTATIONS):
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f'Invalid annotation log line {number}: {exc}') from exc
     return events, sha256(raw).hexdigest()
+
+
+def partition_annotations(events):
+    """Split unified events into rule-knowledge events and reference-ruling events, pairing revocations."""
+    kinds = {e['id']: e['kind'] for e in events if e['operation'] == 'annotate'}
+    rule_events, ref_events = [], []
+    for event in events:
+        kind = event['kind'] if event['operation'] == 'annotate' else kinds[event['target_revision_id']]
+        (ref_events if kind == 'reference' else rule_events).append(event)
+    return rule_events, ref_events
 
 
 def annotation_lifecycle(events):
@@ -271,7 +210,9 @@ def append_annotation_events(path, pending, expected_hash):
     try:
         with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.annotation-', delete=False) as stream:
             temp = Path(stream.name)
-            stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+            stream.write(raw)
+            stream.flush()
+            os.fsync(stream.fileno())
         load_annotations(temp)
         os.replace(temp, path)
         directory = os.open(path.parent, os.O_RDONLY)

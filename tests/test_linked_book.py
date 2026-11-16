@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from anna.source.html import Document
-from anna.review.store import load_events
+from anna.review.store import load_annotations
 from anna.server.linked_book import text_slice,inject,build_book,fingerprint,MARKER
 from anna.presentation.reader import build_navigation,page_data,ReaderError
 
@@ -48,8 +48,8 @@ class LinkedBuildTests(unittest.TestCase):
                  'target_id':'ver_test' if resolved else None,'reason':'explicit_locator','evidence':{'href':tag['href']}}
             conn.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?)',
                          (ref['id'],ref['path'],a,'explicit',ref['status'],int(resolved),json.dumps(ref)))
-        log=root/'decisions.jsonl'
-        conn.execute('INSERT INTO metadata VALUES(?,?)',('review_snapshot',json.dumps({'path':str(log),'sha256':load_events(log)[1],'events':0})))
+        log=root/'annotations.jsonl'
+        conn.execute('INSERT INTO metadata VALUES(?,?)',('annotation_snapshot',json.dumps({'path':str(log),'sha256':load_annotations(log)[1],'events':0,'bytes':0})))
         conn.execute('INSERT INTO metadata VALUES(?,?)',('reference_coverage','{}'))
         conn.commit();conn.close();d.close()
         return source,db

@@ -24,7 +24,7 @@ from anna.source.registry import SourceRegistry
 from anna.source.tables import extract_tables
 
 from anna.paths import PROJECT, WEB as DEFAULT_WEB, FIVETOOLS as DEFAULT_FIVETOOLS
-from anna.review.store import DEFAULT_DECISIONS, DEFAULT_ANNOTATIONS, require_current, require_current_annotations, pipeline_hash, extraction_hash
+from anna.review.store import DEFAULT_ANNOTATIONS, require_current_annotations, pipeline_hash, extraction_hash
 INDEX_FIELDS={
     '物品名':'name','怪物名':'name','法术名':'name','稀有度':'rarity','类别':'item_type','子类别':'item_subtypes',
     '同调':'attunement','同调条件':'attunement_requirements','来源':'source_code','体型':'size','类型':'creature_type',
@@ -546,7 +546,7 @@ class Build:
             assert sha256((self.web/path).read_bytes()).hexdigest()==page['sha256'],('Source changed during build',path)
         return {'input_accounting':'pass','unique_ids':'pass','evidence_ranges':'pass','raw_evidence':'pass','foreign_keys':'pass','source_unchanged':'pass'}
 
-    def export(self,out,validation,total_inputs,elapsed,decision_path=DEFAULT_DECISIONS,fivetools=None,annotations_path=DEFAULT_ANNOTATIONS):
+    def export(self,out,validation,total_inputs,elapsed,fivetools=None,annotations_path=DEFAULT_ANNOTATIONS):
         out.mkdir(parents=True,exist_ok=True)
         db=sqlite3.connect(out/'catalog.sqlite')
         db.execute('PRAGMA foreign_keys=ON')
@@ -592,7 +592,7 @@ class Build:
         from anna.catalog.concepts import build_concepts
         concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path)
         from anna.catalog.references import build_references
-        reference_coverage=build_references(db,self.web,out,decision_path,dom_by_path=self.dom_by_path)
+        reference_coverage=build_references(db,self.web,out,annotations_path,dom_by_path=self.dom_by_path)
         from anna.knowledge.repository import build_knowledge
         knowledge_coverage=build_knowledge(db,out,annotations_path=annotations_path)
         counterpart_coverage=None
@@ -660,7 +660,6 @@ def publish(stage,dest):
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',type=Path,default=DEFAULT_WEB);ap.add_argument('--output',type=Path,default=PROJECT/'data/extracted')
-    ap.add_argument('--decisions',type=Path,default=DEFAULT_DECISIONS)
     ap.add_argument('--annotations',type=Path,default=DEFAULT_ANNOTATIONS)
     ap.add_argument('--5etools',dest='fivetools',type=Path,default=DEFAULT_FIVETOOLS,help='5etools-cn mirror compared with the extracted entries')
     ap.add_argument('--no-counterparts',action='store_true',help='skip the 5etools-cn comparison; the summary records it as skipped')
@@ -688,12 +687,11 @@ def main():
                 if i%500==0:print(f'Pages: {i}/{len(paths)}; candidates: {len(b.entries)}',flush=True)
     b.finish();validation=b.validate(paths)
     with tempfile.TemporaryDirectory(prefix='.build-',dir=PROJECT) as tmp:
-        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,args.decisions,fivetools,annotations_path=args.annotations)
+        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,fivetools,annotations_path=args.annotations)
         b.validate(paths)
         if extraction_hash()!=extraction_at_start:
             raise ValueError('Extraction implementation changed during the build; nothing was published. Rebuild.')
         with sqlite3.connect(Path(tmp)/'catalog.sqlite') as staged_db:
-            require_current(staged_db,args.decisions)
             require_current_annotations(staged_db,args.annotations)
         publish(Path(tmp),args.output)
     print(json.dumps(summary,ensure_ascii=False,indent=2))

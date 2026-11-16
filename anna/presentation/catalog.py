@@ -3,6 +3,7 @@
 from __future__ import annotations
 from collections import Counter
 import csv
+from hashlib import sha256
 import io
 import json
 import re
@@ -14,7 +15,6 @@ from anna.presentation import contracts
 import anna.paths as paths
 from anna.presentation.layout import text_start
 from anna.presentation.references import query_missing_definitions
-from anna.review.store import load_events
 
 ROOT = paths.PROJECT
 DB = ROOT / 'data/extracted/catalog.sqlite'
@@ -295,9 +295,14 @@ def meta(db):
     for r in db.execute('SELECT s.data,count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id LEFT JOIN entries e ON e.id=es.entry_id AND e.type!=\'section\' GROUP BY s.id ORDER BY s.name'):
         s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'short_name':s['label'],'count':r['n']})
     held = {r[0] for r in db.execute('SELECT DISTINCT type FROM entries')}
-    review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
+    review = db.execute("SELECT value FROM metadata WHERE key='annotation_snapshot'").fetchone()
+    if review is None:
+        review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
     review = json.loads(review[0]) if review else None
-    if review: review['pending_rebuild'] = load_events(review['path'])[1] != review['sha256']
+    if review:
+        p = Path(review['path'])
+        current_sha = sha256(p.read_bytes() if p.exists() else b'').hexdigest()
+        review['pending_rebuild'] = current_sha != review['sha256']
     return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
             # Only types the data holds are offered; the picker lists them in reading order.
             'type_order':[t for t in browse.TYPE_ORDER if t!='section' and t in held],'presets':list(browse.PRESETS),

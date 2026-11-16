@@ -229,7 +229,7 @@ class ProjectionContractTests(unittest.TestCase):
 import sys
 import anna.server.app
 for name in ('anna.catalog.build', 'anna.knowledge.repository', 'anna.knowledge.extract',
-             'anna.knowledge.annotations', 'anna.review.commands'):
+             'anna.knowledge.annotations'):
     assert name not in sys.modules, name
 '''
         result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)

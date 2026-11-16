@@ -15,7 +15,7 @@ from anna.knowledge.extract import (
 )
 from anna.knowledge.model import finish_effects, rule_value
 from anna.knowledge.values import evidence
-from anna.review.store import annotation_lifecycle
+from anna.review.store import annotation_lifecycle, partition_annotations
 from anna.serialization import digest
 
 
@@ -421,6 +421,7 @@ def _spans_overlap(bound_a, bound_b):
 
 def evaluate_annotations(context, events):
     """Replay lifecycle state, subject/anchor binding, basis verification, and overlap conflicts."""
+    events, _ = partition_annotations(events)
     states, _ = annotation_lifecycle(events)
     entry_cache = {}
     results = []

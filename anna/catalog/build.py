@@ -591,10 +591,12 @@ class Build:
         db.executemany('INSERT INTO identity_candidates VALUES(?,?,?,?)',[(r['group_id'],r['type'],r['status'],canonical(r)) for r in self.identity_candidates])
         from anna.catalog.concepts import build_concepts
         concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path)
+        from anna.knowledge.context import Context
+        shared_context=Context(db)
         from anna.catalog.references import build_references
-        reference_coverage=build_references(db,self.web,out,annotations_path,dom_by_path=self.dom_by_path)
+        reference_coverage=build_references(db,self.web,out,annotations_path,dom_by_path=self.dom_by_path,context=shared_context)
         from anna.knowledge.repository import build_knowledge
-        knowledge_coverage=build_knowledge(db,out,annotations_path=annotations_path)
+        knowledge_coverage=build_knowledge(db,out,annotations_path=annotations_path,context=shared_context)
         counterpart_coverage=None
         if fivetools:
             from anna.compare.catalog import build_counterparts

@@ -19,8 +19,8 @@ from anna.review.store import annotation_lifecycle, partition_annotations
 from anna.serialization import digest
 
 
-def subject_selector(context, entry):
-    """Portable subject identity without snapshot byte offsets or ver_ IDs."""
+def entry_selector(entry):
+    """Portable entry identity without snapshot byte offsets or ver_ IDs."""
     return {
         'type': entry['type'],
         'ruleset': entry['ruleset'],
@@ -30,11 +30,11 @@ def subject_selector(context, entry):
     }
 
 
-def resolve_subject(context, subject):
-    """Resolve an annotation subject; page moves transfer only when unique."""
+def resolve_subject(context, subject, *, non_empty=True):
+    """Resolve an entry selector; page moves transfer only when unique."""
     matches = [
         e for e in context.entries.values()
-        if e['end'] > e['start']
+        if (not non_empty or e['end'] > e['start'])
         and e['type'] == subject['type']
         and e['ruleset'] == subject['ruleset']
         and e['name_zh'] == subject['name_zh']
@@ -50,6 +50,30 @@ def resolve_subject(context, subject):
     if len(matches) == 1:
         return 'transferred', matches[0]
     return 'ambiguous', None
+
+
+def bind_span_anchor(text, anchor, start=0, end=None):
+    """Bind a portable span anchor (`quote` + optional `within`) within `text[start:end]`."""
+    wa, wb = start, len(text) if end is None else end
+    quote = anchor['quote']
+    within = anchor.get('within')
+    if within:
+        wmatches = list(re.finditer(re.escape(within), text[wa:wb]))
+        if not wmatches:
+            qspans = [(wa + m.start(), wa + m.end()) for m in re.finditer(re.escape(quote), text[wa:wb])]
+            return 'stale', None, qspans, 'Span enclosing text not found'
+        if len(wmatches) > 1:
+            wspans = [(wa + m.start(), wa + m.end()) for m in wmatches]
+            return 'ambiguous', None, wspans, 'Span enclosing text matches multiple locations'
+        wa, wb = wa + wmatches[0].start(), wa + wmatches[0].end()
+    qmatches = list(re.finditer(re.escape(anchor['quote']), text[wa:wb]))
+    if not qmatches:
+        return 'missing', None, [], 'Span quote not found'
+    if len(qmatches) > 1:
+        qspans = [(wa + m.start(), wa + m.end()) for m in qmatches]
+        return 'ambiguous', None, qspans, 'Span quote matches multiple occurrences'
+    span = (wa + qmatches[0].start(), wa + qmatches[0].end())
+    return 'bound', span, [span], 'Bound uniquely'
 
 
 def _table_caption_count(entry, context, label):
@@ -92,24 +116,11 @@ def bind_anchors(context, entry, anchors, header=None, clauses=None):
                     'clause_indices': {idx},
                 }
         elif akind == 'span':
-            wa, wb = entry['title_end'], entry['end']
-            within = anchor.get('within')
-            if within:
-                wmatches = list(re.finditer(re.escape(within), text[wa:wb]))
-                if not wmatches:
-                    errors.append(('stale', aid, 'Span enclosing text not found'))
-                    continue
-                if len(wmatches) > 1:
-                    errors.append(('ambiguous', aid, 'Span enclosing text matches multiple locations'))
-                    continue
-                wa, wb = wa + wmatches[0].start(), wa + wmatches[0].end()
-            qmatches = list(re.finditer(re.escape(anchor['quote']), text[wa:wb]))
-            if not qmatches:
-                errors.append(('stale', aid, 'Span quote not found'))
-            elif len(qmatches) > 1:
-                errors.append(('ambiguous', aid, 'Span quote matches multiple occurrences'))
+            status, span, _, msg = bind_span_anchor(text, anchor, entry['title_end'], entry['end'])
+            if status != 'bound':
+                errors.append(('ambiguous' if status == 'ambiguous' else 'stale', aid, msg))
             else:
-                sa, sb = wa + qmatches[0].start(), wa + qmatches[0].end()
+                sa, sb = span
                 overlapping = {i for i, c in enumerate(clauses) if sa < c['span'][1] and c['span'][0] < sb}
                 bound[aid] = {
                     'id': aid, 'kind': 'span', 'span': [sa, sb],
@@ -678,7 +689,7 @@ def inspect_clauses(context, entry_id):
         ]
     ]
     return {
-        'subject': subject_selector(context, entry),
+        'subject': entry_selector(entry),
         'subject_id': entry['id'],
         'header': header,
         'clauses': clauses,
@@ -692,7 +703,7 @@ def build_annotation_event(context, entry_id, kind, anchors, statements, reviewe
     if kind not in {'grant', 'procedure'}:
         raise ValueError('Annotation kind must be grant or procedure')
     entry = context.entries[entry_id]
-    subject = subject_selector(context, entry)
+    subject = entry_selector(entry)
     bound, errors, header, clauses = bind_anchors(context, entry, anchors)
     if errors:
         raise ValueError('Failed to bind anchors: ' + '; '.join(f'{aid}: {msg}' for _, aid, msg in errors))

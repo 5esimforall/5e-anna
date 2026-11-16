@@ -270,8 +270,8 @@ def _annotation_row(result):
     }
 
 
-def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS):
-    context=Context(db)
+def build_knowledge(db, out, annotations_path=DEFAULT_ANNOTATIONS, context=None):
+    context = context or Context(db)
     annotations_file = Path(annotations_path).resolve()
     raw_annotations = annotations_file.read_bytes() if annotations_file.exists() else b''
     ann_events, ann_hash = load_annotations(annotations_file)

@@ -14,8 +14,8 @@ def candidate_matches(context, ref, query=''):
     evidence = ref.get('evidence', {})
     destination = evidence.get('target_path', '')
     fragment = evidence.get('fragment', '')
-    source_ids = set(context.pages[ref['path']]['source_ids'])
-    rulesets = {context.sources[s].get('ruleset_hint') for s in source_ids if s in context.sources} - {None, '', '待核'}
+    source_ids = set(context.page_sources[ref['path']])
+    rulesets = {context.source_by_id[s].get('ruleset_hint') for s in source_ids if s in context.source_by_id} - {None, '', '待核'}
     automatic = set(ref['automatic']['candidates'])
     wanted = RULE_TYPES | {'class_feature'} if ref['kind'] == 'concept' else {ref['kind']}
     rows = []
@@ -54,24 +54,24 @@ def candidate_matches(context, ref, query=''):
 
 def search_candidates(db, reference_id, *, query='', entry_type='', ruleset='', source_id='', limit=20, offset=0, context=None):
     import json
-    from anna.catalog.references import ReviewContext
+    from anna.knowledge.context import Context
     if not 1 <= limit <= 100 or offset < 0: raise ValueError('候选查询范围无效')
     cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
     where = 'id=? AND is_effective=1' if 'is_effective' in cols else 'id=?'
     row = db.execute('SELECT data FROM effective_references WHERE ' + where, (reference_id,)).fetchone()
     if not row: raise LookupError('引用不存在，请重新查询有效引用 ID')
-    ref = json.loads(row[0]); context = context or ReviewContext(db)
+    ref = json.loads(row[0]); context = context or Context(db)
     matches = candidate_matches(context, ref, query)
     matches = [m for m in matches if (not entry_type or m['entry']['type'] == entry_type)
                and (not ruleset or m['entry']['ruleset'] == ruleset)
                and (not source_id or source_id in m['entry']['source_ids'])]
     rows = []
     for match in matches[offset:offset+limit]:
-        entry = match['entry']; text = context.pages[entry['page_path']]['text'][entry['start']:entry['end']]
+        entry = match['entry']; text = context.pages[entry['page_path']][entry['start']:entry['end']]
         rows.append({**{k: entry.get(k) for k in ('id','name','type','ruleset','source_ids','source_names','page_path','start','end','anchors')},
                      'score': match['score'], 'reasons': match['reasons'], 'warnings': match['warnings'],
                      'locatable': context.locatable(entry['id']), 'excerpt': text[:600], 'excerpt_truncated': len(text)>600})
-    page = context.pages[ref['path']]['text']
+    page = context.pages[ref['path']]
     return {'reference_id': reference_id, 'binding': context.binding(ref),
             'excerpt': page[max(0,ref['start']-160):ref['end']+160],
             'query': query, 'total': len(matches), 'limit': limit, 'offset': offset,

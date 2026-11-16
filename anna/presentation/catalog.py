@@ -3,18 +3,15 @@
 from __future__ import annotations
 from collections import Counter
 import csv
-from hashlib import sha256
 import io
 import json
 import re
 import sqlite3
 from pathlib import Path
 import anna.catalog.views as browse
-import anna.presentation.knowledge as knowledge
 from anna.presentation import contracts
 import anna.paths as paths
 from anna.presentation.layout import text_start
-from anna.presentation.references import query_missing_definitions
 
 ROOT = paths.PROJECT
 DB = ROOT / 'data/extracted/catalog.sqlite'
@@ -55,7 +52,7 @@ ENTRY_BODY = ("(SELECT substr(p.text,s.b+1,e.end-s.b) FROM pages p, (SELECT CASE
 # Any field of chosen values, and each name or body search, can be excluded: `not_<key>` holds the excluded
 # values or terms. Ranges, the conflict switch and the term being typed are not negated.
 NOT = 'not_'
-NEGATABLE = ('type','q','body','ruleset','legacy','status','source','origin','casting')
+NEGATABLE = ('type','q','body','ruleset','legacy','status','source','origin')
 
 
 def field_of(key):
@@ -106,10 +103,6 @@ def included(params):
     if value:
         if field not in FIELDS: raise ValueError('无效属性')
         out.append(('field','EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)',['$.'+field,{'true':'1','false':'0'}.get(value,value)]))
-    if first(params,'casting'):
-        if len(params['casting'])!=1:raise ValueError('Only one branch-scoped casting query is allowed')
-        clause,values=knowledge.casting_condition(first(params,'casting'))
-        out.append(('casting',clause,values))
     out.extend(browse.facet_conditions(params))
     return out
 
@@ -148,7 +141,7 @@ def facets(db, params):
     columns = ''.join(f', ({sql}) AS c{i}' for i,(_,sql,_) in enumerate(conds))
     origin_of = dict(db.execute('SELECT id, origin FROM sources'))
     domain = [*config['facets'],*config['flags']]
-    counted = ['type',*('f_'+f for f in domain),'ruleset','origin','source','legacy','status']
+    counted = ['type',*('f_'+f for f in domain),'ruleset','origin','source']
     counts = {k:Counter() for k in counted}
     universe = {k:set() for k in counted}
     unknown_cover = Counter()
@@ -208,7 +201,7 @@ def facets(db, params):
     domain_groups = [group('f_'+f) for f in domain]
     # Mixed types lead with the facets most of their entries can answer (rarity before weapon mastery).
     if len(config['kinds'])>1: domain_groups.sort(key=lambda g:-unknown_cover[g['key'][2:]])
-    return {'schema':config,'groups':[group('type'),*domain_groups,*(group(k) for k in ('ruleset','origin','source','legacy','status'))],
+    return {'schema':config,'groups':[group('type'),*domain_groups,*(group(k) for k in ('ruleset','origin','source'))],
             'total':total,'scope_total':scope_total,'without':dict(without)}
 
 
@@ -295,15 +288,7 @@ def meta(db):
     for r in db.execute('SELECT s.data,count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id LEFT JOIN entries e ON e.id=es.entry_id AND e.type!=\'section\' GROUP BY s.id ORDER BY s.name'):
         s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'short_name':s['label'],'count':r['n']})
     held = {r[0] for r in db.execute('SELECT DISTINCT type FROM entries')}
-    review = db.execute("SELECT value FROM metadata WHERE key='annotation_snapshot'").fetchone()
-    if review is None:
-        review = db.execute("SELECT value FROM metadata WHERE key='review_snapshot'").fetchone()
-    review = json.loads(review[0]) if review else None
-    if review:
-        p = Path(review['path'])
-        current_sha = sha256(p.read_bytes() if p.exists() else b'').hexdigest()
-        review['pending_rebuild'] = current_sha != review['sha256']
-    return {'summary':summary,'review_snapshot':review,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
+    return {'summary':summary,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
             # Only types the data holds are offered; the picker lists them in reading order.
             'type_order':[t for t in browse.TYPE_ORDER if t!='section' and t in held],'presets':list(browse.PRESETS),
             'type_conditions':{t:browse.type_conditions(t) for t in TYPES if t!='section'}}
@@ -326,80 +311,16 @@ def version_compare(db, entry):
 
 
 
-def casting_facets(db, params):
-    """Counts retain ordinary filters and every other field of the same casting branch."""
-    selected=knowledge.casting_query(first(params,'casting')) if first(params,'casting') else {}
-    base={k:v for k,v in params.items() if k not in {'casting','not_casting'}}
-    where,values=filters(db,base)
-    result={}
-    for field,options in knowledge.QUERY_VALUES.items():
-        result[field]=[]
-        for value in options:
-            candidate={**selected,field:value}
-            # Switching the query subject clears disabled provider controls in
-            # the UI. Its preview must count that same transition, not an invalid
-            # combination that the selected-value API would correctly reject.
-            if field=='query_subject' and value in {'spell','entry'}:
-                candidate={k:v for k,v in candidate.items() if k not in knowledge.ACCESS_QUERY_FIELDS}
-            if candidate.get('query_subject') in {'spell','entry'} and knowledge.ACCESS_QUERY_FIELDS & candidate.keys():count=0
-            else:
-                clause,arguments=knowledge.casting_condition(candidate)
-                count=db.execute('SELECT count(*) FROM entries e'+where+' AND '+clause,values+arguments).fetchone()[0]
-            result[field].append({'value':value,'count':count})
-    return {'groups':result}
-
-
-def detail(db, eid, chain_spell=None, chain_path=None, chain_effect=None):
+def detail(db, eid):
     row=db.execute('SELECT data FROM entries WHERE id=?',(eid,)).fetchone()
     if not row: raise LookupError('条目不存在')
     e=browse.enrich(contracts.entry(json.loads(row[0])))
-    e['rule_chain']=knowledge.chain(db,eid,chain_spell,chain_path,chain_effect)
     e['field_order']=browse.field_order(e)
     start=text_start(e)
     e['body']=db.execute('SELECT substr(text,?,?) FROM pages WHERE path=?',(start+1,e['end']-start,e['page_path'])).fetchone()[0].strip()
-    e['facts']=[]
-    for r in db.execute('SELECT field,value,evidence,rule,scope,status FROM facts WHERE entry_id=? ORDER BY field,id',(eid,)):
-        f=dict(r); f['value']=json.loads(f['value']); f['evidence']=json.loads(f['evidence'])
-        ev=f['evidence']
-        if ev.get('path') and ev.get('span'):
-            a,b=ev['span']; snippet=db.execute('SELECT substr(text,?,?) FROM pages WHERE path=?',(a+1,min(b-a,1200),ev['path'])).fetchone()
-            if snippet: f['excerpt']=snippet[0]
-        e['facts'].append(f)
     e['relations']=[dict(r) for r in db.execute('SELECT predicate,object_id,target_label,status FROM relations WHERE subject_id=? ORDER BY predicate,target_label',(eid,))]
     e['versions']=version_compare(db,e)
-    e['concept_observations']=[]
-    has_obs=bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='concept_observations'").fetchone())
-    has_eff=bool(db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone())
-    eff_cols={r[1] for r in db.execute('PRAGMA table_info(effective_references)')} if has_eff else set()
-    if has_obs:
-        e['concept_observations']=[contracts.observation(json.loads(r[0])) for r in db.execute("SELECT data FROM concept_observations WHERE page_path=? AND start>=? AND end<=? ORDER BY start,signal",(e['page_path'],e['start'],e['end']))]
-    elif has_eff and 'is_effective' in eff_cols:
-        e['concept_observations']=[contracts.observation({**o,**o['automatic']} if 'automatic' in o else o) for r in db.execute("SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? AND signal!='explicit' ORDER BY start,signal",(e['page_path'],e['start'],e['end'])) for o in [json.loads(r[0])]]
-    if e['concept_observations']:
-        ids=sorted({cid for o in e['concept_observations'] if not o['target_id'] for cid in o['candidates']})
-        candidates={}
-        for start in range(0,len(ids),400):
-            batch=ids[start:start+400]
-            candidates.update((r['id'],dict(r)) for r in db.execute('SELECT id,name,ruleset FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
-        for o in e['concept_observations']:
-            o['candidate_entries']=[candidates[cid] for cid in o['candidates'] if cid in candidates] if not o['target_id'] else []
-    e['missing_definitions']=query_missing_definitions(db,path=e['page_path'],limit=300)['rows'] if db.execute("SELECT 1 FROM sqlite_master WHERE name='missing_definitions'").fetchone() else []
-    e['reviews']=[json.loads(r[0]) for r in db.execute('SELECT data FROM review_queue WHERE target IN (?,?) ORDER BY priority,reason',(eid,e['page_path']))]
-    e['effective_references']=[]
-    if has_eff:
-        eff_sql=('SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? AND is_effective=1 ORDER BY start,id'
-                 if 'is_effective' in eff_cols else
-                 'SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id')
-        e['effective_references']=[contracts.reference(json.loads(r[0])) for r in db.execute(eff_sql,(e['page_path'],e['start'],e['end']))]
-        ids=sorted({cid for r in e['effective_references'] if not r['target_id'] for cid in r['candidates']})
-        candidates={}
-        for start in range(0,len(ids),400):
-            batch=ids[start:start+400]
-            candidates.update((r['id'],dict(r)) for r in db.execute('SELECT id,name,ruleset FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
-        for ref in e['effective_references']:
-            ref['candidate_entries']=[candidates[cid] for cid in ref['candidates'] if cid in candidates]
     return e
-
 
 def csv_export(rows, config=None):
     out=io.StringIO(newline=''); writer=csv.writer(out)

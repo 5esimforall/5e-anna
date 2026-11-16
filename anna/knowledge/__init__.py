@@ -1,1 +1,0 @@
-"""Anna knowledge implementation."""

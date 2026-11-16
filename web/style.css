@@ -114,13 +114,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .brand-logo { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 .topbar-actions>a { font-size: var(--anna-type-ui); }
-:root:not([data-audit=on]) .audit-only { display: none !important; }
-.audit-toggle { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; padding: 4px 9px; border-color: transparent; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
-.audit-switch { position: relative; width: 26px; height: 15px; border-radius: 8px; background: var(--anna-line-strong); transition: background var(--anna-fast); }
-.audit-switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--anna-paper); transition: transform var(--anna-fast) var(--anna-ease); }
-.audit-toggle[aria-pressed=true] { color: var(--anna-brand); }
-.audit-toggle[aria-pressed=true] .audit-switch { background: var(--anna-brand); }
-.audit-toggle[aria-pressed=true] .audit-switch::after { transform: translateX(11px); }
 /* The other companion: her avatar and where turning to her leads, then recent places. */
 .companion { position: relative; display: inline-flex; align-items: stretch; height: 34px; box-sizing: border-box; border: 1px solid var(--anna-line); border-radius: 17px; }
 .companion-go { display: inline-flex; align-items: center; gap: 7px; min-width: 0; max-width: 15em; padding: 0 12px 0 3px; border-radius: 16px 0 0 16px; color: var(--anna-secondary); font-size: var(--anna-type-ui); text-decoration: none; }
@@ -165,8 +158,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px; font-weight: 600; line-height: 1.25; }
 #elsewhere { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #empty-elsewhere { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 10px; }
-#empty-sections { margin-top: 12px; }
-#show-sections { border-color: transparent; background: transparent; color: var(--anna-brand); white-space: normal; text-decoration: underline; text-underline-offset: 2px; }
 .heading-row>.muted, .heading-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--anna-type-ui); }
 .heading-note { color: var(--anna-muted); margin-left: auto; }
 .toolbar { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; }
@@ -225,8 +216,6 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .source-search-row>.muted { font-size: var(--anna-type-ui); }
 #source-filters .choices { max-height: 180px; overflow: auto; padding: 3px; }
 #source-filters .facet, #common-filters .facet:last-child { border: 0; }
-.audit-toggles { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 0; font-size: var(--anna-type-ui); }
-.audit-toggles label { display: flex; gap: 5px; align-items: center; }
 /* Active filters stay one line that scrolls sideways, like the narrow view rail. */
 /* The condition bar holds every condition as a chip before the text field. Chips scroll sideways inside it, so
    the bar stays one line at any width; the field keeps room to type. */
@@ -393,7 +382,6 @@ tbody tr:last-child td { border-bottom: 0; }
 .detail-tabs button { padding: 9px 8px; border: 0; border-radius: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
 .detail-tabs button.active { color: var(--anna-brand); border-bottom-color: var(--anna-brand); font-weight: 600; }
 .detail-tabs button.empty:not(.active) { color: var(--anna-muted); opacity: .65; }
-.tab-group { align-self: center; flex-shrink: 0; margin-left: 8px; padding: 0 2px 0 10px; border-left: 1px solid var(--anna-line); color: var(--anna-muted); font-size: var(--anna-type-ui); }
 .body-text { max-width: var(--anna-measure); margin: 18px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: var(--anna-leading-reading); }
 pre.body-text { font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.6; }
 /* Original layout: the book's structure in serif; anna's field readings as wine-red notes. */
@@ -445,18 +433,9 @@ mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--a
 .detail-fields { display: grid; grid-template-columns: minmax(85px,1fr) 2fr; margin: 16px 0; font-size: var(--anna-type-ui); }
 .detail-fields dt, .detail-fields dd { margin: 0; padding: 10px 7px; border-bottom: 1px solid var(--anna-line); overflow-wrap: anywhere; }
 .detail-fields dt { color: var(--anna-secondary); }
-.fact { padding: 17px 0; border-bottom: 1px solid var(--anna-line); font-size: var(--anna-type-ui); overflow-wrap: anywhere; }
-.fact-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
-.fact-value { margin: 7px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.fact small { color: var(--anna-muted); }
-.fact blockquote { margin: 10px 0; padding: 10px 13px; background: var(--anna-surface); border-left: 2px solid var(--anna-line-strong); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--anna-type-ui); }
-.fact a { font-size: var(--anna-type-ui); overflow-wrap: anywhere; }
-.fact button, .related button { white-space: normal; text-align: left; }
+.related button { white-space: normal; text-align: left; }
 .related { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--anna-line); font-size: var(--anna-type-ui); }
 .related button { border: 0; background: transparent; color: var(--anna-brand); padding: 0; }
-.audit-summary { display: block; margin-top: 22px; padding: 8px 0 0; border: 0; border-top: 1px solid var(--anna-line); border-radius: 0; background: transparent; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: left; white-space: normal; }
-.audit-summary:hover:not(:disabled) { background: transparent; color: var(--anna-brand); }
-.footnote { margin-top: 24px; color: var(--anna-muted); font-size: var(--anna-type-small); overflow-wrap: anywhere; }
 /* Keyboard hints close the text instead of holding a fixed bar under it. */
 .reader-hint { margin: 16px 0 0; color: var(--anna-muted); font-size: var(--anna-type-ui); }
 .reader-message { padding: 26px 0; color: var(--anna-secondary); }
@@ -570,49 +549,3 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 @media(prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
-
-/* Review retrieval shares the reader's local design tokens. */
-.review-page {height:auto;min-height:100vh;overflow:auto}
-.review-page .source-page {max-width:1000px;margin:0 auto;padding:24px}
-.review-page section {margin:24px 0}
-.review-controls {display:flex;flex-wrap:wrap;gap:12px;align-items:end;margin:12px 0}
-.review-controls label {display:grid;gap:6px;flex:1;min-width:min(260px,100%)}
-.review-controls input {min-width:0;width:100%;box-sizing:border-box}
-.review-page code,.review-page a {overflow-wrap:anywhere}
-.review-page .fact {margin:12px 0}
-
-/* Rule chains share the entry reader and condition bar; source evidence is folded. */
-.casting-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:12px 0}
-.casting-controls label{display:flex;flex-direction:column;gap:5px;font-size:13px}
-.casting-controls input,.casting-controls select{width:100%;min-width:0}
-.casting-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
-.rule-chain{overflow-wrap:anywhere;max-width:100%}
-.knowledge-record{border-top:1px solid var(--anna-line);padding:18px 0;margin-top:16px}
-.knowledge-record h3,.chain-grant h4{font-size:15px;margin:8px 0;line-height:1.5}
-.chain-grant{padding:12px 0;border-top:1px solid var(--anna-line)}
-.chain-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px}
-.chain-branch{padding:12px;border:1px solid var(--anna-line);border-radius:8px;min-width:0}
-.chain-branch h5{margin:0 0 8px;font-size:13px}
-.chain-evidence{margin:8px 0;font-size:13px}.chain-evidence blockquote{margin:8px 0;padding-left:12px;border-left:2px solid var(--anna-line);white-space:pre-wrap}
-.chain-choices ul{list-style:none;padding:0;max-height:250px;overflow:auto}.chain-choices li{margin:5px 0}
-.chain-effect{margin:12px 0}.chain-effect h4{margin:8px 0}.chain-gaps{margin:16px 0}
-
-/* A chain keeps its question root visible as the reader follows evidence. */
-.chain-path{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem;padding:.7rem 0;border-bottom:1px solid var(--anna-line)}
-.chain-path [aria-current="step"]{font-weight:700;text-decoration:underline;text-underline-offset:.2em}
-.chain-scope-conditions{display:block;margin-block-start:.35rem}
-.chain-step{border-inline-start:3px solid var(--anna-brand);padding-inline-start:.8rem}
-.chain-effect small,.chain-grant h4 small,.chain-branch h5 small{font-weight:400;opacity:.65}
-
-.chain-effect:focus{outline:2px solid var(--anna-focus);outline-offset:4px}
-.effect-links{font-size:13px;border-inline-start:2px solid var(--anna-line);padding-inline-start:.65rem}
-.candidate-trigger{margin:.45rem 0}
-.inline-candidates{margin:.5rem 0;padding:.65rem .75rem;border:1px solid var(--anna-line);border-radius:8px;background:var(--anna-paper-alt,var(--anna-paper))}
-.candidate-policy{margin:0 0 .45rem;font-size:.85rem}
-.inline-candidate-form{display:flex;flex-wrap:wrap;align-items:center;gap:.45rem;margin-bottom:.6rem}
-.inline-candidate-form input[type=search]{flex:1 1 12rem;min-width:0}
-.missing-dialog{width:min(54rem,94vw);max-height:86vh;padding:1.1rem 1.25rem;border:1px solid var(--anna-line);border-radius:10px;background:var(--anna-paper);color:var(--anna-ink)}
-.missing-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin-bottom:.4rem}
-.missing-head h2{margin:0;font-size:1.15rem}
-.missing-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:.75rem 0}
-.missing-dialog .fact{margin:.65rem 0}

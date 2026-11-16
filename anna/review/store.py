@@ -27,9 +27,7 @@ EXTRACTION_MODULES = (
     'serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py',
     'catalog/types.py', 'source/registry.py', 'source/tables.py',
     'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py',
-    'knowledge/extract.py', 'knowledge/annotations.py', 'knowledge/repository.py',
-    'knowledge/conditions.py', 'knowledge/rule_index.py', 'knowledge/context.py',
-    'knowledge/query_schema.py', 'knowledge/effects.py', 'knowledge/values.py', 'knowledge/model.py',
+    'review/anchors.py', 'review/context.py',
 )
 
 

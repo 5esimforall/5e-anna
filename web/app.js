@@ -3,18 +3,16 @@ const $ = s => document.querySelector(s);
 const {esc,stored}=annaKit;
 // New workbench copy lives in one bilingual resource; data/source labels remain unchanged.
 const annaUiLabels = {
-  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',reloading:'数据正在更新，服务会在完整构建后自动换包；换包完成后刷新页面。',reloadFailed:'数据重建未通过校验，服务未切换到新快照；请查看 make upper 的终端输出并重新构建。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',sectionMatches:'原文中还有 {count} 条未分类段落匹配，点击查看',
+  zh: {bundleChanged:'数据已经重建，请重启 make up，再刷新页面。',reloading:'数据正在更新，服务会在完整构建后自动换包；换包完成后刷新页面。',reloadFailed:'数据重建未通过校验，服务未切换到新快照；请查看 make upper 的终端输出并重新构建。',skipSearch:'跳到搜索',emptyTitle:'没有匹配条目',emptyHint:'试试移除已选条件，或清空全部条件。',
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
     outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
-    noEvidence:'未提取到字段证据；不代表不存在。',body:'正文',fields:'属性',facts:'证据',relations:'关系',reviews:'待核',
+    body:'正文',fields:'属性',relations:'关系',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
     moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
-    auditMode:'核对',auditOn:'核对模式已开启：显示提取依据、审核状态与覆盖线索。单击切换为阅读模式',auditOff:'阅读模式：审核细节已收起。单击开启核对模式',
-    auditSummary:'核对',auditSummaryHint:'开启核对模式并查看证据',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
     stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',sortLabel:'排序',displayOptions:'显示',
@@ -25,18 +23,16 @@ const annaUiLabels = {
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
-  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',reloading:'The data is being updated; the service switches snapshots after a complete build. Refresh when it finishes.',reloadFailed:'The rebuild did not validate, so the service kept its previous snapshot. Check the make upper terminal and build again.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',sectionMatches:'{count} unclassified passages in the source also match; show them',
+  en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',reloading:'The data is being updated; the service switches snapshots after a complete build. Refresh when it finishes.',reloadFailed:'The rebuild did not validate, so the service kept its previous snapshot. Check the make upper terminal and build again.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
     outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
-    noEvidence:'No field evidence extracted; this does not establish absence.',body:'Text',fields:'Attributes',facts:'Evidence',relations:'Relations',reviews:'Review',
+    body:'Text',fields:'Attributes',relations:'Relations',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
     moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
-    auditMode:'Audit',auditOn:'Audit mode is on: extraction evidence, review states and coverage signals are shown. Click for reading mode',auditOff:'Reading mode: review details are folded away. Click to turn on audit mode',
-    auditSummary:'Audit',auditSummaryHint:'Turn on audit mode and show evidence',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
     stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',sortLabel:'Sort',displayOptions:'Display',
@@ -59,16 +55,10 @@ const pretty = v => typeof v==='boolean'?ui.flags[v]:typeof v==='object'?JSON.st
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
 const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',type:'类型',source_id:'来源',ruleset:'规则版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',level:'等级',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR',ability:'属性',strength:'力量',dexterity:'敏捷',constitution:'体质',intelligence:'智力',wisdom:'感知',charisma:'魅力'};
 const relationNames = {uses_statblock:'使用数据卡',catalog_offer:'购置条目',lists_mount:'列为坐骑',part_of:'属于',section_of:'所属段落',grants:'授予',grants_feat:'授予专长',references:'引用',requires:'要求',belongs_to:'属于',casts:'施展'};
-const reasonNames = {animal_statblock_unresolved:'动物数据卡关联待核',catalog_table_unhandled:'商品表结构待支持',catalog_row_layout_unresolved:'合并单元格待核',field_conflict:'字段冲突',duplicate_anchor:'重复锚点',anchor_recovered_by_name:'按名称恢复锚点',possible_incomplete_content:'正文可能不完整',unclassified_page:'页面尚未分类',index_entry_unresolved:'索引未关联',source_ruleset_unresolved:'来源版本待核',catalog_without_locator:'仅见资源名录',index_link_recovered:'已恢复索引链接'};
 const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','七环','八环','九环'];
 const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions']);
-const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections','casting']);
-// Audit mode is a per-browser viewing preference, never part of a shared query URL.
-const AUDIT_KEY='anna.audit', AUDIT_COLUMNS=new Set(['classification_status','legacy']), AUDIT_PARAMS=['status','legacy','conflict','sections'];
-const AUDIT_TABS=new Set(['facts','discoveries','references','reviews']);
-let auditMode=stored.get(AUDIT_KEY)==='on';
-const visibleColumns=()=>schema.columns.filter(k=>auditMode||!AUDIT_COLUMNS.has(k));
+const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections']);
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
 let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='', focusSections=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
@@ -108,15 +98,15 @@ history.scrollRestoration='manual';
 function captureUiState(){
   return {tableTop:$('.table-wrap').scrollTop,tableLeft:$('.table-wrap').scrollLeft,
     mainTop:$('#query-main').scrollTop,windowTop:window.scrollY,filterTop:$('#filter-panel').scrollTop,
-    filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,auditOpen:$('#audit-details').open,extraOpen:$('#domain-extra')?.open,
+    filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,extraOpen:$('#domain-extra')?.open,
     sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,readerFull,
-    readerTop:$('#detail-content').scrollTop,readerChainSpell:params.get('chain_spell'),readerChainPath:params.get('chain_path'),readerChainEffect:params.get('chain_effect'),lastResultEntry,loadedRows:currentData?.rows.length||0};
+    readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
 function saveUiState(){if(restoringUi)return;clearTimeout(uiSaveTimer);uiSaveTimer=0;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
 // Anna shares her places with Stella only when both run from the same build.
 const sharing=()=>!!(metadata?.reader_url&&metadata.snapshot);
 // A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
-function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');query.delete('chain_spell');query.delete('chain_path');query.delete('chain_effect');return query.toString();}
+function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');return query.toString();}
 // Names a remembered query by its heading and search words, as a reader would describe it.
 function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.length?title:title===ui.allEntries?terms.join(' '):`${title} · ${terms.join(' ')}`;}
 // This tab's query is Anna's latest place in the shared workspace, so Stella's switcher can lead back to it.
@@ -152,7 +142,7 @@ function restoreUiState(state){
   // The panel starts collapsed; only an explicit opening in this tab's history reopens it.
   $('#filter-panel').hidden=!state.filtersOpen;
   $('#toggle-filters').setAttribute('aria-expanded',!!state.filtersOpen);
-  $('#source-details').open=!!state.sourceOpen;$('#audit-details').open=!!state.auditOpen;
+  $('#source-details').open=!!state.sourceOpen;
   if($('#domain-extra')&&typeof state.extraOpen==='boolean')$('#domain-extra').open=state.extraOpen;
   $('#source-search').value=state.sourceSearch||'';filterSources();
   // Full-width reading changes the text's line breaks, so it returns before the reader's scroll position.
@@ -166,7 +156,7 @@ function restoreUiState(state){
 const UI_SAVE_DELAY=200;
 function queueUiSave(){clearTimeout(uiSaveTimer);uiSaveTimer=setTimeout(saveUiState,UI_SAVE_DELAY);}
 for(const el of [window,$('.table-wrap'),$('#query-main'),$('#filter-panel'),$('#detail-content')])el.addEventListener('scroll',queueUiSave,{passive:true});
-for(const el of [$('#source-details'),$('#audit-details')])el.addEventListener('toggle',queueUiSave);
+for(const el of [$('#source-details')])el.addEventListener('toggle',queueUiSave);
 window.addEventListener('pagehide',saveUiState);
 function setParam(key,value){value!==''&&value!==null?params.set(key,value):params.delete(key);}
 // The URL records only a sort the reader chose. Without one, a search ranks by match quality and an
@@ -224,7 +214,6 @@ function rangeGroup(){
 }
 function sync(){
   if(!schema)return;
-  $('#conflict').checked=params.get('conflict')==='1';$('#sections').checked=params.get('sections')==='1';
   renderSortOptions();
   const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
   $('#prefer').value=params.get('prefer')||'5r';$('#prefer').disabled=!stacked;$('.prefer-control').classList.toggle('inactive',!stacked);
@@ -253,8 +242,6 @@ function sync(){
   const extraCount=groups.filter(g=>(params.has(g.key)||params.has(NOT+g.key))&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
   $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(baseKey(k)))?'已筛选':'';
-  $('#audit-count').textContent=active.some(k=>AUDIT_PARAMS.includes(baseKey(k)))?'已筛选':'';
-  $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
   const chip=key=>{
     const text=key==='cr_min'||key==='cr_max'?`${fieldNames[key]}：${params.get(key)}`:conditionText(key),negated=key.startsWith(NOT);
     const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
@@ -265,23 +252,22 @@ function sync(){
   const chips=[...active.slice(0,lead),...termKeys,...active.slice(lead)].map(chip);
   $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
   markStripEdges($('#active-filters'));
-  castingControls.sync();
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
 // header, rows and paging together; a failure clears them instead of leaving stale counts behind.
 const awaitingResults=()=>$('#results').getAttribute('aria-busy')==='true';
 function awaitResults(status){
   $('#error').hidden=true;$('#result-count').textContent=status;$('#result-count').title='';$('#export').disabled=true;$('#load-more').disabled=true;
-  $('#empty-sections').hidden=true;$('#results').setAttribute('aria-busy','true');
+  $('#results').setAttribute('aria-busy','true');
 }
 function failResults(message,status){
   currentData=null;$('#error').hidden=false;$('#error').textContent=message;$('#result-count').textContent=status;
-  $('#results').replaceChildren();$('#empty').hidden=true;$('#empty-sections').hidden=true;$('#range').textContent='';renderLoadState();
+  $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';renderLoadState();
 }
 const RULESET_ORDER=['5e','5r','待核'];
-// Server groups carry counts; the interface supplies its own words for rules versions and legacy marks.
+// Server groups carry counts; the interface supplies its own words for rules versions.
 function readGroups(data){
-  return data.groups.map(g=>({...g,options:g.options.map(o=>g.key==='ruleset'?{...o,label:rulesetShort(o.value),title:rulesetFull(o.value)}:g.key==='legacy'?{...o,label:legacy[o.value]||o.label}:o)}));
+  return data.groups.map(g=>({...g,options:g.options.map(o=>g.key==='ruleset'?{...o,label:rulesetShort(o.value),title:rulesetFull(o.value)}:o)}));
 }
 // The panel is rebuilt only when its fields or options change (new types, other sources in scope);
 // otherwise counts and states update in place, so focus and open sections stay put while choosing.
@@ -299,7 +285,6 @@ function renderPanel(){
   $('#domain-extra')?.addEventListener('toggle',queueUiSave);
   $('#common-filters').innerHTML=groups.filter(g=>['ruleset','origin'].includes(g.key)).map(multiGroup).join('');
   $('#source-filters').innerHTML=multiGroup(groups.find(g=>g.key==='source'));filterSources();
-  $('#audit-filters').innerHTML=groups.filter(g=>['legacy','status'].includes(g.key)).map(multiGroup).join('');
   if(focusAt?.group){
     const box=document.querySelector(`[data-group="${CSS.escape(focusAt.group)}"]`);
     (focusAt.action?box?.querySelector(`[data-action="${focusAt.action}"]`):box?.querySelector(`input[value="${CSS.escape(focusAt.value||'')}"]`))?.focus();
@@ -340,12 +325,11 @@ async function changeTable(){
     applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
-    $('#audit-details').open=AUDIT_PARAMS.some(k=>params.has(k));
     historyUpdate(true);sync();ready=true;await load();
   }catch(e){if(gen===panelGeneration){failResults(e.message,'读取失败');$('#columns').replaceChildren();$('#results').setAttribute('aria-busy','false');}}
 }
 function renderColumns(){
-  $('#columns').innerHTML='<tr>'+visibleColumns().map(k=>{
+  $('#columns').innerHTML='<tr>'+schema.columns.map(k=>{
     const sortable=schema.sorts.includes(k),active=effectiveSort()===k;
     const order=params.get('dir')==='desc'?'descending':'ascending';
     return `<th scope="col" ${active?`aria-sort="${order}"`:''}>${sortable?`<button data-sort="${esc(k)}" aria-label="按${esc(fieldNames[k]||k)}排序">${esc(fieldNames[k]||k)} <span>${active?(order==='descending'?'↓':'↑'):'↕'}</span></button>`:esc(fieldNames[k]||k)}</th>`;
@@ -393,15 +377,13 @@ function cell(row,key){
   if(key==='sources')return `<td class="source-cell" ${label}>${row.source_ids.map(id=>`<abbr title="${esc(sourceName(id))}">${esc(sourceShort(id))}</abbr>`).join(' / ')}</td>`;
   if(key==='type')return `<td ${label}>${esc(row.type_label)}</td>`;
   if(key==='ruleset')return `<td ${label}><span class="badge ${row.ruleset==='待核'?'amber':'gray'}" title="${esc(rulesetFull(row.ruleset))}">${esc(rulesetShort(row.ruleset))}</span></td>`;
-  if(key==='legacy')return `<td ${label}>${esc(legacy[row.legacy])}</td>`;
-  if(key==='classification_status')return `<td ${label}>${esc(row.classification_status)}</td>`;
   const text=fieldText(row,key,true),flag=flagHTML(row,key);
   const conflict=row.field_conflicts.includes(key),full=fieldText(row,key);
   return `<td ${label} class="${['prerequisite','attunement_requirements','item_subtypes'].includes(key)?'wide-cell':''} ${text==='—'?'missing':''} ${conflict?'conflicted':''}${differs}" title="${esc((conflict?'字段冲突：':'')+full)}"><span class="cell-value">${flag||esc(text)}${conflict&&!text.includes('⚠')?' ⚠':''}</span>${versionDiffs(row,key)}</td>`;
 }
 const rowHTML=(row,columns)=>'<tr>'+columns.map(k=>cell(row,k)).join('')+'</tr>';
 function renderResults(){
-  renderColumns();const columns=visibleColumns();
+  renderColumns();const columns=schema.columns;
   $('#results').innerHTML=(currentData?.rows||[]).map(r=>rowHTML(r,columns)).join('');
   updateReaderNavigation();
 }
@@ -438,7 +420,7 @@ async function appendBatch(){
     const data=await api(entriesURL(currentData.rows.length,BATCH),controller.signal);
     if(gen!==generation||appending!==controller)return false;
     currentData.rows.push(...data.rows);
-    $('#results').insertAdjacentHTML('beforeend',data.rows.map(r=>rowHTML(r,visibleColumns())).join(''));
+    $('#results').insertAdjacentHTML('beforeend',data.rows.map(r=>rowHTML(r,schema.columns)).join(''));
     updateReaderNavigation();queueUiSave();return true;
   }catch(e){
     if(e.name==='AbortError'||gen!==generation)return false;
@@ -462,7 +444,7 @@ async function load(){
     // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.
     $('#result-count').title=$('#result-count').textContent;
     renderResults();
-    $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;renderSectionMatches(data);
+    $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
     if(focusSections){focusSections=false;($('#results .entry-name')||$('.table-wrap')).focus();}
   }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
   finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');renderLoadState();updateReaderNavigation();saveUiState();}}
@@ -478,12 +460,11 @@ $('#filter-panel').addEventListener('change',e=>{
     const g=groups.find(g=>g.key===el.closest('[data-group]').dataset.group);const set=selected(g);
     el.checked?set.add(el.value):set.delete(el.value);
     if(g.key==='type'&&!excluding(g)){chooseTypes([...set]);return;}
-    setSelection(g,[...set]);
-    if(g.key==='status'&&set.size===1&&set.has('未分类段落'))params.set('sections','1');changed();
+    setSelection(g,[...set]);changed();
   }else if(['cr_min','cr_max'].includes(el.id)){
     setParam(el.id,el.value);const val=s=>s.includes('/')?s.split('/').map(Number).reduce((a,b)=>a/b):Number(s);
     if(params.has('cr_min')&&params.has('cr_max')&&val(params.get('cr_min'))>val(params.get('cr_max'))){const other=el.id==='cr_min'?'cr_max':'cr_min';params.set(other,el.value);$('#'+other).value=el.value;}changed();
-  }else if(['conflict','sections'].includes(el.id)){setParam(el.id,el.checked?'1':'');changed();}
+  }
 });
 $('#filter-panel').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;const group=b.closest('[data-group]');if(!group)return;const g=groups.find(g=>g.key===group.dataset.group);
@@ -543,8 +524,7 @@ let suggestions=[],activeSuggestion=0;
 const fold=t=>String(t||'').normalize('NFKC').toLowerCase();
 function suggestionList(text){
   const q=fold(text);if(!q)return [];
-  const visible=g=>auditMode||!['legacy','status'].includes(g.key);
-  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&visible(g)).flatMap(g=>{const chosen=new Set(params.getAll(g.key));
+  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi').flatMap(g=>{const chosen=new Set(params.getAll(g.key));
     return g.options.filter(o=>!chosen.has(o.value)&&(fold(o.label).includes(q)||fold(o.search).includes(q)))
       .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2}));});
   const presets=(metadata?.presets||[]).filter(p=>fold(p.name).includes(q)).map(p=>({kind:'preset',preset:p,field:ui.presetField,label:`${p.name}（${typeName(p.type)}）`,count:null,rank:fold(p.name)===q?0:1}));
@@ -648,17 +628,11 @@ $('#results').addEventListener('keydown',e=>{
 });
 $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
-  const t=e.target.closest('[data-tab]');if(t){++chainGeneration;renderDetail(t.dataset.tab);if(t.dataset.tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate(true);$('#tab-'+t.dataset.tab).focus();saveUiState();}
-  const hop=e.target.closest('[data-chain-entry]');if(hop){const path=annaKnowledge.pathTo(currentEntry.rule_chain,hop.dataset.chainEntry,hop.dataset.chainFrom);if(path)navigateChain(path);}
-  const effect=e.target.closest('[data-chain-effect]');if(effect){const path=annaKnowledge.pathTo(currentEntry.rule_chain,effect.dataset.chainSubject,effect.dataset.chainSubject);if(path)navigateChain(path,undefined,effect.dataset.chainEffect);}
-  const path=e.target.closest('[data-chain-path]');if(path)navigateChain(JSON.parse(path.dataset.chainPath));
-  const spell=e.target.closest('[data-chain-spell]');if(spell)inspectChainSpell(spell.dataset.chainSpell,spell.dataset.chainFrom);
+  const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);params.delete('tab');historyUpdate(true);$('#tab-'+t.dataset.tab).focus();saveUiState();}
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
   const note=e.target.closest('.field-note[data-note]');
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
-  if(e.target.closest('[data-audit-summary]')){setAuditMode(true);renderDetail('facts');$('#tab-facts').focus();saveUiState();}
   if(e.target.closest('[data-reader-full]')){setReaderFull(true);$('#reader-full').focus();}
-  const candBtn=e.target.closest('[data-candidate-ref]');if(candBtn)toggleInlineCandidates(candBtn);
 });
 for(const [type,on] of [['mouseover',true],['focusin',true],['mouseout',false],['focusout',false]])
   $('#detail-content').addEventListener(type,e=>{const el=e.target.closest('.field-note[data-note],mark.note');if(!el)return;
@@ -667,7 +641,7 @@ $('#detail-content').addEventListener('keydown',e=>{
   const t=e.target.closest('[data-tab]');if(!t||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
   e.preventDefault();const tabs=[...$('#detail-content').querySelectorAll('[data-tab]')],index=tabs.indexOf(t);
   const next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
-  const name=tabs[next].dataset.tab;renderDetail(name);if(name==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate(true);$('#tab-'+name).focus();saveUiState();
+  const name=tabs[next].dataset.tab;renderDetail(name);params.delete('tab');historyUpdate(true);$('#tab-'+name).focus();saveUiState();
 });
 $('#close-detail').onclick=()=>closeEntry();
 $('#detail').addEventListener('cancel',e=>{e.preventDefault();closeEntry();});
@@ -689,16 +663,11 @@ window.addEventListener('popstate',async e=>{
   if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
   quietTopic=true;
-  if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:(params.get('tab')==='chain'?'chain':'body'));
+  if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:'body');
   quietTopic=false;
   if(gen!==navigationGeneration)return;
   restoreUiState(state);
-  if(currentReaderId){
-    // A named local effect is the reading position. Keep its focus without
-    // replacing the scroll offset just restored from this history entry.
-    const focused=detailTab==='chain'&&currentEntry?.rule_chain?.reading?.effect_id&&focusChainLocation(currentEntry.rule_chain,{scroll:false});
-    if(!focused)($('#tab-'+detailTab)||$('#close-detail')).focus({preventScroll:true});
-  }
+  if(currentReaderId)($('#tab-'+detailTab)||$('#close-detail')).focus({preventScroll:true});
   else if(state?.lastResultEntry)focusResult();
   restoringUi=false;saveUiState();
 });
@@ -768,11 +737,6 @@ function chooseTypes(types,preset=null){
 }
 // An empty name search can still have matches among the untyped sections. The server counts them
 // under the same conditions, so the offer never leads to a result the filter cannot return.
-function renderSectionMatches(data=currentData){
-  const count=data?.total===0&&params.get('sections')!=='1'?data.section_matches||0:0;
-  $('#empty-sections').hidden=!count;
-  if(count)$('#show-sections').textContent=ui.sectionMatches.replace('{count}',fmt(count));
-}
 // While searching within some types, matches in the others stay one step away; an empty result names the
 // conditions whose removal would bring results back.
 function renderElsewhere(){
@@ -785,7 +749,6 @@ function renderElsewhere(){
   $('#empty-elsewhere').innerHTML=drops.map(d=>`<button type="button" data-drop="${esc(d.key)}">${esc(ui.dropCondition.replace('{condition}',d.text))} <span class="muted">→ ${fmt(d.n)}</span></button>`).join('');
 }
 function conditionText(key){
-  if(baseKey(key)==='casting')return (key.startsWith(NOT)?ui.isNot+' ':'')+annaKnowledge.description(params.get(key));
   if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
   if(key==='conflict')return fieldNames.conflict;
   if(key==='typing')return `${ui.nameField}：${draft}`;
@@ -803,21 +766,6 @@ $('#empty-elsewhere').addEventListener('click',e=>{
   if(key==='typing'){clearDraft();writeTerms();changed();return;}
   dropCondition(key);
 });
-$('#show-sections').onclick=()=>{params.set('sections','1');focusSections=true;changed();};
-// Reading mode folds review apparatus away; filters already in the URL stay visible and editable.
-function applyAuditMode(){
-  document.documentElement.dataset.audit=auditMode?'on':'off';
-  const toggle=$('#audit-mode');toggle.setAttribute('aria-pressed',String(auditMode));toggle.title=auditMode?ui.auditOn:ui.auditOff;
-  $('#audit-details').hidden=!auditMode&&!AUDIT_PARAMS.some(k=>params.has(k));
-  if(!auditMode&&$('#missing-dialog')?.open)$('#missing-dialog').close();
-  if(schema&&currentData)renderResults();else if(schema)renderColumns();
-  if(currentEntry)renderDetail(AUDIT_TABS.has(detailTab)&&!auditMode?'body':detailTab);
-}
-function setAuditMode(on){
-  auditMode=on;stored.set(AUDIT_KEY,on?'on':null); // Blocked storage still applies the mode to this page.
-  applyAuditMode();saveUiState();
-}
-$('#audit-mode').onclick=()=>setAuditMode(!auditMode);
 // Row density is a per-browser reading preference like the theme; shared links never carry it.
 const DENSITY_KEY='anna.density';
 const storedDensity=()=>stored.get(DENSITY_KEY)==='compact';
@@ -829,9 +777,7 @@ $('#compact-rows').onchange=()=>{
 };
 stored.watch(DENSITY_KEY,()=>applyDensity(storedDensity()));
 applyDensity(storedDensity());
-const castingControls=annaKnowledge.install({params:()=>params,changed,api});
 initReaderLayout();
-stored.watch(AUDIT_KEY,()=>{auditMode=stored.get(AUDIT_KEY)==='on';applyAuditMode();});
 async function init(){
   let saved=history.state?.anna;restoringUi=true;
   try{
@@ -844,73 +790,9 @@ async function init(){
     readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
-    await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:(params.get('tab')==='chain'?'chain':'body'));
+    await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
   }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}
   finally{restoringUi=false;quietTopic=false;saveUiState();}
 }
-applyAuditMode();
 init();
-
-const linkLabels=annaLinkLabels[document.documentElement.lang.startsWith('en')?'en':'zh'];
-const ml=linkLabels.reviewSearch;
-const missingToggle=document.createElement('button');
-missingToggle.type='button';missingToggle.id='missing-queue-toggle';missingToggle.className='audit-only quiet-button';
-missingToggle.textContent=ml.missing;missingToggle.setAttribute('aria-controls','missing-dialog');
-document.querySelector('.topbar-actions').prepend(missingToggle);
-
-(() => {
-  const dialog=$('#missing-dialog');if(!dialog)return;
-  const select=$('#missing-status'),results=$('#missing-results'),pending=$('#missing-pending');
-  let offset=0,generation=0;
-  $('#missing-dialog-title').textContent=ml.missing;
-  $('#missing-dialog-help').textContent=ml.missingHelp;
-  $('#missing-status-label').textContent=ml.status;
-  $('#missing-submit').textContent=ml.refresh;
-  $('#missing-prev').textContent=ml.prev;
-  $('#missing-next').textContent=ml.next;
-  $('#close-missing').setAttribute('aria-label',ml.close);
-  select.innerHTML=`<option value="">${esc(ml.all)}</option>`+Object.entries(ml.states).map(([v,t])=>`<option value="${v}">${esc(t)}</option>`).join('');
-  select.value='open';
-  async function loadMissing(){
-    const gen=++generation;
-    results.innerHTML=`<p class="muted">${esc(ml.loading)}</p>`;
-    $('#missing-prev').disabled=true;$('#missing-next').disabled=true;
-    try{
-      const data=await api('/api/missing-definitions?'+new URLSearchParams({status:select.value,limit:20,offset}));
-      if(gen!==generation)return;
-      $('#missing-count').textContent=`${data.offset+1>data.total?0:data.offset+1}–${Math.min(data.total,data.offset+data.rows.length)} / ${data.total}`;
-      $('#missing-prev').disabled=data.offset===0;$('#missing-next').disabled=data.offset+data.rows.length>=data.total;
-      results.innerHTML=data.rows.length?data.rows.map(r=>{
-        const b=r.event.binding||{};
-        return `<article class="fact">
-          <div class="fact-head"><strong>${esc(r.text)}</strong>${badge(ml.states[r.status]||r.status,'amber')}</div>
-          <blockquote>${esc(b.before||'')}<mark>${esc(r.text)}</mark>${esc(b.after||'')}</blockquote>
-          <p>${esc(r.event.reason||'')}</p>
-          <small>${esc(r.event.reviewer||'')} · ${esc(r.event.created_at||'')}</small>
-          <div><code>${esc(r.id)}</code> · ${esc(ml.latest)} <code>${esc(r.latest_decision_id)}</code> · ${esc(r.latest_status)}</div>
-          <div><a href="${esc(sourceURL(b.path||r.path,b.start||0,b.end||0))}" target="_blank" rel="noopener">${esc(linkLabels.extractedRange)} ↗</a>${r.target_id?` · <button type="button" class="link-button" data-entry="${esc(r.target_id)}">${esc(ml.target)}</button>`:''}</div>
-          ${r.reference_id?`<div class="candidate-trigger"><button type="button" class="quiet-button" data-candidate-ref="${esc(r.reference_id)}" aria-expanded="false">${esc(ml.searchAgain)}</button><div class="inline-candidates" data-candidates-for="${esc(r.reference_id)}" hidden></div></div>`:''}
-          <details><summary>${esc(linkLabels.evidence)}</summary><pre class="body-text">${esc(JSON.stringify({search:r.event.candidate_search,changes:r.changes},null,2))}</pre></details>
-        </article>`;
-      }).join(''):`<p class="muted">${esc(ml.emptyQueue)}</p>`;
-    }catch(e){if(gen===generation)results.innerHTML=`<p role="alert">${esc(e.message||ml.error)}</p>`;}
-  }
-  const closeMissing=()=>{if(dialog.open)dialog.close();if(auditMode)missingToggle.focus();};
-  missingToggle.addEventListener('click',()=>{
-    const hasPending=Boolean(metadata?.review_snapshot?.pending_rebuild);
-    pending.hidden=!hasPending;if(hasPending)pending.textContent=linkLabels.pendingReview;
-    offset=0;dialog.showModal();loadMissing();$('#close-missing').focus();
-  });
-  $('#close-missing').addEventListener('click',closeMissing);
-  dialog.addEventListener('cancel',e=>{e.preventDefault();closeMissing();});
-  dialog.addEventListener('click',e=>{if(e.target===dialog)closeMissing();});
-  $('#missing-form').addEventListener('submit',e=>{e.preventDefault();offset=0;loadMissing();});
-  select.addEventListener('change',()=>{offset=0;loadMissing();});
-  $('#missing-prev').addEventListener('click',()=>{offset=Math.max(0,offset-20);loadMissing();});
-  $('#missing-next').addEventListener('click',()=>{offset+=20;loadMissing();});
-  results.addEventListener('click',e=>{
-    const candBtn=e.target.closest('[data-candidate-ref]');if(candBtn){toggleInlineCandidates(candBtn);return;}
-    const entryBtn=e.target.closest('[data-entry]');if(entryBtn){if(dialog.open)dialog.close();openEntry(entryBtn.dataset.entry,true,'body');}
-  });
-})();

@@ -54,7 +54,7 @@ def candidate_matches(context, ref, query=''):
 
 def search_candidates(db, reference_id, *, query='', entry_type='', ruleset='', source_id='', limit=20, offset=0, context=None):
     import json
-    from anna.knowledge.context import Context
+    from anna.review.context import Context
     if not 1 <= limit <= 100 or offset < 0: raise ValueError('候选查询范围无效')
     cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
     where = 'id=? AND is_effective=1' if 'is_effective' in cols else 'id=?'

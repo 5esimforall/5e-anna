@@ -122,22 +122,22 @@ make upper
 
 ## 引用审核：保存、重建、撤销
 
-所有规则标注（`grant`、`procedure`）与具体引用裁定（`reference`：`confirm`、`non_reference`、`missing_definition`）统一追加保存在仓库内的 `annotations/annotations.jsonl`，不属于可删除重建的 `data/`。日志保留作者、理由、时间、内容／上下文双哈希依据以及 `supersedes`／`revoke` 历史，通过 `python -m anna.knowledge.repository` 读取与写入；浏览器服务保持只读。
+具体引用裁定（`confirm`、`non_reference`、`missing_definition`）追加保存在仓库内的 `annotations/annotations.jsonl`，不属于可删除重建的 `data/`。日志保留作者、理由、时间、内容／上下文双哈希依据以及 `supersedes`／`revoke` 历史。历史 `grant`／`procedure` 事件仍保留在日志中作为原始输入，但当前构建只重放 `reference`；通过 `python -m anna.review.repository` 读取与写入，Anna 与 Stella 只读消费有效结果。
 
 先运行 `make build`，然后查询并检查一处引用：
 
 ```sh
 # 列出普通正文中的待核引用；也可使用 --signal explicit / index / format / table
-.venv/bin/python -m anna.knowledge.repository references --signal plain --status review --limit 10
+.venv/bin/python -m anna.review.repository references --signal plain --status review --limit 10
 
 # 查看引用上下文、可迁移锚点、目标选择器、候选与双哈希依据
-.venv/bin/python -m anna.knowledge.repository ref-inspect 引用ID --target 目标条目ID
+.venv/bin/python -m anna.review.repository ref-inspect 引用ID --target 目标条目ID
 ```
 
 `ref-inspect` 返回引用锚点（`within`、`quote`）、目标条目选择器以及 `content_sha256`、`context_sha256` 双哈希。核对后用这组指纹写入确认裁定：
 
 ```sh
-.venv/bin/python -m anna.knowledge.repository annotate 引用ID \
+.venv/bin/python -m anna.review.repository annotate 引用ID \
   --kind reference --ruling confirm --target 目标条目ID \
   --expected-content-sha256 查看得到的content_sha256 \
   --expected-context-sha256 查看得到的context_sha256 \
@@ -149,7 +149,7 @@ make up
 
 一次裁定锚定于该引用所在上下文及文本片段；目标可以是候选外的现有可定位条目，但须提供核对理由。保存只写入 `annotations/annotations.jsonl`，须重建才生效；同一固定输入快照允许连续保存多项裁定，发布前由 `require_current_annotations` 校验日志已完整重放。
 
-anna 详情的“概念线索”保留原始发现信号，“有效引用”展示重放后的目标、审核状态、原始自动结果 `automatic` 和点击层状态。`catalog.sqlite` 用同一张 `effective_references` 表保存全部发现记录（`is_effective=0` 为纯发现或被显式链接覆盖的观察，`is_effective=1` 为有效引用与点击层输入）；审核与 CLI 检查时使用有效引用 ID。
+`catalog.sqlite` 用同一张 `effective_references` 表保存全部发现记录（`is_effective=0` 为纯发现或被显式链接覆盖的观察，`is_effective=1` 为有效引用与点击层输入）；Stella 链接标记、导出与 CLI 检查使用同一组有效引用 ID。
 
 - `status` 表示有效语义结果；`review_status` 区分未经人工审核、决策已采用、失效、冲突和已撤销。
 - `can_link` 与 `presentation` 表示能否添加点击层及不能添加的原因。定义标题优先，原有链接范围不被其他提及覆盖，竞争的引用范围不按顺序取胜。
@@ -159,7 +159,7 @@ anna 详情的“概念线索”保留原始发现信号，“有效引用”展
 若确认此处不是规则引用或记录缺少独立定义，先不带 `--target` 运行 `ref-inspect 引用ID`（登记缺失定义时加 `--missing-definition`），再写入 `non_reference` 或 `missing_definition` 裁定：
 
 ```sh
-.venv/bin/python -m anna.knowledge.repository annotate 引用ID \
+.venv/bin/python -m anna.review.repository annotate 引用ID \
   --kind reference --ruling non_reference \
   --expected-content-sha256 查看得到的content_sha256 \
   --expected-context-sha256 查看得到的context_sha256 \
@@ -170,47 +170,45 @@ make build
 撤销时追加一条 `revoke` 事件，保留历史并在重建后恢复自动结果：
 
 ```sh
-.venv/bin/python -m anna.knowledge.repository revoke ann_ref_事件ID \
+.venv/bin/python -m anna.review.repository revoke ann_ref_事件ID \
   --reviewer 审核者 --reason '说明撤销原因'
 make build
 ```
 
 重新裁定同一引用时，重新 `ref-inspect` 并在 `annotate` 命令增加 `--supersedes 旧事件ID`。同一引用范围内存在多个竞争决策时，不按后写覆盖前写，必须显式替代或撤销。
 
-### 核对模式下的候选搜索与缺失定义队列
+### 候选搜索与缺失定义（命令行）
 
-开启 anna 的核对模式后，条目详情中每条“有效引用”和“待核／缺失定义”均可原地展开“候选搜索”抽屉，按关键词与页码浏览候选、匹配理由、警告和正文摘录，点击候选条目直接阅读；顶栏同时提供“缺失定义队列”对话框查看全库缺失定义状态并就地重新搜索候选。浏览器保持只读；命令行也可直接调用：
+条目详情不再提供核对模式或内联候选抽屉；候选检索和缺失定义队列通过命令行查看。候选排序只表示证据匹配程度，不自动批准关系：
 
 ```sh
-.venv/bin/python -m anna.knowledge.repository candidates 引用ID
-.venv/bin/python -m anna.knowledge.repository candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
-.venv/bin/python -m anna.knowledge.repository missing --status open
+.venv/bin/python -m anna.review.repository candidates 引用ID
+.venv/bin/python -m anna.review.repository candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
+.venv/bin/python -m anna.review.repository missing --status open
 ```
 
-登记缺失定义时先 `ref-inspect 引用ID --missing-definition`，再用 `--kind reference --ruling missing_definition` 写入（可通过 `--query` 保留搜索关键词）；队列结果保存在 `catalog.sqlite` 的 `missing_definitions` 表，状态变化均由统一评估写入 `knowledge_annotations` 与 `review_queue`。定义补齐后重新 `ref-inspect --target` 并用 `annotate --kind reference --ruling confirm --supersedes 缺失登记事件ID` 显式解决，问题状态随之变为 `resolved`。
-
-只读 API：`/api/reference-candidates?id=引用ID` 支持 `q`、`type`、`ruleset`、`source`、`limit`、`offset`；`/api/missing-definitions` 支持 `status`、`path`、`limit`、`offset`。
+登记缺失定义时先 `ref-inspect 引用ID --missing-definition`，再用 `--kind reference --ruling missing_definition` 写入（可通过 `--query` 保留搜索关键词）；队列结果保存在 `catalog.sqlite` 的 `missing_definitions` 表，状态变化由统一评估写入 `knowledge_annotations` 与 `review_queue`。定义补齐后重新 `ref-inspect --target` 并用 `annotate --kind reference --ruling confirm --supersedes 缺失登记事件ID` 显式解决，问题状态随之变为 `resolved`。
 
 ### 依据变化后的迁移与重新待核
 
-规则标注与引用裁定共用内容／上下文双哈希模型：保存锚点文段、最小上下文窗口、目标条目选择器、竞争定义状态、作用域与适用局部定义，不绑定易变的字节偏移和 `ver_...` 临时 ID。
+引用裁定使用内容／上下文双哈希模型：保存锚点文段、最小上下文窗口、目标条目选择器、竞争定义状态、作用域与适用局部定义，不绑定易变的字节偏移和 `ver_...` 临时 ID。
 
 - 原文仅发生无关邻段增删、注释变化或条目 ID 重新生成时，只要被标注引用语句、目标语义和局部竞争集合不变，裁定保持 `applied`。
 - 引用语句或目标语义改写、目标无法定位或出现新增同名竞争时，裁定进入 `stale`、`missing` 或 `conflict`，结构化差异记入 `changes`，并在修正前阻止新增错误跳转。
 
 ```sh
-.venv/bin/python -m anna.knowledge.repository annotations --kind reference --status stale
-.venv/bin/python -m anna.knowledge.repository annotations --kind reference --status missing
-.venv/bin/python -m anna.knowledge.repository annotations --kind reference --status conflict
+.venv/bin/python -m anna.review.repository annotations --kind reference --status stale
+.venv/bin/python -m anna.review.repository annotations --kind reference --status missing
+.venv/bin/python -m anna.review.repository annotations --kind reference --status conflict
 ```
 
-重放评估统一写入 `catalog.sqlite` 的 `knowledge_annotations`（`kind='reference'`）与 `review_queue`；`/api/meta` 的 `review_snapshot.pending_rebuild` 在修改了 `annotations/annotations.jsonl` 但尚未 `make build` 时提示有待重建输入，构建门禁也会拒绝以未重放日志生成链接版或启动服务。
+重放评估统一写入 `catalog.sqlite` 的 `knowledge_annotations`（`kind='reference'`）与 `review_queue`；修改了 `annotations/annotations.jsonl` 但尚未 `make build` 时，构建门禁会拒绝以未重放日志生成链接版或启动服务。
 
 隔离试验时可传入 `--annotations 临时日志路径` 与 `--db 临时数据库路径`；不要把实验裁定写入仓库的 `annotations/annotations.jsonl`。
 
 ## 概念发现与覆盖核对
 
-`make build` 同时生成概念发现线索与有效引用。anna 详情中的“概念线索”列出条目范围内的发现信号、内容角色和处理状态，可查看原文范围、格式结构及其样式表哈希；已关联的提及可打开目标条目，歧义记录可展开候选供比较。
+`make build` 同时生成概念发现线索与有效引用。发现信号、内容角色和处理状态保存在 `catalog.sqlite`，由链接版、导出与审计共同消费；命令行可通过 `anna.review.repository references` 与 `candidates` 查看有效引用和候选。
 
 - `catalog.sqlite` 的 `effective_references` 表统一保存所有发现信号与有效引用：`is_effective=0` 保留未转化为提及链接的标题／定义句候选或被显式链接合并的观察，`is_effective=1` 保存可消费有效引用（其中 `automatic` 字段保留重放审核前的发现结果）。
 - `resolved` 表示当前解析规则下唯一关联；`ambiguous` 表示适用范围内有多个目标；`unresolved` 表示未找到目标；`review` 表示需核对语义或上下文；`excluded` 表示本次不自动关联。
@@ -292,13 +290,13 @@ make up
 
 打开 [查询页](http://127.0.0.1:8000/)。在条件栏输入名称即可查询；按 Enter 把搜索留作标签后可继续输入下一个。每个条件和搜索都是独立的标签，标签之间以“∧”连接，表示都要满足；点击标签文字切换为“不是／不含”，即排除这些取值或词，筛选区的“排除”按钮切换整个字段。下拉的第二项“正文包含”改在条目原文中查找。输入“法术”“塑能”“PHB”“坐骑”等文字时，下拉建议对应的类型、字段取值、来源或预设，选择即加入条件。“筛选”中的第一个字段是条目类型，与其他字段同样操作；所选类型决定表格的列与筛选字段。法术按环阶、学派、职业、施法时间及特性筛选；生物按 CR 范围、体型、类型及传奇动作筛选；物品按稀有度、类别及同调筛选；技能按所用属性筛选，并按力量到魅力的顺序排列，2014 与 2024 的同名属性和技能叠放为版本。环境危害按类型“环境危害”查询，包括名称旁标注【危害】的术语、2024 城主指南标有危害度的危害物，以及“危害物”“环境灾害”“环境影响”等类别下在正文中应用了具体规则（DC、骰子、优势劣势、状态等）的条目；类别导言与查表页保持未分类段落。字段未选即不限制，点击取值即加入；同组多选取并集、组间取交集，支持清除与反选。每个取值旁的数字是选中后的结果数。表头可切换升降序；环阶、CR、稀有度按实际顺序排序，缺失或冲突数值置后。来源可多选；查询、排序与版本显示方式保存在地址栏。结果随滚动每批加载 150 行，底部也可点击“继续加载”；刷新或前进后退恢复已加载的行数和位置。结果底栏的“导出 CSV”导出全部匹配行及所选类型的属性。`Ctrl-C` 停止；用 `ANNA_PORT` 配置查询与阅读共用的端口。
 
-筛选区默认收起，已选条件（类型在最前）以标签显示在条件栏中，可逐个移除；“清空”去掉全部条件；点击“筛选”展开常用条件，“更多筛选条件”展开其余领域条件，来源与审核条件单独展开。展开状态在本标签页刷新和前进后退时保留。切换类型或条件时，旧结果变淡，直到新结果到达。结果表固定表头与名称列，其他属性可横向滚动，中文与英文名称同时保留；法术的成分与仪式／专注以字形条显示，导出仍逐项保留。手机宽度（640px 及以下）结果以列表显示。在某些类型中搜索时，结果栏显示其他类型中的匹配数；结果为空时，空状态列出去掉后能得到结果的条件。名称搜索没有结果、但原文还有未分类段落满足同一组条件时，空状态显示匹配数量；点击后以“包含未分类段落”重查。正文搜索不触发该提示，未分类段落仍只通过名称搜索的补查入口进入结果。
+筛选区默认收起，已选条件（类型在最前）以标签显示在条件栏中，可逐个移除；“清空”去掉全部条件；点击“筛选”展开常用条件，“更多筛选条件”展开其余领域条件，来源条件单独展开。展开状态在本标签页刷新和前进后退时保留。切换类型或条件时，旧结果变淡，直到新结果到达。结果表固定表头与名称列，其他属性可横向滚动，中文与英文名称同时保留；法术的成分与仪式／专注以字形条显示，导出仍逐项保留。手机宽度（640px 及以下）结果以列表显示。在某些类型中搜索时，结果栏显示其他类型中的匹配数；结果为空时，空状态列出去掉后能得到结果的条件。未分类段落可以通过查询参数的 `sections=1` 纳入结果，界面不再提供单独的补查按钮。
 
 阅读栏“正文”按原书排版显示条目，数据卡等表格保持表格；提取的字段以批注列出，悬停或点击批注会高亮其依据的原文文字，正文中已解析的引用可直接打开目标条目。原文镜像缺失或与数据库快照不一致时，显示提取文本并说明原因。
 
 同名的法术、生物、物品等版本默认合为一行：名称下列出各版本标签，版本间不同的取值列在显示值下方；结果栏“显示”菜单中的“优先显示”选择 2024 或 2014 规则，“合并同名版本”可取消，二者保存在地址栏；菜单中还有“紧凑行”。阅读栏“版本对照”逐字段比较同组全部版本。导出始终一个版本一行。
 
-默认为阅读模式，审核相关的筛选、列和详情栏目收起，阅读栏底部显示核对摘要。点击顶栏“核对”或该摘要开启核对模式，选择保存在本浏览器，不进入共享链接。
+阅读栏只保留正文、属性、版本对照和关系四个栏目；核对模式、证据、概念线索、有效引用和待核栏目不再出现在界面中。
 
 点击结果行打开条目阅读，双击则以全宽阅读打开：1200px 及以上时阅读栏在结果右侧展开，标题与结果的每一行都留在原处，可以继续点击其他结果；拖动阅读栏左缘或聚焦后用左右方向键调整宽度，双击恢复默认。更窄时为模态阅读层。阅读栏右上角的全宽阅读按钮让条目铺满工作区，宽于阅读栏的原文表格上方也提供同一入口；全宽阅读持续到关闭阅读栏。阅读栏宽度保存在本浏览器，二者都不进入共享链接。右上角箭头浏览相邻结果，结果列表随之滚动到当前行，到达已加载的末尾时自动加载下一批；条目不在已加载结果中时禁用。筛选与类型变化关闭旧详情；关闭详情不改变列表位置。刷新、浏览器前进后退恢复查询状态、筛选展开状态、详情栏目和滚动位置。读取失败可在阅读层内重试。
 
@@ -322,7 +320,7 @@ python3 -m anna.catalog.query --preset 魔法武器 --ruleset 5r
 python3 -m anna.catalog.query --type spell --field school=塑能 --csv > evocation.csv
 ```
 
-`--preset` 支持 `NPC`、`伙伴`、`坐骑`、`魔法武器`、`战斗风格` 与 `传奇恩惠`；`--csv` 输出 UTF-8 CSV，`--show 版本ID` 查看正文、证据、引用与规则链，`--stats` 查看覆盖与异常统计。来源多选取并集，其余条件取交集。
+`--preset` 支持 `NPC`、`伙伴`、`坐骑`、`魔法武器`、`战斗风格` 与 `传奇恩惠`；`--csv` 输出 UTF-8 CSV，`--show 版本ID` 查看正文、字段、关系与有效引用，`--stats` 查看覆盖与异常统计。来源多选取并集，其余条件取交集。
 
 构建产物集中在 [catalog.sqlite](data/extracted/catalog.sqlite)、[summary.json](data/extracted/summary.json)，审计后另生成 [audit.md](data/extracted/audit.md) 与 [audit.json](data/extracted/audit.json)。
 
@@ -343,62 +341,3 @@ python3 -m anna.catalog.query --type spell --field school=塑能 --csv > evocati
 可用 `--baseline /绝对路径/旧版catalog.sqlite --output /报告目录` 生成逐条增删及分类／字段差异。审计不等于全库人工核验；未支持表格和无法唯一关联的动物保留在审核队列。
 
 审计同时汇总分类缺口与类型冲突，供补充识别规则时决定先读哪里。缺口涵盖没有任何已分类条目的正文页、位于已分类条目之外且自身正文出现豁免 DC／骰子伤害／骰值表的未分类段落，以及每个信号的原文位置；数据卡内的“动作”等段落属于该数据卡，不计入。缺口与冲突均为线索，不作为审计失败条件；明细保存在 [audit.json](data/extracted/audit.json) 与 `catalog.sqlite`，带 `--baseline` 时[提取审计](data/extracted/audit.md)对照修改前后的变化。类型冲突判定顺序见[数据结构与提取规则](MODEL.md)。
-
-## 规则链查询与审核
-
-筛选区中的“规则链条件”可组合授予方式、法术位消耗、恢复条件、固定／选择目标、法术名称，以及效果、伤害类型、判定方式和时机。条件必须命中同一使用分支；“消耗法术位＋长休恢复”不会借用同项能力免费分支的恢复条件。效果条件还须命中同一法术的同一个效果，例如“闪电伤害＋自动造成＋后续使用”不会混入首次攻击。结果只包含完整解析的获取路径，效果筛选另要求效果记录完整解析；空结果不表示原文不存在该能力。
-
-“获取或启用条件涉及”可查角色等级、职业等级、选定分支、属性或物品状态等条件描述，并与“本分支施法目标”组合，例如查需要职业等级且仅对自身免费施法的能力。“本效果的豁免属性”“适用条件涉及”“结束条件涉及”仍约束同一个局部效果；查“感知＋重复豁免”不会借用另一次体质豁免的属性。“涉及”只查谓词种类，完整条件中的同时满足、任选其一与否定仍须沿链核对，不判断角色是否具备资格。
-
-在条目详情打开“规则链”，可沿背景→专长、子职→能力查看固定法术或受限选择；精灵的表格授予逐道显示所选血系及角色等级，生命领域显示牧师等级。点击法术或通则，在保留问题起点的情况下继续阅读；面包屑、浏览器前进／后退与刷新保留路径。查看法术不建立角色数据，查看歧义候选不确认关系。展开“各环节的整理状态”可分别核对本段解析、审核和通则目标；从通则的“被这些能力修改”可反查具体例外分支。
-
-效果中的“沿效果关系阅读”可定位到对应的目标、检定或基础伤害；通则关系的作用范围也可返回具体效果。刷新、历史导航及 JSON 导出保留这个局部位置。持续效果分别显示触发、每次使用成本、首次命中依赖及结束事件；原文依赖不明确时仍显示未解析内容。
-
-前置条件中的具名选项可以继续点击阅读，括号选择限定与整组逻辑保留。取得资格、来源整体启用条件和局部分支限制分别显示；进入法术后，“本步关系”仍保留所经过分支的同调、着装与仅自身限制。重复检定未重述属性时，界面标明属性沿检定引用取得；明确的第几次豁免单独显示。豁免自动成功等例外可沿通则关系往返核对。
-
-精灵3／5级的免费与法术位分支分别显示；高等精灵的长休戏法替换列在替换规定中，不计作全部法师戏法的授予。表格记录标注自身整理范围，其他特质仍以原文为准。
-
-原文证据、Stella 阅读入口及 JSON 导出都使用同一条有效规则链。从 Stella 的“最近打开的位置”选择原查询，可恢复规则链路径；直接查当前话题则打开该条目自身。
-
-核心结构化规则由纯结构提取器（标题、前置、同调、法术参数、背景专长、子职等级能力、核心定义角色）与 `annotations/annotations.jsonl` 中的内容／上下文双哈希版本化标注共同组成。标注按原文子句（`clause`）、限定文本片段（`span`）或标题表（`table`）锚定，不保存易变的字节偏移和 `ver_...` 临时条目 ID；当条目重排位置或移动到唯一目标页面时，只要被标注内容、邻接拓扑和目标查找语义保持不变，标注即可迁移复用。相关子句被改写、头部条件变化、跨锚点插句或拆段、或目标出现新增同名竞争时，对应标注会进入 `stale` 或 `ambiguous`，并在重建前阻止失效片段进入查询索引。
-
-构建期对已标注片段做分句级投影：部分标注条目中已完整消解的授予与局部效果（例如 PHB14 `石化术` 的累计 3 次失败效果）仍进入查询索引与阅读路径，未标注句留在 `unparsed` 中待补。两代魔法学徒、TCE／2024 妖精触碰、2024 侍僧／向导／智者、生命领域、2024 精灵血系、幽影护甲、回气与直觉闪避等核心链均已通过标注与结构提取贯通。
-
-导出的 JSON 携带 `schema` 与构建快照，记录保留解析状态、审核状态和未解析原文，另带 `reading` 路径、`segments` 逐段状态及 `bindings` 变量供给。解析状态为已解析、部分解析、待核或已否决；审核状态为未人工核准、已采用、已撤销、依据变化或审核冲突。两套状态分开显示，不以空值代替未解析。未提取、明确没有、不适用等区分属于覆盖与验收，不混入单条记录的状态。条目身份以稳定 ID 连接；跨快照的移动、拆分、合并和删除尚未自动迁移旧标识，导出只携带当前有效身份与构建快照。
-
-核对模式显示记录 ID 及结构化结果。浏览器保持只读；分句级标注通过 `annotations/annotations.jsonl` 维护：
-
-```sh
-# 查看条目的结构头部、表格锚点与可选正文子句（用于编写锚点）
-.venv/bin/python -m anna.knowledge.repository clauses 条目ID
-# 查看当前标注状态（--status 可选 applied / stale / missing / ambiguous / conflict / revoked）
-.venv/bin/python -m anna.knowledge.repository annotations --status applied --limit 50
-# 追加一条标注（--file 传入含 anchors / statements / 可选 scope 的 JSON；替代旧修订加 --supersedes 旧ann_rev_ID）
-.venv/bin/python -m anna.knowledge.repository annotate 条目ID \
-  --kind grant --file payload.json --reviewer 标注者 --reason '说明原文依据'
-# 查看有效知识记录，或按标注修订 ID 撤销标注
-.venv/bin/python -m anna.knowledge.repository list --kind grant --status resolved --limit 10
-.venv/bin/python -m anna.knowledge.repository revoke ann_rev_事件ID \
-  --reviewer 维护者 --reason '说明撤销原因'
-make build
-```
-
-原文或候选变化后，失效或冲突的标注不再进入有效选项；须重新核对后再替代旧修订。无需修改日志即可只读检查：`python -m anna.knowledge.repository chain 条目ID`。
-
-HTTP 接口提供 `/api/knowledge-chain?id=条目ID&spell=可选法术ID` 和 `/api/knowledge-export?id=条目ID&spell=可选法术ID`。`spell` 可省略；指定时必须属于起点条目的有效选项，否则返回 400。
-
-两个规则链接口另接受 `path`，值为 URL 编码的条目 ID 数组 JSON，须以起点开头、无重复且最多 16 项；每一跳必须有关系依据，否则返回 400。可选的 `effect` 指定路径末端条目的局部效果 ID；不存在或属于其他条目的效果返回 400。`/api/entry` 使用同义参数 `chain_spell`、`chain_path`、`chain_effect`，页面地址也使用这三个参数。沿通则反查能力后继续看法术，使用路径而不改变起点的选项域。
-
-查询接口的 `casting` 参数是 URL 编码后的 JSON，例如 `{"mode":"prepared","resource":"slot_free","recovery":"long_rest","spell":"疗伤术"}`。表格授予示例为 `{"access_condition":"option_selected","spell":"迷踪步","resource":"slot_free","recovery":"long_rest"}`；职业等级限定的准备关系可查 `{"access_condition":"class_level","mode":"prepared","spell":"群体疗伤术"}`。`/api/casting-facets` 返回其他条件保持时各选择的命中数。
-
-效果查询示例为 `{"effect":"damage","damage_type":"lightning","delivery":"automatic","timing":"ongoing"}`。`delivery` 可选 `attack_roll`、`saving_throw`、`automatic` 或 `not_stated`；`timing` 可选 `immediate`、`ongoing`、`repeat`、`cumulative` 或 `not_stated`。攻击判定表示该效果涉及攻击检定，不等于已经命中；重复豁免及依赖其单次结果的效果归入 `repeat`，累计结果归入 `cumulative`。非法字段或取值返回 400。
-
-“查询对象”默认是授予者；选“法术本身”直接查法术机制，选“条目本身（含非施法能力）”查询各类规则过程，此时施法获取条件清空并停用。接口分别使用 `query_subject: "spell"`、`query_subject: "entry"`；同时提交授予方式、资源或其他获取条件会返回 400。`target_scope` 可选 `single`、`area` 或 `not_stated`，区分本效果的目标范围，不把一个法术的初始攻击与范围伤害混用。
-
-累计查询例如 `{"query_subject":"spell","effect":"condition","cumulative_result":"failure","cumulative_count":3,"timing":"cumulative"}`。`cumulative_result` 可选 `success` 或 `failure`；`cumulative_count` 是 1 至 1000000 的 JSON 整数，表示原文阈值，不是角色当前已累积的次数。结果与次数须命中同一个累计谓词。规则链可沿“结果 → 序列 → 重复检定 → 首次检定”查看证据；未明确的首次计入范围及未确定的候选仍显示，查看候选不批准关系。
-
-“本效果的动作成本”与效果条件绑定。例如 `{"query_subject":"entry","effect":"healing"}` 可一起检索法术治疗和回气；再添加 `"use_action":"bonus_action"` 可筛出使用附赠动作的治疗过程，`{"query_subject":"entry","effect":"modifier","use_action":"reaction"}` 可检索直觉闪避的减伤。`use_action` 可选 `action`、`bonus_action`、`reaction`、`timed` 或 `not_stated`。重复豁免不消耗初次施法动作；未明示动作不能当成无需动作。既有分享链接和最近查询沿用 `casting` 参数及 `/api/casting-facets` 路径，内部共用规则效果索引，不分设非施法查询逻辑。
-
-知识记录与单链 JSON 使用 `schema: 2`，记录种类为 `grant`、`procedure` 和 `definition_role`。获取选项的 `acquisition_steps` 逐跳保留授予者、目标、记录、授予与分支身份；`conditions` 含祖先和末端的限定，不能只读取最后一级。表格的局部选项通过 `context_id`／`option_id` 关联同一记录的选择域。程序消费方读取 `value.grants`、`value.parameters` 和 `value.effects`。标注基线依据与事件封装各自使用独立的版本 `1`。
-
-有效知识记录（`effective_knowledge`）与统一标注评估结果（`knowledge_annotations`，涵盖 `grant`、`procedure` 与 `reference`）均保存在 `catalog.sqlite`。`make audit` 校验它们与投影表及原文切片的一致性；`python -m anna.catalog.audit --baseline 旧数据库路径` 在 `audit.json` 中额外记录前后知识变化明细。

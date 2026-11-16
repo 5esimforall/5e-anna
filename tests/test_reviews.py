@@ -7,7 +7,7 @@ import unittest
 
 from anna.catalog.concepts import build_concepts
 from anna.catalog.references import build_references, inspect_reference
-from anna.knowledge.repository import revoke_annotation, save_annotation
+from anna.review.repository import revoke_annotation, save_annotation
 from anna.presentation.references import query_decisions, query_missing_definitions, query_references
 from anna.review.search import search_candidates
 from anna.review.store import (

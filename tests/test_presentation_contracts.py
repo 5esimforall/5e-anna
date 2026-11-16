@@ -13,7 +13,7 @@ import threading
 import unittest
 from urllib.parse import urlencode
 
-from anna.presentation import catalog, contracts, knowledge, reader
+from anna.presentation import catalog, contracts, reader
 from anna.presentation.layout import entry_layout
 from anna.server.linked_book import inject, text_slice
 from anna.server.query import Handler
@@ -73,7 +73,7 @@ class CatalogContractTests(unittest.TestCase):
                 rows = catalog.query(self.db, params, export=True)['rows']
                 self.assertEqual(catalog.csv_export(rows, catalog.browse.schema_for(catalog.entry_types(params))).decode(), case['csv'])
 
-    def test_frozen_entry_evidence_versions_and_metadata(self):
+    def test_frozen_entry_versions_and_metadata(self):
         self.assertEqual(catalog.meta(self.db), self.data['meta'])
         for case in self.data['details']:
             with self.subTest(entry=case['id']):
@@ -85,7 +85,7 @@ class CatalogContractTests(unittest.TestCase):
             value['parser_cache'] = {'private': True}
             self.db.execute('UPDATE entries SET data=? WHERE id=?', (json.dumps(value), eid))
         self.test_frozen_query_schema_order_counts_pagination_and_csv()
-        self.test_frozen_entry_evidence_versions_and_metadata()
+        self.test_frozen_entry_versions_and_metadata()
 
     def test_http_routes_errors_and_download_contract(self):
         with endpoint(self.data) as request:
@@ -112,90 +112,6 @@ class CatalogContractTests(unittest.TestCase):
                 self.assertIn(message, json.loads(body)['error'])
 
 
-class KnowledgeContractTests(unittest.TestCase):
-    def setUp(self):
-        self.data = fixture('knowledge')
-        self.db = database(self.data)
-        self.addCleanup(self.db.close)
-
-    def test_frozen_paths_effect_focus_states_and_evidence(self):
-        for case in self.data['chains']:
-            with self.subTest(subject=case['subject'], path=case['path']):
-                self.assertEqual(knowledge.chain(self.db, case['subject'], reading_path=case['path'], effect_id=case['effect']), case['expected'])
-
-    def test_filters_remain_correlated_to_one_branch_or_effect(self):
-        for case in self.data['queries']:
-            sql, values = knowledge.casting_condition(case['conditions'])
-            actual = [r[0] for r in self.db.execute('SELECT e.id FROM entries e WHERE ' + sql + ' ORDER BY e.id', values)]
-            self.assertEqual(actual, case['expected'])
-        for invalid in [{}, {'unknown': 'field'}, {'resource': 'invented'},
-                        {'cumulative_count': True}, {'cumulative_count': 0},
-                        {'query_subject': 'entry', 'mode': 'known'}, '{broken']:
-            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
-                knowledge.casting_query(invalid)
-
-    def test_invalid_paths_targets_and_effects_are_rejected(self):
-        for path in [['spell'], ['background', 'background'], ['background', 'other'],
-                     ['background'] * 17, 'not JSON']:
-            with self.subTest(path=path), self.assertRaises(ValueError):
-                knowledge.chain(self.db, 'background', reading_path=path)
-        with self.assertRaisesRegex(ValueError, 'effective option'):
-            knowledge.chain(self.db, 'background', spell_id='other')
-        with self.assertRaisesRegex(ValueError, 'focused procedure'):
-            knowledge.chain(self.db, 'background', effect_id='effect_1')
-        with self.assertRaises(LookupError):
-            knowledge.chain(self.db, 'missing')
-
-    def test_missing_knowledge_keeps_the_existing_empty_contract(self):
-        db = sqlite3.connect(':memory:')
-        self.addCleanup(db.close)
-        self.assertEqual(knowledge.chain(db, 'absent'),
-                         {'schema': 2, 'records': [], 'nodes': [], 'options': [], 'incoming': []})
-
-    def test_internal_fields_do_not_escape_through_records_or_options(self):
-        def decorate(value):
-            value['parser_cache'] = 'private'
-            if 'value' in value:
-                body = value['value']
-                body['parser_cache'] = 'private'
-                for effect in body.get('effects', []):
-                    effect['parser_cache'] = 'private'
-                for grant in body.get('grants', []):
-                    decorate_grant(grant)
-            if 'grant' in value:
-                decorate_grant(value['grant'])
-            if 'branch' in value:
-                value['branch']['parser_cache'] = 'private'
-            return value
-        def decorate_grant(grant):
-            grant['parser_cache'] = 'private'
-            for branch in grant['branches']:
-                branch['parser_cache'] = 'private'
-        for table in ('effective_knowledge', 'casting_options'):
-            for rid, raw in self.db.execute('SELECT id,data FROM ' + table).fetchall():
-                self.db.execute('UPDATE ' + table + ' SET data=? WHERE id=?', (json.dumps(decorate(json.loads(raw))), rid))
-        for case in self.data['chains']:
-            self.assertEqual(knowledge.chain(self.db, case['subject'], reading_path=case['path'], effect_id=case['effect']), case['expected'])
-
-    def test_http_chain_and_export_share_the_frozen_reading(self):
-        with endpoint(self.data) as request:
-            for case in self.data['chains']:
-                params = {'id': case['subject']}
-                if case['path'] is not None:
-                    params['path'] = json.dumps(case['path'])
-                if case['effect'] is not None:
-                    params['effect'] = case['effect']
-                query = urlencode(params)
-                status, _, body = request('/api/knowledge-chain?' + query)
-                self.assertEqual((status, json.loads(body)), (200, case['expected']))
-                status, headers, body = request('/api/knowledge-export?' + query)
-                self.assertEqual(status, 200)
-                self.assertEqual(headers['Content-Disposition'], 'attachment; filename="anna-rule-chain.json"')
-                self.assertEqual(json.loads(body), {'schema': 2, 'snapshot': {'fixture': 'presentation-v1'}, 'chain': case['expected']})
-            status, _, body = request('/api/knowledge-chain?' + urlencode({'id': 'background', 'path': '["background","other"]'}))
-            self.assertEqual((status, json.loads(body)), (400, {'error': 'Reading path has no evidenced relationship'}))
-
-
 class ProjectionContractTests(unittest.TestCase):
     def test_ambiguous_names_and_conflicting_reviews_keep_their_candidates(self):
         value = {'id': 'reference', 'text': '同名', 'status': 'ambiguous',
@@ -208,28 +124,16 @@ class ProjectionContractTests(unittest.TestCase):
         projected['candidates'].reverse()
         self.assertEqual(value['candidates'], ['version_b', 'version_a'])
 
-    def test_explicit_states_missing_values_and_input_ownership(self):
-        original = fixture('knowledge')['chains'][0]['expected']['records'][0]
-        for status in ('resolved', 'partial', 'review', 'rejected'):
-            for review in ('unreviewed', 'applied', 'revoked', 'stale', 'conflict'):
-                value = deepcopy(original)
-                value.update(status=status, review_status=review)
-                projected = contracts.record(value)
-                self.assertEqual(projected, value)
-                projected['value']['unparsed'].append({'reason': 'new'})
-                self.assertNotEqual(projected, value)
+    def test_explicit_missing_values_and_input_ownership(self):
         value = {'id': 'entry', 'fields': {'unknown': None, 'explicit_no': False, 'conflict': ['yes', 'no']}}
         self.assertEqual(contracts.entry(value), value)
         self.assertNotIn('name', contracts.entry(value))
-        with self.assertRaisesRegex(ValueError, 'schema'):
-            contracts.record({**original, 'schema': 999})
-
     def test_http_import_does_not_load_analysis_or_review_commands(self):
         code = '''
 import sys
 import anna.server.app
-for name in ('anna.catalog.build', 'anna.knowledge.repository', 'anna.knowledge.extract',
-             'anna.knowledge.annotations'):
+for name in ('anna.catalog.build', 'anna.review.repository', 'anna.review.search',
+             'anna.review.context'):
     assert name not in sys.modules, name
 '''
         result = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True)

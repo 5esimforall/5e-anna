@@ -109,7 +109,7 @@ function updateReaderNavigation(){
   }
 }
 function focusResult(){
-  const id=lastResultEntry||currentReaderId;
+  const id=currentReaderId||lastResultEntry;
   const buttons=[...$('#results').querySelectorAll('[data-entry]')];
   const button=buttons.find(b=>b.dataset.entry===id&&b.classList.contains('entry-name'))||buttons.find(b=>b.dataset.entry===id);
   (button||$('#q')).focus({preventScroll:true});
@@ -121,36 +121,25 @@ async function stepEntry(delta){
 }
 function renderDetail(tab='body') {
   const e=currentEntry;if(!e)return;
-  // Reading mode keeps the entry itself; audit tabs fold into one summary that opens audit mode.
-  if(AUDIT_TABS.has(tab)&&!auditMode)tab='body';if(tab!==detailTab)++chainGeneration;detailTab=tab;
+  if(!['body','fields','versions','relations'].includes(tab))tab='body';
+  detailTab=tab;
   const linkLabels=annaLinkLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
-  const counts={facts:e.facts.length,discoveries:(e.concept_observations||[]).length,references:(e.effective_references||[]).length,reviews:e.reviews.length};
-  const auditNames={facts:ui.facts,discoveries:linkLabels.discoveries,references:linkLabels.effectiveReferences,reviews:ui.reviews};
   const members=e.versions?.members||[];
-  // Reading tabs come first; audit tabs follow under their own group label, and a tab with nothing in it fades.
-  const readingTabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',ui.versionsTab,members.length]]:[]),['relations',ui.relations,e.relations.length],['chain',annaKnowledge.labels.title]];
-  const auditTabs=auditMode?Object.entries(counts).map(([id,n])=>[id,auditNames[id],n]):[];
+  const tabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',ui.versionsTab,members.length]]:[]),['relations',ui.relations,e.relations.length]];
   const tabButton=([id,name,count])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''} ${count===0?'empty':''}" data-tab="${id}">${esc(count===undefined?name:`${name} ${count}`)}</button>`;
-  const auditSummary=auditMode?'':`<button type="button" class="audit-summary" data-audit-summary title="${esc(ui.auditSummaryHint)}">${esc(ui.auditSummary)}：${Object.entries(counts).map(([k,n])=>`${esc(auditNames[k])} ${n}`).join(' · ')}</button>`;
   let content='';
   if(tab==='body'){content=renderBody(e);loadLayout(e);}
   // Attributes follow the type's table columns; fields naming the version (type, book, rules) come last.
   if(tab==='fields') content=`<dl class="detail-fields">${(e.field_order||Object.keys(e.fields)).map(k=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(fieldText(e,k))}${e.field_conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
-  if(tab==='facts') content=e.facts.map(f=>`<article class="fact"><div class="fact-head"><strong>${esc(fieldNames[f.field]||f.field)}</strong>${badge(f.status,f.status==='原文明示'?'green':'amber')}</div><div class="fact-value">${esc(displayValue(f.field,f.value))}</div><small>规则：${esc(f.rule)} · 作用域：${esc(f.scope)}</small>${f.excerpt?`<blockquote>${esc(f.excerpt)}</blockquote>`:''}${f.evidence.path?`<a href="${esc(sourceURL(f.evidence.path,...(f.evidence.span||[0,0])))}" target="_blank" rel="noopener">${esc(f.evidence.path)} ↗</a>`:`<details><summary class="muted">定位依据</summary><pre class="body-text">${esc(JSON.stringify(f.evidence,null,2))}</pre></details>`}</article>`).join('');
-  if(tab==='facts'&&!content)content=`<p class="muted">${esc(ui.noEvidence)}</p>`;
-  if(tab==='chain')content=annaKnowledge.render(e,auditMode);
   if(tab==='versions'&&members.length>1) content=renderVersions(e);
   if(tab==='relations') content=e.relations.length?e.relations.map(r=>`<div class="related"><span class="muted">${esc(relationNames[r.predicate]||r.predicate)}</span>${r.object_id?`<button data-entry="${esc(r.object_id)}">${esc(r.target_label)}</button>`:`<span>${esc(r.target_label)} ${badge('目标未关联','amber')}</span>`}${badge(r.status)}</div>`).join(''):'<p class="muted">未提取到关系；不代表不存在。</p>';
-  if(tab==='discoveries') content=(e.concept_observations||[]).map(o=>renderConceptObservation(o,linkLabels)).join('')||`<p class="muted">${esc(linkLabels.emptyDiscoveries)}</p>`;
-  if(tab==='references') content=(metadata.review_snapshot?.pending_rebuild?`<p>${badge(linkLabels.pendingReview,'amber')}</p>`:'')+`<p class="muted">${esc(linkLabels.referencePolicy)}</p>`+(e.effective_references||[]).map(o=>renderConceptObservation(o,linkLabels)).join('');
-  if(tab==='reviews') content=`<p class="muted">仅展示关联此条目或所在页面的问题。没有待核记录不代表已经核实。</p>`+e.reviews.map(r=>renderReview(r,linkLabels)).join('');
   // One compact head: name, then what and where it is, then its versions and outside links. The tabs stay
   // pinned while the text scrolls, and the toolbar takes over the name once the head has scrolled away.
-  const badges=`${auditMode?badge(e.classification_status,e.classification_status==='原文明示'?'green':'amber'):''}${auditMode||e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}`;
+  const badges=`${e.legacy!=='unmarked'?badge(legacy[e.legacy]):''}${e.field_conflicts.length?badge(`${e.field_conflicts.length} 个字段冲突`,'amber'):''}`;
   const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}</button>`).join('')}</div>`:'';
   const links=`<div class="detail-links">${metadata.reader_url?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(metadata.reader_url+'?entry='+encodeURIComponent(e.id))}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(linkLabels.bookDefinition)} ↗</a>`:''}<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a></div>`;
   const name=e.name_zh||e.name;
-  $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(e.source_ids.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${readingTabs.map(tabButton).join('')}${auditTabs.length?`<span class="tab-group" aria-hidden="true">${esc(ui.auditSummary)}</span>${auditTabs.map(tabButton).join('')}`:''}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section>${auditSummary}<div class="footnote audit-only">${esc(e.id)} · 自动版本候选</div><p class="reader-hint">${esc(readerHint())}</p>`;
+  $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(e.source_ids.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(tabButton).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section><p class="reader-hint">${esc(readerHint())}</p>`;
   $('#reader-name').textContent=name;updatePageChrome();watchReaderTitle();markTableFrames();
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
@@ -161,7 +150,7 @@ const layoutOf=id=>api('/api/entry-layout?id='+encodeURIComponent(id)).catch(()=
 async function openEntry(id,update=true,tab='body',fromResult=false) {
   const gen=++detailGeneration,content=$('#detail-content');
   if(fromResult&&!currentReaderId)lastResultEntry=id;
-  if(update){if(id!==currentReaderId){params.delete('chain_spell');params.delete('chain_path');params.delete('chain_effect');}params.set('entry',id);if(tab==='chain')params.set('tab','chain');else params.delete('tab');historyUpdate();}
+  if(update){params.set('entry',id);params.delete('tab');historyUpdate();}
   if(fromResult)lastResultEntry=id;
   const wasOpen=$('#detail').open;
   currentReaderId=id;currentEntry=null;detailTab=tab;updatePageChrome();
@@ -174,10 +163,10 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
   updateReaderNavigation();
   const layout=layoutOf(id);
   try {
-    const e=await api('/api/entry?id='+encodeURIComponent(id)+(params.has('chain_spell')?'&chain_spell='+encodeURIComponent(params.get('chain_spell')):'')+(params.has('chain_path')?'&chain_path='+encodeURIComponent(params.get('chain_path')):'')+(params.has('chain_effect')?'&chain_effect='+encodeURIComponent(params.get('chain_effect')):''));if(gen!==detailGeneration)return;
+    const e=await api('/api/entry?id='+encodeURIComponent(id));if(gen!==detailGeneration)return;
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
-    currentEntry=e;renderDetail(tab);content.scrollTop=0;if(tab==='chain'&&e.rule_chain?.reading?.effect_id)focusChainLocation(e.rule_chain);
+    currentEntry=e;renderDetail(tab);content.scrollTop=0;
   } catch(e) {
     if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
@@ -260,143 +249,6 @@ function closeEntry({update=true,restoreFocus=true}={}) {
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();
-  if(update&&params.has('entry')){params.delete('entry');params.delete('tab');params.delete('chain_spell');params.delete('chain_path');params.delete('chain_effect');historyUpdate(true);}
+  if(update&&params.has('entry')){params.delete('entry');params.delete('tab');historyUpdate(true);}
   saveUiState();
-}
-
-
-function toggleInlineCandidates(button) {
-  const refId = button?.dataset.candidateRef;
-  const panel = button?.parentElement?.querySelector('.inline-candidates');
-  if (!refId || !panel) return;
-  if (!panel.hidden) {
-    panel.hidden = true;
-    button.setAttribute('aria-expanded', 'false');
-    return;
-  }
-  panel.hidden = false;
-  button.setAttribute('aria-expanded', 'true');
-  if (panel.dataset.initialized === refId) return;
-  panel.dataset.initialized = refId;
-  const labels = annaLinkLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
-  const l = labels.reviewSearch;
-  panel.innerHTML = `<p class="muted candidate-policy">${esc(l.policy)}</p>
-    <form class="inline-candidate-form">
-      <input type="search" name="q" placeholder="${esc(l.query)}" aria-label="${esc(l.query)}" autocomplete="off">
-      <button type="submit" class="quiet-button">${esc(l.search)}</button>
-      <span class="muted" data-candidate-count></span>
-      <button type="button" class="quiet-button" data-candidate-prev disabled>${esc(l.prev)}</button>
-      <button type="button" class="quiet-button" data-candidate-next disabled>${esc(l.next)}</button>
-    </form>
-    <div data-candidate-list></div>`;
-  let offset = 0, queryText = '', generation = 0;
-  const form = panel.querySelector('.inline-candidate-form');
-  const count = panel.querySelector('[data-candidate-count]');
-  const prev = panel.querySelector('[data-candidate-prev]');
-  const next = panel.querySelector('[data-candidate-next]');
-  const list = panel.querySelector('[data-candidate-list]');
-  async function load() {
-    const gen = ++generation;
-    list.innerHTML = `<p class="muted">${esc(l.loading)}</p>`;
-    prev.disabled = true;
-    next.disabled = true;
-    try {
-      const data = await api('/api/reference-candidates?' + new URLSearchParams({id: refId, q: queryText, limit: 20, offset}));
-      if (gen !== generation) return;
-      count.textContent = `${data.offset + 1 > data.total ? 0 : data.offset + 1}–${Math.min(data.total, data.offset + data.rows.length)} / ${data.total}`;
-      prev.disabled = data.offset === 0;
-      next.disabled = data.offset + data.rows.length >= data.total;
-      list.innerHTML = data.rows.length ? data.rows.map(r => `<article class="fact">
-        <div class="fact-head"><button type="button" class="link-button" data-entry="${esc(r.id)}">${esc(r.name)}</button><span>${esc(r.type)} · ${esc(r.ruleset)}</span></div>
-        <div><small>${esc((r.source_names || []).join('；'))}</small></div>
-        <p>${r.reasons.map(reason => `<span class="badge">${esc(l.reasons[reason.code] || reason.code)}</span>`).join(' ')}</p>
-        ${r.warnings.length ? `<p class="muted">${r.warnings.map(w => esc(l.warnings[w] || w)).join('；')}</p>` : ''}
-        <div><code>${esc(r.id)}</code> · <a href="${esc(sourceURL(r.page_path, r.start, r.end))}" target="_blank" rel="noopener">${esc(r.page_path)} ↗</a></div>
-        <details><summary>${esc(l.excerpt)}</summary><pre class="body-text">${esc(r.excerpt)}${r.excerpt_truncated ? '…' : ''}</pre></details>
-      </article>`).join('') : `<p class="muted">${esc(l.empty)}</p>`;
-    } catch (err) {
-      if (gen === generation) list.innerHTML = `<p role="alert">${esc(err.message || l.error)}</p>`;
-    }
-  }
-  form.addEventListener('submit', e => {
-    e.preventDefault();
-    offset = 0;
-    queryText = form.elements.q.value.trim();
-    load();
-  });
-  prev.addEventListener('click', () => { offset = Math.max(0, offset - 20); load(); });
-  next.addEventListener('click', () => { offset += 20; load(); });
-  load();
-}
-
-function renderConceptObservation(o,labels) {
-  const title=o.target_id
-    ? `<button data-entry="${esc(o.target_id)}">${esc(o.text)}</button>`
-    : `<strong>${esc(o.text)}</strong>`;
-  const role=labels[o.role==='definition'?'role_definition':o.role]||o.role;
-  const candidates=!o.target_id && o.candidates.length
-    ? `<details><summary>${esc(labels.candidates)} (${o.candidates.length})</summary>${o.candidate_entries.map(c=>`<button data-entry="${esc(c.id)}">${esc(c.name)} · ${esc(c.ruleset)}</button>`).join(' ')}</details>`
-    : '';
-  return `<article class="fact">
-    <div class="fact-head">${title}${badge(labels[o.status]||o.status)}</div>
-    <div><small>${esc(labels[o.signal]||o.signal)} · ${esc(role)} · ${esc(labels.reasons[o.reason]||o.reason)}</small></div>
-    <div><a target="_blank" rel="noopener" href="${esc(sourceURL(o.path,o.start,o.end))}">${esc(labels.extractedRange)} ↗</a></div>
-    ${o.automatic?`<div><small>${esc(labels.reviewStates[o.review_status]||o.review_status)} · ${esc(labels.presentations[o.presentation]||o.presentation)}</small></div><div><code>${esc(o.id)}</code></div><details><summary>${esc(labels.automaticResult)}</summary><pre class="body-text">${esc(JSON.stringify({automatic:o.automatic,decision_ids:o.decision_ids},null,2))}</pre></details>`:''}
-    ${candidates}
-    ${o.automatic?`<div class="candidate-trigger"><button type="button" class="quiet-button" data-candidate-ref="${esc(o.id)}" aria-expanded="false">${esc(labels.reviewSearch.candidates)}</button><div class="inline-candidates" data-candidates-for="${esc(o.id)}" hidden></div></div>`:''}
-    <details><summary>${esc(labels.evidence)}</summary><pre class="body-text">${esc(JSON.stringify(o.evidence,null,2))}</pre></details>
-  </article>`;
-}
-
-function renderReview(record, labels) {
-  const result=record.detail, event=result?.event, changes=result?.changes||[];
-  const title=labels.reasons[record.reason]||reasonNames[record.reason]||record.reason;
-  if(!event)return `<article class="fact"><strong>${esc(title)}</strong><pre class="body-text">${esc(pretty(result))}</pre></article>`;
-  const l=labels.reviewDiff;
-  const refId=event.binding?.reference_id||'';
-  return `<article class="fact"><strong>${esc(title)}</strong>
-    <blockquote>${esc(event.binding?.before||'')}<mark>${esc(event.binding?.text||'')}</mark>${esc(event.binding?.after||'')}</blockquote>
-    <p>${esc(event.reason)}</p>${event.operation==='missing_definition'&&refId?`<div class="candidate-trigger"><button type="button" class="quiet-button" data-candidate-ref="${esc(refId)}" aria-expanded="false">${esc(labels.reviewSearch.candidates)}</button><div class="inline-candidates" data-candidates-for="${esc(refId)}" hidden></div></div>`:''}<small>${esc(event.reviewer)} · ${esc(event.created_at)}</small>
-    <h3>${esc(l.title)} (${changes.length})</h3>
-    ${changes.map(c=>`<section class="fact"><strong>${esc(l.fields[c.path[0]]||c.path[0])}</strong>
-      <div><code>${esc(c.path.slice(1).join(' / '))}</code> · ${esc(l[c.kind]||c.kind)}</div>
-      <details><summary>${esc(l.values)}</summary><dl><dt>${esc(l.before)}</dt><dd><pre class="body-text">${esc(pretty(c.before))}</pre></dd><dt>${esc(l.after)}</dt><dd><pre class="body-text">${esc(pretty(c.after))}</pre></dd></dl></details>
-    </section>`).join('')}
-    <details><summary>${esc(labels.evidence)}</summary><pre class="body-text">${esc(pretty(result))}</pre></details>
-  </article>`;
-}
-
-let chainGeneration=0;
-async function inspectChainSpell(id,from){
-  const chain=currentEntry?.rule_chain;if(!chain)return;
-  const path=annaKnowledge.pathTo(chain,id,from);
-  if(chain.options.some(o=>o.spell_ids.includes(id)))return navigateChain(path,id);
-  if(path)return navigateChain(path);
-}
-function focusChainLocation(chain,{scroll=true}={}){
-  const r=chain.reading;
-  const target=r.effect_id?document.querySelector(`.knowledge-record[data-subject="${CSS.escape(r.focus_id)}"] [data-effect="${CSS.escape(r.effect_id)}"]`):$('.chain-path [aria-current="step"]');
-  target?.focus({preventScroll:true});if(scroll)target?.scrollIntoView({block:r.effect_id?'start':'nearest'});
-  return !!target;
-}
-async function navigateChain(path,spell=currentEntry?.rule_chain?.selected_spell_id,effectId=null){
-  const entry=currentEntry,gen=++chainGeneration;if(!entry||detailTab!=='chain')return;
-  if(path&&entry.rule_chain.options.some(o=>o.spell_ids.includes(path.at(-1))))spell=path.at(-1);
-  const panel=$('#detail-panel');panel.setAttribute('aria-busy','true');
-  const active=()=>gen===chainGeneration&&currentEntry===entry&&detailTab==='chain';
-  try{
-    const query=new URLSearchParams({id:entry.id});
-    if(spell)query.set('spell',spell);
-    if(path)query.set('path',JSON.stringify(path));
-    if(effectId)query.set('effect',effectId);
-    const chain=await api('/api/knowledge-chain?'+query);
-    if(!active())return;
-    entry.rule_chain=chain;
-    if(chain.selected_spell_id)params.set('chain_spell',chain.selected_spell_id);else params.delete('chain_spell');
-    params.set('chain_path',JSON.stringify(chain.reading.path));params.set('tab','chain');
-    if(chain.reading.effect_id)params.set('chain_effect',chain.reading.effect_id);else params.delete('chain_effect');
-    historyUpdate();renderDetail('chain');
-    focusChainLocation(chain);saveUiState();
-  }catch(error){if(active()){const message=document.createElement('p');message.setAttribute('role','alert');message.textContent=annaKnowledge.labels.error+': '+error.message;panel.append(message);}}
-  finally{if(gen===chainGeneration&&currentEntry===entry)$('#detail-panel')?.removeAttribute('aria-busy');}
 }

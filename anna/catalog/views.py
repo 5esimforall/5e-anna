@@ -58,7 +58,7 @@ SCHEMAS = {
     'feature': {'facets':['level'], 'flags':[], 'columns':['name','level','sources','ruleset'],
                 'sorts':['source','name','name_en','level'], 'default_sort':'level'},
     'animal': {'facets':['role'], 'flags':[], 'columns':['name','role','price','carrying_capacity','speed','sources','ruleset'], 'sorts':['source','name','name_en'],'default_sort':'source'},
-    'generic': {'facets':[], 'flags':[], 'columns':['name','type','sources','ruleset','classification_status','legacy'],
+    'generic': {'facets':[], 'flags':[], 'columns':['name','type','sources','ruleset'],
                 'sorts':['source','name','name_en','type','ruleset'], 'default_sort':'type'},
 }
 

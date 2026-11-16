@@ -18,10 +18,7 @@ async function chooseOnly(page,type){
   await group.locator(`input[value="${type}"]`).check({force:true});
 }
 async function entry(page,index=0){return page.locator('#results .entry-name').nth(index).getAttribute('data-entry');}
-async function read(page,id){await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');await expect(page.locator('#detail .footnote')).toContainText(id);}
-// Audit tabs belong to audit mode, a per-browser preference stored like the theme.
-async function auditMode(page){await page.addInitScript(()=>{try{localStorage.setItem('anna.audit','on');}catch{}});}
-const AUDIT_COLUMNS=['classification_status','legacy'];
+async function read(page){await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');await expect(page.locator('#detail')).toBeVisible();}
 const fmt=n=>n.toLocaleString('zh-CN');
 async function shot(page,testInfo,name){await testInfo.attach(name,{body:await page.screenshot(),contentType:'image/png'});}
 async function queryMatchesAPI(page){
@@ -110,7 +107,7 @@ test('switching types keeps dimmed results and counts consistent until the new t
 });
 
 test('wide reader remains non-modal, consecutive entries and keyboard return preserve list position',async({page},testInfo)=>{
-  await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page);
+  await page.setViewportSize({width:1440,height:900});await visit(page);
   const first=await entry(page,8),second=await entry(page,9);
   await page.locator('#results .entry-name').nth(8).focus();
   await page.keyboard.press('Enter');await read(page,first);
@@ -122,10 +119,9 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
   const current=await page.locator('#results tr.row-selected').boundingBox(),list=await page.locator('.table-wrap').boundingBox();
   expect(current.y).toBeGreaterThanOrEqual(list.y);expect(current.y+current.height).toBeLessThanOrEqual(list.y+list.height+1);
   const top=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
-  await page.getByRole('tab',{name:/^证据/}).click();
-  await expect(page.locator('#detail-panel .fact').first()).toBeVisible();
-  await expect(page.locator('#detail-panel a').first()).toHaveAttribute('target','_blank');
-  await shot(page,testInfo,'desktop-spell-evidence.png');
+  await page.getByRole('tab',{name:'属性',exact:true}).click();
+  await expect(page.locator('#detail-panel .detail-fields')).toBeVisible();
+  await shot(page,testInfo,'desktop-spell-fields.png');
   await page.keyboard.press('F6');await expect(page.locator(`#results .entry-name[data-entry="${second}"]`)).toBeFocused();
   await page.keyboard.press('F6');await expect(page.locator('#close-detail')).toBeFocused();
   await page.keyboard.press('Escape');await expect(page.locator('#detail')).not.toBeVisible();
@@ -140,7 +136,7 @@ test('wide reader remains non-modal, consecutive entries and keyboard return pre
 });
 
 test('history and reload restore loaded rows, sorting, disclosure, reading tab and scroll positions',async({page})=>{
-  await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&size=50&page=2&sort=name&dir=desc');
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&size=50&page=2&sort=name&dir=desc');
   // Links from before batch loading keep their query; page and size fall away.
   const keys=[...new URL(page.url()).searchParams.keys()];expect(keys).not.toContain('page');expect(keys).not.toContain('size');
   await expect(page.locator('#results tr')).toHaveCount(150);
@@ -149,21 +145,21 @@ test('history and reload restore loaded rows, sorting, disclosure, reading tab a
   await page.locator('#results .entry-name').nth(160).focus();
   const first=await entry(page,160),second=await entry(page,161);
   await page.keyboard.press('Enter');await read(page,first);
-  await page.getByRole('tab',{name:/^证据/}).click();
-  await page.locator('#detail-content').evaluate(e=>e.scrollTop=180);
+  await page.getByRole('tab',{name:'属性',exact:true}).click();
+  await page.locator('#detail-content').evaluate(e=>e.scrollTop=100);
   await page.locator('#entry-next').click();await read(page,second);
   await page.goBack();await read(page,first);
-  await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
+  await expect(page.getByRole('tab',{name:'属性',exact:true})).toHaveAttribute('aria-selected','true');
   await expect(page.locator('#filter-panel')).toBeVisible();await expect(page.locator('#toggle-filters')).toHaveAttribute('aria-expanded','true');
-  await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(180);
+  await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(100);
   const listTop=await page.locator('.table-wrap').evaluate(e=>e.scrollTop);
-  await expect(page.getByRole('tab',{name:/^证据/})).toBeFocused();
+  await expect(page.getByRole('tab',{name:'属性',exact:true})).toBeFocused();
   await page.keyboard.press('F6');await expect(page.locator(`#results .entry-name[data-entry="${first}"]`)).toBeFocused();
   await page.keyboard.press('F6');
   await page.reload();await ready(page);await read(page,first);
   await expect(page.locator('#filter-panel')).toBeVisible();
-  await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
-  await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(180);
+  await expect(page.getByRole('tab',{name:'属性',exact:true})).toHaveAttribute('aria-selected','true');
+  await expect.poll(()=>page.locator('#detail-content').evaluate(e=>e.scrollTop)).toBe(100);
   expect(await page.locator('.table-wrap').evaluate(e=>e.scrollTop)).toBe(listTop);
   await expect(page.locator('#results tr')).toHaveCount(300);await expect(page.locator('#range')).toContainText('已显示 300 /');
   await expect(page.locator('#sort')).toHaveValue('name');await expect(page.locator('#direction')).toHaveText('降序 ↓');
@@ -188,7 +184,6 @@ test('scrolling the reading pane writes history state once after it settles',asy
     await page.locator('#detail-content').evaluate(e=>{e.scrollTop+=20;});
     await page.waitForTimeout(40);
   }
-  expect(await page.evaluate(()=>window.__historyWrites.length)).toBe(0);
   await expect.poll(()=>page.evaluate(()=>window.__historyWrites.length)).toBe(1);
   await page.waitForTimeout(300);
   const writes=await page.evaluate(()=>window.__historyWrites);
@@ -206,9 +201,7 @@ test('narrow reader traps focus, tabs use arrow keys, resize keeps content and c
   await page.getByRole('tab',{name:'正文',exact:true}).focus();await page.keyboard.press('ArrowRight');
   await expect(page.getByRole('tab',{name:'属性',exact:true})).toBeFocused();
   await expect(page.getByRole('tab',{name:'属性',exact:true})).toHaveAttribute('aria-selected','true');
-  // Reading mode ends the tab list at the rule chain; audit tabs are summarized below the panel.
-  await page.keyboard.press('End');await expect(page.getByRole('tab',{name:'规则链',exact:true})).toBeFocused();
-  await expect(page.getByRole('tab',{name:/^待核/})).toHaveCount(0);await expect(page.locator('[data-audit-summary]')).toContainText('待核');
+  await page.keyboard.press('End');await expect(page.getByRole('tab',{name:/^关系/})).toBeFocused();
   await page.keyboard.press('Home');await expect(page.getByRole('tab',{name:'正文',exact:true})).toBeFocused();
   expect(await page.locator('#detail-content').evaluate(e=>e.scrollWidth<=e.clientWidth)).toBeTruthy();
   await shot(page,testInfo,'mobile-spell-reader.png');
@@ -243,7 +236,7 @@ test('every type and preset shares the workbench without losing its columns or f
   for(const choice of choices){
     await visit(page,'/?'+choice.search);
     const facets=await (await page.request.get(anna+'/api/facets?'+new URLSearchParams((choice.types||[]).map(t=>['type',t])))).json();
-    await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.filter(k=>!AUDIT_COLUMNS.includes(k)).length);
+    await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.length);
     for(const group of facets.groups)await expect(page.locator(`[data-group="${group.key}"]`)).toHaveCount(1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
     const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
@@ -317,29 +310,6 @@ test('counts say what choosing each option would match, and an empty result offe
   await visit(page);await expect(page.locator('#elsewhere')).toBeHidden();
 });
 
-test('an empty name search offers unclassified passages under the same conditions',async({page})=>{
-  await page.setViewportSize({width:1440,height:900});
-  await visit(page,'/?q='+encodeURIComponent('盾矮人'));
-  const data=await (await page.request.get(anna+'/api/entries'+new URL(page.url()).search)).json();
-  expect(data.total).toBe(0);expect(data.section_matches).toBeGreaterThan(0);
-  await expect(page.locator('#empty')).toBeVisible();
-  await expect(page.locator('#empty-sections')).toBeVisible();
-  await expect(page.locator('#show-sections')).toContainText(`原文中还有 ${fmt(data.section_matches)} 条未分类段落匹配`);
-  await page.locator('#show-sections').click();await ready(page);
-  expect(new URL(page.url()).searchParams.get('sections')).toBe('1');
-  await expect(page.locator('#empty')).toBeHidden();
-  await expect(page.locator('#results .entry-name')).toHaveCount(data.section_matches);
-  // A typed result, a chosen type a section cannot answer, or a body-only search suppresses the offer.
-  await visit(page,'/?q='+encodeURIComponent('幸运符'));
-  await expect(page.locator('#empty-sections')).toBeHidden();
-  await visit(page,'/?type=spell&q='+encodeURIComponent('盾矮人'));
-  await expect(page.locator('#empty')).toBeVisible();
-  await expect(page.locator('#empty-sections')).toBeHidden();
-  await visit(page,'/?body='+encodeURIComponent('卓尔蘑菇扒'));
-  await expect(page.locator('#empty')).toBeVisible();
-  await expect(page.locator('#empty-sections')).toBeHidden();
-});
-
 test('environmental hazards read as their own query type and view',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await visit(page,'/?type=hazard');
@@ -384,54 +354,15 @@ test('spell components read as glyph strips while filters and export keep every 
   for(const name of ['言语','姿势','材料','仪式','专注'])expect(csv.split('\n')[0]).toContain(name);
 });
 
-test('reading mode folds review apparatus and audit mode persists per browser',async({page})=>{
+test('review apparatus is absent from the workbench',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,'/');
+  await expect(page.locator('#audit-mode')).toHaveCount(0);
+  await expect(page.locator('#missing-queue-toggle')).toHaveCount(0);
+  await page.locator('#toggle-filters').click();
+  await expect(page.locator('#audit-details')).toHaveCount(0);
   expect((await page.locator('#columns th').allTextContents()).some(h=>h.includes('分类依据'))).toBeFalsy();
-  await expect(page.locator('#missing-queue-toggle')).toBeHidden();
-  await page.locator('#toggle-filters').click();await expect(page.locator('#audit-details')).toBeHidden();
-  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
-  await expect(page.getByRole('tab',{name:/^证据/})).toHaveCount(0);
-  await page.locator('[data-audit-summary]').click();
-  await expect(page.locator('#audit-mode')).toHaveAttribute('aria-pressed','true');
-  await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
-  await expect(page.getByRole('tab',{name:/^证据/})).toBeFocused();
-  await expect(page.locator('#missing-queue-toggle')).toBeVisible();await expect(page.locator('#audit-details')).toBeVisible();
-  expect((await page.locator('#columns th').allTextContents()).some(h=>h.includes('分类依据'))).toBeTruthy();
-  // The mode belongs to this browser, not to the shared query URL.
-  expect([...new URL(page.url()).searchParams.keys()].some(k=>k.includes('audit'))).toBeFalsy();
-  await page.reload();await ready(page);await read(page,id);
-  await expect(page.locator('#audit-mode')).toHaveAttribute('aria-pressed','true');
-  await expect(page.getByRole('tab',{name:/^证据/})).toHaveAttribute('aria-selected','true');
-  // Leaving audit mode returns an open audit tab to the text without closing the reader.
-  await page.locator('#audit-mode').click();
-  await expect(page.getByRole('tab',{name:'正文',exact:true})).toHaveAttribute('aria-selected','true');
-  await expect(page.locator('#detail')).toBeVisible();
-  expect(await page.evaluate(()=>localStorage.getItem('anna.audit'))).toBeNull();
-  // An audit filter from a shared URL stays visible and removable in reading mode.
-  await visit(page,'/?conflict=1');
-  await expect(page.locator('#active-filters')).toContainText('字段冲突');
-  await page.locator('#toggle-filters').click();await expect(page.locator('#audit-details')).toBeVisible();
-  await page.getByRole('button',{name:/^移除 字段冲突/}).click();await ready(page);
-  await expect(page.locator('#audit-details')).toBeHidden();
-});
-
-test('audit mode inline candidate search and missing-definitions queue replace /review',async({page})=>{
-  await page.setViewportSize({width:1440,height:900});await auditMode(page);
-  await visit(page,'/?type=spell&q='+encodeURIComponent('火球术'));
-  await page.locator('#missing-queue-toggle').click();
-  await expect(page.locator('#missing-dialog')).toBeVisible();
-  await expect(page.locator('#missing-count')).toContainText('/');
-  await page.locator('#close-missing').click();
-  await expect(page.locator('#missing-dialog')).toBeHidden();
-  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
-  await page.locator('#tab-references').click();
-  const trigger=page.locator('#detail-panel [data-candidate-ref]').first();
-  await expect(trigger).toBeVisible();
-  await trigger.click();
-  const panel=page.locator('#detail-panel .inline-candidates').first();
-  await expect(panel).toBeVisible();
-  await expect(panel.locator('[data-candidate-count]')).toContainText('/');
-  await expect(panel.locator('[data-candidate-list] .fact').first()).toBeVisible();
+  const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page);
+  await expect(page.getByRole('tab',{name:/证据|概念线索|有效引用|待核|规则链/})).toHaveCount(0);
 });
 
 test('narrow results read as labelled lists without horizontal scrolling',async({page},testInfo)=>{
@@ -704,16 +635,16 @@ test('reader shows the original layout with field notes tied to their words and 
   await page.setViewportSize({width:1280,height:800});
 });
 
-test('reader sets label lines as a parameter card, starts after the title and groups audit tabs',async({page})=>{
-  await auditMode(page);await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('亡者丧钟'));
+test('reader sets label lines as a parameter card and starts after the title',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});await visit(page,spells+'&q='+encodeURIComponent('亡者丧钟'));
   await page.locator('#results .entry-name').first().click();
   const card=page.locator('#detail-panel .layout-text dl.parameters');
   await expect(card.locator('dt')).toHaveText(['施法时间','施法距离','法术成分','持续时间']);await expect(card.locator('dd').first()).toHaveText('动作');
   expect(await card.evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(2);
   await expect(page.locator('#detail-panel .layout-text')).not.toContainText('Toll the Dead');
-  // Reading tabs lead; audit tabs follow their group label, and a tab with nothing in it is faded.
-  const tabs=page.locator('.detail-tabs');await expect(tabs.locator('.tab-group')).toHaveText('核对');
-  expect(await tabs.locator('[role=tab]').evaluateAll(els=>els.map(e=>e.dataset.tab))).toEqual(['body','fields','versions','relations','chain','facts','discoveries','references','reviews']);
+  // Reading tabs lead; a tab with nothing in it is faded.
+  const tabs=page.locator('.detail-tabs');
+  expect(await tabs.locator('[role=tab]').evaluateAll(els=>els.map(e=>e.dataset.tab))).toEqual(['body','fields','versions','relations']);
   for(const tab of await tabs.locator('[role=tab]').all()){
     const count=(await tab.textContent()).match(/ (\d+)$/)?.[1];
     if(count!==undefined)await expect(tab).toHaveClass(count==='0'?/\bempty\b/:/^(?!.*\bempty\b)/);

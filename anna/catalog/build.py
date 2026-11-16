@@ -591,12 +591,10 @@ class Build:
         db.executemany('INSERT INTO identity_candidates VALUES(?,?,?,?)',[(r['group_id'],r['type'],r['status'],canonical(r)) for r in self.identity_candidates])
         from anna.catalog.concepts import build_concepts
         concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path)
-        from anna.knowledge.context import Context
+        from anna.review.context import Context
         shared_context=Context(db)
         from anna.catalog.references import build_references
         reference_coverage=build_references(db,self.web,out,annotations_path,dom_by_path=self.dom_by_path,context=shared_context)
-        from anna.knowledge.repository import build_knowledge
-        knowledge_coverage=build_knowledge(db,out,annotations_path=annotations_path,context=shared_context)
         counterpart_coverage=None
         if fivetools:
             from anna.compare.catalog import build_counterparts
@@ -610,7 +608,7 @@ class Build:
             'legacy':dict(Counter(e['legacy'] for e in self.entries if e['type']!='section')),'index_rows':len(self.observations),
             'index_rows_linked':len({o for e in self.entries for o in e['observation_ids']}),'facts':len(self.facts),'relations':len(self.relations),'raw_tables':len(self.tables),
             'concept_definitions':concept_coverage['definitions'],'concept_observations':concept_coverage['observations'],'identity_candidate_groups':len(self.identity_candidates),'review_reasons':dict(Counter(r['reason'] for r in reviews)),
-            'reference_coverage':reference_coverage, 'knowledge_coverage':knowledge_coverage,
+            'reference_coverage':reference_coverage,
             'counterparts':{k:counterpart_coverage[k] for k in ('catalog','commit','input_sha256','records','entries','outcomes','findings')} if counterpart_coverage else {'catalog':'5etools-cn','status':'skipped'},
             'validation':validation,'runtime_seconds':round(elapsed,2),'identity_policy':'provisional locator identities; no name-based merge',
             'parser':'beautifulsoup4/html5lib','pipeline_sha256':pipeline_hash(),'extraction_sha256':extraction_hash()}

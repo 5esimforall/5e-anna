@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 import re
 
-from anna.knowledge.annotations import bind_span_anchor, entry_selector, resolve_subject
-from anna.knowledge.context import Context
+from anna.review.anchors import bind_span_anchor, entry_selector, resolve_subject
+from anna.review.context import Context
 from anna.review.store import (
     DEFAULT_ANNOTATIONS,
     annotation_lifecycle,

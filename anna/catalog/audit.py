@@ -11,7 +11,6 @@ import re
 import sqlite3
 from anna.serialization import csv_write
 from anna.catalog.types import TYPE_LABELS, RULE_TYPES
-from anna.knowledge.repository import audit_knowledge, knowledge_diff
 
 # Leads for the classifier, not classifications. An untyped section whose own text prints a mechanic
 # (a save DC, dice damage, a dice-rolled table) probably defines something no recognizer reads yet.
@@ -205,7 +204,6 @@ def audit(db_path,baseline=None):
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
     concepts=audit_concepts(db,Path(db_path).parent) if (db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone() and db.execute("SELECT 1 FROM metadata WHERE key='concept_coverage'").fetchone()) else None
     counterparts=audit_counterparts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
-    knowledge=audit_knowledge(db,Path(db_path).parent);knowledge_changes=[]
     gaps,gap_pages,gap_sections=classification_gaps(db)
     conflicts,conflict_rows=type_conflict_report(db)
     old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None
@@ -226,7 +224,6 @@ def audit(db_path,baseline=None):
                 'change':'added' if a is None else 'removed' if b is None else 'type_changed' if a['type']!=b['type'] else 'fields_changed',
                 'before_type':a['type'] if a else '', 'after_type':b['type'] if b else '',
                 'before_fields':json.loads(a['fields']) if a else {},'after_fields':json.loads(b['fields']) if b else {}})
-        knowledge_changes=knowledge_diff(old,db)
         old.close()
     result={'snapshot_commit':summary['snapshot_commit'],'input_manifest_sha256':summary['input_manifest_sha256'],
         'full_scan':summary['full_scan'],'processed_pages':summary['processed_html_files'],
@@ -234,7 +231,7 @@ def audit(db_path,baseline=None):
         'integrity_check':db.execute('PRAGMA integrity_check').fetchone()[0],
         'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),
         'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
-        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'knowledge':knowledge,'knowledge_changes':knowledge_changes,'concepts':concepts,'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
+        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
         'classification_gaps':gaps,'classification_gaps_before':gaps_before,
         'type_conflicts':conflicts,'type_conflicts_before':conflicts_before}
     db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows}
@@ -313,7 +310,6 @@ def export_report(out,result,changes,gaps):
         '这不是全库人工核验。未分类段落、待核关联和既有索引问题仍保留，不将空结果解释为原文不存在。','',
         '## 本轮变化','',
         f"- 条目变化：{result['change_counts']}；未指定基线时不推断本轮修正。",
-        f"- 规则陈述变化：{dict(Counter(c['change'] for c in result['knowledge_changes']))}。",'',
         '## 校验','',
         f"- 全量扫描：{result['processed_pages']} 页；解析错误 {result['parse_errors']}。",
         f"- SQLite：{result['integrity_check']}；外键错误 {result['foreign_key_errors']}。",
@@ -340,11 +336,10 @@ def main():
     p.add_argument('--baseline',type=Path);p.add_argument('--output',type=Path)
     a=p.parse_args();result,changes,gaps=audit(a.db,a.baseline);export_report(a.output or a.db.parent,result,changes,gaps)
     report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','concepts','change_counts']}
-    report['knowledge']={k:v for k,v in result['knowledge'].items() if k!='by_source'} if result['knowledge'] else None
     report['classification_gaps']={k:result['classification_gaps'][k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
     report['type_conflicts']=result['type_conflicts']['entries'] if result['type_conflicts'] else None
     report['counterparts']={k:result['counterparts'][k] for k in ('commit','outcomes','findings','errors')} if result['counterparts'] else None
     print(json.dumps(report,ensure_ascii=False,indent=2))
-    if result['parse_errors'] or result['foreign_key_errors'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']) or (result['counterparts'] and result['counterparts']['errors']) or (result['knowledge'] and result['knowledge']['errors']):raise SystemExit(1)
+    if result['parse_errors'] or result['foreign_key_errors'] or result['integrity_check']!='ok' or (result['concepts'] and result['concepts']['errors']) or (result['counterparts'] and result['counterparts']['errors']):raise SystemExit(1)
 
 if __name__=='__main__':main()

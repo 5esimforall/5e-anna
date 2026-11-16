@@ -221,7 +221,7 @@ class BrowseCorpusTests(unittest.TestCase):
         mixed=browse.schema_for({'magic_item','equipment'})
         self.assertEqual(mixed['kinds'],['generic','equipment','item'])
         self.assertEqual(mixed['columns'][:2],['name','type'])
-        self.assertEqual(mixed['columns'][-4:],['sources','ruleset','classification_status','legacy'])
+        self.assertEqual(mixed['columns'][-2:],['sources','ruleset'])
         for column in ['price','weight','damage','mastery','rarity','item_type','attunement']:self.assertIn(column,mixed['columns'])
         self.assertEqual(len(mixed['columns']),len(set(mixed['columns'])))
         self.assertEqual(mixed['default_sort'],'type')

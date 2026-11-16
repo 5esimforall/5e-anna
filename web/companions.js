@@ -29,13 +29,6 @@ const annaCompanions = (() => {
     const params = new URLSearchParams(choice.memory.query);
     if (choice.memory.entry) {
       params.set('entry', choice.memory.entry);
-      const ui=choice.memory.ui;
-      if(ui?.readerTab==='chain'){
-        params.set('tab','chain');
-        if(ui.readerChainSpell)params.set('chain_spell',ui.readerChainSpell);
-        if(ui.readerChainPath)params.set('chain_path',ui.readerChainPath);
-        if(ui.readerChainEffect)params.set('chain_effect',ui.readerChainEffect);
-      }
     }
     return '/' + (params.size ? '?' + params : '');
   }

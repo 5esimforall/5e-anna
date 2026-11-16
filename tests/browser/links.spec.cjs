@@ -117,34 +117,19 @@ test('existing reference reaches the exact target in the current page',async({pa
   await attach(testInfo,'reference-target.png',await page.screenshot(),'image/png');
 });
 
-test('formatted mention navigates in the current page and exposes evidence in anna',async({page},testInfo)=>{
+test('formatted mention navigates in the current page and opens the matching Anna entry',async({page},testInfo)=>{
   const m=cases.mention;
   await page.goto(topic(book,m.path));await ready(page);
   const link=page.getByRole('link',{name:'查看定义: '+m.text,exact:true}).first();
   await expect(link).toHaveAttribute('target','_self');
   await link.focus();await expect(link).toBeFocused();await page.keyboard.press('Enter');
   await expect(page).toHaveURL(topic(book,m.target.path)+'#'+m.target.fragment);await ready(page);
-  // Concept evidence is an audit tab; reading mode summarizes it below the entry.
+  // Anna opens the definition entry; the review apparatus is no longer part of the workbench.
   await page.goto(anna+'/?entry='+m.entry_id);
-  await expect(page.getByRole('tab',{name:/概念线索/})).toHaveCount(0);
-  await page.locator('[data-audit-summary]').click();
-  await page.getByRole('tab',{name:/概念线索/}).click();
-  const detail=await (await page.request.get(anna+'/api/entry?id='+m.entry_id)).json();
-  const pending=detail.concept_observations.find(o=>o.status==='review' && o.candidate_entries.length);
-  expect(pending).toBeTruthy();
-  const candidateCard=page.locator('article.fact').filter({has:page.locator('strong').filter({hasText:pending.text})}).first();
-  await candidateCard.getByText(`候选定义 (${pending.candidate_entries.length})`,{exact:true}).click();
-  const candidate=pending.candidate_entries[0];
-  await expect(candidateCard.getByRole('button',{name:candidate.name+' · '+candidate.ruleset,exact:true})).toBeVisible();
-  const mention=page.locator('article.fact').filter({has:page.getByRole('button',{name:m.text,exact:true})}).first();
-  await expect(mention).toContainText('格式标记');await expect(mention).toContainText('正文提及');
-  await mention.getByText('发现依据',{exact:true}).click();
-  await expect(mention.locator('pre')).toContainText('topics/style.css');
-  await expect(mention.locator('pre')).toContainText(m.evidence.stylesheet_sha256);
-  await page.setViewportSize({width:390,height:800});
-  await attach(testInfo,'concept-mention-evidence.png',await page.screenshot(),'image/png');
-  await mention.getByRole('button',{name:m.text,exact:true}).click();
-  await expect(page).toHaveURL(new RegExp('entry='+m.target_id));
+  await expect(page.locator('#detail')).toBeVisible();
+  await expect(page.locator('#entry-title')).toBeVisible();
+  await expect(page.getByRole('tab',{name:/证据|概念线索|有效引用|待核|规则链/})).toHaveCount(0);
+  await attach(testInfo,'formatted-mention-entry.png',await page.screenshot(),'image/png');
 });
 
 test('plain and marked core-rule mentions share the precise subdefinition in anna and the book',async({page})=>{
@@ -158,10 +143,6 @@ test('plain and marked core-rule mentions share the precise subdefinition in ann
     plain.references.map(r=>['format',r.target_id])
   );
   const ref=plain.references[0];
-  const subject=await (await page.request.get(anna+'/api/entry?id='+plain.entry_id)).json();
-  expect(subject.effective_references.find(r=>r.id===ref.id)).toMatchObject({
-    target_id:ref.target_id,can_link:true,review_status:'unreviewed'
-  });
   const child=await (await page.request.get(anna+'/api/entry?id='+ref.target_id)).json();
   expect(child).toMatchObject({name_zh:'半身掩护',type:'rule',ruleset:'5r',boundary_rule:'rule_term_gloss_list'});
   expect(child.body).toContain('+2加值');

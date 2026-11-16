@@ -3,9 +3,7 @@
   "sql": [
     "PRAGMA foreign_keys=OFF;",
     "BEGIN TRANSACTION;",
-    "CREATE TABLE casting_options(id TEXT PRIMARY KEY,root_id TEXT REFERENCES entries(id),subject_id TEXT REFERENCES entries(id),\n            spell_id TEXT REFERENCES entries(id),mode TEXT,resource TEXT,recovery TEXT,selection TEXT,data TEXT NOT NULL);",
     "CREATE TABLE concept_observations(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table')),status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),target_id TEXT REFERENCES entries(id),data TEXT NOT NULL);",
-    "CREATE TABLE effective_knowledge(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),kind TEXT,status TEXT,review_status TEXT,data TEXT NOT NULL);",
     "CREATE TABLE effective_references(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER,end INTEGER,\n            signal TEXT,status TEXT,target_id TEXT REFERENCES entries(id),review_status TEXT,can_link INTEGER,presentation TEXT,data TEXT NOT NULL);",
     "CREATE TABLE entries(id TEXT PRIMARY KEY,entity_id TEXT REFERENCES entities(id),name TEXT,name_zh TEXT,name_en TEXT,type TEXT,page_path TEXT REFERENCES pages(path),start INTEGER,end INTEGER,ruleset TEXT,legacy TEXT,classification_status TEXT,fields TEXT,data TEXT NOT NULL);",
     "INSERT INTO \"entries\" VALUES('ver_8329e67bdb6815ea7dc1de48','ent_881cb1d68a716a57f61f0bd0','盾牌 Shield','盾牌','Shield','section','topics/玩家手册2024/装备/护甲.htm',574,616,'5r','unmarked','未分类段落','{\"ruleset\":\"5r\",\"source_id\":\"src_f473a607f72c5a164e63506e\",\"type\":\"section\"}','{\"anchors\":[],\"body_hash\":\"3a299ee455bb8b4eb9e79e4f2ec1e1b918ce710e3f4824d7dba06b3d450a6f59\",\"boundary_rule\":\"colored_heading\",\"classification_rule\":\"document_structure\",\"classification_status\":\"未分类段落\",\"end\":616,\"entity_id\":\"ent_881cb1d68a716a57f61f0bd0\",\"field_conflicts\":[],\"fields\":{\"ruleset\":\"5r\",\"source_id\":\"src_f473a607f72c5a164e63506e\",\"type\":\"section\"},\"id\":\"ver_8329e67bdb6815ea7dc1de48\",\"identity_status\":\"provisional\",\"is_primary\":false,\"legacy\":\"unmarked\",\"locator\":\"topics/玩家手册2024/装备/护甲.htm::盾牌 Shield::1\",\"name\":\"盾牌 Shield\",\"name_en\":\"Shield\",\"name_parse\":{\"annotations\":[],\"groups\":[],\"name_en\":\"Shield\",\"name_zh\":\"盾牌\",\"offset_basis\":\"raw_name_codepoints\",\"parts\":[{\"language\":\"zh\",\"spans\":[[0,2]],\"text\":\"盾牌\"},{\"language\":\"en\",\"spans\":[[3,9]],\"text\":\"Shield\"}],\"raw\":\"盾牌 Shield\",\"rule\":\"bilingual_suffix\",\"status\":\"parsed\"},\"name_zh\":\"盾牌\",\"observation_ids\":[],\"page_path\":\"topics/玩家手册2024/装备/护甲.htm\",\"parent_id\":\"ver_e75b813d6243520d9d25b64c\",\"ruleset\":\"5r\",\"ruleset_status\":\"上下文推得\",\"snapshot\":\"c1425c8e90804766689a0db7ec416833f3fc3046\",\"source_ids\":[\"src_f473a607f72c5a164e63506e\"],\"source_names\":[\"玩家手册2024\"],\"start\":574,\"title_end\":583,\"type\":\"section\",\"type_conflicts\":[],\"type_label\":\"文献段落\"}');",
@@ -48,7 +46,6 @@
     "INSERT INTO \"facts\" VALUES('fact_0c099181a4ad57b8fe6c784e','ver_958337258cbdf07fb3fe6c4f','source_id','\"src_f473a607f72c5a164e63506e\"','{\"source_id\":\"src_f473a607f72c5a164e63506e\",\"toc_nodes\":[\"114\",\"957\"]}','toc_ownership','book','上下文推得');",
     "INSERT INTO \"facts\" VALUES('fact_aa9782206048fa86e6c610af','ver_958337258cbdf07fb3fe6c4f','type','\"class_feature\"','{\"locator\":\"topics/玩家手册2024/角色职业/战士/战士.htm::1级：回气 Second Wind::1\",\"path\":\"topics/玩家手册2024/角色职业/战士/战士.htm\",\"span\":[1426,1444]}','level_heading','entry','原文明示');",
     "CREATE TABLE identity_candidates(group_id TEXT PRIMARY KEY,type TEXT,status TEXT,data TEXT);",
-    "CREATE TABLE knowledge_rule_links(id TEXT PRIMARY KEY,source_id TEXT REFERENCES entries(id),\n        target_id TEXT REFERENCES entries(id),relation TEXT,status TEXT,data TEXT NOT NULL);",
     "CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT NOT NULL);",
     "INSERT INTO \"metadata\" VALUES('summary','{\"fixture\":\"presentation-catalog-v1\"}');",
     "CREATE TABLE missing_definitions(id TEXT PRIMARY KEY,reference_id TEXT,page_path TEXT,status TEXT,data TEXT NOT NULL);",
@@ -58,7 +55,6 @@
     "INSERT INTO \"pages\" VALUES('topics/玩家手册2024/角色职业/战士/战士.htm','战士','document','ok','c4fd81d09d6e36e409dfe47326d88715bbf7749fe95a2088049cd2bd8bff0b39','\n战士 Fighter\n \n百兵之君，万甲之王\n \n战士核心特质Core Fighter Traits \n \n 主要属性Primary Ability 力量或敏捷\n \n 生命值骰Hit Point Die 每战士等级D10\n \n豁免熟练Saving Throw Proficiencies 力量与体质\n \n 技能熟练Skill Proficiencies 选择2项：特技、驯兽、运动、历史、洞悉、威吓、游说、察觉、求生\n \n 武器熟练Weapon Proficiencies 简易和军用武器\n \n 护甲受训Armor Training 轻甲、中甲、重甲和盾牌\n \n 起始装备Starting Equipment 选择A、B或C：（A）链甲，巨剑，链枷，8杆标枪，地城套组以及4GP；或者（B）镶钉皮甲，弯刀，短剑，长弓，20支箭矢，箭袋，地城套组 以及11GP；或者 （C）155GP\n\n\n \n战士是诸多战场的主宰者。无论是探险骑士、皇家勇士、亦或者是那些百战精兵、历练老成的佣兵，他们都是战士的一员。他们在盔甲与武器的运用上拥有旁人无与伦比的造诣。战士们对死亡洞若观火，他们既不害怕面对死亡，更不畏惧与死亡抗争。\n战士精通百般武艺，一个披坚执锐的战士总是能在各种战斗情况下挥舞最适合的武器。同样，战士也熟稔各式各样的甲胄。在那些最基本的东西之外，每个战士在战斗上也都有着自己的一技之长。一些人熟习射技，一些人会在战斗中同时挥舞两把武器，还有一些则会以魔法来增幅自身的武艺。这种泛用才能与特化领域的相互结合，让战士成为了更优异的作战人员。\n \n 成为一名战士……Becoming a Fighter…\n \n作为1级角色 As a Level 1 Character \n \n \n获得战士核心特质表里的所有特质。 \n\n获得战士的1级特性（见战士特性表）。\n\n \n作为兼职角色 As a Multiclass Character \n \n \n获得战士核心特质表里的以下能力：生命值骰、军用武器熟练以及轻甲、中甲和盾牌的护甲受训。 \n\n获得战士的1级特性（见战士特性表）。\n\n \n\n战士职业特性 Fighter Class Features\n \n作为战士，当你抵达特定战士等级时，你会获得下列的各项职业特性。这些特性也分别列在了战士职业特性表中。\n \n 战士特性Fighter Features \n \n等级熟练加值(PB)职业特性回气武器精通\n \n1+2战斗风格，回气，武器精通23\n \n2+2动作如潮（一次），战术思维23\n \n3+2战士子职23\n \n4+2属性值提升34\n \n5+3额外攻击，战术转进34\n \n6+3属性值提升34\n \n7+3子职特性34\n \n8+3属性值提升34\n \n9+4不屈（一次），战术主宰34\n \n10+4子职特性45\n \n11+4额外攻击（二）45\n \n12+4属性值提升45\n \n13+5不屈（两次），究明攻击45\n \n14+5属性值提升45\n \n15+5子职特性45\n \n16+5属性值提升46\n \n17+6动作如潮（两次），不屈（三次）46\n \n18+6子职特性46\n \n19+6传奇恩惠46\n \n20+6额外攻击（三）46\n\n\n \n\n1级：战斗风格 Fighting Style\n你不断磨练你的武艺。你获得一项你选择的战斗风格专长（见第五章）。推荐选择防御。\n每当你获得战士等级时，你可以将其改为另一个战斗风格专长。\n \n1级：回气 Second Wind\n你可以利用有限的精力与体力来重整旗鼓。以一个附赠动作，你可以用此法恢复生命值，其总值为1d10＋你的战士职业等级。\n你可以使用此特性两次，并且在完成短休时恢复一次已消耗的使用次数，完成长休时恢复所有已消耗的使用次数。\n当你到达特定战士等级时，你获得这项特性的额外使用次数，已列在战士特性表的回气一列。\n \n1级：武器精通 Weapon Mastery\n 你对武器的训练使你能够运用三种自选的简易或军用武器的精通词条。每当你完成一次长休时，你可以重新演练武器技巧，来改变你所选择的其中一个武器类型。\n当你到达特定的战士等级时，你还可以使用更多种类武器的精通词条，详见战士特性表中武器精通一栏。\n \n2级：动作如潮 Action Surge\n你可以在短期内让自己突破身为凡骨的极限。在你的回合中，你可以执行一个额外的动作，但不能是魔法动作。\n你使用此特性后，你必须在完成一次短休或长休后才能再次使用。第17级起，你可以在每次休息之间使用此特性两次，但每回合只能使用一次。\n \n2级：战术思维 Tactical Mind\n在战场内外，你都能够运用你的战术思维。当你在一次属性检定上失败时，你可以消耗一次回气次数让你更接近成功。你掷1d10并将骰值加入到结果之中，而非恢复生命值。这可能会让结果变为成功。如果检定依旧失败，则不会消耗回气次数。\n \n3级：战士子职 Fighter Subclass\n 你选择获得一项战士子职：战斗大师、  勇士 、 奥法骑士或  灵能武士。子职的内容见后文。子职是一种特化，在特定的战士等级给予你对应的独特能力。此后你将获得你所选的子职所有能力——只要其所需等级不超过你的战士等级。战士特性表列出了你从子职中获得新特性的战士等级。 \n \n4级：属性值提升 Ability Score Improvement\n你获得属性值提升专长（见第五章）或其他你满足条件的专长。如战士特性表所示，你还会在第6、第8、第12、第14、第16级时再次获得本特性。\n \n5级：额外攻击 Extra Attack\n你在自己回合内执行攻击动作时，可以发动两次攻击而非一次。\n \n5级：战术转进 Tactical Shift\n每当你使用附赠动作进行回气时，你可以移动至多相当于你速度一半的距离，且不会引发借机攻击。\n \n9级：不屈 Indomitable\n当你在一次豁免检定中失败时，你可以重骰并获得等同你战士等级的加值。你必须使用新的掷骰结果，你使用此特性后，你必须在完成一次长休后才能再次使用。\n第13级起，你可以在两次长休之间使用此特性两次；第17级起，你可以在两次长休之间使用此特性三次。\n \n9级：战术主宰 Tactical Master\n每当你用武器发动攻击，且你可以使用此武器的精通词条时，你可以将此次攻击的精通词条改为推离，削弱或缓速 中的一种。\n \n11级：额外攻击（二）Two Extra Attacks\n 你在自己回合内执行攻击动作时，可以发动三次攻击而非一次。\n \n13级：究明攻击 Studied Attacks\n你已深晓对手的一举一动，并且从每次攻击中吸取经验教训。如果你对一个生物进行攻击检定但失手，那么直到你的下个回合结束前，你对其的下次攻击检定具有优势。\n \n19级：传奇恩惠 Epic Boon\n你获得一项传奇恩惠专长（见第五章）或其他一项你选择的适用的专长。推荐选择英勇战斗之恩惠 。\n \n20级：额外攻击（三）Three Extra Attacks\n 你在自己回合内执行攻击动作时，可以发动四次攻击而非一次。\n ','[\"src_f473a607f72c5a164e63506e\"]','{\"characters\":2919,\"encoding\":\"utf-8\",\"error\":\"\",\"parse_status\":\"ok\",\"path\":\"topics/玩家手册2024/角色职业/战士/战士.htm\",\"role\":\"document\",\"sha256\":\"c4fd81d09d6e36e409dfe47326d88715bbf7749fe95a2088049cd2bd8bff0b39\",\"source_ids\":[\"src_f473a607f72c5a164e63506e\"],\"source_method\":\"toc_ownership\",\"title\":\"战士\",\"toc_nodes\":[\"114\",\"957\"]}');",
     "CREATE TABLE relations(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),predicate TEXT,object_id TEXT REFERENCES entries(id),target_label TEXT,target_locator TEXT,evidence TEXT,status TEXT);",
     "CREATE TABLE review_queue(id TEXT PRIMARY KEY,target TEXT,reason TEXT,priority TEXT,data TEXT);",
-    "CREATE TABLE rule_effect_index(id TEXT PRIMARY KEY,subject_id TEXT REFERENCES entries(id),\n        effect_id TEXT,effect TEXT,damage_type TEXT,delivery TEXT,timing TEXT,save_ability TEXT,target_scope TEXT,use_action TEXT,data TEXT NOT NULL);",
     "CREATE TABLE sources(id TEXT PRIMARY KEY,name TEXT NOT NULL,origin TEXT,ruleset_hint TEXT,release_status TEXT,source_type TEXT,archived INTEGER,coverage TEXT,data TEXT NOT NULL);",
     "INSERT INTO \"sources\" VALUES('src_a00c764955b18f32fb27c71a','玩家手册2014','官方','5e','正式','归档资源',1,'toc_located','{\"abbreviations\":[\"PHB\"],\"aliases\":[\"PHB\",\"Player''s Handbook\",\"玩家手册\"],\"archived\":true,\"catalog_ids\":[\"cat_7090cb431e91d7b8f7da1693\"],\"collection_abbreviations\":[],\"coverage\":\"toc_located\",\"evidence\":[{\"group\":\"旧版内容\",\"label\":\"玩家手册2014（旧版）\",\"node_id\":\"5373\",\"path\":\"webhelpcontents.htm\"},{\"path\":\"topics/速查/资源简写.htm\",\"row\":1,\"table\":\"旧版资源\"}],\"group\":\"旧版内容\",\"id\":\"src_a00c764955b18f32fb27c71a\",\"label\":\"PHB\",\"metadata_status\":\"上下文推得\",\"name\":\"玩家手册2014\",\"namespace_hint\":\"topics/玩家手册\",\"origin\":\"官方\",\"parent_name\":\"\",\"paths\":[\"topics/玩家手册/个性与背景/个性与背景.html\",\"topics/玩家手册/个性与背景/侍僧.html\",\"topics/玩家手册/个性与背景/公会工匠.html\",\"topics/玩家手册/个性与背景/化外之民.html\",\"topics/玩家手册/个性与背景/士兵.html\",\"topics/玩家手册/个性与背景/平民英雄.html\",\"topics/玩家手册/个性与背景/智者.html\",\"topics/玩家手册/个性与背景/水手.html\",\"topics/玩家手册/个性与背景/流浪儿.html\",\"topics/玩家手册/个性与背景/罪犯.html\",\"topics/玩家手册/个性与背景/艺人.html\",\"topics/玩家手册/个性与背景/贵族.html\",\"topics/玩家手册/个性与背景/隐士.html\",\"topics/玩家手册/个性与背景/骗子.html\",\"topics/玩家手册/冒险/休息.htm\",\"topics/玩家手册/冒险/休整期活动/专业实践.htm\",\"topics/玩家手册/冒险/休整期活动/休养.htm\",\"topics/玩家手册/冒险/休整期活动/制作.htm\",\"topics/玩家手册/冒险/休整期活动/深入调查.htm\",\"topics/玩家手册/冒险/冒险之余.htm\",\"topics/玩家手册/冒险/时间.htm\",\"topics/玩家手册/冒险/环境.htm\",\"topics/玩家手册/冒险/社交.htm\",\"topics/玩家手册/冒险/移动.htm\",\"topics/玩家手册/冒险/训练.htm\",\"topics/玩家手册/创建角色/第一章：一步步创建你的角色.htm\",\"topics/玩家手册/创建角色/高于1级.htm\",\"topics/玩家手册/前言.htm\",\"topics/玩家手册/存在位面.htm\",\"topics/玩家手册/属性值应用/优势与劣势.htm\",\"topics/玩家手册/属性值应用/各属性值应用.htm\",\"topics/玩家手册/属性值应用/属性值与调整值.htm\",\"topics/玩家手册/属性值应用/属性检定.htm\",\"topics/玩家手册/属性值应用/熟练加值.htm\",\"topics/玩家手册/属性值应用/豁免检定.htm\",\"topics/玩家手册/战斗/伤害与治疗.htm\",\"topics/玩家手册/战斗/发起攻击.htm\",\"topics/玩家手册/战斗/战斗动作.htm\",\"topics/玩家手册/战斗/战斗流程.htm\",\"topics/玩家手册/战斗/掩护.htm\",\"topics/玩家手册/战斗/水下战斗.htm\",\"topics/玩家手册/战斗/移动与位置.htm\",\"topics/玩家手册/战斗/骑乘战斗.htm\",\"topics/玩家手册/物质位面.htm\",\"topics/玩家手册/物质界外.htm\",\"topics/玩家手册/状态.html\",\"topics/玩家手册/留档：被删除的阵营内容.htm\",\"topics/玩家手册/神系/凯尔特神系.htm\",\"topics/玩家手册/神系/北欧神系.htm\",\"topics/玩家手册/神系/埃及神系.htm\",\"topics/玩家手册/神系/希腊神系.htm\",\"topics/玩家手册/神系/灰鹰.htm\",\"topics/玩家手册/神系/现实史传奇幻神系.htm\",\"topics/玩家手册/神系/艾伯伦.htm\",\"topics/玩家手册/神系/被遗忘国度.htm\",\"topics/玩家手册/神系/非人类神祇.htm\",\"topics/玩家手册/神系/龙与地下城神系.htm\",\"topics/玩家手册/神系/龙枪.htm\",\"topics/玩家手册/种族/人类.html\",\"topics/玩家手册/种族/侏儒.html\",\"topics/玩家手册/种族/半兽人.html\",\"topics/玩家手册/种族/半精灵.html\",\"topics/玩家手册/种族/半身人.html\",\"topics/玩家手册/种族/提夫林.html\",\"topics/玩家手册/种族/矮人.html\",\"topics/玩家手册/种族/种族.html\",\"topics/玩家手册/种族/精灵.html\",\"topics/玩家手册/种族/龙裔.html\",\"topics/玩家手册/简介/使用本书.htm\",\"topics/玩家手册/简介/充满冒险的世界.htm\",\"topics/玩家手册/简介/冒险.htm\",\"topics/玩家手册/简介/如何进行游戏.htm\",\"topics/玩家手册/简介/简介.htm\",\"topics/玩家手册/职业/吟游诗人/勇气学院.html\",\"topics/玩家手册/职业/吟游诗人/逸闻学院.html\",\"topics/玩家手册/职业/吟游诗人1.html\",\"topics/玩家手册/职业/圣武士.html\",\"topics/玩家手册/职业/圣武士/古贤之誓.html\",\"topics/玩家手册/职业/圣武士/复仇之誓.html\",\"topics/玩家手册/职业/圣武士/奉献之誓.html\",\"topics/玩家手册/职业/德鲁伊.html\",\"topics/玩家手册/职业/德鲁伊/大地结社.html\",\"topics/玩家手册/职业/德鲁伊/月亮结社.html\",\"topics/玩家手册/职业/战士.html\",\"topics/玩家手册/职业/战士/勇士.html\",\"topics/玩家手册/职业/战士/奥法骑士.html\",\"topics/玩家手册/职业/战士/战斗大师.html\",\"topics/玩家手册/职业/术士.html\",\"topics/玩家手册/职业/术士/狂野魔法.html\",\"topics/玩家手册/职业/术士/龙族血脉.html\",\"topics/玩家手册/职业/武僧.html\",\"topics/玩家手册/职业/武僧/四象宗.html\",\"topics/玩家手册/职业/武僧/散打宗.html\",\"topics/玩家手册/职业/武僧/暗影宗.html\",\"topics/玩家手册/职业/法师.html\",\"topics/玩家手册/职业/法师/变化学派.html\",\"topics/玩家手册/职业/法师/咒法学派.html\",\"topics/玩家手册/职业/法师/塑能学派.html\",\"topics/玩家手册/职业/法师/幻术学派.html\",\"topics/玩家手册/职业/法师/惑控学派.html\",\"topics/玩家手册/职业/法师/死灵学派.html\",\"topics/玩家手册/职业/法师/防护学派.html\",\"topics/玩家手册/职业/法师/预言学派.html\",\"topics/玩家手册/职业/游侠.html\",\"topics/玩家手册/职业/游侠/猎人.html\",\"topics/玩家手册/职业/游侠/驯兽师.html\",\"topics/玩家手册/职业/游荡者.html\",\"topics/玩家手册/职业/游荡者/刺客.html\",\"topics/玩家手册/职业/游荡者/盗贼.html\",\"topics/玩家手册/职业/游荡者/诡术师.html\",\"topics/玩家手册/职业/牧师.html\",\"topics/玩家手册/职业/牧师/光明领域.html\",\"topics/玩家手册/职业/牧师/战争领域.html\",\"topics/玩家手册/职业/牧师/生命领域.html\",\"topics/玩家手册/职业/牧师/知识领域.html\",\"topics/玩家手册/职业/牧师/自然领域.html\",\"topics/玩家手册/职业/牧师/诡术领域.html\",\"topics/玩家手册/职业/牧师/风暴领域.html\",\"topics/玩家手册/职业/职业.html\",\"topics/玩家手册/职业/邪术师.html\",\"topics/玩家手册/职业/邪术师/旧日支配者.html\",\"topics/玩家手册/职业/邪术师/至高妖精.html\",\"topics/玩家手册/职业/邪术师/邪魔.html\",\"topics/玩家手册/职业/邪术师/魔能祈唤.html\",\"topics/玩家手册/职业/野蛮人.html\",\"topics/玩家手册/职业/野蛮人/图腾武者道途.html\",\"topics/玩家手册/职业/野蛮人/狂战士道途.html\",\"topics/玩家手册/自定义选项.htm\",\"topics/玩家手册/自定义选项/专长.html\",\"topics/玩家手册/自定义选项/兼职.html\",\"topics/玩家手册/装备/其他开支.html\",\"topics/玩家手册/装备/冒险用品.html\",\"topics/玩家手册/装备/坐骑与载具.htm\",\"topics/玩家手册/装备/工具.html\",\"topics/玩家手册/装备/护甲与盾牌.html\",\"topics/玩家手册/装备/武器.html\",\"topics/玩家手册/装备/装备.html\",\"topics/玩家手册/装备/财富.htm\",\"topics/玩家手册/装备/起始装备.htm\",\"topics/玩家手册/装备/饰品.htm\",\"topics/玩家手册/诸神.htm\",\"topics/玩家手册/进行游戏/冒险.html\",\"topics/玩家手册/进行游戏/属性值应用.html\",\"topics/玩家手册/进行游戏/战斗.html\",\"topics/玩家手册/魔法/施展法术.htm\",\"topics/玩家手册/魔法/法术.htm\",\"topics/玩家手册/魔法/法术列表/吟游诗人.html\",\"topics/玩家手册/魔法/法术列表/圣武士.html\",\"topics/玩家手册/魔法/法术列表/德鲁伊.html\",\"topics/玩家手册/魔法/法术列表/术士.html\",\"topics/玩家手册/魔法/法术列表/法师.html\",\"topics/玩家手册/魔法/法术列表/游侠.html\",\"topics/玩家手册/魔法/法术列表/牧师.html\",\"topics/玩家手册/魔法/法术列表/邪术师.html\",\"topics/玩家手册/魔法/法术是什么.htm\",\"topics/玩家手册/魔法/法术详述/1环.html\",\"topics/玩家手册/魔法/法术详述/2环.html\",\"topics/玩家手册/魔法/法术详述/3环.html\",\"topics/玩家手册/魔法/法术详述/4环.html\",\"topics/玩家手册/魔法/法术详述/5环.html\",\"topics/玩家手册/魔法/法术详述/6环.html\",\"topics/玩家手册/魔法/法术详述/7环.html\",\"topics/玩家手册/魔法/法术详述/8环.html\",\"topics/玩家手册/魔法/法术详述/9环.html\",\"topics/玩家手册/魔法/法术详述/戏法.html\",\"topics/玩家手册/魔法/魔法.html\"],\"reference_role\":\"core_rules\",\"reference_role_evidence\":[{\"catalog_entry\":{\"path\":\"topics/速查/资源简写.htm\",\"row\":1,\"table\":\"旧版资源\"},\"core_family_entries\":[{\"path\":\"topics/速查/资源简写.htm\",\"row\":1,\"table\":\"核心（三宝书）\"}],\"rule\":\"catalog_publication_family\",\"status\":\"上下文推得\"}],\"release_status\":\"正式\",\"ruleset_hint\":\"5e\",\"setting\":[],\"source_type\":\"归档资源\",\"toc_node\":\"5373\"}');",
     "INSERT INTO \"sources\" VALUES('src_f473a607f72c5a164e63506e','玩家手册2024','官方','5r','正式','核心',0,'toc_located','{\"abbreviations\":[\"PHB24\"],\"aliases\":[\"PHB24\",\"Player''s Handbook\",\"玩家手册2024\"],\"archived\":false,\"catalog_ids\":[\"cat_d659a99b6ac303b21492ee5e\"],\"collection_abbreviations\":[],\"coverage\":\"toc_located\",\"evidence\":[{\"group\":\"核心规则\",\"label\":\"玩家手册2024\",\"node_id\":\"872\",\"path\":\"webhelpcontents.htm\"},{\"path\":\"topics/速查/资源简写.htm\",\"row\":1,\"table\":\"核心（三宝书）\"}],\"group\":\"核心规则\",\"id\":\"src_f473a607f72c5a164e63506e\",\"label\":\"PHB24\",\"metadata_status\":\"上下文推得\",\"name\":\"玩家手册2024\",\"namespace_hint\":\"topics/玩家手册2024\",\"origin\":\"官方\",\"parent_name\":\"\",\"paths\":[\"topics/玩家手册2024/Credits.htm\",\"topics/玩家手册2024/专长/专长概述.htm\",\"topics/玩家手册2024/专长/传奇恩惠专长.htm\",\"topics/玩家手册2024/专长/战斗风格专长.htm\",\"topics/玩家手册2024/专长/起源专长.htm\",\"topics/玩家手册2024/专长/通用专长.htm\",\"topics/玩家手册2024/创建角色/以更高等级开始.htm\",\"topics/玩家手册2024/创建角色/兼职.htm\",\"topics/玩家手册2024/创建角色/创建你的角色.htm\",\"topics/玩家手册2024/创建角色/第一步：选择职业.htm\",\"topics/玩家手册2024/创建角色/第三步：确定属性值.htm\",\"topics/玩家手册2024/创建角色/第二步：确定起源.htm\",\"topics/玩家手册2024/创建角色/第五步：丰富细节.htm\",\"topics/玩家手册2024/创建角色/第四步：选择阵营.htm\",\"topics/玩家手册2024/创建角色/等级提升.htm\",\"topics/玩家手册2024/创建角色/饰品.htm\",\"topics/玩家手册2024/多元宇宙/内层位面.htm\",\"topics/玩家手册2024/多元宇宙/外层位面.htm\",\"topics/玩家手册2024/多元宇宙/物质领域.htm\",\"topics/玩家手册2024/多元宇宙/过渡位面.htm\",\"topics/玩家手册2024/序章：欢迎来到冒险世界.htm\",\"topics/玩家手册2024/术语汇编/其他术语.htm\",\"topics/玩家手册2024/术语汇编/动作.htm\",\"topics/玩家手册2024/术语汇编/危害.htm\",\"topics/玩家手册2024/术语汇编/态度.htm\",\"topics/玩家手册2024/术语汇编/效应区域.htm\",\"topics/玩家手册2024/术语汇编/术语速查.htm\",\"topics/玩家手册2024/术语汇编/状态.htm\",\"topics/玩家手册2024/欢迎/你需要什么.htm\",\"topics/玩家手册2024/欢迎/使用本书.htm\",\"topics/玩家手册2024/欢迎/充满冒险的世界.htm\",\"topics/玩家手册2024/法术/持续时间.htm\",\"topics/玩家手册2024/法术/施展法术.htm\",\"topics/玩家手册2024/法术/施法时间.htm\",\"topics/玩家手册2024/法术/施法距离.htm\",\"topics/玩家手册2024/法术/法术成分.htm\",\"topics/玩家手册2024/法术/法术效应.htm\",\"topics/玩家手册2024/法术/法术环阶.htm\",\"topics/玩家手册2024/法术/法术详述.htm\",\"topics/玩家手册2024/法术/职业法术列表.htm\",\"topics/玩家手册2024/法术/获得法术.htm\",\"topics/玩家手册2024/法术/魔法学派.htm\",\"topics/玩家手册2024/法术详述/0环.htm\",\"topics/玩家手册2024/法术详述/1环.htm\",\"topics/玩家手册2024/法术详述/2环.htm\",\"topics/玩家手册2024/法术详述/3环.htm\",\"topics/玩家手册2024/法术详述/4环.htm\",\"topics/玩家手册2024/法术详述/5环.htm\",\"topics/玩家手册2024/法术详述/6环.htm\",\"topics/玩家手册2024/法术详述/7环.htm\",\"topics/玩家手册2024/法术详述/8环.htm\",\"topics/玩家手册2024/法术详述/9环.htm\",\"topics/玩家手册2024/第一章：进行游戏.htm\",\"topics/玩家手册2024/第七章：法术.htm\",\"topics/玩家手册2024/第三章：角色职业.htm\",\"topics/玩家手册2024/第二章：创建角色.htm\",\"topics/玩家手册2024/第五章：专长.htm\",\"topics/玩家手册2024/第六章：装备.htm\",\"topics/玩家手册2024/第四章：角色起源.htm\",\"topics/玩家手册2024/装备/其他工具.htm\",\"topics/玩家手册2024/装备/冒险装备.htm\",\"topics/玩家手册2024/装备/制造装备.htm\",\"topics/玩家手册2024/装备/坐骑与载具.htm\",\"topics/玩家手册2024/装备/工具.htm\",\"topics/玩家手册2024/装备/工匠工具.htm\",\"topics/玩家手册2024/装备/护甲.htm\",\"topics/玩家手册2024/装备/服务.htm\",\"topics/玩家手册2024/装备/武器.htm\",\"topics/玩家手册2024/装备/精通词条.htm\",\"topics/玩家手册2024/装备/词条.htm\",\"topics/玩家手册2024/装备/钱币.htm\",\"topics/玩家手册2024/装备/魔法物品.htm\",\"topics/玩家手册2024/角色职业/吟游诗人/勇气学院.htm\",\"topics/玩家手册2024/角色职业/吟游诗人/吟游诗人.htm\",\"topics/玩家手册2024/角色职业/吟游诗人/吟游诗人法术列表.htm\",\"topics/玩家手册2024/角色职业/吟游诗人/舞蹈学院.htm\",\"topics/玩家手册2024/角色职业/吟游诗人/逸闻学院.htm\",\"topics/玩家手册2024/角色职业/吟游诗人/魅心学院.htm\",\"topics/玩家手册2024/角色职业/圣武士/古贤之誓.htm\",\"topics/玩家手册2024/角色职业/圣武士/圣武士.htm\",\"topics/玩家手册2024/角色职业/圣武士/圣武士法术列表.htm\",\"topics/玩家手册2024/角色职业/圣武士/复仇之誓.htm\",\"topics/玩家手册2024/角色职业/圣武士/奉献之誓.htm\",\"topics/玩家手册2024/角色职业/圣武士/荣耀之誓.htm\",\"topics/玩家手册2024/角色职业/德鲁伊/大地结社.htm\",\"topics/玩家手册2024/角色职业/德鲁伊/德鲁伊.htm\",\"topics/玩家手册2024/角色职业/德鲁伊/德鲁伊法术列表.htm\",\"topics/玩家手册2024/角色职业/德鲁伊/星辰结社.htm\",\"topics/玩家手册2024/角色职业/德鲁伊/月亮结社.htm\",\"topics/玩家手册2024/角色职业/德鲁伊/海洋结社.htm\",\"topics/玩家手册2024/角色职业/战士/勇士.htm\",\"topics/玩家手册2024/角色职业/战士/奥法骑士.htm\",\"topics/玩家手册2024/角色职业/战士/战士.htm\",\"topics/玩家手册2024/角色职业/战士/战斗大师.htm\",\"topics/玩家手册2024/角色职业/战士/灵能武士.htm\",\"topics/玩家手册2024/角色职业/术士/时械术法.htm\",\"topics/玩家手册2024/角色职业/术士/术士.htm\",\"topics/玩家手册2024/角色职业/术士/术士法术列表.htm\",\"topics/玩家手册2024/角色职业/术士/狂野术法.htm\",\"topics/玩家手册2024/角色职业/术士/畸变术法.htm\",\"topics/玩家手册2024/角色职业/术士/超魔法选项.htm\",\"topics/玩家手册2024/角色职业/术士/龙族术法.htm\",\"topics/玩家手册2024/角色职业/武僧/命流武者.htm\",\"topics/玩家手册2024/角色职业/武僧/四象武者.htm\",\"topics/玩家手册2024/角色职业/武僧/散打武者.htm\",\"topics/玩家手册2024/角色职业/武僧/暗影武者.htm\",\"topics/玩家手册2024/角色职业/武僧/武僧.htm\",\"topics/玩家手册2024/角色职业/法师/塑能师.htm\",\"topics/玩家手册2024/角色职业/法师/幻术师.htm\",\"topics/玩家手册2024/角色职业/法师/法师.htm\",\"topics/玩家手册2024/角色职业/法师/法师法术列表.htm\",\"topics/玩家手册2024/角色职业/法师/防护师.htm\",\"topics/玩家手册2024/角色职业/法师/预言师.htm\",\"topics/玩家手册2024/角色职业/游侠/妖精漫游者.htm\",\"topics/玩家手册2024/角色职业/游侠/幽域追猎者.htm\",\"topics/玩家手册2024/角色职业/游侠/游侠.htm\",\"topics/玩家手册2024/角色职业/游侠/游侠法术列表.htm\",\"topics/玩家手册2024/角色职业/游侠/猎人.htm\",\"topics/玩家手册2024/角色职业/游侠/驯兽师.htm\",\"topics/玩家手册2024/角色职业/游荡者/刺客.htm\",\"topics/玩家手册2024/角色职业/游荡者/游荡者.htm\",\"topics/玩家手册2024/角色职业/游荡者/盗贼.htm\",\"topics/玩家手册2024/角色职业/游荡者/诡术师.htm\",\"topics/玩家手册2024/角色职业/游荡者/魂刃.htm\",\"topics/玩家手册2024/角色职业/牧师/光明领域.htm\",\"topics/玩家手册2024/角色职业/牧师/战争领域.htm\",\"topics/玩家手册2024/角色职业/牧师/牧师.htm\",\"topics/玩家手册2024/角色职业/牧师/牧师法术列表.htm\",\"topics/玩家手册2024/角色职业/牧师/生命领域.htm\",\"topics/玩家手册2024/角色职业/牧师/诡术领域.htm\",\"topics/玩家手册2024/角色职业/野蛮人/世界树道途.htm\",\"topics/玩家手册2024/角色职业/野蛮人/兽心道途.htm\",\"topics/玩家手册2024/角色职业/野蛮人/狂战士道途.htm\",\"topics/玩家手册2024/角色职业/野蛮人/狂热者道途.htm\",\"topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm\",\"topics/玩家手册2024/角色职业/魔契师/天界宗主.htm\",\"topics/玩家手册2024/角色职业/魔契师/旧日支配者宗主.htm\",\"topics/玩家手册2024/角色职业/魔契师/至高妖精宗主.htm\",\"topics/玩家手册2024/角色职业/魔契师/邪魔宗主.htm\",\"topics/玩家手册2024/角色职业/魔契师/魔契师.htm\",\"topics/玩家手册2024/角色职业/魔契师/魔契师法术列表.htm\",\"topics/玩家手册2024/角色职业/魔契师/魔能祈唤选项.htm\",\"topics/玩家手册2024/角色起源/种族/人类.htm\",\"topics/玩家手册2024/角色起源/种族/侏儒.htm\",\"topics/玩家手册2024/角色起源/种族/兽人.htm\",\"topics/玩家手册2024/角色起源/种族/半身人.htm\",\"topics/玩家手册2024/角色起源/种族/提夫林.htm\",\"topics/玩家手册2024/角色起源/种族/歌利亚.htm\",\"topics/玩家手册2024/角色起源/种族/矮人.htm\",\"topics/玩家手册2024/角色起源/种族/精灵.htm\",\"topics/玩家手册2024/角色起源/种族/阿斯莫.htm\",\"topics/玩家手册2024/角色起源/种族/龙裔.htm\",\"topics/玩家手册2024/角色起源/种族详述.htm\",\"topics/玩家手册2024/角色起源/背景/侍僧.htm\",\"topics/玩家手册2024/角色起源/背景/农民.htm\",\"topics/玩家手册2024/角色起源/背景/向导.htm\",\"topics/玩家手册2024/角色起源/背景/商人.htm\",\"topics/玩家手册2024/角色起源/背景/士兵.htm\",\"topics/玩家手册2024/角色起源/背景/工匠.htm\",\"topics/玩家手册2024/角色起源/背景/抄写员.htm\",\"topics/玩家手册2024/角色起源/背景/智者.htm\",\"topics/玩家手册2024/角色起源/背景/水手.htm\",\"topics/玩家手册2024/角色起源/背景/流浪者.htm\",\"topics/玩家手册2024/角色起源/背景/罪犯.htm\",\"topics/玩家手册2024/角色起源/背景/艺人.htm\",\"topics/玩家手册2024/角色起源/背景/警卫.htm\",\"topics/玩家手册2024/角色起源/背景/贵族.htm\",\"topics/玩家手册2024/角色起源/背景/隐士.htm\",\"topics/玩家手册2024/角色起源/背景/骗子.htm\",\"topics/玩家手册2024/角色起源/背景详述.htm\",\"topics/玩家手册2024/角色起源/起源的构成部分.htm\",\"topics/玩家手册2024/进行游戏/D20检定.htm\",\"topics/玩家手册2024/进行游戏/与物件交互.htm\",\"topics/玩家手册2024/进行游戏/临时生命值.htm\",\"topics/玩家手册2024/进行游戏/交涉.htm\",\"topics/玩家手册2024/进行游戏/交涉案例.htm\",\"topics/玩家手册2024/进行游戏/优势_劣势.htm\",\"topics/玩家手册2024/进行游戏/伤害与治疗.htm\",\"topics/玩家手册2024/进行游戏/伤害掷骰.htm\",\"topics/玩家手册2024/进行游戏/伤害类型.htm\",\"topics/玩家手册2024/进行游戏/免疫.htm\",\"topics/玩家手册2024/进行游戏/六项属性.htm\",\"topics/玩家手册2024/进行游戏/动作.htm\",\"topics/玩家手册2024/进行游戏/危害.htm\",\"topics/玩家手册2024/进行游戏/反应.htm\",\"topics/玩家手册2024/进行游戏/发动攻击.htm\",\"topics/玩家手册2024/进行游戏/属性检定.htm\",\"topics/玩家手册2024/进行游戏/战斗.htm\",\"topics/玩家手册2024/进行游戏/战斗与伤害案例.htm\",\"topics/玩家手册2024/进行游戏/战斗流程.htm\",\"topics/玩家手册2024/进行游戏/抗性和易伤.htm\",\"topics/玩家手册2024/进行游戏/探索.htm\",\"topics/玩家手册2024/进行游戏/探索案例.htm\",\"topics/玩家手册2024/进行游戏/攻击检定.htm\",\"topics/玩家手册2024/进行游戏/旅行.htm\",\"topics/玩家手册2024/进行游戏/水下战斗.htm\",\"topics/玩家手册2024/进行游戏/治疗.htm\",\"topics/玩家手册2024/进行游戏/游戏规律.htm\",\"topics/玩家手册2024/进行游戏/熟练.htm\",\"topics/玩家手册2024/进行游戏/状态.htm\",\"topics/玩家手册2024/进行游戏/玩家还是DM？.htm\",\"topics/玩家手册2024/进行游戏/生命值.htm\",\"topics/玩家手册2024/进行游戏/生命值降至0点.htm\",\"topics/玩家手册2024/进行游戏/移动和位置.htm\",\"topics/玩家手册2024/进行游戏/视野与光照.htm\",\"topics/玩家手册2024/进行游戏/豁免检定.htm\",\"topics/玩家手册2024/进行游戏/豁免检定与伤害.htm\",\"topics/玩家手册2024/进行游戏/躲藏.htm\",\"topics/玩家手册2024/进行游戏/近战攻击.htm\",\"topics/玩家手册2024/进行游戏/远程攻击.htm\",\"topics/玩家手册2024/进行游戏/重击.htm\",\"topics/玩家手册2024/进行游戏/长期游戏.htm\",\"topics/玩家手册2024/进行游戏/附赠动作.htm\",\"topics/玩家手册2024/进行游戏/骑乘战斗.htm\",\"topics/玩家手册2024/进行游戏/骰子.htm\",\"topics/玩家手册2024/附录A：多元宇宙.htm\",\"topics/玩家手册2024/附录B：生物数据卡.htm\",\"topics/玩家手册2024/附录C：术语汇编.htm\"],\"reference_role\":\"core_rules\",\"reference_role_evidence\":[{\"catalog_entry\":{\"path\":\"topics/速查/资源简写.htm\",\"row\":1,\"table\":\"核心（三宝书）\"},\"core_family_entries\":[{\"path\":\"topics/速查/资源简写.htm\",\"row\":1,\"table\":\"核心（三宝书）\"}],\"rule\":\"catalog_publication_family\",\"status\":\"上下文推得\"}],\"release_status\":\"正式\",\"ruleset_hint\":\"5r\",\"setting\":[],\"source_type\":\"核心\",\"toc_node\":\"872\"}');",
@@ -599,9 +595,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "sorts": [
             "source",
@@ -615,9 +609,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "composites": {}
         },
@@ -634,9 +626,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "sorts": [
             "source",
@@ -650,9 +640,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "composites": {}
         },
@@ -736,50 +724,6 @@
                 "title": "玩家手册2024",
                 "search": "玩家手册2024 PHB24 Player's Handbook 玩家手册2024",
                 "count": 1
-              }
-            ]
-          },
-          {
-            "key": "legacy",
-            "label": "旧版标记",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "entry_marked",
-                "label": "entry_marked",
-                "count": 1
-              },
-              {
-                "value": "source_archived",
-                "label": "source_archived",
-                "count": 0
-              },
-              {
-                "value": "unmarked",
-                "label": "unmarked",
-                "count": 1
-              }
-            ]
-          },
-          {
-            "key": "status",
-            "label": "分类依据",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "原文明示",
-                "label": "原文明示",
-                "count": 2
-              },
-              {
-                "value": "上下文推得",
-                "label": "上下文推得",
-                "count": 0
-              },
-              {
-                "value": "未分类段落",
-                "label": "未分类段落",
-                "count": 0
               }
             ]
           }
@@ -1403,50 +1347,6 @@
                 "count": 1
               }
             ]
-          },
-          {
-            "key": "legacy",
-            "label": "旧版标记",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "entry_marked",
-                "label": "entry_marked",
-                "count": 1
-              },
-              {
-                "value": "source_archived",
-                "label": "source_archived",
-                "count": 0
-              },
-              {
-                "value": "unmarked",
-                "label": "unmarked",
-                "count": 0
-              }
-            ]
-          },
-          {
-            "key": "status",
-            "label": "分类依据",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "原文明示",
-                "label": "原文明示",
-                "count": 1
-              },
-              {
-                "value": "上下文推得",
-                "label": "上下文推得",
-                "count": 0
-              },
-              {
-                "value": "未分类段落",
-                "label": "未分类段落",
-                "count": 0
-              }
-            ]
           }
         ],
         "total": 1,
@@ -1808,50 +1708,6 @@
                 "title": "玩家手册2014",
                 "search": "玩家手册2014 PHB Player's Handbook 玩家手册",
                 "count": 1
-              }
-            ]
-          },
-          {
-            "key": "legacy",
-            "label": "旧版标记",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "entry_marked",
-                "label": "entry_marked",
-                "count": 1
-              },
-              {
-                "value": "source_archived",
-                "label": "source_archived",
-                "count": 0
-              },
-              {
-                "value": "unmarked",
-                "label": "unmarked",
-                "count": 0
-              }
-            ]
-          },
-          {
-            "key": "status",
-            "label": "分类依据",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "原文明示",
-                "label": "原文明示",
-                "count": 1
-              },
-              {
-                "value": "上下文推得",
-                "label": "上下文推得",
-                "count": 0
-              },
-              {
-                "value": "未分类段落",
-                "label": "未分类段落",
-                "count": 0
               }
             ]
           }
@@ -2480,50 +2336,6 @@
                 "count": 1
               }
             ]
-          },
-          {
-            "key": "legacy",
-            "label": "旧版标记",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "entry_marked",
-                "label": "entry_marked",
-                "count": 1
-              },
-              {
-                "value": "source_archived",
-                "label": "source_archived",
-                "count": 0
-              },
-              {
-                "value": "unmarked",
-                "label": "unmarked",
-                "count": 0
-              }
-            ]
-          },
-          {
-            "key": "status",
-            "label": "分类依据",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "原文明示",
-                "label": "原文明示",
-                "count": 1
-              },
-              {
-                "value": "上下文推得",
-                "label": "上下文推得",
-                "count": 0
-              },
-              {
-                "value": "未分类段落",
-                "label": "未分类段落",
-                "count": 0
-              }
-            ]
           }
         ],
         "total": 1,
@@ -2555,9 +2367,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "sorts": [
             "source",
@@ -2571,9 +2381,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "composites": {}
         },
@@ -2590,9 +2398,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "sorts": [
             "source",
@@ -2606,9 +2412,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "composites": {}
         },
@@ -2691,50 +2495,6 @@
                 "label": "PHB24",
                 "title": "玩家手册2024",
                 "search": "玩家手册2024 PHB24 Player's Handbook 玩家手册2024",
-                "count": 0
-              }
-            ]
-          },
-          {
-            "key": "legacy",
-            "label": "旧版标记",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "entry_marked",
-                "label": "entry_marked",
-                "count": 0
-              },
-              {
-                "value": "source_archived",
-                "label": "source_archived",
-                "count": 0
-              },
-              {
-                "value": "unmarked",
-                "label": "unmarked",
-                "count": 0
-              }
-            ]
-          },
-          {
-            "key": "status",
-            "label": "分类依据",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "原文明示",
-                "label": "原文明示",
-                "count": 0
-              },
-              {
-                "value": "上下文推得",
-                "label": "上下文推得",
-                "count": 0
-              },
-              {
-                "value": "未分类段落",
-                "label": "未分类段落",
                 "count": 0
               }
             ]
@@ -3018,9 +2778,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "sorts": [
             "source",
@@ -3034,9 +2792,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "composites": {}
         },
@@ -3053,9 +2809,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "sorts": [
             "source",
@@ -3069,9 +2823,7 @@
             "name",
             "type",
             "sources",
-            "ruleset",
-            "classification_status",
-            "legacy"
+            "ruleset"
           ],
           "composites": {}
         },
@@ -3148,50 +2900,6 @@
                 "title": "玩家手册2024",
                 "search": "玩家手册2024 PHB24 Player's Handbook 玩家手册2024",
                 "count": 1
-              }
-            ]
-          },
-          {
-            "key": "legacy",
-            "label": "旧版标记",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "entry_marked",
-                "label": "entry_marked",
-                "count": 0
-              },
-              {
-                "value": "source_archived",
-                "label": "source_archived",
-                "count": 0
-              },
-              {
-                "value": "unmarked",
-                "label": "unmarked",
-                "count": 1
-              }
-            ]
-          },
-          {
-            "key": "status",
-            "label": "分类依据",
-            "mode": "multi",
-            "options": [
-              {
-                "value": "原文明示",
-                "label": "原文明示",
-                "count": 1
-              },
-              {
-                "value": "上下文推得",
-                "label": "上下文推得",
-                "count": 0
-              },
-              {
-                "value": "未分类段落",
-                "label": "未分类段落",
-                "count": 0
               }
             ]
           }
@@ -3347,107 +3055,14 @@
             "__unknown__"
           ]
         },
-        "rule_chain": {
-          "schema": 2,
-          "records": [],
-          "nodes": [
-            {
-              "id": "ver_8329e67bdb6815ea7dc1de48",
-              "name": "盾牌 Shield",
-              "type": "section",
-              "ruleset": "5r",
-              "source_ids": [
-                "src_f473a607f72c5a164e63506e"
-              ],
-              "page_path": "topics/玩家手册2024/装备/护甲.htm",
-              "start": 574,
-              "end": 616
-            }
-          ],
-          "options": [],
-          "references": [],
-          "incoming": [],
-          "selected_spell_id": null,
-          "edges": [],
-          "reading": {
-            "root_id": "ver_8329e67bdb6815ea7dc1de48",
-            "path": [
-              "ver_8329e67bdb6815ea7dc1de48"
-            ],
-            "steps": [],
-            "focus_id": "ver_8329e67bdb6815ea7dc1de48",
-            "effect_id": null,
-            "text": null
-          },
-          "segments": [],
-          "bindings": []
-        },
         "field_order": [
           "type",
           "source_id",
           "ruleset"
         ],
         "body": "你必须拥有盾牌的受训才能从一面盾牌中获得其护甲等级的增益。",
-        "facts": [
-          {
-            "field": "ruleset",
-            "value": "5r",
-            "evidence": {
-              "source_evidence": [
-                {
-                  "group": "核心规则",
-                  "label": "玩家手册2024",
-                  "node_id": "872",
-                  "path": "webhelpcontents.htm"
-                },
-                {
-                  "path": "topics/速查/资源简写.htm",
-                  "row": 1,
-                  "table": "核心（三宝书）"
-                }
-              ],
-              "source_id": "src_f473a607f72c5a164e63506e"
-            },
-            "rule": "source_default",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "source_id",
-            "value": "src_f473a607f72c5a164e63506e",
-            "evidence": {
-              "source_id": "src_f473a607f72c5a164e63506e",
-              "toc_nodes": [
-                "1045"
-              ]
-            },
-            "rule": "toc_ownership",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "type",
-            "value": "section",
-            "evidence": {
-              "locator": "topics/玩家手册2024/装备/护甲.htm::盾牌 Shield::1",
-              "path": "topics/玩家手册2024/装备/护甲.htm",
-              "span": [
-                574,
-                583
-              ]
-            },
-            "rule": "document_structure",
-            "scope": "entry",
-            "status": "未分类段落",
-            "excerpt": "盾牌 Shield"
-          }
-        ],
         "relations": [],
-        "versions": null,
-        "concept_observations": [],
-        "missing_definitions": [],
-        "reviews": [],
-        "effective_references": []
+        "versions": null
       }
     },
     {
@@ -3611,41 +3226,6 @@
             "__unknown__"
           ]
         },
-        "rule_chain": {
-          "schema": 2,
-          "records": [],
-          "nodes": [
-            {
-              "id": "ver_9362521b9c94f0358d220f29",
-              "name": "护盾术Shield",
-              "type": "spell",
-              "ruleset": "5e",
-              "source_ids": [
-                "src_a00c764955b18f32fb27c71a"
-              ],
-              "page_path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "start": 13487,
-              "end": 13652
-            }
-          ],
-          "options": [],
-          "references": [],
-          "incoming": [],
-          "selected_spell_id": null,
-          "edges": [],
-          "reading": {
-            "root_id": "ver_9362521b9c94f0358d220f29",
-            "path": [
-              "ver_9362521b9c94f0358d220f29"
-            ],
-            "steps": [],
-            "focus_id": "ver_9362521b9c94f0358d220f29",
-            "effect_id": null,
-            "text": null
-          },
-          "segments": [],
-          "bindings": []
-        },
         "field_order": [
           "spell_level",
           "school",
@@ -3667,386 +3247,8 @@
           "legacy"
         ],
         "body": "一环 防护（术士、法师） \n施法时间：1 反应，当你被攻击命中或被作为魔法飞弹的目标时执行\n施法距离：自身\n法术成分：V、S\n持续时间：1 轮\n一道看不见的力场制护盾浮现在你身旁，保护着你。在你的下一回合开始前，你的 AC 具有+5 加值（在触发该法术的攻击之前生效），并且不会受到魔法飞弹的伤害。",
-        "facts": [
-          {
-            "field": "casting_time",
-            "value": "反应",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "施法时间：1 反应，当你被攻击命中或被作为魔法飞弹的目标时执行",
-              "span": [
-                13514,
-                13545
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "施法时间：1 反应，当你被攻击命中或被作为魔法飞弹的目标时执行"
-          },
-          {
-            "field": "casting_time",
-            "value": "反应",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "casting_time_detail",
-            "value": "1 反应，当你被攻击命中或被作为魔法飞弹的目标时执行",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "施法时间：1 反应，当你被攻击命中或被作为魔法飞弹的目标时执行",
-              "span": [
-                13514,
-                13545
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "施法时间：1 反应，当你被攻击命中或被作为魔法飞弹的目标时执行"
-          },
-          {
-            "field": "components",
-            "value": "V、S",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "法术成分：V、S",
-              "span": [
-                13554,
-                13562
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "法术成分：V、S"
-          },
-          {
-            "field": "concentration",
-            "value": false,
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "concentration",
-            "value": false,
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "持续时间：1 轮",
-              "span": [
-                13563,
-                13571
-              ]
-            },
-            "rule": "duration_concentration",
-            "scope": "entry",
-            "status": "上下文推得",
-            "excerpt": "持续时间：1 轮"
-          },
-          {
-            "field": "duration",
-            "value": "1 轮",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "持续时间：1 轮",
-              "span": [
-                13563,
-                13571
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "持续时间：1 轮"
-          },
-          {
-            "field": "legacy",
-            "value": true,
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "index_legacy_marker",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "legacy",
-            "value": true,
-            "evidence": {
-              "sources": [
-                "src_a00c764955b18f32fb27c71a"
-              ]
-            },
-            "rule": "source_archive",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "material",
-            "value": "×",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "range",
-            "value": "自身",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "施法距离：自身",
-              "span": [
-                13546,
-                13553
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "施法距离：自身"
-          },
-          {
-            "field": "ritual",
-            "value": false,
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "ruleset",
-            "value": "5e",
-            "evidence": {
-              "source_evidence": [
-                {
-                  "group": "旧版内容",
-                  "label": "玩家手册2014（旧版）",
-                  "node_id": "5373",
-                  "path": "webhelpcontents.htm"
-                },
-                {
-                  "path": "topics/速查/资源简写.htm",
-                  "row": 1,
-                  "table": "旧版资源"
-                }
-              ],
-              "source_id": "src_a00c764955b18f32fb27c71a"
-            },
-            "rule": "source_default",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "school",
-            "value": "防护",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "school",
-            "value": "防护",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "一环 防护",
-              "span": [
-                13500,
-                13505
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "一环 防护"
-          },
-          {
-            "field": "somatic",
-            "value": true,
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "source_code",
-            "value": "PHB14",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "source_id",
-            "value": "src_a00c764955b18f32fb27c71a",
-            "evidence": {
-              "source_id": "src_a00c764955b18f32fb27c71a",
-              "toc_nodes": [
-                "5517"
-              ]
-            },
-            "rule": "toc_ownership",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "spell_classes",
-            "value": "术 法",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "spell_level",
-            "value": "一环",
-            "evidence": {
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "raw": "一环 防护",
-              "span": [
-                13500,
-                13505
-              ]
-            },
-            "rule": "body_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "一环 防护"
-          },
-          {
-            "field": "spell_level",
-            "value": "一环",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "type",
-            "value": "spell",
-            "evidence": {
-              "locator": "topics/玩家手册/魔法/法术详述/1环.html#Shield",
-              "path": "topics/玩家手册/魔法/法术详述/1环.html",
-              "span": [
-                13487,
-                13497
-              ]
-            },
-            "rule": "index_or_statblock",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "护盾术｜Shield"
-          },
-          {
-            "field": "type",
-            "value": "spell",
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_attribute",
-            "scope": "index",
-            "status": "原文明示"
-          },
-          {
-            "field": "verbal",
-            "value": true,
-            "evidence": {
-              "observation_id": "de277229dc2d5ad177b402de",
-              "path": "topics/速查/法术速查/5E万法大全.html",
-              "span": [
-                46747,
-                46787
-              ]
-            },
-            "rule": "quickref_cell",
-            "scope": "index",
-            "status": "原文明示"
-          }
-        ],
         "relations": [],
-        "versions": null,
-        "concept_observations": [],
-        "missing_definitions": [],
-        "reviews": [],
-        "effective_references": []
+        "versions": null
       }
     },
     {
@@ -4203,41 +3405,6 @@
             "__unknown__"
           ]
         },
-        "rule_chain": {
-          "schema": 2,
-          "records": [],
-          "nodes": [
-            {
-              "id": "ver_958337258cbdf07fb3fe6c4f",
-              "name": "1级：回气 Second Wind",
-              "type": "class_feature",
-              "ruleset": "5r",
-              "source_ids": [
-                "src_f473a607f72c5a164e63506e"
-              ],
-              "page_path": "topics/玩家手册2024/角色职业/战士/战士.htm",
-              "start": 1426,
-              "end": 1597
-            }
-          ],
-          "options": [],
-          "references": [],
-          "incoming": [],
-          "selected_spell_id": null,
-          "edges": [],
-          "reading": {
-            "root_id": "ver_958337258cbdf07fb3fe6c4f",
-            "path": [
-              "ver_958337258cbdf07fb3fe6c4f"
-            ],
-            "steps": [],
-            "focus_id": "ver_958337258cbdf07fb3fe6c4f",
-            "effect_id": null,
-            "text": null
-          },
-          "segments": [],
-          "bindings": []
-        },
         "field_order": [
           "level",
           "type",
@@ -4245,89 +3412,8 @@
           "ruleset"
         ],
         "body": "你可以利用有限的精力与体力来重整旗鼓。以一个附赠动作，你可以用此法恢复生命值，其总值为1d10＋你的战士职业等级。\n你可以使用此特性两次，并且在完成短休时恢复一次已消耗的使用次数，完成长休时恢复所有已消耗的使用次数。\n当你到达特定战士等级时，你获得这项特性的额外使用次数，已列在战士特性表的回气一列。",
-        "facts": [
-          {
-            "field": "level",
-            "value": 1,
-            "evidence": {
-              "locator": "topics/玩家手册2024/角色职业/战士/战士.htm::1级：回气 Second Wind::1",
-              "name_spans": [
-                [
-                  0,
-                  3
-                ]
-              ],
-              "path": "topics/玩家手册2024/角色职业/战士/战士.htm",
-              "span": [
-                1426,
-                1444
-              ]
-            },
-            "rule": "name_level_label",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "1级：回气 Second Wind\n"
-          },
-          {
-            "field": "ruleset",
-            "value": "5r",
-            "evidence": {
-              "source_evidence": [
-                {
-                  "group": "核心规则",
-                  "label": "玩家手册2024",
-                  "node_id": "872",
-                  "path": "webhelpcontents.htm"
-                },
-                {
-                  "path": "topics/速查/资源简写.htm",
-                  "row": 1,
-                  "table": "核心（三宝书）"
-                }
-              ],
-              "source_id": "src_f473a607f72c5a164e63506e"
-            },
-            "rule": "source_default",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "source_id",
-            "value": "src_f473a607f72c5a164e63506e",
-            "evidence": {
-              "source_id": "src_f473a607f72c5a164e63506e",
-              "toc_nodes": [
-                "114",
-                "957"
-              ]
-            },
-            "rule": "toc_ownership",
-            "scope": "book",
-            "status": "上下文推得"
-          },
-          {
-            "field": "type",
-            "value": "class_feature",
-            "evidence": {
-              "locator": "topics/玩家手册2024/角色职业/战士/战士.htm::1级：回气 Second Wind::1",
-              "path": "topics/玩家手册2024/角色职业/战士/战士.htm",
-              "span": [
-                1426,
-                1444
-              ]
-            },
-            "rule": "level_heading",
-            "scope": "entry",
-            "status": "原文明示",
-            "excerpt": "1级：回气 Second Wind\n"
-          }
-        ],
         "relations": [],
-        "versions": null,
-        "concept_observations": [],
-        "missing_definitions": [],
-        "reviews": [],
-        "effective_references": []
+        "versions": null
       }
     }
   ],
@@ -4335,7 +3421,6 @@
     "summary": {
       "fixture": "presentation-catalog-v1"
     },
-    "review_snapshot": null,
     "types": {
       "subclass": "子职",
       "class_feature": "职业能力",

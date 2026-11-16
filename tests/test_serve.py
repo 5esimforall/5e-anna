@@ -55,206 +55,17 @@ class WebTests(unittest.TestCase):
         rows=query(self.db,{'type':['spell'],'field':['school'],'value':['塑能']})['rows']
         self.assertTrue(rows);self.assertTrue(all('塑能' in str(r['fields']['school']) for r in rows))
         rows=query(self.db,{'conflict':['1']})['rows'];self.assertTrue(rows);self.assertTrue(all(r['field_conflicts'] for r in rows))
-    def test_detail_evidence(self):
-        eid=query(self.db,{'q':['Medium Armor Master'],'ruleset':['5r']})['rows'][0]['id']
-        d=detail(self.db,eid);self.assertTrue(d['body']);self.assertTrue(d['facts'])
-        for f in d['facts']:
-            if 'excerpt' in f:
-                ev=f['evidence'];a,b=ev['span'];text=self.db.execute('select text from pages where path=?',(ev['path'],)).fetchone()[0]
-                self.assertEqual(f['excerpt'],text[a:min(b,a+1200)])
-    def test_concept_observations_are_scoped_and_keep_evidence(self):
-        row=self.db.execute("SELECT e.id FROM entries e JOIN effective_references m ON m.page_path=e.page_path AND m.start>=e.start AND m.end<=e.end WHERE e.type='spell' AND m.signal='format' AND m.status='resolved' LIMIT 1").fetchone()
-        self.assertIsNotNone(row);d=detail(self.db,row[0]);self.assertTrue(d['concept_observations'])
-        for m in d['concept_observations']:
-            self.assertEqual(m['path'],d['page_path'])
-            self.assertTrue(d['start']<=m['start']<=m['end']<=d['end'])
-            if m['signal']=='format' and m['status']=='resolved':
-                self.assertEqual(len(m['evidence']['stylesheet_sha256']),64)
-                self.assertEqual(m['candidates'],[m['target_id']])
-            if not m['target_id']:
-                self.assertEqual([c['id'] for c in m['candidate_entries']],m['candidates'])
-                self.assertTrue(all(c['name'] for c in m['candidate_entries']))
-    def test_table_grant_query_facets_exclusion_and_inherited_export(self):
-        condition={'spell':'迷踪步','mode':'prepared','resource':'slot_free','recovery':'long_rest','access_condition':'option_selected'}
-        params={'casting':[json.dumps(condition)],'versions':['each']}
-        rows=query(self.db,params)['rows'];elf=next(e for e in rows if e['name_zh']=='精灵' and e['ruleset']=='5r')
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
-        self.assertEqual(status,200);groups=json.loads(raw)['groups']
-        self.assertEqual(next(v['count'] for v in groups['access_condition'] if v['value']=='option_selected'),len(rows))
-        excluded=query(self.db,{'q':['精灵'],'not_casting':[json.dumps(condition)],'versions':['each']})
-        self.assertNotIn(elf['id'],{e['id'] for e in excluded['rows']})
-        wrong={**condition,'resource':'spell_slot'};self.assertFalse(query(self.db,{'casting':[json.dumps(wrong)]})['rows'])
-        domain=self.db.execute("SELECT id FROM entries WHERE name_en='Life Domain' AND type='subclass' AND ruleset='5r'").fetchone()[0]
-        spell=self.db.execute("SELECT id FROM entries WHERE name_en='Mass Cure Wounds' AND type='spell' AND ruleset='5r' AND page_path LIKE '%玩家手册2024%'").fetchone()[0]
-        args={'id':domain,'spell':spell};status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200)
-        value=json.loads(raw);self.assertEqual(len(value['reading']['path']),3)
-        self.assertEqual(value['reading']['path'][0],domain);self.assertEqual(value['reading']['path'][-1],spell)
-        self.assertEqual(value['bindings'][0]['conditions'][0]['scope']['subject_id'],domain)
-        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],value)
-        status,_,raw=self.request('/api/entry?'+urlencode({'id':domain,'chain_spell':spell}));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],value)
-        fake_path=json.dumps([domain,spell]);self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({**args,'path':fake_path}))[0],400)
 
-    def test_casting_chain_query_export_and_invalid_selection(self):
-        condition=json.dumps({'mode':'prepared','resource':'slot_free','recovery':'long_rest','spell':'疗伤术'},ensure_ascii=False)
-        rows=query(self.db,{'casting':[condition],'versions':['each']})['rows']
-        self.assertTrue(any(r['name_zh']=='侍僧' for r in rows))
-        eid=next(r['id'] for r in rows if r['name_zh']=='侍僧')
-        status,_,raw=self.request('/api/knowledge-chain?'+urlencode({'id':eid}))
-        self.assertEqual(status,200);chain=json.loads(raw)
-        status,_,raw=self.request('/api/knowledge-export?'+urlencode({'id':eid}))
-        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
-        self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({'id':eid,'spell':'absent'}))[0],400)
-        self.assertEqual(self.request('/api/knowledge-chain?id=absent')[0],404)
-        provider=chain['options'][0]['subject_id'];path=json.dumps([eid,provider])
-        status,_,raw=self.request('/api/knowledge-chain?'+urlencode({'id':eid,'path':path}))
-        self.assertEqual(status,200);reading=json.loads(raw)
-        self.assertEqual(reading['reading']['path'],[eid,provider])
-        for endpoint,key in [('/api/knowledge-export','path'),('/api/entry','chain_path')]:
-            status,_,raw=self.request(endpoint+'?'+urlencode({'id':eid,key:path}))
-            self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain' if key=='path' else 'rule_chain'],reading)
-            self.assertEqual(self.request(endpoint+'?'+urlencode({'id':eid,key:json.dumps([eid,'absent'])}))[0],400)
-        for invalid_path in [json.dumps([eid,eid]),'{',json.dumps([eid,4])]:
-            self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({'id':eid,'path':invalid_path}))[0],400)
-        self.assertEqual(self.request('/api/entries?'+urlencode({'casting':'{"mode":"bad"}'}))[0],400)
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':condition}))
-        self.assertEqual(status,200)
-        values={x['value']:x['count'] for x in json.loads(raw)['groups']['resource']}
-        self.assertEqual(values['slot_free'],query(self.db,{'casting':[condition],'versions':['each']})['total'])
-        self.assertEqual(values['spell_slot'],0)
-        invalid=json.dumps({'resource':'spell_slot','recovery':'long_rest'})
-        self.assertEqual(query(self.db,{'casting':[invalid]})['total'],0)
 
-    def test_effect_filters_and_local_focus_share_the_export_contract(self):
-        condition={'effect':'damage','damage_type':'lightning','delivery':'automatic','timing':'ongoing','resource':'slot_free','spell':'巫术箭'}
-        rows=query(self.db,{'casting':[json.dumps(condition)],'versions':['each']})['rows']
-        root=next(r['id'] for r in rows if r['name_zh']=='智者')
-        self.assertFalse(any(r['name_zh']=='侍僧' for r in rows))
-        wrong={**condition,'delivery':'attack_roll'}
-        self.assertFalse(query(self.db,{'casting':[json.dumps(wrong)]})['rows'])
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
-        self.assertEqual(status,200)
-        counts={r['value']:r['count'] for r in json.loads(raw)['groups']['delivery']}
-        self.assertEqual(counts['automatic'],len(rows));self.assertEqual(counts['attack_roll'],0)
-        excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each'],'limit':['1500']})
-        self.assertFalse({r['id'] for r in rows}&{r['id'] for r in excluded['rows']})
-        self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
-        spell=next(r['id'] for r in query(self.db,{'q':['巫术箭'],'versions':['each']})['rows'] if r['ruleset']=='5r')
-        args={'id':root,'spell':spell,'effect':'effect_4'}
-        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200)
-        value=json.loads(raw);self.assertEqual(value['reading']['effect_id'],'effect_4')
-        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],value)
-        status,_,raw=self.request('/api/entry?'+urlencode({'id':root,'chain_spell':spell,'chain_effect':'effect_4'}))
-        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],value)
-        for effect in ('missing','effect_0'):
-            self.assertEqual(self.request('/api/knowledge-chain?'+urlencode({**args,'effect':effect}))[0],400)
-        for field in ('effect','damage_type','delivery','timing','save_ability','trigger','end_trigger','access_condition','casting_target'):
-            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({field:'invalid'})}))[0],400)
 
-    def test_scoped_acquisition_and_second_save_survive_public_consumers(self):
-        query_args={'access_condition':'class_level','casting_target':'self','resource':'slot_free'}
-        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(query_args),'versions':'each'}))
-        self.assertEqual(status,200);rows=json.loads(raw)['rows']
-        self.assertTrue(any(e['name_en']=='Otherworldly Leap' for e in rows))
-        effect_query={'effect':'condition','save_ability':'感知','timing':'repeat','trigger':'save_result','spell':'睡眠术'}
-        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(effect_query),'versions':'each'}))
-        self.assertEqual(status,200);root=next(e['id'] for e in json.loads(raw)['rows'] if e['name_zh']=='智者')
-        spell=next(e['id'] for e in query(self.db,{'q':['睡眠术'],'versions':['each']})['rows'] if e['ruleset']=='5r')
-        args={'id':root,'spell':spell,'effect':'effect_5'}
-        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
-        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='procedure' and r['subject_id']==spell)
-        self.assertEqual(effects[4]['when']['effect_id'],'effect_4');self.assertEqual(effects[3]['repeat_of']['effect_id'],'effect_2')
-        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
-        status,_,raw=self.request('/api/entry?'+urlencode({'id':root,'chain_spell':spell,'chain_effect':'effect_5'}))
-        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],chain)
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(effect_query)}));self.assertEqual(status,200)
-        counts={row['value']:row['count'] for row in json.loads(raw)['groups']['save_ability']}
-        self.assertGreater(counts['感知'],0);self.assertEqual(counts['体质'],0)
 
-    def test_cumulative_and_target_scope_filters_reach_real_spells_and_public_exports(self):
-        condition={'query_subject':'spell','effect':'condition','cumulative_result':'failure','cumulative_count':3,
-                   'save_ability':'体质','timing':'cumulative','target_scope':'single'}
-        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(condition),'versions':'each'}))
-        self.assertEqual(status,200);rows=json.loads(raw)['rows']
-        stone=next(r for r in rows if r['name_en']=='Flesh to Stone' and r['ruleset']=='5r')
-        stone_5e=next(r for r in rows if r['name_en']=='Flesh to Stone' and r['ruleset']=='5e')
-        status_5e,_,raw_5e=self.request('/api/knowledge-chain?'+urlencode({'id':stone_5e['id']}))
-        self.assertEqual(status_5e,200);chain_5e=json.loads(raw_5e)
-        rec_5e=next(r for r in chain_5e['records'] if r['kind']=='procedure' and r['subject_id']==stone_5e['id'])
-        self.assertEqual(rec_5e['status'],'partial')
-        self.assertEqual([g['reason'] for g in rec_5e['value']['unparsed']],['unannotated_clause','unannotated_clause'])
-        self.assertFalse(any(r['relation']=='removed_by' for r in rec_5e['value']['rules']))
-        excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each']})
-        self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
-        for field,value in [('cumulative_count',2),('cumulative_result','success'),('save_ability','感知'),('target_scope','area')]:
-            query_params={'casting':[json.dumps({**condition,field:value})],'versions':['each']}
-            self.assertNotIn(stone['id'],{e['id'] for e in query(self.db,query_params)['rows']})
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
-        self.assertEqual(status,200);groups=json.loads(raw)['groups']
-        counts={r['value']:r['count'] for r in groups['cumulative_result']}
-        self.assertGreater(counts['failure'],0);self.assertEqual(counts['success'],0)
-        self.assertTrue(all(r['count']==0 for r in groups['resource']))
-        args={'id':stone['id'],'effect':'effect_9'}
-        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
-        effects=next(r['value']['effects'] for r in chain['records'] if r['kind']=='procedure' and r['subject_id']==stone['id'])
-        self.assertEqual(effects[8]['when']['effect_id'],'effect_7');self.assertEqual(effects[6]['check']['effect_id'],'effect_6')
-        self.assertEqual(effects[5]['repeat_of']['effect_id'],'effect_2')
-        self.assertEqual(effects[6]['initial_inclusion'],'not_stated')
-        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['chain'],chain)
-        status,_,raw=self.request('/api/entry?'+urlencode({'id':stone['id'],'chain_effect':'effect_9'}));self.assertEqual(status,200);self.assertEqual(json.loads(raw)['rule_chain'],chain)
-        for bad in [0,True,'3',1.5,None]:
-            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({**condition,'cumulative_count':bad})}))[0],400)
-        for field in ['query_subject','target_scope','cumulative_result']:
-            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({field:'invalid'})}))[0],400)
-        self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps({**condition,'resource':'slot_free'})}))[0],400)
 
-    def test_area_save_query_does_not_borrow_single_target_attack(self):
-        condition={'spell':'冰刃','effect':'damage','damage_type':'cold','target_scope':'area','delivery':'saving_throw','resource':'slot_free'}
-        rows=query(self.db,{'casting':[json.dumps(condition)],'versions':['each']})['rows']
-        self.assertTrue(any(r['name_zh']=='智者' for r in rows))
-        for change in [{'delivery':'attack_roll'},{'target_scope':'single'},{'damage_type':'piercing'}]:
-            self.assertFalse(query(self.db,{'casting':[json.dumps({**condition,**change})]})['rows'])
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
-        self.assertEqual(status,200)
-        subject_counts={r['value']:r['count'] for r in json.loads(raw)['groups']['query_subject']}
-        switched={k:v for k,v in condition.items() if k!='resource'}|{'query_subject':'spell'}
-        self.assertEqual(subject_counts['spell'],query(self.db,{'casting':[json.dumps(switched)],'versions':['each']})['total'])
-        self.assertGreater(subject_counts['spell'],0)
 
     def test_invalid_query(self):
         for p in [{'type':['entries; DROP TABLE entries']},{'type':['spell','section']},{'field':['bogus'],'value':['x']},{'sort':['invalid']},{'offset':['nan']},{'offset':['-1']},{'limit':['0']},{'limit':['1501']}]:
             with self.assertRaises(ValueError):query(self.db,p)
         with self.assertRaises(LookupError):detail(self.db,'absent')
 
-    def test_common_rule_queries_read_nonspell_procedures_and_export_the_same_graph(self):
-        condition={'query_subject':'entry','effect':'healing','use_action':'bonus_action'}
-        status,_,raw=self.request('/api/entries?'+urlencode({'casting':json.dumps(condition),'versions':'each'}))
-        self.assertEqual(status,200);rows=json.loads(raw)['rows']
-        wind=next(e for e in rows if e['id']=='ver_0fd1de793ebd67111e8e6e30')
-        all_healing=query(self.db,{'casting':[json.dumps({'query_subject':'entry','effect':'healing'})]},export=True)['rows']
-        self.assertIn(wind['id'],{e['id'] for e in all_healing})
-        self.assertTrue(any(e['type']=='spell' for e in all_healing))
-        self.assertNotIn('ver_958337258cbdf07fb3fe6c4f',{e['id'] for e in rows})
-        for value in ['reaction','action']:
-            self.assertNotIn(wind['id'],{e['id'] for e in query(self.db,{'casting':[json.dumps({**condition,'use_action':value})]},export=True)['rows']})
-        status,_,raw=self.request('/api/casting-facets?'+urlencode({'casting':json.dumps(condition)}))
-        self.assertEqual(status,200)
-        counts={r['value']:r['count'] for r in json.loads(raw)['groups']['use_action']}
-        self.assertEqual(counts['bonus_action'],len(rows))
-        excluded=query(self.db,{'not_casting':[json.dumps(condition)],'versions':['each']})
-        self.assertEqual(excluded['total']+len(rows),query(self.db,{'versions':['each']})['total'])
-        eid='ver_e03ee891694944041e9b1434';args={'id':eid,'effect':'effect_2'}
-        status,_,raw=self.request('/api/knowledge-chain?'+urlencode(args));self.assertEqual(status,200);chain=json.loads(raw)
-        self.assertEqual(chain['schema'],2);self.assertEqual(chain['options'],[])
-        record=next(r for r in chain['records'] if r['kind']=='procedure')
-        self.assertEqual(record['value']['effects'][1]['applies_to']['effect_id'],'effect_1')
-        self.assertEqual(record['value']['effects'][1]['use']['action'],'reaction')
-        self.assertNotIn('casting',record['value'])
-        status,_,raw=self.request('/api/knowledge-export?'+urlencode(args));self.assertEqual(status,200)
-        self.assertEqual(json.loads(raw)['schema'],2);self.assertEqual(json.loads(raw)['chain'],chain)
-        status,_,raw=self.request('/api/entry?'+urlencode({'id':eid,'chain_effect':'effect_2'}));self.assertEqual(status,200)
-        self.assertEqual(json.loads(raw)['rule_chain'],chain)
-        for invalid in [{'query_subject':'entry','mode':'known'},{'query_subject':'entry','use_action':'swift'}]:
-            self.assertEqual(self.request('/api/entries?'+urlencode({'casting':json.dumps(invalid)}))[0],400)
     def test_export_all_not_one_page(self):
         data=query(self.db,{'type':['feat']},export=True)
         output=csv_export(data['rows']).decode('utf-8-sig')
@@ -303,7 +114,6 @@ class WebTests(unittest.TestCase):
         self.assertIn(b"query:{home:'/', logo:'/anna-logo.png'}",topbar)
         self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png'}",topbar)
         self.assertEqual(self.request('/review')[0],404)
-        self.assertIn(b'id="missing-dialog"',page)
         self.assertIn(b'href="/favicon.ico"',page)
         for size in (16,32,48):
             path=f'/favicon-{size}.png'

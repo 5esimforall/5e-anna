@@ -33,8 +33,8 @@ class LinkedBuildTests(unittest.TestCase):
         page.write_text('<h2 id="Spell">甲 Alpha</h2><p>定义</p><p><a href="#Spell">甲 Alpha</a></p><p><a href="#missing">未知</a></p>')
         (source/'topics/style.css').write_text('h2 {color:red}')
         (source/'index.htm').write_text('<!doctype html><iframe id="content"></iframe>')
-        d=Document('topics/test.htm',page.read_text());c=d.candidates()[0]
-        e={'id':'ver_test','name':'甲 Alpha','name_zh':'甲','name_en':'Alpha','page_path':'topics/test.htm','anchors':['Spell'],'start':c.start,'title_end':c.title_end,'end':c.end,'type':'spell','is_primary':True}
+        d=Document('topics/test.htm',page.read_text());h=d.element_headings()[0]
+        e={'id':'ver_test','name':'甲 Alpha','name_zh':'甲','name_en':'Alpha','page_path':'topics/test.htm','anchors':['Spell'],'start':h.start,'title_end':h.end,'end':len(d.text),'type':'spell','is_primary':True}
         db=root/'catalog.sqlite';conn=sqlite3.connect(db)
         conn.executescript('CREATE TABLE metadata(key,value); CREATE TABLE pages(path,sha256,text); CREATE TABLE entries(data);')
         conn.execute('insert into metadata values(?,?)',('summary',json.dumps({'full_scan':True})))
@@ -170,10 +170,10 @@ class LinkedBuildTests(unittest.TestCase):
             page=source/'topics/test.htm'
             page.write_text('<h2 id="New">甲 Alpha</h2><p>更新后的规则。</p>')
             with self.assertRaisesRegex(ValueError,'snapshot'):build_book(source,db,out)
-            doc=Document('topics/test.htm',page.read_text());candidate=doc.candidates()[0]
+            doc=Document('topics/test.htm',page.read_text());heading=doc.element_headings()[0]
             conn=sqlite3.connect(db)
             entry=json.loads(conn.execute('SELECT data FROM entries').fetchone()[0])
-            entry.update(id='ver_updated',start=candidate.start,end=candidate.end,title_end=candidate.title_end,anchors=['New'])
+            entry.update(id='ver_updated',start=heading.start,end=len(doc.text),title_end=heading.end,anchors=['New'])
             conn.execute('UPDATE entries SET data=?',(json.dumps(entry),))
             conn.execute('UPDATE pages SET text=?,sha256=?',(doc.text,fingerprint(page)))
             conn.execute('DELETE FROM effective_references');conn.commit();conn.close();doc.close()

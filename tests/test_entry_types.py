@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from anna.source.html import Candidate
+from anna.catalog.frames import Candidate
 from anna.catalog.types import RECOGNIZERS, RULE_EVIDENCE, PRINTED, INFERRED, UNTYPED, classify, evidence_status, refine_page_types, type_conflicts
 
 SPELL_FIELDS='\n施法时间：1 动作\n施法距离：60 尺\n法术成分：V、S\n持续时间：立即\n'

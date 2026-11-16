@@ -1,8 +1,8 @@
-"""Tolerant HTML parsing, anchored section extraction, and evidence-preserving fields."""
+"""Domain-free HTML parsing, bilingual name segmentation, and page layout IR."""
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from collections import defaultdict
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import PurePosixPath
 import posixpath
@@ -10,795 +10,862 @@ import re
 import unicodedata
 from urllib.parse import unquote, urlsplit
 
-from bs4 import BeautifulSoup, NavigableString, Tag, Comment, Doctype
+from bs4 import BeautifulSoup, Comment, Doctype, NavigableString, Tag
 
-BLOCKS = {'p','div','h1','h2','h3','h4','h5','h6','tr','li','ul','ol','blockquote','table','section','hr'}
-HEADINGS = {'h1','h2','h3','h4','h5','h6'}
-IGNORED = {'script','style','noscript','head'}
-EXAMPLE_CLASSES = {'example','ex-right'}
-FIELD_TITLE = re.compile(r'^(?:护甲等级|生命值|速度|力量|敏捷|体质|智力|感知|魅力|技能|感官|语言|挑战等级|挑战|伤害抗性|伤害免疫|状态免疫)(?:\s*[:：].*|\s*)$')
-CREATURE_META = re.compile(r'(?m)^[ \t]*(?:微型|小型|中型|大型|巨型|超巨型)(?:或(?:微型|小型|中型|大型|巨型))?\s*(?:异怪|野兽|天族|天界|构装|龙类|元素|妖精|邪魔|巨人|类人|怪兽|泥怪|植物|亡灵)[^\n]{0,120}$')
-STATS = re.compile(r'(?:护甲等级|(?<![A-Za-z])AC(?=\s|[:：]|\d)).{0,100}(?:生命值|(?<![A-Za-z])HP(?=\s|[:：]|\d))', re.S|re.I)
-SPELL = re.compile(r'施法时间.{0,250}(?:施法距离|射程|距离).{0,250}(?:法术成分|成分)', re.S)
-LEGACY = re.compile(r'Legacy\b|[（(]旧版[）)]',re.I)
-CLASSES = {'野蛮人','吟游诗人','牧师','德鲁伊','战士','武僧','圣武士','游侠','游荡者','术士','魔契师','邪术师','法师','奇械师','血猎手','邪狱使','拳斗士','铳士','魔战士','怪物猎人'}
+BLOCKS = {'p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'tr', 'li', 'ul', 'ol', 'blockquote', 'table', 'section', 'hr'}
+HEADINGS = {'h1', 'h2', 'h3', 'h4', 'h5', 'h6'}
+IGNORED = {'script', 'style', 'noscript', 'head'}
+EXAMPLE_CLASSES = {'example', 'ex-right'}
+LEGACY = re.compile(r'Legacy\b|[（(]旧版[）)]', re.I)
+LOCAL_LEGACY_RE = re.compile(r'[（(](?:旧版|Legacy)[）)]', re.I)
+MAROON_COLORS = {'#800000', '800000', '#ff0000', 'red', 'maroon'}
+MAROON_STYLE_RE = re.compile(r'color\s*:\s*(?:rgb\(128,\s*0,\s*0\)|#800000)')
+
+NOTATION_JOINER = r'(?:或|、|/|／|和)'
+JOINERS = ('或', '/', '／', '、')
+# A conjunction counts as a separator only right after an English run and before the next
+# Chinese name, so 或 inside a Chinese name (微型或小型) never splits it.
+ALTERNATIVE = re.compile(r'(?<=[A-Za-z])(\s*(?:' + '|'.join(map(re.escape, JOINERS)) + r')\s*)(?=[㐀-鿿\d])')
+# Without a conjunction, a translation can run straight into the next Chinese name.
+# Only an English word run marks that boundary; initialisms and codes belong to the Chinese name.
+ADJACENT = re.compile(r'(?<=[A-Za-z])(\s*)(?=[㐀-鿿])(?!' + '|'.join(map(re.escape, JOINERS)) + ')')
+SENTENCE = re.compile(r'[，。？！；?]')
+LEVEL_LABEL = re.compile(r'\s*(\d+)\s*级\s*[:：]\s*')
+HAN_RE = re.compile(r'[\u3400-\u9fff]')
+DICE_OR_RANGE_RE = re.compile(r'(?:\d+)?[dD]\d+(?:\s*[-+]\s*\d+)?|\d+(?:[-–~～]\d+)?')
 
 
-def compact(s):
+def compact(s: object) -> str:
     return re.sub(r'\s+', ' ', str(s)).strip()
 
 
-def format_kind(tag):
-    """Require a uniform mark across the whole occurrence, not just one styled child."""
-    kinds=set()
+def underline_style(tag: Tag) -> str:
+    """Uniform typographical emphasis around a <u> tag: bold, inner_italic, outer_italic, plain, or mixed."""
+    styles = set()
     for node in tag.find_all(string=True):
-        if not str(node).strip():continue
-        ancestors=list(node.parents);boundary=next(i for i,p in enumerate(ancestors) if p is tag)
-        inner=any(p.name in {'em','i'} for p in ancestors[:boundary])
-        outer=any(p.name in {'em','i'} for p in ancestors[boundary+1:])
-        bold=any(p.name in {'b','strong'} for p in ancestors)
-        kinds.add('ambiguous' if sum((inner,outer,bold))>1 else
-                  'creature' if bold else 'spell' if inner else 'magic_item' if outer else 'concept')
-    return kinds.pop() if len(kinds)==1 else 'ambiguous'
+        if not str(node).strip():
+            continue
+        ancestors = list(node.parents)
+        boundary = next(i for i, p in enumerate(ancestors) if p is tag)
+        inner = any(p.name in {'em', 'i'} for p in ancestors[:boundary])
+        outer = any(p.name in {'em', 'i'} for p in ancestors[boundary + 1:])
+        bold = any(p.name in {'b', 'strong'} for p in ancestors)
+        styles.add(
+            'mixed' if sum((inner, outer, bold)) > 1
+            else 'bold' if bold
+            else 'inner_italic' if inner
+            else 'outer_italic' if outer
+            else 'plain'
+        )
+    return styles.pop() if len(styles) == 1 else 'mixed'
 
 
-def format_tag_paths(tag):
-    paths=[]
+def format_tag_paths(tag: Tag) -> list[list[str]]:
+    paths: list[list[str]] = []
     for node in tag.find_all(string=True):
         if str(node).strip():
-            path=[p.name for p in reversed(list(node.parents)) if p.name in {'u','em','i','b','strong'}]
-            if path not in paths:paths.append(path)
+            path = [p.name for p in reversed(list(node.parents)) if p.name in {'u', 'em', 'i', 'b', 'strong'}]
+            if path not in paths:
+                paths.append(path)
     return paths
 
 
-def key(s):
-    return re.sub(r'[\W_]+','',unicodedata.normalize('NFKC',s).casefold())
+def key(s: str) -> str:
+    return re.sub(r'[\W_]+', '', unicodedata.normalize('NFKC', s).casefold())
 
 
-def digest(*parts):
+def digest(*parts: object) -> str:
     return sha256('\0'.join(str(x) for x in parts).encode()).hexdigest()[:24]
 
 
-def resolve_link(page, href):
+def resolve_link(page: str, href: str) -> tuple[str, str] | None:
     """Decode once, preserve fragment spelling; reject remote/root-escaping URLs."""
-    u=urlsplit(href.strip())
+    u = urlsplit(href.strip())
     if u.scheme or u.netloc:
         return None
-    path=unquote(u.path)
+    path = unquote(u.path)
     if not path:
-        target=page
+        target = page
     elif path.startswith('/'):
-        target=posixpath.normpath(path.lstrip('/'))
+        target = posixpath.normpath(path.lstrip('/'))
     else:
-        target=posixpath.normpath(posixpath.join(posixpath.dirname(page),path.replace('\\','/')))
-    if target.startswith('../') or target=='..':
+        target = posixpath.normpath(posixpath.join(posixpath.dirname(page), path.replace('\\', '/')))
+    if target.startswith('../') or target == '..':
         return None
     return target, unquote(u.fragment)
 
 
-# A conjunction counts as a separator only right after an English run and before the next
-# Chinese name, so 或 inside a Chinese name (微型或小型) never splits it.
-JOINERS = ('或','/','／','、')
-ALTERNATIVE = re.compile(r'(?<=[A-Za-z])(\s*(?:'+'|'.join(map(re.escape,JOINERS))+r')\s*)(?=[㐀-鿿\d])')
-# Without a conjunction, a translation can run straight into the next Chinese name
-# (蜥蜴之王Lizard King蜥蜴女王Lizard Queen). Only an English word run marks that boundary:
-# initialisms and codes (AHA成员, X射线戒指) are part of the Chinese name they open.
-ADJACENT = re.compile(r'(?<=[A-Za-z])(\s*)(?=[㐀-鿿])(?!'+'|'.join(map(re.escape,JOINERS))+')')
+def _has_han(text: str) -> bool:
+    return bool(HAN_RE.search(text))
 
 
-SENTENCE = re.compile(r'[，。？！；?]')
+def _is_latin(ch: str) -> bool:
+    return ch.isalpha() and 'LATIN' in unicodedata.name(ch, '')
 
 
-def adjacent_cuts(text,han):
+def _is_english_segment(s: str) -> bool:
+    """Only ungrouped text establishes language; explanatory qualifiers may use another script."""
+    grouped = {'(': ')', '（': '）', '[': ']', '【': '】'}
+    nest: list[str] = []
+    seen = False
+    for ch in s:
+        if ch in grouped:
+            nest.append(grouped[ch])
+            continue
+        if nest:
+            if ch == nest[-1]:
+                nest.pop()
+            continue
+        if ch.isalpha():
+            if not _is_latin(ch):
+                return False
+            seen = True
+    return seen and not nest
+
+
+def _trim_slice(text: str, a: int, b: int, separators: str = '') -> tuple[int, int]:
+    while a < b and (text[a].isspace() or text[a] in separators):
+        a += 1
+    while b > a and (text[b - 1].isspace() or text[b - 1] in separators):
+        b -= 1
+    return a, b
+
+
+def _raw_spans(positions: list[int], a: int, b: int) -> list[list[int]]:
+    ranges: list[list[int]] = []
+    for i in positions[a:b]:
+        if ranges and ranges[-1][1] == i:
+            ranges[-1][1] = i + 1
+        else:
+            ranges.append([i, i + 1])
+    return ranges
+
+
+def adjacent_cuts(text: str) -> list[tuple[int, int]]:
     """Boundaries where an English word run that follows Chinese text meets the next Chinese name."""
-    cuts=[]
+    cuts = []
     for m in ADJACENT.finditer(text):
-        start=m.start(1);run=start
-        while run>0 and not han(text[run-1]):run-=1
-        if run>0 and re.search(r'[a-z]',text[run:start]):cuts.append(m.span(1))
+        start = m.start(1)
+        run = start
+        while run > 0 and not _has_han(text[run - 1]):
+            run -= 1
+        if run > 0 and re.search(r'[a-z]', text[run:start]):
+            cuts.append(m.span(1))
     return cuts
 
 
-def parse_alternatives(text,result,han,latin,english,trim,spans):
-    """Several bilingual names joined by conjunctions, such as a table row offering one price for
-    alternative goods. Each name pairs its own Chinese and English text; a single English suffix
-    would otherwise claim only the last one. Every segment must be a clean pair or nothing splits."""
-    # A sentence that glosses its terms inline (所有魔法 黑暗Darkness 都会阻挡…？) is not a list of names.
-    if SENTENCE.search(text):return None
-    cuts=sorted([m.span(1) for m in ALTERNATIVE.finditer(text)]+adjacent_cuts(text,han))
-    if not cuts:return None
-    bounds=[0]+[x for cut in cuts for x in cut]+[len(text)]
-    pairs=[]
-    for a,b in zip(bounds[::2],bounds[1::2]):
-        boundary=next((i for i in range(a,b) if latin(text[i]) and han(text[a:i]) and english(text[i:b])
-                       and sum(c.isalnum() for c in text[i:b])>=2),None)
-        if boundary is None or any(latin(ch) for ch in text[a:boundary]):return None
-        pairs.append((trim(a,boundary),trim(boundary,b)))
-    zh=[];en=[]
-    for (za,zb),(ea,eb) in pairs:
-        for language,(x,y),out in (('zh',(za,zb),zh),('en',(ea,eb),en)):
+def parse_alternatives(text: str, positions: list[int], result: dict) -> dict | None:
+    """Several bilingual names joined by conjunctions, pairing each Chinese and English segment."""
+    if SENTENCE.search(text):
+        return None
+    cuts = sorted([m.span(1) for m in ALTERNATIVE.finditer(text)] + adjacent_cuts(text))
+    if not cuts:
+        return None
+    bounds = [0] + [x for cut in cuts for x in cut] + [len(text)]
+    pairs = []
+    for a, b in zip(bounds[::2], bounds[1::2]):
+        boundary = next(
+            (
+                i for i in range(a, b)
+                if _is_latin(text[i])
+                and _has_han(text[a:i])
+                and _is_english_segment(text[i:b])
+                and sum(c.isalnum() for c in text[i:b]) >= 2
+            ),
+            None,
+        )
+        if boundary is None or any(_is_latin(ch) for ch in text[a:boundary]):
+            return None
+        pairs.append((_trim_slice(text, a, boundary), _trim_slice(text, boundary, b)))
+
+    zh: list[str] = []
+    en: list[str] = []
+    for (za, zb), (ea, eb) in pairs:
+        for language, (x, y), out in (('zh', (za, zb), zh), ('en', (ea, eb), en)):
             out.append(compact(text[x:y]))
-            result['parts'].append({'language':language,'text':out[-1],'spans':spans(x,y)})
-    # Space before a conjunction separated the English word; space after it stays (或 1 头绵羊).
-    # Names that met without one are joined by the slash the English projection uses.
-    joiners=[re.sub(r'\s+',' ',text[a:b]).lstrip() or '/' for a,b in cuts]
-    result['annotations'].extend({'role':'alternative_separator','text':text[a:b],'spans':spans(a,b)} for a,b in cuts)
-    # The Chinese projection keeps the source's own conjunctions; the English one has none to keep.
-    result['name_zh']=zh[0]+''.join(j+z for j,z in zip(joiners,zh[1:]))
-    result['name_en']=' / '.join(en)
-    result.update(status='parsed',rule='bilingual_alternatives')
+            result['parts'].append({'language': language, 'text': out[-1], 'spans': _raw_spans(positions, x, y)})
+
+    joiners = [re.sub(r'\s+', ' ', text[a:b]).lstrip() or '/' for a, b in cuts]
+    result['annotations'].extend(
+        {'role': 'alternative_separator', 'text': text[a:b], 'spans': _raw_spans(positions, a, b)}
+        for a, b in cuts
+    )
+    result['name_zh'] = zh[0] + ''.join(j + z for j, z in zip(joiners, zh[1:]))
+    result['name_en'] = ' / '.join(en)
+    result.update(status='parsed', rule='bilingual_alternatives')
     return result
 
 
-LEVEL_LABEL = re.compile(r'\s*(\d+)\s*级\s*[:：]\s*')
+def parse_name(raw: object) -> dict:
+    """Parse bilingual structure; all spans address the unchanged input name, not HTML."""
+    raw = str(raw)
+    removed: set[int] = set()
+    annotations = []
 
-
-def parse_name(raw):
-    """Parse bilingual structure; all spans address the unchanged input name, not HTML.
-
-    Parentheses wrapping a translation differ from qualifiers inside either name.
-    Uncertain structure stays intact; display normalization never establishes identity.
-    """
-    raw=str(raw);removed=set();annotations=[]
-    # Existing source editorial conventions, recorded separately from name content.
     for pattern in (r'（旧版）|\(旧版\)', r'Legacy\s*$', r'(?<![A-Za-z])new!(?=\s|$)'):
-        for match in re.finditer(pattern,raw,re.I):
+        for match in re.finditer(pattern, raw, re.I):
             removed.update(range(*match.span()))
-            annotations.append({'role':'editorial_marker','text':match[0],'spans':[list(match.span())]})
-    # A leading level label (3级：) says when a class grants the feature; it qualifies the name and is
-    # recorded apart from it, so the display name and aliases read 绝望打击, not 3级：绝望打击.
-    level=LEVEL_LABEL.match(raw)
+            annotations.append({'role': 'editorial_marker', 'text': match[0], 'spans': [list(match.span())]})
+
+    level = LEVEL_LABEL.match(raw)
     if level and raw[level.end():].strip():
         removed.update(range(*level.span()))
-        annotations.append({'role':'level_label','text':level[0],'value':int(level[1]),'spans':[list(level.span())]})
-    positions=[i for i in range(len(raw)) if i not in removed]
-    while positions and raw[positions[0]] in ' \t\r\n｜|：:':positions.pop(0)
-    while positions and raw[positions[-1]] in ' \t\r\n｜|：:':positions.pop()
-    text=''.join(raw[i] for i in positions)
-    result={'raw':raw,'offset_basis':'raw_name_codepoints','status':'single_language','rule':'single_language',
-            'name_zh':'','name_en':'','parts':[],'groups':[],'annotations':annotations}
-    han=lambda s:bool(re.search(r'[\u3400-\u9fff]',s))
-    latin=lambda ch:ch.isalpha() and 'LATIN' in unicodedata.name(ch,'')
-    def english(s):
-        # A qualifier belongs to its surrounding name even when its explanatory
-        # text is in another language. Only the ungrouped name establishes language.
-        grouped={'(':')','（':'）','[':']','【':'】'};nest=[];seen=False
-        for ch in s:
-            if ch in grouped:nest.append(grouped[ch]);continue
-            if nest:
-                if ch==nest[-1]:nest.pop()
-                continue
-            if ch.isalpha():
-                if not latin(ch):return False
-                seen=True
-        return seen and not nest
-    def trim(a,b,separators=''):
-        while a<b and (text[a].isspace() or text[a] in separators):a+=1
-        while b>a and (text[b-1].isspace() or text[b-1] in separators):b-=1
-        return a,b
-    def spans(a,b):
-        ranges=[]
-        for i in positions[a:b]:
-            if ranges and ranges[-1][1]==i:ranges[-1][1]=i+1
-            else:ranges.append([i,i+1])
-        return ranges
-    def part(language,a,b):
-        a,b=trim(a,b)
-        value=compact(text[a:b]);result['name_'+language]=value
-        result['parts'].append({'language':language,'text':value,'spans':spans(a,b)})
-    def unsplit(reason=None):
-        if reason:result.update(status='review',rule=reason)
-        if text:part('zh' if han(text) else 'en',0,len(text))
-        else:result.update(status='review',rule='empty_name')
+        annotations.append({'role': 'level_label', 'text': level[0], 'value': int(level[1]), 'spans': [list(level.span())]})
+
+    positions = [i for i in range(len(raw)) if i not in removed]
+    while positions and raw[positions[0]] in ' \t\r\n｜|：:':
+        positions.pop(0)
+    while positions and raw[positions[-1]] in ' \t\r\n｜|：:':
+        positions.pop()
+    text = ''.join(raw[i] for i in positions)
+
+    result = {
+        'raw': raw,
+        'offset_basis': 'raw_name_codepoints',
+        'status': 'single_language',
+        'rule': 'single_language',
+        'name_zh': '',
+        'name_en': '',
+        'parts': [],
+        'groups': [],
+        'annotations': annotations,
+    }
+
+    def add_part(language: str, a: int, b: int) -> None:
+        a, b = _trim_slice(text, a, b)
+        value = compact(text[a:b])
+        result['name_' + language] = value
+        result['parts'].append({'language': language, 'text': value, 'spans': _raw_spans(positions, a, b)})
+
+    def unsplit(reason: str | None = None) -> dict:
+        if reason:
+            result.update(status='review', rule=reason)
+        if text:
+            add_part('zh' if _has_han(text) else 'en', 0, len(text))
+        else:
+            result.update(status='review', rule='empty_name')
         return result
-    pairs={'(':')','（':'）','[':']','【':'】','“':'”','「':'」','『':'』','"':'"'}
-    stack=[];groups=[];depth=[]
-    for i,ch in enumerate(text):
+
+    pairs = {'(': ')', '（': '）', '[': ']', '【': '】', '“': '”', '「': '」', '『': '』', '"': '"'}
+    stack: list[tuple[int, str]] = []
+    groups: list[tuple[int, int, int]] = []
+    depth: list[int] = []
+    for i, ch in enumerate(text):
         depth.append(len(stack))
-        if ch=='"' and stack and stack[-1][1]=='"':
-            start,_=stack.pop();groups.append((start,i+1,len(stack)))
-        elif ch in pairs:stack.append((i,ch))
+        if ch == '"' and stack and stack[-1][1] == '"':
+            start, _ = stack.pop()
+            groups.append((start, i + 1, len(stack)))
+        elif ch in pairs:
+            stack.append((i, ch))
         elif ch in pairs.values():
-            if not stack or pairs[stack[-1][1]]!=ch:return unsplit('unbalanced_brackets')
-            start,_=stack.pop();groups.append((start,i+1,len(stack)))
-    if stack:return unsplit('unbalanced_brackets')
-    if han(text) and not groups:
-        alternatives=parse_alternatives(text,result,han,latin,english,trim,spans)
-        if alternatives:return alternatives
-    boundary=None;wrapper=None
-    if han(text):
-        # A language transition is allowed only outside balanced groups. Prefer the
-        # whole English suffix, so English Name (Alias) keeps its internal qualifier.
-        for i,ch in enumerate(text):
-            if (depth[i]==0 and (latin(ch) or ch in '“「『"') and han(text[:i])
-                    and english(text[i:]) and sum(c.isalnum() for c in text[i:])>=2):
-                boundary=i
-                # Digits glued to the English word belong to it (2nd-Level, 13th-Level).
-                while boundary>0 and text[boundary-1].isdigit():boundary-=1
-                if not han(text[:boundary]):boundary=i
-                # Keep a separated numeric qualifier with the following English name.
-                qualifier=re.search(r'(?<!\S)[+−-]?\d+\s+$',text[:boundary])
-                if qualifier and han(text[:qualifier.start()]):boundary=qualifier.start()
+            if not stack or pairs[stack[-1][1]] != ch:
+                return unsplit('unbalanced_brackets')
+            start, _ = stack.pop()
+            groups.append((start, i + 1, len(stack)))
+    if stack:
+        return unsplit('unbalanced_brackets')
+
+    if _has_han(text) and not groups:
+        alternatives = parse_alternatives(text, positions, result)
+        if alternatives:
+            return alternatives
+
+    boundary = None
+    wrapper = None
+    if _has_han(text):
+        for i, ch in enumerate(text):
+            if (
+                depth[i] == 0
+                and (_is_latin(ch) or ch in '“「『"')
+                and _has_han(text[:i])
+                and _is_english_segment(text[i:])
+                and sum(c.isalnum() for c in text[i:]) >= 2
+            ):
+                boundary = i
+                while boundary > 0 and text[boundary - 1].isdigit():
+                    boundary -= 1
+                if not _has_han(text[:boundary]):
+                    boundary = i
+                qualifier = re.search(r'(?<!\S)[+−-]?\d+\s+$', text[:boundary])
+                if qualifier and _has_han(text[:qualifier.start()]):
+                    boundary = qualifier.start()
                 break
         if boundary is None:
-            for a,b,level in groups:
-                if level==0 and b==len(text) and text[a] in '(（' and han(text[:a]) and english(text[a+1:b-1]):
-                    boundary=a;wrapper=(a,b);break
-    # A preceding English-only group followed by another English suffix could be
-    # a second translation or a qualifier. Do not assign it to the Chinese field.
-    if boundary is not None and any(b<=boundary and english(text[a+1:b-1]) for a,b,_ in groups):
-        boundary=None;wrapper=None
-    # An English word run inside the Chinese field is a translation the pairs above could not place.
-    if boundary is not None and adjacent_cuts(text[:boundary],han):
-        boundary=None;wrapper=None
+            for a, b, grp_level in groups:
+                if grp_level == 0 and b == len(text) and text[a] in '(（' and _has_han(text[:a]) and _is_english_segment(text[a + 1:b - 1]):
+                    boundary = a
+                    wrapper = (a, b)
+                    break
+
+    if boundary is not None and any(b <= boundary and _is_english_segment(text[a + 1:b - 1]) for a, b, _ in groups):
+        boundary = None
+        wrapper = None
+    if boundary is not None and adjacent_cuts(text[:boundary]):
+        boundary = None
+        wrapper = None
+
     if boundary is None:
-        unsplit('mixed_name_unresolved' if han(text) and any(latin(ch) for ch in text) else None)
+        unsplit('mixed_name_unresolved' if _has_han(text) and any(_is_latin(ch) for ch in text) else None)
     else:
-        a,b=trim(0,boundary,'｜|')
-        part('zh',a,b)
-        start,end=(wrapper[0]+1,wrapper[1]-1) if wrapper else (boundary,len(text))
-        part('en',start,end)
-        result.update(status='parsed',rule='wrapped_translation' if wrapper else 'bilingual_suffix')
-    for a,b,_ in sorted(groups):
-        is_wrapper=wrapper==(a,b)
-        language=None
-        if is_wrapper:role='translation_wrapper'
-        elif result['status']=='review':role='undetermined'
+        a, b = _trim_slice(text, 0, boundary, '｜|')
+        add_part('zh', a, b)
+        start, end = (wrapper[0] + 1, wrapper[1] - 1) if wrapper else (boundary, len(text))
+        add_part('en', start, end)
+        result.update(status='parsed', rule='wrapped_translation' if wrapper else 'bilingual_suffix')
+
+    for a, b, _ in sorted(groups):
+        is_wrapper = wrapper == (a, b)
+        language = None
+        if is_wrapper:
+            role = 'translation_wrapper'
+        elif result['status'] == 'review':
+            role = 'undetermined'
         else:
-            role='quoted_name' if text[a] in '“「『"' else 'qualifier'
-            language=('en' if a>=boundary else 'zh') if boundary is not None else ('zh' if han(text) else 'en')
-        result['groups'].append({'role':role,'language':language,'text':text[a:b],'spans':spans(a,b),
-            'delimiter_spans':spans(a,a+1)+spans(b-1,b)})
+            role = 'quoted_name' if text[a] in '“「『"' else 'qualifier'
+            language = ('en' if a >= boundary else 'zh') if boundary is not None else ('zh' if _has_han(text) else 'en')
+        result['groups'].append({
+            'role': role,
+            'language': language,
+            'text': text[a:b],
+            'spans': _raw_spans(positions, a, b),
+            'delimiter_spans': _raw_spans(positions, a, a + 1) + _raw_spans(positions, b - 1, b),
+        })
     return result
 
 
-def split_name(text):
+def split_name(text: object) -> tuple[str, str]:
     """Two-field projection of the shared structural parser for existing consumers."""
-    parsed=parse_name(text)
-    return parsed['name_zh'],parsed['name_en']
+    parsed = parse_name(text)
+    return parsed['name_zh'], parsed['name_en']
 
 
-# Page structure names an entry's role where a title or a folder name does not. A class prints a hit
-# die and a core-traits table; its features begin at 1st level. A subclass prints only the features
-# it adds, which begin at 3rd level and carry no core traits. These are layouts, not name whitelists.
-CLASS_STRUCTURE=re.compile(r'生命[值]?骰[\s\S]{0,40}?每\s*([^\s，。；：:]{1,12}?)\s*等级')
-CLASS_TRAITS=re.compile(r'核心特质|熟练加值|熟练项')
-# A class's own folder (/战士/, /战士-…), or a class or subclass chapter.
-CLASS_PATH=re.compile(r'/(?:'+'|'.join(re.escape(x) for x in CLASSES)+r')(?:/|[-（(.])|/(?:角色职业|职业|子职|子职业)/')
+# ---------------------------------------------------------------------------------------------------
+# Domain-free Page Layout IR blocks over canonicalized HTML.
 
-
-def class_structure(text,title=''):
-    """A hit die plus core traits describes a class page, whatever its name or directory.
-
-    The hit die must name the class it belongs to (每战士等级), so a rule that mentions hit dice
-    in general (每当你获得新的等级) is not a class page.
-    """
-    head=text[:8000]
-    if not CLASS_TRAITS.search(head):return False
-    m=CLASS_STRUCTURE.search(head)
-    if not m:return False
-    label=compact(m[1])
-    if not title:return True
-    return label in CLASSES or label in title
-
-
-NOTATION_JOINER = r'(?:或|、|/|／|和)'
-
-
-def skill_notation(skill, abilities=()):
-    """The ability-check notation that applies a skill: 力量（运动）检定, 魅力（欺瞒或游说）检定. With `abilities`, the
-    ability printed before the parentheses must be one of them and is captured as group 1."""
-    lead='('+'|'.join(map(re.escape,sorted(abilities,key=len,reverse=True)))+r')\s*' if abilities else ''
-    return re.compile(lead+r'[（(]\s*(?:[^（）()\n]{1,20}?'+NOTATION_JOINER+r'\s*)?'+re.escape(skill)
-                      +r'\s*(?:'+NOTATION_JOINER+r'[^（）()\n]{1,20}?)?[）)]\s*检定')
-
-
-@dataclass
-class Candidate:
+@dataclass(frozen=True)
+class HeadingBlock:
+    """A structural heading or opening bold run found in DOM order."""
+    tag: Tag
     start: int
-    title_end: int
-    name: str
+    end: int
+    text: str
     rank: int
     method: str
-    tag: Tag | None = None
-    anchors: list[str] = field(default_factory=list)
-    kinds: list[str] = field(default_factory=list)
-    observations: list[dict] = field(default_factory=list)
-    explicit_end: int | None = None
-    end: int = 0
-    parent: int | None = None
-    local_legacy: bool = False
-    fields: dict = field(default_factory=dict)
+    anchor: str = ''
+    tail: str = ''
+
+
+@dataclass(frozen=True)
+class ParagraphMarks:
+    """Marked inline runs inside one top-level prose paragraph."""
+    start: int
+    end: int
+    marked_runs: tuple[tuple[Tag, int, int], ...]
+    bold_runs: tuple[tuple[Tag, int, int], ...]
+
+
+@dataclass(frozen=True)
+class TitledList:
+    """A bullet list preceded by a sibling caption element."""
+    caption: str
+    caption_span: tuple[int, int]
+    items: tuple[tuple[str, tuple[int, int]], ...]
 
 
 class Document:
-    def __init__(self, path, raw):
-        self.path=path
-        self.soup=BeautifulSoup(raw,'html5lib')
-        self.title=compact(self.soup.title.get_text(' ',strip=True)) if self.soup.title else PurePosixPath(path).stem
-        self.body=self.soup.body or self.soup
-        self.ranges={}
-        self.text_nodes=[]
-        self.elements=[]
-        self.anchors={}
-        parts=[]
-        size=0
-        def add(s):
+    """Canonicalized HTML text with element-to-codepoint span mapping and typographical blocks."""
+
+    def __init__(self, path: str, raw: str):
+        self.path = path
+        self.soup = BeautifulSoup(raw, 'html5lib')
+        self.title = compact(self.soup.title.get_text(' ', strip=True)) if self.soup.title else PurePosixPath(path).stem
+        self.body = self.soup.body or self.soup
+        self.ranges: dict[int, tuple[int, int]] = {}
+        self.text_nodes: list[tuple[int, int, NavigableString]] = []
+        self.elements: list[Tag] = []
+        self.anchors: dict[str, list[Tag]] = {}
+        parts: list[str] = []
+        size = 0
+
+        def add(s: str) -> None:
             nonlocal size
-            parts.append(s);size+=len(s)
-        def walk(node):
-            if isinstance(node,(Comment,Doctype)):return
-            if isinstance(node,NavigableString):
-                # Whitespace is canonicalized before offsets are assigned.
-                start=size
-                add(re.sub(r'\s+',' ',str(node)))
-                self.text_nodes.append((start,size,node))
+            parts.append(s)
+            size += len(s)
+
+        def walk(node) -> None:
+            if isinstance(node, (Comment, Doctype)):
                 return
-            if not isinstance(node,Tag) or node.name in IGNORED:
+            if isinstance(node, NavigableString):
+                start = size
+                add(re.sub(r'\s+', ' ', str(node)))
+                self.text_nodes.append((start, size, node))
                 return
-            if node.name in BLOCKS or node.name=='br':add('\n')
-            start=size
+            if not isinstance(node, Tag) or node.name in IGNORED:
+                return
+            if node.name in BLOCKS or node.name == 'br':
+                add('\n')
+            start = size
             self.elements.append(node)
-            for child in node.children:walk(child)
-            self.ranges[id(node)]=(start,size)
-            for attr in ('id','name'):
-                value=node.get(attr)
-                if value and node.name not in {'meta','input','select'}:
-                    self.anchors.setdefault(str(value),[]).append(node)
-            if node.name in BLOCKS:add('\n')
+            for child in node.children:
+                walk(child)
+            self.ranges[id(node)] = (start, size)
+            for attr in ('id', 'name'):
+                value = node.get(attr)
+                if value and node.name not in {'meta', 'input', 'select'}:
+                    self.anchors.setdefault(str(value), []).append(node)
+            if node.name in BLOCKS:
+                add('\n')
+
         walk(self.body)
-        self.text=''.join(parts)
+        self.text = ''.join(parts)
 
-    def span(self,tag):return self.ranges.get(id(tag),(0,0))
-    def text_of(self,tag):
-        a,b=self.span(tag)
+    def span(self, tag: Tag) -> tuple[int, int]:
+        return self.ranges.get(id(tag), (0, 0))
+
+    def text_of(self, tag: Tag) -> str:
+        a, b = self.span(tag)
         return self.text[a:b]
-    def close(self):self.soup.decompose()
 
-    def dom_snapshot(self):
+    def close(self) -> None:
+        self.soup.decompose()
+
+    def dom_snapshot(self) -> dict:
         """Extract all DOM signals needed by downstream concept and link analyzers in one pass."""
-        anchors={a:[list(self.span(t)) for t in tags] for a,tags in self.anchors.items()}
-        body_links=[{'href':a['href'],'span':list(self.span(a)),'link_text':compact(a.get_text(' ',strip=True))}
-                    for a in self.body.find_all('a',href=True)]
-        stylesheets=[]
-        for link in self.soup.find_all('link',href=True):
-            dest=resolve_link(self.path,link['href'])
-            if 'stylesheet' not in link.get('rel',[]) or not dest:continue
-            if dest[0] not in stylesheets:stylesheets.append(dest[0])
-        u_marks=[]
+        anchors = {a: [list(self.span(t)) for t in tags] for a, tags in self.anchors.items()}
+        body_links = [
+            {'href': a['href'], 'span': list(self.span(a)), 'link_text': compact(a.get_text(' ', strip=True))}
+            for a in self.body.find_all('a', href=True)
+        ]
+        stylesheets: list[str] = []
+        for link in self.soup.find_all('link', href=True):
+            dest = resolve_link(self.path, link['href'])
+            if 'stylesheet' not in link.get('rel', []) or not dest:
+                continue
+            if dest[0] not in stylesheets:
+                stylesheets.append(dest[0])
+        u_marks = []
         for tag in self.body.find_all('u'):
-            a,b=self.span(tag)
+            a, b = self.span(tag)
             u_marks.append({
-                'span':[a,b],
-                'kind':format_kind(tag),
-                'has_parent_u':bool(tag.find_parent('u')),
-                'in_explicit_parent':bool(tag.find_parent('a',href=True)),
-                'has_explicit_child':bool(tag.find('a',href=True)),
-                'in_example':any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents),
-                'tag_paths':format_tag_paths(tag),
-                'markup':str(tag),
+                'span': [a, b],
+                'style': underline_style(tag),
+                'has_parent_u': bool(tag.find_parent('u')),
+                'in_explicit_parent': bool(tag.find_parent('a', href=True)),
+                'has_explicit_child': bool(tag.find('a', href=True)),
+                'in_example': any(EXAMPLE_CLASSES.intersection(p.get('class', [])) for p in tag.parents),
+                'tag_paths': format_tag_paths(tag),
+                'markup': str(tag),
             })
-        concept_tables=[]
-        for ti,table in enumerate(self.tables()):
-            if table['tag'].find_parent('table'):continue
-            if any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in table['tag'].parents):continue
-            rows=table['rows']
-            header=next((r for r in rows[:4] if r['cell_tags'] and all(t=='th' for t in r['cell_tags'])),rows[0])
-            headers=[compact(h) for h in header['cells']]
-            cells=[]
-            for ri,row in enumerate(rows[1:],1):
-                if row['cell_tags'] and all(t=='th' for t in row['cell_tags']):continue
-                for ci,cell_span in enumerate(row['cell_spans']):
-                    cells.append([ri,ci,cell_span[0],cell_span[1]])
-            concept_tables.append({'index':ti,'span':list(table['span']),'headers':headers,'cells':cells})
-        non_prose_spans=[list(self.span(t)) for t in self.elements
-                         if t.name in {'table','blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class',[]))]
-        return {'anchors':anchors,'body_links':body_links,'stylesheets':stylesheets,
-                'u_marks':u_marks,'concept_tables':concept_tables,'non_prose_spans':non_prose_spans}
+        concept_tables = []
+        for ti, table in enumerate(self.tables()):
+            if table['tag'].find_parent('table'):
+                continue
+            if any(EXAMPLE_CLASSES.intersection(p.get('class', [])) for p in table['tag'].parents):
+                continue
+            rows = table['rows']
+            header = next((r for r in rows[:4] if r['cell_tags'] and all(t == 'th' for t in r['cell_tags'])), rows[0])
+            headers = [compact(h) for h in header['cells']]
+            cells = []
+            for ri, row in enumerate(rows[1:], 1):
+                if row['cell_tags'] and all(t == 'th' for t in row['cell_tags']):
+                    continue
+                for ci, cell_span in enumerate(row['cell_spans']):
+                    cells.append([ri, ci, cell_span[0], cell_span[1]])
+            concept_tables.append({'index': ti, 'span': list(table['span']), 'headers': headers, 'cells': cells})
+        non_prose_spans = [
+            list(self.span(t)) for t in self.elements
+            if t.name in {'table', 'blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class', []))
+        ]
+        return {
+            'anchors': anchors,
+            'body_links': body_links,
+            'stylesheets': stylesheets,
+            'u_marks': u_marks,
+            'concept_tables': concept_tables,
+            'non_prose_spans': non_prose_spans,
+        }
 
-    def tables(self):
-        out=[]
+    def tables(self) -> list[dict]:
+        out = []
         for table in self.body.find_all('table'):
-            rows=[]
+            rows = []
             for tr in table.find_all('tr'):
-                if tr.find_parent('table') is not table:continue
-                cells=tr.find_all(['th','td'],recursive=False)
-                if not cells:continue
-                rows.append({'cells':[compact(c.get_text(' ',strip=True)) for c in cells],
-                             'cell_spans':[self.span(c) for c in cells],
-                             'rowspan':[c.get('rowspan','1') for c in cells],
-                             'colspan':[c.get('colspan','1') for c in cells],
-                             'cell_tags':[c.name for c in cells],
-                             'span':self.span(tr),'tag':tr})
+                if tr.find_parent('table') is not table:
+                    continue
+                cells = tr.find_all(['th', 'td'], recursive=False)
+                if not cells:
+                    continue
+                rows.append({
+                    'cells': [compact(c.get_text(' ', strip=True)) for c in cells],
+                    'cell_spans': [self.span(c) for c in cells],
+                    'rowspan': [c.get('rowspan', '1') for c in cells],
+                    'colspan': [c.get('colspan', '1') for c in cells],
+                    'cell_tags': [c.name for c in cells],
+                    'span': self.span(tr),
+                    'tag': tr,
+                })
             if rows:
-                out.append({'span':self.span(table),'rows':rows,'tag':table})
+                out.append({'span': self.span(table), 'rows': rows, 'tag': table})
         return out
 
-    def quickrefs(self):
-        out=[]
-        for n,tr in enumerate(self.body.find_all('tr')):
-            kind=next((a for a in ('item','monster','spell') if tr.has_attr(a)),None)
-            if not kind:continue
-            cells=tr.find_all(['td','th'],recursive=False)
-            vals=[compact(c.get_text(' ',strip=True)) for c in cells]
-            links=[a for a in (cells[0].find_all('a',href=True) if cells else [])]
-            table=tr.find_parent('table')
-            headers=[]
+    def tagged_rows(self, attributes: tuple[str, ...]) -> list[dict]:
+        """Extract <tr> rows carrying one of the given marker attributes (e.g. WinCHM index tables)."""
+        out = []
+        for n, tr in enumerate(self.body.find_all('tr')):
+            attr = next((a for a in attributes if tr.has_attr(a)), None)
+            if not attr:
+                continue
+            cells = tr.find_all(['td', 'th'], recursive=False)
+            vals = [compact(c.get_text(' ', strip=True)) for c in cells]
+            links = list(cells[0].find_all('a', href=True)) if cells else []
+            table = tr.find_parent('table')
+            headers = []
             if table:
-                first=table.find('tr')
-                if first:headers=[compact(c.get_text(' ',strip=True)) for c in first.find_all(['th','td'],recursive=False)]
-            href=links[0]['href'] if links else ''
-            target=resolve_link(self.path,href) if href else None
-            out.append({'id':digest(self.path,'row',n), 'path':self.path,'row':n,
-                        'span':list(self.span(tr)),'kind':{'item':'magic_item','monster':'creature','spell':'spell'}[kind],
-                        'name':compact(tr.get(kind,'')),'headers':headers,'cells':vals,'tags':compact(tr.get('tags','')),
-                        'href':href,'target_path':target[0] if target else '', 'target_anchor':target[1] if target else '',
-                        'legacy':bool(tr.select('.legacy')) or bool(LEGACY.search(vals[0] if vals else ''))})
+                first = table.find('tr')
+                if first:
+                    headers = [compact(c.get_text(' ', strip=True)) for c in first.find_all(['th', 'td'], recursive=False)]
+            href = links[0]['href'] if links else ''
+            target = resolve_link(self.path, href) if href else None
+            out.append({
+                'id': digest(self.path, 'row', n),
+                'path': self.path,
+                'row': n,
+                'span': list(self.span(tr)),
+                'attr': attr,
+                'name': compact(tr.get(attr, '')),
+                'headers': headers,
+                'cells': vals,
+                'tags': compact(tr.get('tags', '')),
+                'href': href,
+                'target_path': target[0] if target else '',
+                'target_anchor': target[1] if target else '',
+                'legacy': bool(tr.select('.legacy')) or bool(LEGACY.search(vals[0] if vals else '')),
+            })
         return out
 
-    def named_tables(self):
-        """Pair a caption/standalone marked line with its adjacent data table, not nearby prose."""
-        title_tags=HEADINGS|{'u','b','strong'}
-        def short_title(tag):
-            name=compact(self.text_of(tag))
-            return (1<len(name)<=120 and not re.search(r'[。；！？!?]',name) and not FIELD_TITLE.fullmatch(name)
-                    and not re.fullmatch(r'(?:\d+)?[dD]\d+(?:\s*[-+]\s*\d+)?|\d+(?:[-–~～]\d+)?',name))
-        for table in self.body.find_all('table'):
-            if table.find_parent('table') or table.find_parent(class_=['stat-block','statblock']):continue
-            rows=[r for r in table.find_all('tr') if r.find_parent('table') is table]
-            if len(rows)<2 or not any(len(r.find_all(['td','th'],recursive=False))>=2 for r in rows):continue
-            caption=table.find('caption',recursive=False)
-            if caption and short_title(caption) and self.span(caption)[1]<=self.span(rows[0])[0]:
-                yield caption,self.span(table);continue
-            # html5lib may retain the table inside a paragraph or move it outside.
-            # Only the immediate previous visible sibling can supply a title.
-            previous=table.previous_sibling
-            while previous is not None and (isinstance(previous,Comment) or isinstance(previous,NavigableString) and not str(previous).strip() or isinstance(previous,Tag) and previous.name=='br'):
-                previous=previous.previous_sibling
-            if not isinstance(previous,Tag) or previous.name=='table':continue
-            ta,tb=self.span(table);matches=[]
-            for tag in [previous]+list(previous.find_all(list(title_tags))):
-                if tag.name not in title_tags or tag.find_parent(['td','th','table']) or not short_title(tag):continue
-                a,b=self.span(tag)
-                if b>ta or compact(self.text[b:ta]):continue
-                line_start=self.text.rfind('\n',0,a)+1
-                if compact(self.text[line_start:a]):continue
-                matches.append(tag)
-            # Nested wrappers of the same title share a range; separate titles remain ambiguous.
-            spans={self.span(t) for t in matches}
-            if len(spans)==1:yield matches[0],(ta,tb)
+    def element_headings(self) -> list[HeadingBlock]:
+        """Yield structural headings and paragraph-opening bold leads in DOM order."""
+        blocks: list[HeadingBlock] = []
+        for tag in self.elements:
+            if id(tag) not in self.ranges:
+                continue
+            a, b = self.span(tag)
+            if tag.name in HEADINGS:
+                blocks.append(HeadingBlock(tag, a, b, compact(self.text[a:b]), int(tag.name[1]), 'heading', anchor=tag.get('id', '')))
+                continue
+            if tag.name in {'b', 'strong'} and not tag.find_parent(list(HEADINGS)):
+                block = tag.find_parent('p')
+                if block and not block.find_parent(['li', 'table']):
+                    ba, bb = self.span(block)
+                    if not compact(self.text[ba:a]):
+                        blocks.append(HeadingBlock(tag, a, b, compact(self.text[a:b]), 4, 'opening_bold', tail=compact(self.text[b:bb])))
+            if tag.name == 'p':
+                style = tag.get('style', '').lower()
+                txt = compact(self.text_of(tag))
+                if 'border-bottom' in style and len(txt) < 150 and (tag.find('b') or tag.find('strong')):
+                    blocks.append(HeadingBlock(tag, a, b, txt, 4, 'word_heading'))
+                    continue
+            color = tag.get('color', '').lower()
+            style = tag.get('style', '').lower()
+            colored = color in MAROON_COLORS or bool(MAROON_STYLE_RE.search(style))
+            if colored and tag.name in {'font', 'span'} and not tag.find_parent(list(HEADINGS)):
+                txt = compact(self.text_of(tag))
+                if not 1 < len(txt) < 150:
+                    continue
+                block = tag.find_parent(['p', 'li', 'div', 'td', 'body'])
+                if block is None:
+                    continue
+                prefix = self.text[self.span(block)[0]:a]
+                if compact(prefix.split('\n')[-1]):
+                    continue
+                if block.name == 'p' and 'border-bottom' in block.get('style', '').lower():
+                    continue
+                if not (tag.find(['b', 'strong']) or tag.find_parent(['b', 'strong']) or re.search('[A-Za-z]{3}', txt)):
+                    continue
+                blocks.append(HeadingBlock(tag, a, b, txt, 4, 'colored_heading'))
+        return blocks
 
-    def rule_children(self, start, end, parent_name):
-        """Find independent rule terms, not every emphasized subheading in a rule."""
-        parent_zh,parent_en=split_name(parent_name)
-        def family(name):
-            zh,en=split_name(name)
-            return any(p and key(p)!=key(n) and key(p) in key(n)
-                       for p,n in ((parent_zh,zh),(parent_en,en)))
-        def usable(tag):
-            return not (tag.find_parent(['table','a','blockquote']+list(HEADINGS))
-                        or any(EXAMPLE_CLASSES.intersection(p.get('class',[])) for p in tag.parents))
-        # A declared series of marked terms, each with its own parenthesized
-        # rule text, differs from a list of names or an incidental gloss.
+    def paragraph_marks(self) -> list[ParagraphMarks]:
+        """Top-level prose paragraphs and their inner marked/bold tag spans."""
+        result: list[ParagraphMarks] = []
         for block in self.body.find_all('p'):
-            lo,hi=self.span(block)
-            if lo<start or hi>end or not usable(block):continue
-            terms={}
-            for tag in block.find_all('u',recursive=False):
-                a,b=self.span(tag);name=self.text[a:b]
-                if re.fullmatch(r'[\u3400-\u9fff]{2,24}',name):terms[a]=b
-            for intro in re.finditer(r'([^。！？；\n：:]+)[：:]\s*',self.text[lo:hi]):
-                lead=intro[1]
-                if not re.search(r'(?:[两二三四五六七八九十\d]+种|分为|包括|下列|以下|分别)',lead):continue
-                if re.search(r'例如|比如|举例|譬如',lead):continue
-                items=[];a=lo+intro.end()
-                while a in terms:
-                    b=terms[a];tail=self.text[b:hi]
-                    opening=re.match(r'\s*([（(])',tail)
-                    if not opening:break
-                    stack=[opening[1]]
-                    for pos in range(b+opening.end(),min(hi,b+180)):
-                        ch=self.text[pos]
-                        if ch in '（(':stack.append(ch)
-                        elif ch in '）)':
-                            if ch!=('）' if stack[-1]=='（' else ')'):break
-                            stack.pop()
-                            if not stack:break
-                        elif ch=='\n':break
-                    if stack:break
-                    gloss=compact(self.text[b+opening.end():pos])
-                    if len(gloss)<4 or not re.search(r'[\u3400-\u9fff]',gloss):break
-                    items.append((a,b,pos+1,self.text[a:b]))
-                    separator=re.match(r'\s*[、，,]\s*',self.text[pos+1:hi])
-                    if not separator:
-                        after=self.text[pos+1:hi].lstrip()
-                        if len(items)>=2 and len({key(t[3]) for t in items})==len(items) and (not after or after[0] in '。；;.!！？'):
-                            yield from ((*t,'rule_term_gloss_list') for t in items)
-                        break
-                    a=pos+1+separator.end()
+            if block.find_parent(['table', 'li']):
+                continue
+            ba, bb = self.span(block)
+            marked = tuple((t, *self.span(t)) for t in block.find_all(['u', 'b', 'strong']))
+            bold = tuple((t, *self.span(t)) for t in block.find_all(['b', 'strong']))
+            result.append(ParagraphMarks(ba, bb, marked, bold))
+        return result
 
-        # The other layout is parallel lines inside rule prose: either a
-        # bold bilingual lead-in or a bold name in a repeated rule clause.
-        # Only independently named variants of the enclosing term are
-        # exported; generic labels like "Effects" don't become global terms.
-        lines=defaultdict(list)
-        for tag in self.body.find_all(['b','strong']):
-            a,b=self.span(tag)
-            if not start<=a<b<=end or tag.find_parent(['b','strong']) or not usable(tag):continue
-            line=self.text.rfind('\n',start,a)+1
-            if line<start:line=start
-            stop=self.text.find('\n',a,end)
-            if stop<0:stop=end
-            if b>stop:continue
-            lines[(line,stop)].append((a,b))
-        siblings=defaultdict(list)
-        for (line,stop),parts in lines.items():
-            a,b=parts[0]
-            for x,y in parts[1:]:
-                if compact(self.text[b:x]):break
-                b=y
-            prefix=compact(self.text[line:a])
-            raw=compact(self.text[a:b])
-            name=raw.rstrip('。:：')
-            zh,en=split_name(name)
-            if not (zh and en and len(name)<=80 and not re.search(r'[。！？；：:]',name)):continue
-            tail=compact(self.text[b:stop])
-            if len(tail)<8 or not re.search(r'[。！？]',tail):continue
-            if not prefix and raw!=name:
-                signature='inline_heading'
-            elif re.fullmatch(r'(?:当(?:你|目标|生物)?)?(?:处于|具有|获得|陷入|使用|执行|受到)',prefix):
-                continuation=re.match(r'(?:下的|时[，,]|期间|中的|中[，,])',tail)
-                if not continuation:continue
-                signature=(prefix,continuation[0])
-            else:continue
-            siblings[signature].append((a,b,b+len(self.text[b:stop].rstrip()),name))
-        for group in siblings.values():
-            if len({key(t[3]) for t in group})!=len(group) or len(group)<2:continue
-            yield from ((*t,'rule_parallel_lead') for t in group if family(t[3]))
-
-    def line_leads(self):
-        """Bold runs that open a line and end at 。, ：or a period: (start, end, name) in text order. Adjacent bold
-        tags form one run (运动 + Athletics); the punctuation may sit outside the bold run."""
-        runs=[]
-        for tag in self.body.find_all(['b','strong']):
-            if tag.find_parent(['b','strong','table','a']+list(HEADINGS)):continue
-            a,b=self.span(tag)
-            if a>=b:continue
-            if runs and runs[-1][1]<=a and not compact(self.text[runs[-1][1]:a]):
-                runs[-1][1]=max(runs[-1][1],b);continue
-            line=self.text.rfind('\n',0,a)+1
-            if compact(self.text[line:a]):continue
-            runs.append([a,b])
-        leads=[]
-        for a,b in runs:
-            raw=compact(self.text[a:b]);after=self.text[b:b+3].lstrip(' ')
-            name=raw.rstrip('。:：.')
-            if not name or (raw==name and not after[:1] in {'。','：',':','.'}):continue
-            leads.append((a,b,name))
+    def line_leads(self) -> list[tuple[int, int, str]]:
+        """Bold runs that open a line and end at 。, ：, : or .: (start, end, name) in text order."""
+        runs: list[list[int]] = []
+        for tag in self.body.find_all(['b', 'strong']):
+            if tag.find_parent(['b', 'strong', 'table', 'a'] + list(HEADINGS)):
+                continue
+            a, b = self.span(tag)
+            if a >= b:
+                continue
+            if runs and runs[-1][1] <= a and not compact(self.text[runs[-1][1]:a]):
+                runs[-1][1] = max(runs[-1][1], b)
+                continue
+            line = self.text.rfind('\n', 0, a) + 1
+            if compact(self.text[line:a]):
+                continue
+            runs.append([a, b])
+        leads: list[tuple[int, int, str]] = []
+        for a, b in runs:
+            raw = compact(self.text[a:b])
+            after = self.text[b:b + 3].lstrip(' ')
+            name = raw.rstrip('。:：.')
+            if not name or (raw == name and after[:1] not in {'。', '：', ':', '.'}):
+                continue
+            leads.append((a, b, name))
         return leads
 
-    def skill_leads(self, headings=()):
-        """Leads that define the skills of an ability's check. Inside the heading that names the check (力量检定
-        Strength Checks), a lead whose text applies its own name in that check's notation is a skill: 运动Athletics。
-        力量（运动）检定涵盖… The name may stand among alternatives (魅力（欺瞒或游说）检定). A lead that only uses a skill
-        elsewhere, such as an armor table's 隐匿 Stealth column, sits under no check heading.
+    def standalone_bilingual_lines(self) -> set[int]:
+        """Start offsets of standalone unpunctuated bilingual lines (e.g. sidebar banners)."""
+        bounds: set[int] = set()
+        for m in re.finditer(r'(?m)^[ \t]*(\S[^\n]{0,80}?)[ \t]*$', self.text):
+            title = compact(m[1])
+            zh, en = split_name(title)
+            if zh and en and not re.search(r'[。！？；，、]', title):
+                bounds.add(m.start(1))
+        return bounds
 
-        Yields (start, title_end, end, name, owning heading). A lead's text runs to the next lead that opens a line,
-        the next heading, or a line that is only a bilingual title, such as 边栏：寻找隐藏物件Finding a Hidden Object."""
-        headings=sorted(headings,key=lambda h:h.start)
-        leads=self.line_leads();bounds={h.start for h in headings}
-        for m in re.finditer(r'(?m)^[ \t]*(\S[^\n]{0,80}?)[ \t]*$',self.text):
-            title=compact(m[1]);zh,en=split_name(title)
-            if zh and en and not re.search(r'[。！？；，、]',title):bounds.add(m.start(1))
-        bounds=sorted(bounds)
-        for i,(a,b,name) in enumerate(leads):
-            zh,en=split_name(name)
-            if not (zh and en and len(name)<=60) or re.search(r'[。！？；，、]',name):continue
-            owner=next((h for h in reversed(headings) if h.start<a),None)
-            if owner is None:continue
-            check_zh,check_en=split_name(owner.name)
-            if not (len(check_zh)>2 and check_zh.endswith('检定') and re.search(r'\bChecks?$',check_en,re.I)):continue
-            end=min([leads[i+1][0]] if i+1<len(leads) else [len(self.text)])
-            end=min([end]+[s for s in bounds if s>a])
-            if skill_notation(zh,[check_zh[:-2]]).search(self.text,b,end):yield a,b,end,name,owner
+    def titled_tables(self, exclude_title=None):
+        """Pair a caption or standalone preceding marked line with its adjacent data table."""
+        title_tags = HEADINGS | {'u', 'b', 'strong'}
 
-    def candidates(self, observations=()):
-        items=[]
-        def add(tag,name=None,rank=4,method='heading',anchor='',kind='',ob=None,end=None):
-            if id(tag) not in self.ranges:return
-            a,b=self.span(tag)
-            name=compact(name or self.text[a:b])
-            if not name or len(name)>200 or FIELD_TITLE.fullmatch(name):return
-            items.append(Candidate(a,b,name,rank,method,tag,[anchor] if anchor else [],[kind] if kind else [],[ob] if ob else [],end))
-        for tag in self.elements:
-            if tag.name in HEADINGS:
-                add(tag,rank=int(tag.name[1]),anchor=tag.get('id',''))
+        def short_title(tag: Tag) -> bool:
+            name = compact(self.text_of(tag))
+            if not (1 < len(name) <= 120 and not re.search(r'[。；！？!?]', name)):
+                return False
+            if DICE_OR_RANGE_RE.fullmatch(name):
+                return False
+            return not (exclude_title and exclude_title(name))
+
+        for table in self.body.find_all('table'):
+            if table.find_parent('table') or table.find_parent(class_=['stat-block', 'statblock']):
                 continue
-            if tag.name in {'b','strong'} and not tag.find_parent(list(HEADINGS)):
-                block=tag.find_parent('p')
-                if block and not block.find_parent(['li','table']):
-                    a,b=self.span(tag);ba,bb=self.span(block)
-                    prefix=compact(self.text[ba:a])
-                    tail=compact(self.text[b:bb])
-                    if not prefix and re.match(r'^(?:起源|通用|战斗风格|传奇恩惠|种族|血族)专长',tail):
-                        add(tag,rank=4,method='descriptor_heading')
-            if tag.name=='p':
-                style=tag.get('style','').lower()
-                if 'border-bottom' in style and len(compact(self.text_of(tag)))<150 and (tag.find('b') or tag.find('strong')):
-                    add(tag,rank=4,method='word_heading')
+            rows = [r for r in table.find_all('tr') if r.find_parent('table') is table]
+            if len(rows) < 2 or not any(len(r.find_all(['td', 'th'], recursive=False)) >= 2 for r in rows):
+                continue
+            caption = table.find('caption', recursive=False)
+            if caption and short_title(caption) and self.span(caption)[1] <= self.span(rows[0])[0]:
+                yield caption, self.span(table)
+                continue
+            previous = table.previous_sibling
+            while previous is not None and (
+                isinstance(previous, Comment)
+                or (isinstance(previous, NavigableString) and not str(previous).strip())
+                or (isinstance(previous, Tag) and previous.name == 'br')
+            ):
+                previous = previous.previous_sibling
+            if not isinstance(previous, Tag) or previous.name == 'table':
+                continue
+            ta, tb = self.span(table)
+            matches = []
+            for tag in [previous] + list(previous.find_all(list(title_tags))):
+                if tag.name not in title_tags or tag.find_parent(['td', 'th', 'table']) or not short_title(tag):
                     continue
-            color=tag.get('color','').lower()
-            style=tag.get('style','').lower()
-            colored=color in {'#800000','800000','#ff0000','red','maroon'} or bool(re.search(r'color\s*:\s*(?:rgb\(128,\s*0,\s*0\)|#800000)',style))
-            if colored and tag.name in {'font','span'}:
-                if tag.find_parent(list(HEADINGS)):continue
-                txt=compact(self.text_of(tag))
-                if not 1<len(txt)<150:continue
-                block=tag.find_parent(['p','li','div','td','body'])
-                if block is None:continue
-                prefix=self.text[self.span(block)[0]:self.span(tag)[0]]
-                if compact(prefix.split('\n')[-1]):continue
-                # A Word heading's adjacent spans together form one title.
-                if block.name=='p' and 'border-bottom' in block.get('style','').lower():continue
-                if not (tag.find(['b','strong']) or tag.find_parent(['b','strong']) or re.search('[A-Za-z]{3}',txt)):continue
-                add(tag,rank=4,method='colored_heading')
-        # Level-prefixed inline headings in class/subclass prose, regardless of color.
-        class_context=bool(CLASS_PATH.search(self.path)) or class_structure(self.text,self.title)
-        if class_context:
-            for block in self.body.find_all('p'):
-                if block.find_parent(['table','li']):continue
-                ba,bb=self.span(block)
-                headings=[]
-                for tag in block.find_all(['u','b','strong']):
-                    a,b=self.span(tag);name=compact(self.text[a:b])
-                    if compact(self.text[ba:a]):continue
-                    # A formatted heading may span adjacent tags (including its
-                    # closing quote). Failed name segmentation must not erase an
-                    # already established heading or its child ability boundaries.
-                    existing=next((c for c in items if c.start==a and c.method in {'heading','colored_heading','word_heading'}),None)
-                    if re.match(r'^\d+\s*级\s*[:：]',name) and (split_name(name)[1] or existing) and not re.search(r'[。；！？]',name):
-                        if not existing and not any(c.start==a and c.title_end==b for c in items):
-                            add(tag,rank=4,method='level_inline_heading')
-                        headings.append(tag)
-                        break
-                if not headings:continue
-                for tag in block.find_all(['b','strong']):
-                    a,b=self.span(tag);name=compact(self.text[a:b]).rstrip('。:：')
-                    if a<=self.span(headings[0])[1] or compact(self.text[ba:a].split('\n')[-1]):continue
-                    zh,en=split_name(name)
-                    if zh and en and len(name)<120 and not re.search(r'[。；！？]',name):
-                        add(tag,name=name,rank=5,method='feature_inline_heading',end=bb)
-            # Inline children stop at a sibling; their enclosing feature stops at the next heading.
-            children=[c for c in items if c.method=='feature_inline_heading']
-            for c in children:
-                c.explicit_end=min([c.explicit_end]+[x.start for x in children if c.start<x.start<c.explicit_end])
-        # Skill leads are children of the check heading they belong to and end at the next lead.
-        headings=[c for c in items if c.method in {'heading','word_heading','colored_heading'}]
-        for a,b,end,name,owner in self.skill_leads(headings):
-            if any(c.start<=a<c.title_end for c in items):continue
-            items.append(Candidate(a,b,name,owner.rank+1,'skill_lead',None,[],[],[],end))
-        # Named tables reuse a heading at the same location, or become bounded child entries.
-        for tag,table_span in self.named_tables():
-            a,b=self.span(tag)
-            existing=next((c for c in items if c.start==a and c.title_end==b),None)
-            if existing:
-                existing.fields['table_span']=list(table_span)
-                continue
-            preceding=[c for c in items if c.start<a and (c.explicit_end is None or c.explicit_end>a)]
-            parent=max(preceding,key=lambda c:c.start) if preceding else None
-            add(tag,rank=parent.rank+1 if parent else 2,method='table_caption',end=table_span[1])
-            if items and items[-1].tag is tag:items[-1].fields['table_span']=list(table_span)
-        # Stat blocks are atomic records, regardless of inner action headings.
-        for tag in self.body.select('.stat-block, .statblock'):
-            title=tag.find(list(HEADINGS))
-            if title:
-                add(title,rank=2,method='stat_block',kind='creature',anchor=title.get('id',''),end=self.span(tag)[1])
-        # Word-exported stat blocks often have no semantic heading tags.
-        # A standalone size/type line plus AC/HP identifies the card; the preceding
-        # nonempty line provides its title. Metadata lines never become headings.
-        synthetic=[]
-        def preceding_title(pos):
-            prefix=self.text[:pos].rstrip()
-            a=prefix.rfind('\n')+1
-            title=compact(prefix[a:])
-            if title and not re.search(r'[\u3400-\u9fff]',title):
-                before=prefix[:a].rstrip();b=before.rfind('\n')+1
-                chinese=compact(before[b:])
-                if chinese and len(chinese)<100 and re.search(r'[\u3400-\u9fff]',chinese) and not re.search(r'[A-Za-z。；！？]',chinese):
-                    a=b;title=compact(prefix[a:])
-            if not title or len(title)>150 or re.search(r'[。；！？]',title):return None
-            return a,len(prefix),title
-        for m in CREATURE_META.finditer(self.text):
-            if not STATS.search(self.text[m.end():m.end()+450]):continue
-            previous=preceding_title(m.start())
-            if not previous:continue
-            a,b,title=previous
-            if any(c.explicit_end and c.start<=a<c.explicit_end for c in items):continue
-            synthetic.append(Candidate(a,b,title,2,'stat_signature',None,[],['creature']))
-        for i,c in enumerate(synthetic):
-            following=[x.start for x in synthetic+items if 'creature' in x.kinds and x.start>c.start]
-            c.explicit_end=min(following) if following else len(self.text)
-            items.append(c)
-        item_meta=re.compile(r'(?m)^[ \t]*(?:奇物|药水|卷轴|法杖|魔杖|魔棒|戒指|武器|护甲|盔甲|盾牌|长剑|短剑|弯刀|匕首|巨剑|长棍|权杖|魔法船)[^\n]{0,65}[，,、 ](?:非普通|极珍稀|珍稀|普通|传说|神器|稀有|罕见)[^\n]{0,100}$')
-        spell_meta=re.compile(r'(?m)^[ \t]*(?:戏法|[一二三四五六七八九十\d]+环)\s*(?:[｜|/：:]\s*)?(?:防护|咒法|预言|惑控|塑能|幻术|死灵|变化)[^\n]{0,100}$')
-        for kind,pattern in [('magic_item',item_meta),('spell',spell_meta)]:
-            for m in pattern.finditer(self.text):
-                if kind=='spell' and not SPELL.search(self.text[m.end():m.end()+700]):continue
-                previous=preceding_title(m.start())
-                if not previous:continue
-                a,b,title=previous
-                if any(c.start<=a<c.title_end and kind in c.kinds for c in items):continue
-                items.append(Candidate(a,b,title,4,kind+'_signature',None,[],[kind]))
-        for m in re.finditer(r'(?m)^[ \t]*([^\n。]{1,130}[（(](?:服用|吸入|接触|损伤)[）)])。',self.text):
-            title=compact(m[1]);a=m.start(1);b=m.end(1)
-            if re.search('[A-Za-z]',title):items.append(Candidate(a,b,title,4,'poison_signature',None,[],['poison']))
-        for ob in observations:
-            anchor=ob.get('target_anchor','')
-            tags=self.anchors.get(anchor,[]) if anchor else []
-            if len(tags)==1:
-                tag=tags[0]
-                if not compact(self.text_of(tag)):
-                    parent=tag.find_parent(['p']+list(HEADINGS))
-                    if parent and len(compact(self.text_of(parent)))<200:
-                        tag=parent
-                    else:
-                        pos=self.span(tag)[0]
-                        near=[c for c in items if pos<=c.start<=pos+200]
-                        if near:tag=min(near,key=lambda c:c.start).tag
-                container=tag.find_parent(class_='stat-block')
-                add(tag,name=ob['name'],rank=2 if ob['kind']=='creature' else 4,method='index_anchor',anchor=anchor,kind=ob['kind'],ob=ob,end=self.span(container)[1] if container else None)
+                a, b = self.span(tag)
+                if b > ta or compact(self.text[b:ta]):
+                    continue
+                line_start = self.text.rfind('\n', 0, a) + 1
+                if compact(self.text[line_start:a]):
+                    continue
+                matches.append(tag)
+            spans = {self.span(t) for t in matches}
+            if len(spans) == 1:
+                yield matches[0], (ta, tb)
+
+    def boxed_headings(self, selector: str = '.stat-block, .statblock') -> list[tuple[Tag, str, int]]:
+        """Boxed card containers carrying an internal <h1..h6> title and explicit box end."""
+        out = []
+        for box in self.body.select(selector):
+            title = box.find(list(HEADINGS))
+            if title and id(title) in self.ranges:
+                out.append((title, title.get('id', ''), self.span(box)[1]))
+        return out
+
+    def preceding_title(self, pos: int) -> tuple[int, int, str] | None:
+        """Standalone title line (or Chinese + English line pair) immediately preceding `pos`."""
+        prefix = self.text[:pos].rstrip()
+        a = prefix.rfind('\n') + 1
+        title = compact(prefix[a:])
+        if title and not _has_han(title):
+            before = prefix[:a].rstrip()
+            b = before.rfind('\n') + 1
+            chinese = compact(before[b:])
+            if chinese and len(chinese) < 100 and _has_han(chinese) and not re.search(r'[A-Za-z。；！？]', chinese):
+                a = b
+                title = compact(prefix[a:])
+        if not title or len(title) > 150 or re.search(r'[。；！？]', title):
+            return None
+        return a, len(prefix), title
+
+    def anchor_target(self, anchor: str, candidate_starts_near) -> tuple[Tag, int | None] | None:
+        """Resolve a unique DOM anchor to its target tag (or enclosing/nearby heading) and optional stat-block end."""
+        tags = self.anchors.get(anchor, []) if anchor else []
+        if len(tags) != 1:
+            return None
+        tag = tags[0]
+        if not compact(self.text_of(tag)):
+            parent = tag.find_parent(['p'] + list(HEADINGS))
+            if parent and len(compact(self.text_of(parent))) < 200:
+                tag = parent
             else:
-                # Unique exact heading match can recover a stale/missing anchor, not a fuzzy match.
-                zh,en=split_name(ob['name'])
-                exact=[c for c in items if key(c.name)==key(ob['name'])]
-                matches=exact or [c for c in items if en and key(split_name(c.name)[1])==key(en)]
-                if len(matches)==1:
-                    c=matches[0];c.observations.append(ob);c.kinds.append(ob['kind'])
-                    c.method+=':index_name'
-                elif not anchor and not items:
-                    add(self.body,name=ob['name'],rank=1,method='index_page',kind=ob['kind'],ob=ob,end=len(self.text))
-        # Merge overlapping title wrappers, not distinct sections with similar names.
-        items.sort(key=lambda c:(c.start,0 if c.observations else 1,0 if c.method=='stat_block' else 1,-c.title_end))
-        merged=[]
-        for c in items:
-            same=next((x for x in reversed(merged[-6:]) if (c.start<=x.title_end and x.start<=c.title_end) and (key(c.name)==key(x.name) or c.observations or x.observations or c.method in {'stat_block','stat_signature'} or x.method in {'stat_block','stat_signature'})),None)
-            if same:
-                same.anchors=list(dict.fromkeys(same.anchors+c.anchors))
-                same.kinds=list(dict.fromkeys(same.kinds+c.kinds))
-                same.observations+=c.observations
-                same.fields.update(c.fields)
-                same.start=min(same.start,c.start);same.title_end=max(same.title_end,c.title_end)
-                same.rank=min(same.rank,c.rank)
-                if c.explicit_end:same.explicit_end=max(c.explicit_end,same.explicit_end or 0)
-                if c.method in {'stat_block','stat_signature'}:same.method=c.method
-            else:merged.append(c)
-        if not merged:
-            merged=[Candidate(0,0,self.title,1,'page_fallback',end=len(self.text))]
-        elif merged[0].start<150 and merged[0].rank>=2:
-            first_zh,first_en=split_name(merged[0].name)
-            title_zh,title_en=split_name(self.title)
-            if (first_zh and key(first_zh)==key(title_zh)) or (first_en and key(first_en)==key(title_en)):
-                merged[0].rank=1
-        # Introductory material before the first heading remains addressable.
-        if compact(self.text[:merged[0].start]) and merged[0].start>100:
-            merged.insert(0,Candidate(0,0,self.title,0,'page_intro',end=merged[0].start))
-        stack=[]
-        legacy_markers=[self.span(t) for t in self.elements if t.name in {'sup','em','i'} and compact(self.text_of(t)).casefold()=='legacy']
-        for i,c in enumerate(merged):
-            while stack and (merged[stack[-1]].rank>=c.rank or merged[stack[-1]].end<=c.start):stack.pop()
-            c.parent=stack[-1] if stack else None
-            stack.append(i)
-            c.end=c.explicit_end or next((x.start for x in merged[i+1:] if x.rank<=c.rank),len(self.text))
-            if c.method=='page_intro':c.end=merged[i+1].start
-            # The title's immediate marker is local; explanatory prose is not.
-            c.local_legacy=bool(re.search(r'[（(](?:旧版|Legacy)[）)]',c.name,re.I))
-            marker_limit=min(c.end,c.title_end+40,merged[i+1].start if i+1<len(merged) else c.end)
-            if any(c.start<=a<marker_limit and b<=marker_limit for a,b in legacy_markers):c.local_legacy=True
-            if c.tag:
-                block=c.tag.find_parent(['p']+list(HEADINGS)) or c.tag
-                a,b=self.span(block)
-                if a<=c.start and b>=c.title_end:
-                    for marker in block.find_all(['sup','em','i']):
-                        ma,mb=self.span(marker)
-                        if c.start<=ma<=c.title_end+40 and compact(self.text[ma:mb]).casefold()=='legacy':c.local_legacy=True
-        return merged
+                near_tag = candidate_starts_near(self.span(tag)[0])
+                if near_tag is not None:
+                    tag = near_tag
+        container = tag.find_parent(class_='stat-block')
+        return tag, self.span(container)[1] if container else None
+
+    def titled_lists(self) -> list[TitledList]:
+        """Bullet lists paired with their immediate preceding sibling caption."""
+        out: list[TitledList] = []
+        for ul in self.body.find_all('ul'):
+            caption = ul.find_previous_sibling()
+            if not caption:
+                continue
+            items = tuple(
+                (compact(li.get_text(' ', strip=True)), self.span(li))
+                for li in ul.find_all('li', recursive=False)
+            )
+            out.append(TitledList(compact(caption.get_text(' ', strip=True)), self.span(caption), items))
+        return out
+
+    def _usable_prose_tag(self, tag: Tag) -> bool:
+        return not (
+            tag.find_parent(['table', 'a', 'blockquote'] + list(HEADINGS))
+            or any(EXAMPLE_CLASSES.intersection(p.get('class', [])) for p in tag.parents)
+        )
+
+    def underlined_gloss_series(self, start: int, end: int):
+        """Declared series of underlined Chinese terms, each followed by a parenthesized gloss."""
+        for block in self.body.find_all('p'):
+            lo, hi = self.span(block)
+            if lo < start or hi > end or not self._usable_prose_tag(block):
+                continue
+            terms = {}
+            for tag in block.find_all('u', recursive=False):
+                a, b = self.span(tag)
+                name = self.text[a:b]
+                if re.fullmatch(r'[\u3400-\u9fff]{2,24}', name):
+                    terms[a] = b
+            for intro in re.finditer(r'([^。！？；\n：:]+)[：:]\s*', self.text[lo:hi]):
+                lead = intro[1]
+                if not re.search(r'(?:[两二三四五六七八九十\d]+种|分为|包括|下列|以下|分别)', lead):
+                    continue
+                if re.search(r'例如|比如|举例|譬如', lead):
+                    continue
+                items = []
+                a = lo + intro.end()
+                while a in terms:
+                    b = terms[a]
+                    tail = self.text[b:hi]
+                    opening = re.match(r'\s*([（(])', tail)
+                    if not opening:
+                        break
+                    stack = [opening[1]]
+                    pos = b + opening.end()
+                    for pos in range(b + opening.end(), min(hi, b + 180)):
+                        ch = self.text[pos]
+                        if ch in '（(':
+                            stack.append(ch)
+                        elif ch in '）)':
+                            if ch != ('）' if stack[-1] == '（' else ')'):
+                                break
+                            stack.pop()
+                            if not stack:
+                                break
+                        elif ch == '\n':
+                            break
+                    if stack:
+                        break
+                    gloss = compact(self.text[b + opening.end():pos])
+                    if len(gloss) < 4 or not _has_han(gloss):
+                        break
+                    items.append((a, b, pos + 1, self.text[a:b]))
+                    separator = re.match(r'\s*[、，,]\s*', self.text[pos + 1:hi])
+                    if not separator:
+                        after = self.text[pos + 1:hi].lstrip()
+                        if len(items) >= 2 and len({key(t[3]) for t in items}) == len(items) and (not after or after[0] in '。；;.!！？'):
+                            yield items
+                        break
+                    a = pos + 1 + separator.end()
+
+    def parallel_bold_lines(self, start: int, end: int):
+        """Groups of sibling bold bilingual runs sharing an inline-heading or clause frame."""
+        lines: dict[tuple[int, int], list[tuple[int, int]]] = defaultdict(list)
+        for tag in self.body.find_all(['b', 'strong']):
+            a, b = self.span(tag)
+            if not start <= a < b <= end or tag.find_parent(['b', 'strong']) or not self._usable_prose_tag(tag):
+                continue
+            line = max(start, self.text.rfind('\n', start, a) + 1)
+            stop = self.text.find('\n', a, end)
+            if stop < 0:
+                stop = end
+            if b <= stop:
+                lines[(line, stop)].append((a, b))
+
+        siblings: dict[object, list[tuple[int, int, int, str]]] = defaultdict(list)
+        for (line, stop), parts in lines.items():
+            a, b = parts[0]
+            for x, y in parts[1:]:
+                if compact(self.text[b:x]):
+                    break
+                b = y
+            prefix = compact(self.text[line:a])
+            raw = compact(self.text[a:b])
+            name = raw.rstrip('。:：')
+            zh, en = split_name(name)
+            if not (zh and en and len(name) <= 80 and not re.search(r'[。！？；：:]', name)):
+                continue
+            tail = compact(self.text[b:stop])
+            if len(tail) < 8 or not re.search(r'[。！？]', tail):
+                continue
+            if not prefix and raw != name:
+                signature: object = 'inline_heading'
+            elif re.fullmatch(r'(?:当(?:你|目标|生物)?)?(?:处于|具有|获得|陷入|使用|执行|受到)', prefix):
+                continuation = re.match(r'(?:下的|时[，,]|期间|中的|中[，,])', tail)
+                if not continuation:
+                    continue
+                signature = (prefix, continuation[0])
+            else:
+                continue
+            siblings[signature].append((a, b, b + len(self.text[b:stop].rstrip()), name))
+
+        for group in siblings.values():
+            if len(group) >= 2 and len({key(t[3]) for t in group}) == len(group):
+                yield group
+
+    def legacy_marker_spans(self) -> list[tuple[int, int]]:
+        return [
+            self.span(t) for t in self.elements
+            if t.name in {'sup', 'em', 'i'} and compact(self.text_of(t)).casefold() == 'legacy'
+        ]
+
+    def has_local_legacy(
+        self,
+        name: str,
+        start: int,
+        title_end: int,
+        marker_limit: int,
+        legacy_markers: list[tuple[int, int]],
+        tag: Tag | None = None,
+    ) -> bool:
+        if LOCAL_LEGACY_RE.search(name):
+            return True
+        if any(start <= a < marker_limit and b <= marker_limit for a, b in legacy_markers):
+            return True
+        if tag is not None:
+            block = tag.find_parent(['p'] + list(HEADINGS)) or tag
+            a, b = self.span(block)
+            if a <= start and b >= title_end:
+                for marker in block.find_all(['sup', 'em', 'i']):
+                    ma, mb = self.span(marker)
+                    if start <= ma <= title_end + 40 and compact(self.text[ma:mb]).casefold() == 'legacy':
+                        return True
+        return False

@@ -2,6 +2,7 @@ from pathlib import Path
 import unittest
 
 from anna.source.html import Document,resolve_link,split_name,key
+from anna.catalog.frames import candidates,quickref_rows
 from anna.catalog.signatures import printed_type
 from anna.catalog.types import hazard_member,NO_TOC_PLACE
 from anna.catalog.build import Build,parse_one,normalize_value,observation_fields
@@ -13,7 +14,7 @@ from anna.paths import WEB
 class StructureTests(unittest.TestCase):
     def test_omitted_td(self):
         d=Document('topics/test.htm','<table><tr><td>A<td>B<tr item="剑Sword"><td><a href="x.htm#Sword">剑Sword</a><td>珍稀</table>')
-        obs=d.quickrefs();self.assertEqual(len(obs),1);self.assertEqual(obs[0]['cells'],['剑Sword','珍稀']);d.close()
+        obs=quickref_rows(d);self.assertEqual(len(obs),1);self.assertEqual(obs[0]['cells'],['剑Sword','珍稀']);d.close()
 
     def test_links(self):
         self.assertEqual(resolve_link('topics/a/b.htm','../%E4%B9%A6.htm#A%20B'),('topics/书.htm','A B'))
@@ -24,28 +25,28 @@ class StructureTests(unittest.TestCase):
 
     def test_legacy_scope(self):
         raw='<h2>专长 Feats</h2><p>标注Legacy的是旧版。</p><p><font color="#800000"><b>甲 Alpha</b><sup>Legacy</sup></font><br>正文</p><p><font color="#800000"><b>乙 Beta</b></font><br>正文</p>'
-        d=Document('topics/test.htm',raw);cs=d.candidates()
+        d=Document('topics/test.htm',raw);cs=candidates(d)
         self.assertTrue(next(c for c in cs if 'Alpha' in c.name).local_legacy)
         self.assertFalse(next(c for c in cs if 'Beta' in c.name).local_legacy)
         self.assertFalse(cs[0].local_legacy);d.close()
 
     def test_bold_descriptor(self):
         d=Document('topics/test.htm','<h2>专长</h2><p><b>甲 Alpha</b><br><i>起源专长</i><br>正文</p><ul><li><b>能力 Ability。</b>正文</li></ul>')
-        cs=d.candidates();self.assertEqual(len(cs),2);self.assertEqual(cs[1].name,'甲 Alpha');d.close()
+        cs=candidates(d);self.assertEqual(len(cs),2);self.assertEqual(cs[1].name,'甲 Alpha');d.close()
 
     def test_unknown_anchor_not_guessed(self):
         d=Document('topics/test.htm','<h4 id="A">甲 Alpha</h4><p>正文</p><h4 id="B">乙 Beta</h4><p>正文</p>')
         ob={'id':'o','target_anchor':'missing','name':'丙 Gamma','kind':'spell'}
-        self.assertFalse(any(c.observations for c in d.candidates([ob])));d.close()
+        self.assertFalse(any(c.observations for c in candidates(d,[ob])));d.close()
 
     def test_anchor_exact_name_recovery(self):
         d=Document('topics/test.htm','<h4 id="A">甲｜Alpha</h4><p>正文</p>')
         ob={'id':'o','target_anchor':'stale','name':'甲Alpha','kind':'spell'}
-        cs=d.candidates([ob]);self.assertEqual(cs[0].observations,[ob]);d.close()
+        cs=candidates(d,[ob]);self.assertEqual(cs[0].observations,[ob]);d.close()
 
     def test_ambiguous_anchor(self):
         d=Document('topics/test.htm','<h4 id="A">甲 Alpha</h4><h4 id="A">甲 Alpha</h4>')
-        cs=d.candidates([{'id':'o','target_anchor':'A','name':'甲Alpha','kind':'spell'}])
+        cs=candidates(d,[{'id':'o','target_anchor':'A','name':'甲Alpha','kind':'spell'}])
         self.assertFalse(any(c.observations for c in cs));d.close()
 
     def test_skill_leads_apply_their_name_in_an_ability_check(self):
@@ -59,7 +60,7 @@ class StructureTests(unittest.TestCase):
              '<p><b>游说Persuasion</b>。DM可能会要求你进行一次魅力（欺瞒或游说）检定。</p>'
              '<p>边栏：寻找隐藏物件Finding a Hidden Object</p><p>进行一次感知（察觉）检定。</p>'
              '<h3>护甲Armor</h3><p><b>隐匿Stealth</b>。如果护甲表的“隐匿”列显示劣势，穿着者在敏捷（隐匿）检定中具有劣势。</p>')
-        d=Document('topics/test.htm',raw);cs=d.candidates()
+        d=Document('topics/test.htm',raw);cs=candidates(d)
         skills=[c for c in cs if c.method=='skill_lead']
         # 载重 applies no check, 被动察觉 is not the word in the parentheses, 特技 is applied in another ability's
         # check, and the armor's 隐匿 column uses a skill outside any check heading.
@@ -73,16 +74,16 @@ class StructureTests(unittest.TestCase):
         d.close()
 
     def test_definition_tables_list_terms_by_bilingual_name(self):
-        raw=('<table><tr><td>技能</td><td>属性</td><td>适用示例</td></tr>'
+        raw=('<p>导言</p>\n  <table><tr><td>技能</td><td>属性</td><td>适用示例</td></tr>'
              '<tr><td>特技Acrobatics</td><td>敏捷</td><td>表演杂技。</td></tr>'
-             '<tr><td>巧手Sleight of Hand</td><td>敏捷</td><td>扒窃。</td></tr></table>'
+             '<tr><td>巧手Sleight of Hand</td><td>敏捷</td><td>扒窃。</td></tr></table>\n  '
              '<table><tr><td>属性</td><td>数值衡量……</td></tr><tr><td>力量Strength</td><td>力气</td></tr><tr><td>敏捷Dexterity</td><td>灵活性</td></tr></table>'
              # Uses of the abilities, not definitions: the rows print no English names.
              '<table><tr><td>属性</td><td>进行检定用来……</td></tr><tr><td>力量</td><td>举起</td></tr><tr><td>敏捷</td><td>移动</td></tr></table>'
              # One row without an English name makes the table no definition table.
              '<table><tr><td>技能</td><td>属性</td></tr><tr><td>特技Acrobatics</td><td>敏捷</td></tr><tr><td>自创技能</td><td>智力</td></tr></table>')
         d=Document('topics/test.htm',raw)
-        rows,_,_=extract_tables(d,d.candidates())
+        rows,_,_=extract_tables(d,candidates(d))
         self.assertEqual([(r['type'],r['name']) for r in rows],[('skill','特技Acrobatics'),('skill','巧手Sleight of Hand'),('ability','力量Strength'),('ability','敏捷Dexterity')])
         self.assertTrue(all(r['classification_rule']=='definition_table' and r['boundary_rule']=='table_row' for r in rows))
         acrobatics=rows[0];value,a,b=acrobatics['fields']['ability'][0]

@@ -187,6 +187,30 @@ VEHICLE_CONTEXT_RE = re.compile(r'载具|船舶|战争机器|魔法船')
 VEHICLE_META_RE = re.compile(r'(?m)^\s*(?:大型|巨型|超巨型)\s*(?:载具|车辆|物件|物体|运载工具)')
 VEHICLE_COMPONENT_HEADING_RE = re.compile(r'^(?:操纵|移动|动作|武器|船壳|容量|乘员数量|载货量)')
 
+# Standalone untagged block signatures used to promote untagged Word/prose lines into candidates.
+STANDALONE_CREATURE_META_RE = re.compile(
+    r'(?m)^[ \t]*(?:' + '|'.join(CREATURE_SIZES) + r')(?:或(?:' + '|'.join(CREATURE_SIZES[:-1]) + r'))?\s*'
+    r'(?:' + '|'.join((*CREATURE_TYPES[:3], '天界', *CREATURE_TYPES[3:])) + r')[^\n]{0,120}$'
+)
+STANDALONE_STATS_RE = re.compile(
+    r'(?:护甲等级|(?<![A-Za-z])AC(?=\s|[:：]|\d)).{0,100}(?:生命值|(?<![A-Za-z])HP(?=\s|[:：]|\d))',
+    re.S | re.I,
+)
+STANDALONE_ITEM_META_RE = re.compile(
+    r'(?m)^[ \t]*(?:奇物|药水|卷轴|法杖|魔杖|魔棒|戒指|武器|护甲|盔甲|盾牌|'
+    + '|'.join(ITEM_WEAPON_SUBKINDS)
+    + r')[^\n]{0,65}[，,、 ](?:' + '|'.join(RARITIES) + r')[^\n]{0,100}$'
+)
+STANDALONE_SPELL_META_RE = re.compile(r'(?m)^[ \t]*' + SPELL_DESCRIPTOR_RE.pattern + r'[^\n]{0,100}$')
+STANDALONE_SPELL_CONFIRM_RE = re.compile(
+    r'施法时间.{0,250}(?:施法距离|射程|距离).{0,250}(?:法术成分|成分)',
+    re.S,
+)
+STANDALONE_POISON_RE = re.compile(
+    r'(?m)^[ \t]*([^\n。]{1,130}[（(](?:' + '|'.join(POISON_MODES) + r')[）)])。'
+)
+QUICKREF_ATTR_KINDS = {'item': 'magic_item', 'monster': 'creature', 'spell': 'spell'}
+
 
 def matches_facility_descriptor(after_title: str) -> bool:
     return bool(FACILITY_DESCRIPTOR_RE.match(after_title))

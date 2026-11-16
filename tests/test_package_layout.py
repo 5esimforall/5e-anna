@@ -68,5 +68,22 @@ class PackageLayoutTests(unittest.TestCase):
         from anna.server import query
         self.assertFalse(hasattr(query,'main'))
 
+    def test_source_html_is_domain_free(self):
+        from anna.catalog.types import TYPE_LABELS
+        forbidden_packages={'anna.catalog','anna.review','anna.compare','anna.presentation','anna.server'}
+        for file in sorted((PROJECT/'anna/source').glob('*.py')):
+            tree=ast.parse(file.read_text())
+            for node in ast.walk(tree):
+                if isinstance(node,ast.ImportFrom) and node.module:
+                    self.assertFalse(any(node.module.startswith(p) for p in forbidden_packages),(file,node.module))
+        html_tree=ast.parse((PROJECT/'anna/source/html.py').read_text())
+        string_literals={
+            node.value for node in ast.walk(html_tree)
+            if isinstance(node,ast.Constant) and isinstance(node.value,str)
+        }
+        # 'class' is the HTML attribute name; 'rule' is parse_name's segmentation rule key.
+        rule_types=set(TYPE_LABELS)-{'section','class','rule'}
+        self.assertEqual(string_literals&rule_types,set())
+
 
 if __name__=='__main__':unittest.main()

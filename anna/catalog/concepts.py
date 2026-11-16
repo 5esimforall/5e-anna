@@ -6,8 +6,22 @@ import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,format_kind,key,resolve_link,split_name
+from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name,underline_style
 from anna.catalog.types import RULE_TYPES
+
+UNDERLINE_KINDS = {
+    'bold': 'creature',
+    'inner_italic': 'spell',
+    'outer_italic': 'magic_item',
+    'plain': 'concept',
+    'mixed': 'ambiguous',
+}
+
+
+def format_kind(mark_or_tag):
+    """Map typographical underline emphasis onto the source stylesheet's semantic kind."""
+    style = mark_or_tag['style'] if isinstance(mark_or_tag, dict) else underline_style(mark_or_tag)
+    return UNDERLINE_KINDS.get(style, 'ambiguous')
 
 def aliases(entry):
     names=[]
@@ -389,7 +403,7 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
         # This is a scoped definition binding, not a global alias for an external item.
         if trusted:
             for mark in dom['u_marks']:
-                a,b=mark['span'];kind=mark['kind']
+                a,b=mark['span'];kind=format_kind(mark)
                 if kind not in {'magic_item','spell','creature'} or mark['in_explicit_parent'] or mark['in_example']:continue
                 owners=[e for e in resolver.pages[path] if e.get('boundary_rule')=='feature_inline_heading' and e['title_end']<=a<b<=e['end']]
                 if not owners:continue
@@ -407,7 +421,7 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
         for mark in dom['u_marks']:
             if mark['has_parent_u']:continue
             marked+=1
-            a,b=mark['span'];occupied.append((a,b));label=compact(page_text[a:b]);kind=mark['kind']
+            a,b=mark['span'];occupied.append((a,b));label=compact(page_text[a:b]);kind=format_kind(mark)
             evidence=format_evidence(mark['tag_paths'],mark['markup'],profile,linked)
             evidence['stylesheets']=[{'path':p,'sha256':profiles[p]['sha256'] if profiles[p] else None,'supported':bool(profiles[p] and profiles[p]['supported'])} for p in stylesheet_paths]
             evidence['format_mark_id']='mark_'+digest(path,a,b)

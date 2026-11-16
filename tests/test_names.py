@@ -147,25 +147,27 @@ class NameTests(unittest.TestCase):
         self.assertEqual(wrapped['name'],'冥河之剑 (Acheron blade)')
 
     def test_multilingual_qualifiers_do_not_remove_feature_boundaries(self):
+        from anna.catalog.frames import candidates
         from anna.source.html import Document
         doc=Document('topics/职业/示例.htm','<p><b>1级：测试 Example</b><br>说明。<br>'
                      '<b>子能力 Subfeature (花费：1d6)</b><br>能力正文。</p>')
         try:
-            names=[c.name for c in doc.candidates() if c.method=='feature_inline_heading']
+            names=[c.name for c in candidates(doc) if c.method=='feature_inline_heading']
             self.assertIn('子能力 Subfeature (花费：1d6)',names)
         finally:doc.close()
 
     def test_uncertain_name_does_not_erase_an_existing_structural_heading(self):
+        from anna.catalog.frames import candidates
         from anna.source.html import Document
         raw='<p><font color="#800000"><strong>3级："示例 Examples</strong><strong>"</strong></font>'
         raw+='<br>说明。<br><strong>子能力 Subfeature。</strong>正文。</p>'
         doc=Document('topics/职业/示例.htm',raw)
         try:
-            candidates=doc.candidates()
-            heading=next(c for c in candidates if c.method=='colored_heading')
+            cs=candidates(doc)
+            heading=next(c for c in cs if c.method=='colored_heading')
             self.assertEqual(heading.name,'3级："示例 Examples"')
             self.assertEqual(parse_name(heading.name)['status'],'review')
-            self.assertTrue(any(c.method=='feature_inline_heading' and c.name=='子能力 Subfeature' for c in candidates))
+            self.assertTrue(any(c.method=='feature_inline_heading' and c.name=='子能力 Subfeature' for c in cs))
         finally:doc.close()
 
 

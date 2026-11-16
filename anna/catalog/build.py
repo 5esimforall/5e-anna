@@ -20,6 +20,7 @@ import time
 from anna.serialization import canonical
 from anna.source.pages import read_page
 from anna.source.html import Document, compact, key, digest, parse_name, split_name, resolve_link
+from anna.catalog.frames import candidates, quickref_rows, rule_children
 from anna.catalog.signatures import (
     CLASSES,
     CLASS_SHORT,
@@ -104,10 +105,11 @@ def parse_one(args):
         if page['role']=='index':
             out={'page':page,'candidates':[],'tables':[],'links':[],'anchors':dom['anchors'],'dom':dom,'search':search_doc,'issues':[]}
             doc.close();return out
-        cs=doc.candidates(observations)
-        mark_class_regions(cs,doc.text)
-        output=[];rule_children=[]
-        for i,c in enumerate(cs):
+        cs = candidates(doc, observations)
+        mark_class_regions(cs, doc.text)
+        output = []
+        subrules = []
+        for i, c in enumerate(cs):
             full=doc.text[c.start:c.end]
             c.fields['core_rule_chapter']=bool(core_rule_source and re.search(r'/(?:魔法|法术)/',path) and '/法术详述/' not in path)
             next_start=cs[i+1].start if i+1<len(cs) else c.end
@@ -138,12 +140,12 @@ def parse_one(args):
                 'table_span': c.fields.get('table_span'),
             })
             if core_rule_source and kind in RULE_TYPES:
-                for a,b,end,name,method in doc.rule_children(c.title_end,min(c.end,next_start),c.name):
-                    rule_children.append({'name':name,'start':a,'title_end':b,'end':end,'anchors':[],'parent_index':i,
+                for a, b, end, name, method in rule_children(doc, c.title_end, min(c.end, next_start), c.name):
+                    subrules.append({'name':name,'start':a,'title_end':b,'end':end,'anchors':[],'parent_index':i,
                         'type':'rule','classification_rule':'rule_subdefinition','boundary_rule':method,'legacy_direct':c.local_legacy,
                         'fields':{},'observation_ids':[],'body_hash':sha256(compact(doc.text[a:end]).encode()).hexdigest(),
                         'level':c.rank+1,'is_primary':False})
-        output.extend(rule_children)
+        output.extend(subrules)
         refine_page_types(output,doc.text,toc_place)
         # PHB/DMG calls this a table but the HTML encodes it as a simple list.
         for ul in doc.body.find_all('ul'):
@@ -207,8 +209,9 @@ class Build:
             if file.suffix.lower() not in {'.htm','.html'}:continue
             raw,_,_=read_page(file)
             if not re.search(r'<tr\b[^>]*(?:item|monster|spell)\s*=',raw,re.I):continue
-            path=file.relative_to(self.web).as_posix();doc=Document(path,raw)
-            for ob in doc.quickrefs():
+            path = file.relative_to(self.web).as_posix()
+            doc = Document(path, raw)
+            for ob in quickref_rows(doc):
                 ob['fields']=observation_fields(ob)
                 self.observations.append(ob);self.ob_by_id[ob['id']]=ob
                 if ob['target_path'] and (self.web/ob['target_path']).is_file():

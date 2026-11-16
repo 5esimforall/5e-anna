@@ -39,7 +39,8 @@ from anna.catalog.signatures import (
     matches_vehicle_layout,
     printed_type,
 )
-from anna.source.html import Candidate, compact, key, split_name
+from anna.catalog.frames import Candidate
+from anna.source.html import compact, key, split_name
 
 # Types that define a rule of play rather than a game object; core-rule pages split these into subdefinitions.
 # The six abilities and the skills checked with them are rule terms too: text applies them in d20 tests.

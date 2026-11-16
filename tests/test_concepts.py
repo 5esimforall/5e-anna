@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from anna.catalog.concepts import Resolver,check_notation,format_kind,build_concepts,plain_syntax,style_profile,table_cell_names,term_scanner
+from anna.catalog.frames import rule_children
 from anna.source.html import Document
 from anna.catalog.types import NO_TOC_PLACE
 from anna.catalog.build import Build,parse_one
@@ -25,7 +26,7 @@ class ConceptTests(unittest.TestCase):
              '<strong>屏障例外 Barrier Exception。</strong>此屏障不会阻挡它的施法者。</p>'
              '<blockquote><p>包括：<u>远墙</u>（说明其独立效果）、<u>近墙</u>（说明其独立效果）。</p></blockquote>')
         doc=Document('topics/fixture.htm',raw)
-        children=list(doc.rule_children(doc.span(doc.soup.h3)[1],len(doc.text),'屏障 Barrier'))
+        children=list(rule_children(doc,doc.span(doc.soup.h3)[1],len(doc.text),'屏障 Barrier'))
         self.assertEqual([row[3] for row in children],['软壁','硬壁','低阶屏障Low Barrier','高阶屏障 High Barrier','屏障例外 Barrier Exception'])
         for a,b,end,name,method in children:
             self.assertTrue(a<b<end)

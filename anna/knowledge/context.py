@@ -1,10 +1,6 @@
 """Read-only source context, target traversal and review dependency evidence."""
-from collections import defaultdict
 import json
-import re
-from anna.catalog.concepts import Resolver, aliases
-from anna.source.html import key
-from anna.knowledge.values import evidence
+from anna.catalog.concepts import Resolver
 from anna.knowledge.conditions import CLASSES
 from anna.knowledge.model import SCHEMA
 from anna.serialization import digest
@@ -20,12 +16,6 @@ class Context:
         self.sources = [json.loads(raw) for raw, in db.execute('SELECT data FROM sources')]
         self.source_by_id = {s['id']: s for s in self.sources}
         self.resolver = Resolver(list(self.entries.values()), self.sources)
-        self.spell_names = defaultdict(set)
-        for e in self.entries.values():
-            if e['type']=='spell':
-                for n in aliases(e):
-                    if len(n)>1: self.spell_names[n].add(e['id'])
-        self.name_pattern = re.compile('|'.join(re.escape(n) for n in sorted(self.spell_names,key=lambda n:(-len(n),n))),re.IGNORECASE) if self.spell_names else None
 
     def class_owner(self, entry):
         ids=set();seen=set();current=entry
@@ -41,19 +31,6 @@ class Context:
     def resolve(self, entry, name, kind):
         return self.resolver.resolve(name, kind, entry['page_path'], entry['title_end'],
             scope={'source_ids':entry['source_ids'], 'ruleset':entry['ruleset']})
-
-    def mentions(self, entry):
-        if not self.name_pattern:return []
-        text=self.pages[entry['page_path']];out=[];prior=None
-        for m in self.name_pattern.finditer(text,entry['title_end'],entry['end']):
-            if m[0].isascii() and ((m.start() and text[m.start()-1].isascii() and text[m.start()-1].isalpha()) or (m.end()<len(text) and text[m.end()].isascii() and text[m.end()].isalpha())):continue
-            result=self.resolve(entry,m[0],'spell')
-            # Adjacent bilingual names are one reference, not two grants.
-            if prior and not text[prior['evidence']['span'][1]:m.start()].strip() and set(result['targets'])==set(prior['resolution']['targets']):
-                prior['evidence']=evidence(entry['page_path'],text,prior['evidence']['span'][0],m.end());continue
-            prior={'kind':'entry','name':m[0],'resolution':result,'evidence':evidence(entry['page_path'],text,m.start(),m.end())}
-            out.append(prior)
-        return out
 
     def choice_options(self, entry, target, restrictions=None):
         constraints=target['constraints'];levels=constraints.get('levels')

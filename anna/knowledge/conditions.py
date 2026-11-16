@@ -5,19 +5,6 @@ ABILITIES=('力量','敏捷','体质','智力','感知','魅力')
 CLASSES=('野蛮人','战士','武僧','游荡者','吟游诗人','牧师','德鲁伊','圣武士','游侠','术士','法师','魔契师','奇械师')
 
 
-def reference(kind, **criteria):return {'kind':kind,**criteria}
-
-
-def outcome(kind, result, scope='initial', **criteria):
-    return reference(kind+'_result',result=result,scope=scope,**criteria)
-
-
-def target_ref(**criteria):return reference('target_ref',**criteria)
-
-
-def turn(subject,phase,relative):return reference('turn',subject=subject,phase=phase,relative=relative)
-
-
 def conjunction(*terms):
     terms=[term for term in terms if term]
     return terms[0] if len(terms)==1 else {'all':terms} if terms else None
@@ -89,20 +76,6 @@ def prerequisite_expression(raw):
     # (智力或感知13+) 或 某项专长. Parentheses make that lexical scope explicit.
     shared=r'((?:'+'|'.join(ABILITIES)+r')(?:[、或](?:'+'|'.join(ABILITIES)+r'))+\d+\+)'
     return boolean_expression(re.sub(shared,r'(\1)',re.sub(r'\s+','',raw)),atom)
-
-
-def item_condition(raw):
-    """Deictic equipment requirements refer to this source item, not a guessed name."""
-    named=r'(?:这[件根面本双顶枚支副把]|此|该)(?:物品|魔杖|法杖|武器|盾牌|书|牌组|戒指|头盔|靴子|帽子|帽)'
-    antecedent=re.search(named,raw)
-    if '其' in raw and (not antecedent or raw.index('其')<antecedent.end()):return None
-    item=r'(?:'+named+r'|其)'
-    def atom(part):
-        m=re.fullmatch(r'(?:你)?(持握|穿戴|着装|携带)('+item+r')',part)
-        if m:return {'kind':'item_state','state':{'持握':'held','穿戴':'worn','着装':'worn','携带':'carried'}[m[1]],'subject':'source_item'}
-        if re.fullmatch(r'(?:你)?与'+item+r'(?:维持)?同调',part):return {'kind':'item_state','state':'attuned','subject':'source_item'}
-        return None
-    return boolean_expression(raw,atom)
 
 
 def condition_terms(value):

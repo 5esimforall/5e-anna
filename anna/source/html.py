@@ -16,33 +16,12 @@ BLOCKS = {'p','div','h1','h2','h3','h4','h5','h6','tr','li','ul','ol','blockquot
 HEADINGS = {'h1','h2','h3','h4','h5','h6'}
 IGNORED = {'script','style','noscript','head'}
 EXAMPLE_CLASSES = {'example','ex-right'}
-GENERIC = re.compile(r'^(?:前言|简介|概述|引言|目录|使用本书|专长|法术|魔法物品|装备|种族|背景|职业|角色选项|玩家选项|起源专长|通用专长|传奇恩惠专长|战斗风格专长|怪物|生物|图鉴|数据卡|法术详述|附录[A-Z]?[：:]?.*|第[一二三四五六七八九十\d]+章.*|[0-9一二三四五六七八九]环|戏法)(?:\s*[A-Za-z].*)?$', re.I)
 FIELD_TITLE = re.compile(r'^(?:护甲等级|生命值|速度|力量|敏捷|体质|智力|感知|魅力|技能|感官|语言|挑战等级|挑战|伤害抗性|伤害免疫|状态免疫)(?:\s*[:：].*|\s*)$')
 CREATURE_META = re.compile(r'(?m)^[ \t]*(?:微型|小型|中型|大型|巨型|超巨型)(?:或(?:微型|小型|中型|大型|巨型))?\s*(?:异怪|野兽|天族|天界|构装|龙类|元素|妖精|邪魔|巨人|类人|怪兽|泥怪|植物|亡灵)[^\n]{0,120}$')
 STATS = re.compile(r'(?:护甲等级|(?<![A-Za-z])AC(?=\s|[:：]|\d)).{0,100}(?:生命值|(?<![A-Za-z])HP(?=\s|[:：]|\d))', re.S|re.I)
 SPELL = re.compile(r'施法时间.{0,250}(?:施法距离|射程|距离).{0,250}(?:法术成分|成分)', re.S)
 LEGACY = re.compile(r'Legacy\b|[（(]旧版[）)]',re.I)
-# The two rule generations print the same rule differently. A 2024 stat block lists initiative and a
-# modifier/save column per ability; a 2014 one is a table of scores with modifiers in parentheses
-# (several of them, so a prose note such as 智力18（+4） is not a table). A 2024 spell drops the
-# count from its casting time (动作, not 1 动作). These are layouts, not book names.
-GENERATION_MARKERS = {
-    'creature':{'5r':(re.compile(r'先攻\s*[+＋\-−]?\d|调整\s*豁免'),1),
-                '5e':(re.compile(r'\d{1,2}\s*[（(]\s*[+＋\-−]\s*\d+\s*[)）]'),3)},
-    'spell':{'5r':(re.compile(r'施法时间\s*[:：]\s*(?:动作|附赠|反应)'),1),
-             '5e':(re.compile(r'施法时间\s*[:：]\s*[1１一]\s*个?\s*(?:动作|附赠|反应)'),1)},
-}
-
-
-def printed_generation(kind,text):
-    """(ruleset, span) when an entry's text is laid out in exactly one generation's format."""
-    found={}
-    for rule,(pattern,needed) in GENERATION_MARKERS.get(kind,{}).items():
-        matches=list(pattern.finditer(text))
-        if len(matches)>=needed:found[rule]=(matches[0].start(),matches[needed-1].end())
-    return next(iter(found.items())) if len(found)==1 else None
 CLASSES = {'野蛮人','吟游诗人','牧师','德鲁伊','战士','武僧','圣武士','游侠','游荡者','术士','魔契师','邪术师','法师','奇械师','血猎手','邪狱使','拳斗士','铳士','魔战士','怪物猎人'}
-CLASS_SHORT = {'诗':'吟游诗人','吟':'吟游诗人','牧':'牧师','德':'德鲁伊','帕':'圣武士','圣':'圣武士','软':'游侠','游':'游侠','术':'术士','锁':'魔契师','契':'魔契师','邪':'邪术师','法':'法师','械':'奇械师','魔':'魔战士'}
 
 
 def compact(s):
@@ -823,48 +802,3 @@ class Document:
                         ma,mb=self.span(marker)
                         if c.start<=ma<=c.title_end+40 and compact(self.text[ma:mb]).casefold()=='legacy':c.local_legacy=True
         return merged
-
-
-FIELD_LABELS = {
-    'casting_time': ['施法时间'], 'range': ['施法距离','射程'], 'components':['法术成分','成分'],
-    'duration':['持续时间'], 'prerequisite':['先决条件','先决','先决要求','前置条件'],
-    'ability_scores':['属性值','属性值加成','属性提升'], 'skills':['技能熟练','技能熟练项'],
-    'tools':['工具熟练','工具熟练项'], 'granted_feat':['专长'], 'starting_equipment':['装备'],
-    'creature_type':['生物类型'], 'size':['体型'], 'speed':['速度'], 'languages':['语言'],
-    'senses':['感官'], 'resistances':['伤害抗性'], 'immunities':['伤害免疫'], 'condition_immunities':['状态免疫'],
-    'ac':['护甲等级','AC'], 'hp':['生命值','HP'], 'cr':['挑战等级','挑战','CR'],
-}
-LABEL_TO_FIELD={label:field for field,labels in FIELD_LABELS.items() for label in labels}
-LABEL_RE=re.compile(r'(?<![\u3400-\u9fffA-Za-z])('+'|'.join(re.escape(x) for x in sorted(LABEL_TO_FIELD,key=len,reverse=True))+r')(?:\s*[A-Za-z][A-Za-z ]{0,35})?\s*[:：]\s*')
-
-
-def text_fields(text,kind):
-    """Labeled statements only. Values retain original units and qualifiers."""
-    result={}
-    matches=list(LABEL_RE.finditer(text))
-    for i,m in enumerate(matches):
-        end=min(matches[i+1].start() if i+1<len(matches) else len(text),text.find('\n',m.end()) if '\n' in text[m.end():] else len(text))
-        value=compact(text[m.end():end])
-        if value and len(value)<=600:
-            result.setdefault(LABEL_TO_FIELD[m.group(1)],[]).append((value,m.start(),end))
-    if kind=='creature':
-        for field,labels in [('ac',r'AC|护甲等级'),('hp',r'HP|生命值'),('cr',r'CR|挑战等级|挑战')]:
-            m=re.search(r'(?:^|[\s\n])(?:'+labels+r')\s*[:：]?\s*(\d+(?:/\d+)?[^\n]{0,65})',text,re.I)
-            if m:result.setdefault(field,[]).append((compact(m[1]),m.start(),m.end()))
-        for field,label in [('speed','速度'),('languages','语言'),('senses','感官'),('skills','技能'),('resistances','伤害抗性'),('immunities','伤害免疫'),('condition_immunities','状态免疫')]:
-            m=re.search(r'(?:^|[\s\n])'+label+r'\s*[:：]?\s*([^\n]{1,250})',text[:1800])
-            if m:result.setdefault(field,[]).append((compact(m[1]),m.start(),m.end()))
-        for field,label in [('strength','力量'),('dexterity','敏捷'),('constitution','体质'),('intelligence','智力'),('wisdom','感知'),('charisma','魅力')]:
-            m=re.search(label+r'\s*[:：]?\s*(\d{1,2})',text[:1200])
-            if m:result.setdefault(field,[]).append((m[1],m.start(),m.end()))
-    allowed={
-        'spell':{'casting_time','range','components','duration'},
-        'feat':{'prerequisite'},
-        'background':{'ability_scores','skills','tools','granted_feat','starting_equipment','languages'},
-        'species':{'ability_scores','creature_type','size','speed','languages','senses','resistances','immunities'},
-        'class_feature':{'prerequisite'}, 'class':set(), 'subclass':{'prerequisite'},
-        'vehicle':{'speed'}, 'facility':set(), 'section':set(), 'lore':set(), 'magic_item':set(),
-        'ability':set(), 'skill':set(),
-    }
-    if kind in allowed:result={k:v for k,v in result.items() if k in allowed[kind]}
-    return result

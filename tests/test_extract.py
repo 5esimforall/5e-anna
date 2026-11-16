@@ -2,7 +2,8 @@ from pathlib import Path
 import unittest
 
 from anna.source.html import Document,resolve_link,split_name,key
-from anna.catalog.types import printed_type,hazard_member,NO_TOC_PLACE
+from anna.catalog.signatures import printed_type
+from anna.catalog.types import hazard_member,NO_TOC_PLACE
 from anna.catalog.build import Build,parse_one,normalize_value,observation_fields
 from anna.source.registry import SourceRegistry
 from anna.source.tables import extract_tables
@@ -393,7 +394,7 @@ class CorpusRegressionTests(unittest.TestCase):
         self.assertEqual(len(set(labels.values())),len(labels))
 
     def test_printed_layout_marks_one_rule_generation(self):
-        from anna.source.html import printed_generation
+        from anna.catalog.signatures import printed_generation
         old='僵尸 中型亡灵 护甲等级 8 生命值 22 力量 敏捷 体质 智力 感知 魅力 13 (+1) 6 (-2) 16 (+3) 3 (-4) 6 (-2) 5 (-3)'
         new='僵尸 中型亡灵 AC 8 先攻 -2 (8) HP 15 调整 豁免 力量 13 +1 +1'
         self.assertEqual(printed_generation('creature',old)[0],'5e')

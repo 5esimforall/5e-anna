@@ -18,7 +18,28 @@ from functools import cached_property
 import re
 from typing import Callable
 
-from anna.source.html import CLASSES, GENERIC, CLASS_PATH, Candidate, class_structure, compact, key, split_name
+from anna.catalog.signatures import (
+    CLASSES,
+    CLASS_PATH,
+    CONDITION_RULE_HEADING,
+    RULES_MECHANICS,
+    STATBLOCK_PART,
+    class_structure,
+    document_structure_name,
+    matches_background_fields,
+    matches_facility_descriptor,
+    matches_feat_descriptor,
+    matches_hazard_descriptor,
+    matches_item_descriptor,
+    matches_poison_descriptor,
+    matches_species_fields,
+    matches_spell_fields,
+    matches_stat_fields,
+    matches_trap_descriptor,
+    matches_vehicle_layout,
+    printed_type,
+)
+from anna.source.html import Candidate, compact, key, split_name
 
 # Types that define a rule of play rather than a game object; core-rule pages split these into subdefinitions.
 # The six abilities and the skills checked with them are rule terms too: text applies them in d20 tests.
@@ -96,49 +117,13 @@ def mark_class_regions(cs,text):
 # ---------------------------------------------------------------------------------------------------
 # Name and layout evidence shared by both passes.
 
-LEVEL_HEADING=re.compile(r'^\s*(\d{1,2})\s*级\s*[:：]')
-# Some definitions print their own type beside their name (目盲 Blinded【状态】, 燃烧 Burning【危害】). A
-# heading that is only the label, such as 【状态】Condition, defines the label itself and keeps its context type.
-PRINTED_TYPE_LABELS={'状态':'condition','动作':'action','危害':'hazard'}
-PRINTED_TYPE_LABEL=re.compile(r'[（(【]('+'|'.join(PRINTED_TYPE_LABELS)+r')[）)】]')
-# DMG 2024 hazards open with their severity and level band, as traps open with their kind.
-HAZARD_DESCRIPTOR=re.compile(r'(?:致命|妨碍)危害\s*[（(]\s*等级')
-# A body that applies a defined rule: a DC, a die roll or die table, advantage or disadvantage on a d20 test,
-# a condition, exhaustion, difficult terrain or obscurement. Words such as 危险 or 效果 name no rule.
-RULES_MECHANICS=re.compile(r'DC\s*\d+|(?<![A-Za-z\d])\d*[dD]\d+(?![A-Za-z])|(?:攻击|豁免|检定)[^。]{0,12}(?:优势|劣势)|(?:优势|劣势)[^。]{0,12}(?:攻击|豁免|检定)'
-                           r'|力竭|陷入[^。]{1,8}状态|困难地形|(?:轻度|重度)遮蔽')
-CONDITION_RULE_HEADING=re.compile(r'^(?:持续时间|豁免|概述|简介|来源|结束)(?:\s|[A-Za-z]|$)')
-# A field layout opens a line with its label and gives the value: 护甲等级：类人形态下11, AC18 (天生护甲) HP 65,
-# 技能熟练项：欺瞒、隐匿, 技能熟练。运动、恐吓. The same words inside prose name no field: 对抗此次攻击的护甲等级会
-# 获得+2加值, 4. 护甲等级, 每颗石头拥有AC 24，生命值为10.
-STAT_BLOCK=re.compile(r'(?m)^[ \t]*(?:护甲等级|AC)[ \t]*(?:[:：]|\d).{0,120}?(?:生命值|(?<![A-Za-z])HP)[ \t]*(?:[:：]|\d)',re.S|re.I)
-
-
-def field_label(*labels):
-    """A label that opens a line as a field: the label, an optional 项 and English gloss, then a colon or 。"""
-    return re.compile(r'(?m)^[ \t]*(?:'+'|'.join(labels)+r')项?(?:[ \t]*[A-Za-z][A-Za-z \t]*)?[ \t]*[:：.。]')
-
-
-BACKGROUND_FIELDS=(field_label('技能熟练'),field_label('工具熟练','语言'),field_label('(?:初始|起始)?装备'))
+LEVEL_HEADING = re.compile(r'^\s*(\d{1,2})\s*级\s*[:：]')
 
 
 def level_heading(name):
     """The level a class or subclass feature heading states, or None for prose and range headings."""
-    m=LEVEL_HEADING.match(name)
+    m = LEVEL_HEADING.match(name)
     return int(m[1]) if m else None
-
-
-def document_structure_name(name):
-    """Names that label a page or a catalog rather than the entry the page is about."""
-    return bool(GENERIC.fullmatch(name)) or bool(re.fullmatch(r'(?:专长|法术|魔法物品|装备|背景|种族|物种)(?:描述|详述|列表|总览)(?:\s*[A-Za-z].*)?',name))
-
-
-def printed_type(name):
-    """The type a definition prints beside its own name, or '' when the heading is the label itself."""
-    m=PRINTED_TYPE_LABEL.search(name)
-    if not m:return ''
-    zh,_=split_name(compact(name[:m.start()]+' '+name[m.end():]))
-    return PRINTED_TYPE_LABELS[m[1]] if zh and not zh.startswith(m[1]) else ''
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -266,87 +251,95 @@ def rules_section_name(p):
     if re.search(r'^(?:子职|子职业|特色设施详述|疾病范例|毒药范例|毒药的(?:制作|提取)|毒药|疾病|专长与背景)(?:\s*[A-Za-z].*)?$',p.name):return 'rule'
 
 
-STATBLOCK_PART=re.compile(r'(?:动作|附赠动作|反应|特质|传奇动作|巢穴动作)\s*(?:Actions?|Bonus Actions?|Reactions?|Traits?|Legendary Actions?|Lair Actions?)?',re.I)
-COMBAT_RULES_PATH=re.compile(r'术语|进行游戏|/战斗/')
+COMBAT_RULES_PATH = re.compile(r'术语|进行游戏|/战斗/')
 
 
 @recognizer('context_heading')
 def combat_rule_heading(p):
     """动作, 反应 and the like define rules in the combat and glossary chapters."""
-    if STATBLOCK_PART.fullmatch(p.name) and COMBAT_RULES_PATH.search(p.path):return 'rule'
+    if STATBLOCK_PART.fullmatch(p.name) and COMBAT_RULES_PATH.search(p.path):
+        return 'rule'
 
 
 @recognizer('document_structure')
 def statblock_part_heading(p):
     """Elsewhere the same headings divide a stat block."""
-    if STATBLOCK_PART.fullmatch(p.name) and not COMBAT_RULES_PATH.search(p.path):return 'section'
+    if STATBLOCK_PART.fullmatch(p.name) and not COMBAT_RULES_PATH.search(p.path):
+        return 'section'
 
 
 # Catalog headings and field descriptions are not entities: the signatures below require a descriptor
 # printed under the title, not merely a keyword inherited from the page or TOC.
 @recognizer('facility_signature')
 def facility_descriptor(p):
-    if re.match(r'^\s*\d+\s*级据点设施',p.after_title):return 'facility'
+    if matches_facility_descriptor(p.after_title):
+        return 'facility'
 
 
 @recognizer('vehicle_signature')
 def vehicle_layout(p):
-    vehicle_context=bool(re.search(r'载具|船舶|战争机器|魔法船',p.context))
-    vehicle_meta=re.search(r'(?m)^\s*(?:大型|巨型|超巨型)\s*(?:载具|车辆|物件|物体|运载工具)',p.after_title[:250])
-    ship_summary=re.search(r'载货量\s*Cargo\s*[:：]',p.intro) and re.search(r'船员\s*Crew\s*[:：]',p.intro)
-    vehicle_capacity=re.search(r'(?:生物容量|生物载量|乘员数量|乘员容量)\s*(?:[A-Za-z ]+)?[:：]',p.intro[:900])
-    if (ship_summary or vehicle_context and (vehicle_meta or vehicle_capacity)) and not re.match(r'^(?:操纵|移动|动作|武器|船壳|容量|乘员数量|载货量)',p.name):
+    if matches_vehicle_layout(p.name, p.after_title, p.intro, p.context):
         return 'vehicle'
 
 
 @recognizer('hazard_signature')
 def hazard_descriptor(p):
-    if HAZARD_DESCRIPTOR.match(p.after_title.lstrip()):return 'hazard'
+    if matches_hazard_descriptor(p.after_title):
+        return 'hazard'
 
 
 @recognizer('trap_signature')
 def trap_descriptor(p):
-    if re.search(r'\s(?:机械|魔法)陷阱$',p.name) or re.match(r'(?:机械|魔法|简易|复合|致命|妨碍)陷阱(?:\s|[（(]|$)',p.after_title.lstrip()):return 'trap'
+    if matches_trap_descriptor(p.name, p.after_title):
+        return 'trap'
 
 
 @recognizer('spell_fields')
 def spell_layout(p):
-    if all(pattern.search(p.intro) for pattern in (field_label('施法时间'), field_label('施法距离','射程','距离'), field_label('法术成分','成分'))):return 'spell'
+    if matches_spell_fields(p.intro):
+        return 'spell'
 
 
 @recognizer('stat_fields')
 def stat_layout(p):
-    if STAT_BLOCK.search(p.intro) and re.search(r'挑战|\bCR\b|力量.*敏捷',p.intro,re.S):return 'creature'
+    if matches_stat_fields(p.intro):
+        return 'creature'
 
 
 @recognizer('item_descriptor')
 def item_descriptor(p):
-    if re.match(r'^(?:武器|护甲|奇物|戒指|魔杖|法杖|魔棒|药水|卷轴|弹药|盾牌).{0,60}(?:普通|珍稀|稀有|传说|神器)',p.descriptor):return 'magic_item'
+    if matches_item_descriptor(p.descriptor):
+        return 'magic_item'
 
 
 @recognizer('feat_descriptor')
 def feat_descriptor(p):
-    if re.match(r'^(?:起源|通用|战斗风格|传奇恩惠|种族|血族)专长',p.descriptor):return 'feat'
+    if matches_feat_descriptor(p.descriptor):
+        return 'feat'
 
 
 @recognizer('level_heading')
 def class_level_heading(p):
-    if re.match(r'^\s*\d+\s*级\s*[:：]',p.name) and p.class_context:return 'class_feature'
+    if level_heading(p.name) is not None and p.class_context:
+        return 'class_feature'
 
 
 @recognizer('background_fields')
 def background_layout(p):
-    if all(f.search(p.intro) for f in BACKGROUND_FIELDS) and (p.primary or re.search(r'背景',p.context)):return 'background'
+    if matches_background_fields(p.intro, p.primary, p.context):
+        return 'background'
 
 
 @recognizer('species_fields')
 def species_layout(p):
-    if re.search(r'生物类型|属性值加成',p.intro) and re.search(r'体型',p.intro) and re.search(r'速度',p.intro) and (p.primary or '种族' in p.context or '物种' in p.context):return 'species'
+    if matches_species_fields(p.intro, p.primary, p.context):
+        return 'species'
 
 
 @recognizer('poison_descriptor')
 def poison_descriptor(p):
-    if re.match(r'^(?:吸入|服用|损伤|接触)型毒药',p.descriptor):return 'poison'
+    if matches_poison_descriptor(p.descriptor):
+        return 'poison'
 
 
 @recognizer('name_label')

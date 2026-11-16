@@ -19,7 +19,15 @@ import time
 
 from anna.serialization import canonical
 from anna.source.pages import read_page
-from anna.source.html import Document, Candidate, compact, key, digest, parse_name, split_name, resolve_link, text_fields, printed_generation, skill_notation, CLASS_SHORT, CLASSES
+from anna.source.html import Document, compact, key, digest, parse_name, split_name, resolve_link
+from anna.catalog.signatures import (
+    CLASSES,
+    CLASS_SHORT,
+    clean_entry_name,
+    extract_entry_fields,
+    printed_generation,
+    skill_notation,
+)
 from anna.catalog.types import TYPE_LABELS, classify, refine_page_types, mark_class_regions, evidence_status, type_conflicts, RULE_TYPES
 from anna.source.registry import SourceRegistry
 from anna.source.search import extract_body_text as extract_search_body, extract_title as extract_search_title, index_signature, load_toc_titles
@@ -105,48 +113,30 @@ def parse_one(args):
             next_start=cs[i+1].start if i+1<len(cs) else c.end
             own=doc.text[c.start:min(c.end,next_start)]
             primary=i==0 or (i==1 and cs[0].method=='page_intro')
-            typing=classify(c,own,full,context+' | '+path,primary)
-            kind,rule=typing.type,typing.rule
-            if kind=='class':full_for_fields=full
-            elif c.explicit_end:full_for_fields=full
-            else:full_for_fields=own
-            fields=text_fields(full_for_fields,kind)
-            title_offset=max(0,c.title_end-c.start)
-            raw_descriptor=full_for_fields[title_offset:]
-            descriptor=compact(raw_descriptor)[:200]
-            if kind=='feat':
-                m=re.match(r'\s*(起源|通用|战斗风格|传奇恩惠|种族|血族)专长',raw_descriptor)
-                if m:fields['feat_category']=[(m[1],title_offset+m.start(),title_offset+m.end())]
-            if kind=='spell':
-                m=re.search(r'(戏法|[一二三四五六七八九十\d]+环)\s*(?:[｜|/：:]\s*)?(防护|咒法|预言|惑控|塑能|幻术|死灵|变化)',raw_descriptor[:250])
-                if m:
-                    fields['spell_level']=[(m[1],title_offset+m.start(),title_offset+m.end())]
-                    fields['school']=[(m[2],title_offset+m.start(),title_offset+m.end())]
-                for value,a,b in fields.get('casting_time',[]):
-                    fields.setdefault('casting_time_detail',[]).append((value,a,b))
-                    if '仪式' in value:fields.setdefault('ritual',[]).append(('是',a,b))
-                for value,a,b in fields.get('duration',[]):
-                    fields.setdefault('concentration',[]).append(('是' if value.startswith('专注') else '否',a,b))
-            if kind=='magic_item':
-                m=re.match(r'\s*(武器|护甲|奇物|戒指|魔杖|法杖|魔棒|药水|卷轴|弹药|盾牌|长剑|短剑|弯刀|匕首|巨剑|长棍|权杖|魔法船).*?(非普通|极珍稀|珍稀|普通|传说|神器|稀有|罕见)',raw_descriptor[:250],re.S)
-                if m:
-                    fields['item_type']=[(m[1],title_offset,title_offset+m.end())]
-                    fields['rarity']=[(m[2],title_offset,title_offset+m.end())]
-                attune=re.search(r'[（(]([^\n）)]{0,80}同调[^\n）)]{0,30})[）)]',raw_descriptor[:250])
-                if attune:
-                    required=not re.search(r'不需|无需',attune[1])
-                    fields['attunement']=[('是' if required else '否',title_offset+attune.start(),title_offset+attune.end())]
-                    if required:fields['attunement_requirements']=[(attune[1],title_offset+attune.start(),title_offset+attune.end())]
-            if kind=='creature':
-                m=re.search(r'(微型|小型|中型|大型|巨型|超巨型)\s*(异怪|野兽|天族|构装|龙类|元素|妖精|邪魔|巨人|类人|怪兽|泥怪|植物|亡灵)',full_for_fields[:500])
-                if m:
-                    fields['size']=[(m[1],m.start(),m.end())]
-                    fields['creature_type']=[(m[2],m.start(),m.end())]
-            output.append({'name':re.sub(r'\s+(?:机械|魔法)陷阱$','',c.name) if kind=='trap' else c.name,'start':c.start,'title_end':c.title_end,'end':c.end,'anchors':c.anchors,'parent_index':c.parent,
-                'type':kind,'classification_rule':rule,'printed_types':[list(t) for t in typing.printed_types],
-                'boundary_rule':c.method,'legacy_direct':c.local_legacy,'fields':fields,
-                'observation_ids':[o['id'] for o in c.observations], 'body_hash':sha256(compact(full).encode()).hexdigest(),
-                'level':c.rank,'is_primary':primary,'table_span':c.fields.get('table_span')})
+            typing = classify(c, own, full, context + ' | ' + path, primary)
+            kind, rule = typing.type, typing.rule
+            full_for_fields = full if (kind == 'class' or c.explicit_end) else own
+            title_offset = max(0, c.title_end - c.start)
+            fields = extract_entry_fields(full_for_fields, kind, title_offset)
+            output.append({
+                'name': clean_entry_name(c.name, kind),
+                'start': c.start,
+                'title_end': c.title_end,
+                'end': c.end,
+                'anchors': c.anchors,
+                'parent_index': c.parent,
+                'type': kind,
+                'classification_rule': rule,
+                'printed_types': [list(t) for t in typing.printed_types],
+                'boundary_rule': c.method,
+                'legacy_direct': c.local_legacy,
+                'fields': fields,
+                'observation_ids': [o['id'] for o in c.observations],
+                'body_hash': sha256(compact(full).encode()).hexdigest(),
+                'level': c.rank,
+                'is_primary': primary,
+                'table_span': c.fields.get('table_span'),
+            })
             if core_rule_source and kind in RULE_TYPES:
                 for a,b,end,name,method in doc.rule_children(c.title_end,min(c.end,next_start),c.name):
                     rule_children.append({'name':name,'start':a,'title_end':b,'end':end,'anchors':[],'parent_index':i,

@@ -16,7 +16,7 @@ DEFAULT_ANNOTATIONS = PROJECT / 'annotations/annotations.jsonl'
 ANNOTATION_OPERATIONS = {'annotate', 'revoke'}
 ANNOTATION_KINDS = {'grant', 'procedure', 'reference'}
 REFERENCE_RULINGS = {'confirm', 'non_reference', 'missing_definition'}
-REFERENCE_SIGNALS = {'explicit', 'index', 'format', 'plain', 'table'}
+REFERENCE_SIGNALS = {'explicit', 'index', 'format', 'plain', 'table', 'field'}
 
 
 def pipeline_hash():
@@ -26,7 +26,7 @@ def pipeline_hash():
 EXTRACTION_MODULES = (
     'serialization.py', 'source/pages.py', 'catalog/build.py', 'source/html.py',
     'catalog/signatures.py', 'catalog/frames.py', 'catalog/types.py', 'source/registry.py',
-    'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py',
+    'catalog/reference_slots.py', 'catalog/concepts.py', 'catalog/references.py', 'review/store.py', 'review/search.py',
     'review/anchors.py', 'review/context.py',
 )
 

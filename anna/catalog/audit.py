@@ -35,7 +35,8 @@ def connect(path):
 def audit_concepts(db,folder=None):
     """Validate occurrence accounting independently of semantic review completion."""
     errors=[];ids=set();outcomes=Counter()
-    pages=dict(db.execute('SELECT path,length(text) FROM pages'))
+    texts=dict(db.execute('SELECT path,text FROM pages'))
+    pages={p:len(text) for p,text in texts.items()}
     entries={r[0] for r in db.execute('SELECT id FROM entries')}
     entry_cols={r[1] for r in db.execute('PRAGMA table_info(entries)')}
     if {'ruleset','type'}<=entry_cols:
@@ -71,6 +72,19 @@ def audit_concepts(db,folder=None):
                 errors.append(mid+': missing plain reference provenance')
             elif rule_targets.get(target)!=scope['ruleset']:
                 errors.append(mid+': plain reference target ruleset mismatch')
+        ev=o.get('evidence',{})
+        if status=='resolved' and (signal=='field' or 'field' in ev):
+            span=ev.get('field_span',[]); scope=ev.get('scope',{}); declarations=ev.get('declarations',[])
+            allowed={'components','duration'} if signal=='field' else {'properties','mastery','damage'} if signal=='table' else {'components','duration','properties','mastery','damage'}
+            if (ev.get('field') not in allowed or len(span)!=2 or not 0<=span[0]<=a<b<=span[1]<=pages[path]
+                or texts[path][slice(*span)]!=ev.get('field_text') or texts[path][a:b]!=o['text']
+                or len(scope.get('source_ids',[]))!=1 or not scope.get('owner_ids')
+                or not set(scope['owner_ids'])<=entries or scope.get('ruleset') not in {'5r','5e'}
+                or rule_targets.get(target)!=scope['ruleset'] or not declarations
+                or not all(d.get('member_id') in entries and d.get('heading') and d.get('member_name')
+                           and (d.get('via')=='glossary_referral' or d.get('via')=='member' and d['member_id']==target)
+                           for d in declarations)):
+                errors.append(mid+': missing typed field provenance')
         if signal=='table' and status=='resolved':
             table=o['evidence'].get('table',{})
             cell=table.get('cell_span',[]);outer=table.get('span',[])

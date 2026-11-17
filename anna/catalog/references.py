@@ -66,6 +66,10 @@ def portable_evidence(context, ref):
     ev.pop('format_mark_span', None)
     ev.pop('stylesheet_sha256', None)
     ev.pop('resolution', None)
+    ev.pop('field_span', None)
+    if 'declarations' in ev:
+        ev['declarations'] = sorted(({k:v for k,v in d.items() if k!='member_id'} for d in ev['declarations']),
+                                    key=lambda d:(d['heading'],d['member_name'],d['via']))
     stylesheets = ev.pop('stylesheets', [])
     if stylesheets or ref['signal'] == 'format':
         ev['format_profiles'] = {
@@ -518,7 +522,7 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
 
     db.executescript('''
         CREATE TABLE IF NOT EXISTS effective_references(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),
-            signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table','explicit')),
+            signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table','field','explicit')),
             status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),
             target_id TEXT REFERENCES entries(id),review_status TEXT,can_link INTEGER NOT NULL DEFAULT 0,
             presentation TEXT,is_effective INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL);
@@ -538,7 +542,7 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
             grouped[(ref['start'], ref['end'])].append(ref)
         exact = {span: group[0] for span, group in grouped.items() if len(group) == 1}
         for raw, in db.execute(
-            "SELECT data FROM effective_references WHERE page_path=? AND signal IN ('index','format','plain','table') ORDER BY start,end,id",
+            "SELECT data FROM effective_references WHERE page_path=? AND signal IN ('index','format','plain','table','field') ORDER BY start,end,id",
             (path,),
         ):
             o = json.loads(raw)

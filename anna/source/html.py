@@ -466,12 +466,15 @@ class Document:
             header = next((r for r in rows[:4] if r['cell_tags'] and all(t == 'th' for t in r['cell_tags'])), rows[0])
             headers = [compact(h) for h in header['cells']]
             cells = []
+            repeated_headers = {}
             for ri, row in enumerate(rows[1:], 1):
                 if row['cell_tags'] and all(t == 'th' for t in row['cell_tags']):
+                    repeated_headers[ri] = row['cells']
                     continue
                 for ci, cell_span in enumerate(row['cell_spans']):
                     cells.append([ri, ci, cell_span[0], cell_span[1]])
-            concept_tables.append({'index': ti, 'span': list(table['span']), 'headers': headers, 'cells': cells})
+            concept_tables.append({'index': ti, 'span': list(table['span']), 'headers': headers, 'cells': cells,
+                                   'repeated_headers': repeated_headers})
         non_prose_spans = [
             list(self.span(t)) for t in self.elements
             if t.name in {'table', 'blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class', []))

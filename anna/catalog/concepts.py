@@ -8,6 +8,8 @@ import re
 from bs4 import BeautifulSoup
 from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name,underline_style
 from anna.catalog.types import RULE_TYPES
+from anna.catalog.frames import weapon_cells
+from anna.catalog.reference_slots import SlotVocabulary, field_occurrences, resolve_field_slots
 
 UNDERLINE_KINDS = {
     'bold': 'creature',
@@ -61,7 +63,7 @@ def reference_spans(text,start,end,kind,resolver):
     def known(a,b):
         ids=resolver.names.get(key(compact(text[a:b])),set())
         wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
-        return any(resolver.entries[i]['type'] in wanted for i in ids)
+        return any(resolver.entries[i]['type'] in wanted and not slot_only(resolver.entries[i]) for i in ids)
     if known(start,end):return [(start,end)]  # punctuation may be part of a real name
     parts=[];begin=start;stack=[];pairs={'(':')','（':'）','[':']','【':'】','「':'」','“':'”'}
     def append(a,b):
@@ -206,6 +208,11 @@ def rule_use_clause(text,a,b,previous):
     return None
 
 
+def slot_only(entry):
+    # A newly exposed family row (e.g. a damage type) does not make the same bare word in prose a reference.
+    return entry.get('classification_rule') == 'reference_family_member'
+
+
 class Resolver:
     def __init__(self,entries,sources=()):
         self.sources={s["id"]:s for s in sources};self.local_definitions=defaultdict(list)
@@ -227,7 +234,7 @@ class Resolver:
     def locator(self,path,fragment):
         ids=self.anchors.get((path,fragment),set()) if fragment else set()
         return sorted(ids)
-    def resolve(self,label,kind,path,position=None,*,scope=None,types=None):
+    def resolve(self,label,kind,path,position=None,*,scope=None,types=None,member_ids=None):
         """`types` narrows a concept to the definition kinds its position admits (a d20-test notation part)."""
         excluded_features=[]
         def result(candidates,reason,status=None):
@@ -236,13 +243,14 @@ class Resolver:
             if excluded_features:result['resolution_evidence']={'out_of_scope_feature_ids':sorted(excluded_features)}
             return result
         local=[d for d in self.local_definitions[path] if d['kind']==kind and key(label) in d['name_keys'] and position is not None and d['scope'][0]<=position<d['scope'][1]]
-        if local:
+        if local and member_ids is None:
             size=min(d['scope'][1]-d['scope'][0] for d in local)
             local=[d for d in local if d['scope'][1]-d['scope'][0]==size]
             found=result([self.entries[i] for i in sorted({d['definition_id'] for d in local})],'local_definition')
             found['resolution_evidence']={'local_definition_ids':[d['id'] for d in local]}
             return found
-        ids=self.names.get(key(label),set())
+        ids=(member_ids if member_ids is not None else
+             {i for i in self.names.get(key(label),()) if not slot_only(self.entries[i])})
         wanted=types or (RULE_TYPES|{'class_feature'} if kind=='concept' else {kind})
         def matches_kind(e):return e['type'] in wanted or kind=='concept' and not types and e.get('table_span') and e['type']=='lore'
         candidates=[self.entries[i] for i in ids if matches_kind(self.entries[i])]
@@ -331,7 +339,7 @@ class Resolver:
         if competitors:return pending('plain_competing_kind','ambiguous',[target_id,*competitors]),evidence
         return resolution,evidence
 
-def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
+def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field_facts=()):
     resolver=Resolver(entries,sources);observations=[];definition_ids={e['id'] for e in entries if e['type'] in RULE_TYPES or e.get('table_span') and e['type']=='lore'}
     def observe(path,a,b,label,signal,kind,targets=(),reason='',status=None,role='mention',evidence=None,resolution_evidence=None):
         targets=sorted(set(targets));status=status or ('resolved' if len(targets)==1 else 'ambiguous' if targets else 'unresolved')
@@ -373,7 +381,12 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
             if not dest[1]:ids=[e['id'] for e in resolver.pages.get(dest[0],[]) if e.get('is_primary') and e['type']!='section']
             row=observe(path,*link['span'],link['link_text'],'index','entry',ids,'explicit_locator',role='index',evidence={'href':link['href'],'target_path':dest[0],'fragment':dest[1]})
             if row['status']=='resolved':resolver.indexed.add(row['target_id'])
-    terms={n for e in entries if e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
+    families=SlotVocabulary(resolver,pages)
+    facts_by_page=defaultdict(list)
+    for f in field_facts:
+        if f['rule']=='body_label' and f['field'] in {'components','duration','damage','properties','mastery'}:
+            facts_by_page[f['evidence']['path']].append(f)
+    terms={n for e in entries if not slot_only(e) and e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
     scan_terms=term_scanner(terms) if terms else None
     table_terms={n for e in entries if e['type'] in TABLE_REFERENCE_TYPES for n in aliases(e) if len(n)>=2}
     table_scan=term_scanner(table_terms) if table_terms else None
@@ -418,6 +431,11 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
                     'span':[a,b],'definition_id':owner['id'],'scope':[parent['start'],parent['end']],
                     'scope_entry_id':parent['id'],'rule':'named_object_in_subfeature'}
                 resolver.local_definitions[path].append(record)
+        fields = facts_by_page.get(path, ())
+        cells = weapon_cells(path,page_text,dom['concept_tables']) if fields else {}
+        slots = resolve_field_slots(field_occurrences(fields,resolver.entries,page_text,cells),
+                                    resolver,families,path,page_text)
+        overlaps_slot = overlap_check(slots)
         for mark in dom['u_marks']:
             if mark['has_parent_u']:continue
             marked+=1
@@ -437,8 +455,18 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
                 if len(spans)>1:part_evidence['segmentation']='verified_name_list'
                 if not trusted:resolution={'reason':'unknown_style','status':'review'}
                 elif kind=='ambiguous':resolution={'reason':'mixed_format','status':'review'}
+                elif (start,end) in slots and kind=='concept':
+                    _,slot_evidence,resolution=slots[start,end]
+                    part_evidence.update(slot_evidence)
+                elif overlaps_slot(start,end):
+                    resolution={'reason':'slot_format_conflict','status':'review'}
                 else:resolution=resolver.resolve(compact(page_text[start:end]),kind,path,start)
                 observe(path,start,end,compact(page_text[start:end]),'format',kind,**resolution,evidence=part_evidence)
+        reserved = overlap_check(occupied+titles)
+        for (a,b),(signal,evidence,result) in slots.items():
+            if not reserved(a,b):
+                observe(path,a,b,page_text[a:b],signal,'concept',evidence=evidence,**result)
+                occupied.append((a,b))
         # A class table cell that is only a list of class-feature names is a reference-bearing
         # structure of its own, like a rules-use clause in prose. Existing links, format marks and
         # definition titles win, and a cell containing prose or an unknown item stays out.
@@ -499,7 +527,7 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
                 observe(path,a,b,page_text[a:b],'plain','concept',**resolution,evidence=evidence)
     db.executescript('''
     CREATE TABLE effective_references(id TEXT PRIMARY KEY,page_path TEXT REFERENCES pages(path),start INTEGER CHECK(start>=0),end INTEGER CHECK(end>=start),
-        signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table','explicit')),
+        signal TEXT CHECK(signal IN ('index','format','heading','definition_phrase','plain','table','field','explicit')),
         status TEXT CHECK(status IN ('resolved','ambiguous','unresolved','review','excluded')),
         target_id TEXT REFERENCES entries(id),review_status TEXT,can_link INTEGER NOT NULL DEFAULT 0,
         presentation TEXT,is_effective INTEGER NOT NULL DEFAULT 0,data TEXT NOT NULL);
@@ -535,6 +563,6 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None):
                     'unclassified_definitions':[o['id'] for o in observations if o['signal']=='heading'],
                     'ambiguous_targets':[o['id'] for o in observations if o['status']=='ambiguous']},
             'unindexed_definitions':sorted(definition_ids-resolver.indexed),
-            'policy':'provisional definition identities; plain rule-use clauses require scoped core targets; table name cells require class-feature names in the owning class or subclass; no name-based merge'}
+            'policy':'provisional definition identities; plain rule-use clauses require scoped core targets; typed fields restrict names to their definition family; class-feature cells require the owning class or subclass; no name-based merge'}
     db.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps(report,ensure_ascii=False)))
     return report

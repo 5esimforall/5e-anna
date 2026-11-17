@@ -23,6 +23,7 @@ from anna.catalog.signatures import (
     matches_feat_descriptor,
     skill_notation,
 )
+from anna.catalog.reference_slots import heading_family, measurement_rule
 from anna.catalog.types import RULE_TYPES, classify, mark_class_regions, refine_page_types
 from anna.source.html import Document, compact, digest, key, split_name
 
@@ -163,6 +164,79 @@ def rule_children(doc: Document, start: int, end: int, parent_name: str):
 
     for group in doc.parallel_bold_lines(start, end):
         yield from ((*item, 'rule_parallel_lead') for item in group if in_family(item[3]))
+
+
+def collect_slot_definitions(doc, cs, entries, core_rule_source):
+    """Use the named collection around a definition, not a global list of member names."""
+    by_start = {e['start']:e for e in entries}
+    for i, container in enumerate(cs):
+        if container.method not in STRUCTURAL_HEADING_METHODS:
+            continue
+        family = heading_family(container.name)
+        if not family:
+            continue
+        end = min(container.end, cs[i+1].start) if i+1<len(cs) else container.end
+        weapon_family = family in {'properties','mastery'}
+        if not core_rule_source and not weapon_family:
+            continue
+        children = []
+        for j, child in enumerate(cs[i+1:], i+1):
+            if child.parent == i:
+                children.append(j)
+            elif child.start < container.end:
+                continue  # nested below a child, not a sibling definition
+            elif (container.method == 'word_heading' and child.parent == container.parent
+                  and child.rank == container.rank and child.method == 'heading'
+                  and child.tag is not None and child.tag.name == 'h4'):
+                children.append(j)
+            else:
+                break
+        # "Properties" alone could be an unrelated list. The introduction or repeated
+        # member descriptions must explicitly place these properties on weapons.
+        if weapon_family and '武器' not in container.name and '武器' not in doc.text[container.title_end:end]:
+            descriptions = [doc.text[cs[j].title_end:cs[j].end].strip().split('。',1)[0] for j in children]
+            if sum('词条' in d and '武器' in d for d in descriptions) < 2:
+                continue
+        evidence = {'family':family, 'heading':container.name,
+                    'heading_span':[container.start,container.title_end]}
+        leads = [(a,b,n) for a,b,n in doc.line_leads() if container.title_end<=a<b<=end]
+
+        def register(member, description):
+            declaration = evidence.copy()
+            if family=='duration' and (rule := measurement_rule(description)):
+                declaration['measure'] = rule
+            member['slot_definition'] = declaration
+
+        # Earlier layouts describe measured durations in the parent introduction instead of a member.
+        intro = doc.text[container.title_end:leads[0][0] if leads else end]
+        if family=='duration' and entries[i]['type']=='rule' and '法术' in intro and measurement_rule(intro):
+            register(entries[i], intro)
+
+        for j in children:
+            member = entries[j]
+            if not all(split_name(member['name'])) or not compact(doc.text[member['title_end']:member['end']]):
+                continue
+            if weapon_family and member['type']=='section':
+                member.update(type='rule',classification_rule='reference_family_member')
+            if member['type']=='rule':
+                register(member, doc.text[member['title_end']:member['end']])
+
+        # A series of bilingual paragraph labels under the same family heading.
+        if len(leads)<2 or not all(all(split_name(n)) for a,b,n in leads):
+            continue
+        for j,(a,b,name) in enumerate(leads):
+            stop = leads[j+1][0] if j+1<len(leads) else end
+            if not compact(doc.text[b:stop]):
+                continue
+            member = by_start.get(a)
+            if member is None:
+                member = entry_draft(name,a,b,stop,doc.text[a:stop],kind='rule',
+                                     classification_rule='reference_family_member',boundary_rule='family_line_lead',
+                                     level=container.rank+1,parent_index=i)
+                entries.append(member)
+                by_start[a] = member
+            if member['type']=='rule':
+                register(member, doc.text[b:stop])
 
 
 def _valid_candidate_name(name: str) -> bool:
@@ -417,18 +491,58 @@ def _header_field(header: str) -> str | None:
     return TABLE_HEADERS.get(cleaned)
 
 
-def _definition_table_entries(doc: Document, table: dict) -> list[dict]:
+def weapon_field(header):
+    return 'price' if header.strip()=='价值' else _header_field(header)
+
+
+def weapon_header(headers):
+    """The column signature identifies weapons even in a price-less or period-labelled inventory."""
+    roles = [_header_field(h) for h in headers]
+    return (bool(headers) and {'damage','properties'} <= set(roles)
+            and (headers[0] in TABLE_NAME_HEADERS or headers[0].endswith('物品'))
+            and all(roles.count(role)==1 for role in ('damage','properties')))
+
+
+def weapon_cells(path, text, tables):
+    """Map each cell to the currently governing header, including repeated headers within a table."""
+    cells = {}
+    for table in tables:
+        headers = table['headers']
+        if not weapon_header(headers):
+            continue
+        by_row = {}
+        for row,col,a,b in table['cells']:
+            by_row.setdefault(row, []).append((col,a,b))
+        for row in sorted(set(by_row) | set(table.get('repeated_headers',{}))):
+            spans = by_row.get(row, [])
+            printed = table.get('repeated_headers',{}).get(row) or [compact(text[a:b]) for _,a,b in spans]
+            if weapon_header(printed):
+                headers = printed
+                continue
+            if len(spans) != len(headers):
+                continue
+            for col,a,b in spans:
+                cells[a,b] = (_header_field(headers[col]), {'id':'tbl_'+digest(path,table['index']),
+                             'row':row, 'column':col, 'span':table['span'], 'cell_span':[a,b],
+                             'headers':headers, 'cell_text':compact(text[a:b])})
+    return cells
+
+
+def _definition_table_entries(doc: Document, table: dict, family_heading=None) -> list[dict]:
     """Entries for tables whose first header names a definition kind and whose rows all carry bilingual names."""
     rows = table['rows']
     headers = [re.sub(r'\s+', '', h) for h in rows[0]['cells']]
     kind = DEFINITION_TABLE_KINDS.get(headers[0]) if headers else None
+    damage_table = family_heading is not None and headers == ['类型','例子']
+    if damage_table:
+        kind = 'rule'
     body = rows[1:]
     if not kind or len(body) < 2:
         return []
     if any(
         len(r['cells']) != len(headers)
         or any(s != '1' for s in r['rowspan'] + r['colspan'])
-        or not all(split_name(r['cells'][0]))
+        or not all(split_name(r['cells'][0])) or (damage_table and not r['cells'][1])
         for r in body
     ):
         return []
@@ -450,22 +564,27 @@ def _definition_table_entries(doc: Document, table: dict) -> list[dict]:
             entry_draft(
                 row['cells'][0], left, row['cell_spans'][0][1], right, doc.text[left:right],
                 kind=kind,
-                classification_rule='definition_table',
+                classification_rule='reference_family_member' if damage_table else 'definition_table',
                 boundary_rule='table_row',
                 level=9,
                 fields=fields,
                 extra_facts=[],
             )
         )
+        if damage_table:
+            entries[-1]['slot_definition'] = {'family':'damage','heading':family_heading.name,
+                                               'heading_span':[family_heading.start,family_heading.title_end]}
     return entries
 
 
-def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[list[dict], list[dict], list[dict]]:
+def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_source=False) -> tuple[list[dict], list[dict], list[dict]]:
     """Extract raw table records alongside definition-table and catalog-table row entries."""
     entries: list[dict] = []
     tables: list[dict] = []
     issues: list[dict] = []
 
+    family_tables = {tuple(c.fields['table_span']): c for c in page_candidates
+                     if core_rule_source and c.fields.get('table_span') and heading_family(c.name)=='damage'}
     for ti, t in enumerate(doc.tables()):
         rows = t['rows']
         a, b = t['span']
@@ -479,7 +598,7 @@ def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[lis
             'layout_warning': any(any(x != '1' for x in r['rowspan'] + r['colspan']) for r in rows),
         })
 
-        defined = _definition_table_entries(doc, t)
+        defined = _definition_table_entries(doc, t, family_tables.get((a,b)))
         if defined:
             entries.extend(defined)
             continue
@@ -487,8 +606,8 @@ def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[lis
         hi = next(
             (
                 i for i, r in enumerate(rows[:4])
-                if any(_header_field(h) == 'price' for h in r['cells'])
-                and any(h in TABLE_NAME_HEADERS for h in r['cells'])
+                if weapon_header(r['cells']) or (any(_header_field(h) == 'price' for h in r['cells'])
+                and any(h in TABLE_NAME_HEADERS for h in r['cells']))
             ),
             None,
         )
@@ -496,7 +615,9 @@ def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[lis
             continue
 
         headers = rows[hi]['cells']
-        namecols = [i for i, h in enumerate(headers) if h in TABLE_NAME_HEADERS]
+        weapons = weapon_header(headers)
+        column_field = weapon_field if weapons else _header_field
+        namecols = [0] if weapons else [i for i, h in enumerate(headers) if h in TABLE_NAME_HEADERS]
         before = [c for c in page_candidates if c.start < a]
         title = max(before, key=lambda c: c.start).name if before else doc.title
         caption_text = t.get('preceding_text', '')
@@ -508,15 +629,15 @@ def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[lis
             lo = 0 if len(namecols) == 1 else (nc if nc else 0)
             end = namecols[i + 1] if i + 1 < len(namecols) else len(headers)
             cols = list(range(lo, end))
-            if not any(_header_field(headers[j]) == 'price' for j in cols):
+            if not weapons and not any(column_field(headers[j]) == 'price' for j in cols):
                 continue
-            mapped = {_header_field(headers[j]) for j in cols}
+            mapped = {column_field(headers[j]) for j in cols}
             animal = 'carrying_capacity' in mapped and bool(re.search(r'坐骑.*动物', title))
             vehicle = (
                 ('speed' in mapped and bool(re.search('载具|船', doc.path + title)))
                 or ('carrying_capacity' in mapped and not animal and '载具' in doc.path)
             )
-            equipment = 'weight' in mapped or ('price' in mapped and title.startswith('机巧奇具'))
+            equipment = weapons or 'weight' in mapped or ('price' in mapped and title.startswith('机巧奇具'))
             goods = len(headers) == 2 and headers[nc] in {'货物', '商品'} and bool(re.search('商业货物|其他开支', doc.path))
             if not (animal or vehicle or equipment or goods):
                 issues.append({'reason': 'catalog_table_unhandled', 'detail': {'headers': headers, 'title': title}, 'span': [a, b]})
@@ -526,6 +647,11 @@ def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[lis
         group_label = ''
         for row in rows[hi + 1:]:
             vals = row['cells']
+            if weapons and weapon_header(vals):
+                headers = vals
+                groups = [(0, list(range(len(headers))), 'equipment')]
+                group_label = ''
+                continue
             if len(vals) == 1 and row['colspan'][0] != '1':
                 group_label = vals[0]
                 continue
@@ -537,16 +663,18 @@ def extract_tables(doc: Document, page_candidates: list[Candidate]) -> tuple[lis
                 name = vals[nc]
                 if not name or len(name) > 100:
                     continue
-                price = next((vals[j] for j in cols if _header_field(headers[j]) == 'price'), '')
+                price = next((vals[j] for j in cols if column_field(headers[j]) == 'price'), '')
                 if not re.search(r'\d|×|多[种类]|不等|—|－', price):
-                    continue
+                    # Without a printed price, require an actual damage expression, not a section divider.
+                    if not weapons or not re.match(r'\s*\d', vals[next(j for j in cols if column_field(headers[j])=='damage')]):
+                        continue
                 actual = 'vehicle' if kind == 'equipment' and '坐骑' in doc.path and VEHICLE_NAMES_RE.search(name) else kind
                 left = min(row['cell_spans'][j][0] for j in cols)
                 right = max(row['cell_spans'][j][1] for j in cols)
                 fields = {
                     field_name: [(vals[j], row['cell_spans'][j][0] - left, row['cell_spans'][j][1] - left)]
                     for j in cols
-                    if (field_name := _header_field(headers[j])) and vals[j]
+                    if (field_name := column_field(headers[j])) and vals[j]
                 }
                 extra = []
                 if actual == 'animal_offer':
@@ -645,7 +773,8 @@ def extract_page_entries(
 
     entries.extend(subrules)
     refine_page_types(entries, doc.text, toc_place)
+    collect_slot_definitions(doc, cs, entries, core_rule_source)
     entries.extend(facility_list_entries(doc))
-    table_entries, tables, table_issues = extract_tables(doc, cs)
+    table_entries, tables, table_issues = extract_tables(doc, cs, core_rule_source)
     entries.extend(table_entries)
     return entries, tables, table_issues

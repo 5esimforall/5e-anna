@@ -64,6 +64,7 @@ RULE_EVIDENCE = {
     'level_statement': PRINTED,
     'name_label': PRINTED,
     'definition_table': PRINTED,
+    'reference_family_member': PRINTED,
     'skill_notation': PRINTED,
     # The place the text sits implies the type.
     'checked_ability': INFERRED,

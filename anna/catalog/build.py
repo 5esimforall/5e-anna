@@ -215,6 +215,7 @@ class Build:
                 'type_conflicts':type_conflicts(c['type'],c.get('printed_types',[])),
                 'fields':{},'field_conflicts':[],'observation_ids':c['observation_ids'],'parent_id':'','is_primary':c['is_primary'], 'snapshot':self.commit}
             local_entries.append(e);self.entries.append(e);self.entry_by_id[eid]=e;self.page_entries[path].append(e)
+            if c.get('slot_definition'):e['slot_definition']=c['slot_definition']
             if c.get('table_span'):e['table_span']=c['table_span']
             self.locators[path].add(eid) if c['is_primary'] else None
             for a in c['anchors']:self.locators[path+'#'+a].add(eid)
@@ -524,7 +525,7 @@ class Build:
         db.executemany('INSERT INTO review_queue VALUES(?,?,?,?,?)',[(r['id'],r['target'],r['reason'],r['priority'],canonical(r)) for r in self.reviews])
         db.executemany('INSERT INTO identity_candidates VALUES(?,?,?,?)',[(r['group_id'],r['type'],r['status'],canonical(r)) for r in self.identity_candidates])
         from anna.catalog.concepts import build_concepts
-        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path)
+        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path,field_facts=self.facts)
         from anna.review.context import Context
         shared_context=Context(db)
         from anna.catalog.references import build_references

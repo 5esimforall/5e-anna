@@ -1,0 +1,225 @@
+"""Typed reference slots. A field names the family; the source definitions supply its members."""
+from __future__ import annotations
+
+from collections import defaultdict
+import re
+
+from anna.catalog.signatures import LABEL_RE, LABEL_TO_FIELD
+from anna.source.html import key, split_name
+
+# These are headings of definition collections, never names of individual members.
+FAMILY_HEADINGS = {
+    ('法术成分', 'components'): 'components',
+    ('持续时间', 'duration'): 'duration',
+    ('词条', 'properties'): 'properties',
+    ('武器词条', 'weaponproperties'): 'properties',
+    ('精通词条', 'masteryproperties'): 'mastery',
+    ('伤害类型', 'damagetypes'): 'damage',
+}
+
+
+def heading_family(name):
+    zh, en = split_name(name)
+    return FAMILY_HEADINGS.get((zh, key(en)))
+
+
+SYMBOL = re.compile(r'[（(]([A-Z])[）)]$')
+NAME = r'[\u3400-\u9fff]+|[A-Za-z][A-Za-z\-]*(?: [A-Za-z][A-Za-z\-]*)*'
+LIST_SEPARATOR = re.compile(r'\s*[、，,；;/／]\s*')
+MEMBER_NAME = re.compile(NAME)
+QUALIFIED_NAME = re.compile(r'(?:' + NAME + r')\d*')
+DAMAGE_AMOUNT = re.compile(r'\s*\d+(?:[dD]\d+)?(?:\s*[+＋-]\s*\d+)?\s*(?:点\s*)?')
+TIME_UNIT = r'(?:分钟|小时|星期|轮|日|天|周|月|年)'
+TIME_AMOUNT = re.compile(r'(?:[0-9]+|[一二两三四五六七八九十百千]+)\s*(?:个\s*)?' + TIME_UNIT)
+TIME_BOUND = re.compile(r'\s*(?:(?:至多|最多|最长)\s*)?')
+MEASUREMENT = re.compile(r'(?:单位(?:是|为)[^。；\n]{1,48}|可(?:以)?用[^。；\n]{1,48}?度量)')
+
+
+def measurement_rule(text):
+    """A duration explanation must actually describe measurement in time units."""
+    for statement in MEASUREMENT.finditer(text):
+        if len(set(re.findall(TIME_UNIT, statement[0]))) >= 2:
+            return statement[0]
+    return None
+
+
+def list_tokens(text, start, pattern):
+    spans = []
+    i = start
+    while i < len(text):
+        while i < len(text) and text[i].isspace():
+            i += 1
+        member = pattern.match(text, i)
+        if not member:
+            return []
+        spans.append(member.span())
+        i = member.end()
+        while i < len(text) and text[i].isspace():
+            i += 1
+        qualified = i < len(text) and text[i] in '(（'
+        if qualified:
+            # Full- and half-width parentheses delimit the same printed qualifier.
+            depth = 0
+            while i < len(text):
+                c = text[i]
+                i += 1
+                depth += int(c in '(（') - int(c in ')）')
+                if not depth:
+                    break
+            if depth:
+                return []
+        if text[i:].strip() in ('', '。', '.'):
+            break
+        sep = LIST_SEPARATOR.match(text, i)
+        if sep and sep.end() < len(text):
+            i = sep.end()
+        elif not (qualified and pattern.match(text, i)):
+            return []
+    return spans
+
+
+def duration_tokens(text):
+    """Named modes and measured bounds may coexist, including alternative durations."""
+    spans = []
+    i = 0
+    while i < len(text):
+        i = TIME_BOUND.match(text, i).end()
+        amount = TIME_AMOUNT.match(text, i)
+        if amount:
+            span = amount.span()
+        else:
+            name = re.match(r'(' + NAME + r')(?=\s*(?:[，,；;（(。.]|$))', text[i:])
+            alternative = re.match(r'([\u3400-\u9fff]+?)或(?=\s*(?:[0-9一二两三四五六七八九十百千]|至多|最多|最长))',text[i:])
+            if alternative:
+                name = alternative
+            if not name:
+                break
+            span = (i, i + name.end(1))
+        spans.append(span)
+        separator = re.match(r'\s*(?:[，,；;]|或)', text[span[1]:])
+        if not separator:
+            break
+        i = span[1] + separator.end()
+    return spans
+
+
+def value_tokens(field, text):
+    """Offsets in a printed field value, never free-text matches in material or range descriptions."""
+    if field == 'damage':
+        amount = DAMAGE_AMOUNT.match(text)
+        return list_tokens(text, amount.end(), MEMBER_NAME) if amount else []
+    if field == 'duration':
+        return duration_tokens(text)
+    return list_tokens(text, 0, QUALIFIED_NAME if field == 'properties' else MEMBER_NAME)
+
+
+class SlotVocabulary:
+    """Family-local spellings with source-backed target identities, kept out of global aliases."""
+    def __init__(self, resolver, pages):
+        self.members = defaultdict(lambda: defaultdict(list))
+        self.measured = defaultdict(list)
+        self.parameterized = defaultdict(lambda: defaultdict(list))
+        for entry in resolver.entries.values():
+            definition = entry.get('slot_definition')
+            if not definition:
+                continue
+            family = definition['family']
+            names = {entry['name_zh'], entry.get('name_en','')}
+            if family == 'components' and (m := SYMBOL.search(entry['name'])):
+                names.add(m[1])
+            ids = {entry['id']}
+            body = pages[entry['page_path']]['text'][entry['title_end']:entry['end']]
+            # Some families print a named parameter form, e.g. 标识为“名称X”. A number alone
+            # is never reason to throw away part of the printed name.
+            parameter = (re.search(r'(?:标识为|记作|写作)[“「](' + re.escape(entry['name_zh']) + r'X)[”」]',body)
+                         if family=='properties' and entry['name_zh'] else None)
+            # A local duration synopsis may direct readers to the glossary for the actual rule.
+            if family == 'duration':
+                if re.search(r'(?:详见|参见)术语汇编', body):
+                    glossary = [resolver.entries[i] for i in resolver.names.get(key(entry['name_zh']), ())]
+                    targets = {g['id'] for g in glossary if '/术语汇编/' in g['page_path']
+                               and g['type']=='rule' and g['ruleset']==entry['ruleset']
+                               and set(g['source_ids']) == set(entry['source_ids'])
+                               and g['name_zh']==entry['name_zh'] and key(g['name_en'])==key(entry['name_en'])}
+                    if targets:
+                        ids = targets
+            if rule := definition.get('measure'):
+                self.measured[entry['id']].append({'member_id':entry['id'], 'member_name':entry['name'],
+                    'heading':definition['heading'], 'via':'member', 'measure':rule})
+            for spelling in {key(n) for n in names if n}:
+                for target in ids:
+                    declaration = {'member_id':entry['id'], 'member_name':entry['name'],
+                                   'heading':definition['heading'], 'via':'member' if target==entry['id'] else 'glossary_referral'}
+                    self.members[family, spelling][target].append(declaration)
+                    if parameter and spelling == key(entry['name_zh']):
+                        self.parameterized[family, spelling][target].append({**declaration, 'notation':parameter[1]})
+
+    def candidates(self, field, name):
+        if field == 'duration' and TIME_AMOUNT.fullmatch(name):
+            return self.measured
+        exact = self.members.get((field, key(name)), {})
+        qualified = re.fullmatch(r'(.+?)([0-9]+)',name)
+        if not qualified:
+            return exact
+        matches = {i:list(ds) for i,ds in exact.items()}
+        for i,ds in self.parameterized.get((field,key(qualified[1])), {}).items():
+            matches.setdefault(i,[]).extend(ds)
+        return matches
+
+
+def field_occurrences(facts, entries, text, cells):
+    """Bind only printed field evidence. Weapon cells must agree with the column and equipment row."""
+    for fact in facts:
+        field = fact['field']
+        owner = entries[fact['entry_id']]
+        a,b = fact['evidence']['span']
+        evidence = {'field':field, 'field_span':[a,b], 'field_text':text[a:b]}
+        if not owner['title_end'] <= a < b <= owner['end']:
+            continue
+        if owner['type']=='spell' and field in {'components','duration'}:
+            label = LABEL_RE.match(text,a,b)
+            if not label or LABEL_TO_FIELD[label[1]] != field:
+                continue
+            start = label.end()
+            signal = 'field'
+        elif owner['type']=='equipment' and field in {'damage','properties','mastery'}:
+            cell = cells.get((a,b))
+            if not cell or cell[0]!=field:
+                continue
+            evidence['table'] = cell[1]
+            start = a
+            signal = 'table'
+        else:
+            continue
+        for lo,hi in value_tokens(field,text[start:b]):
+            yield owner, start+lo, start+hi, signal, evidence
+
+
+def resolve_field_slots(occurrences, resolver, vocabulary, path, text):
+    """One reading per printed occurrence, independent of fact insertion order."""
+    groups = defaultdict(list)
+    for owner,a,b,signal,evidence in occurrences:
+        groups[a,b].append((owner,signal,evidence))
+    slots = {}
+    for (a,b), readings in sorted(groups.items()):
+        owner,signal,ev = readings[0]
+        owners = sorted({e['id'] for e,_,_ in readings})
+        scope = {'source_ids':owner['source_ids'], 'ruleset':owner['ruleset'], 'owner_ids':owners}
+        meanings = {(s, f['field'], tuple(f['field_span']), tuple(sorted(e['source_ids'])), e['ruleset'])
+                    for e,s,f in readings}
+        if len(meanings)!=1:
+            # No competing owner, field or generation wins merely because it was loaded first.
+            signals = {m[0] for m in meanings}
+            slots[a,b] = (signal if len(signals)==1 else 'field', {'owner_count':len(owners), 'competing_fields':sorted({m[1] for m in meanings})},
+                          {'status':'review','reason':'slot_conflict','targets':[]})
+            continue
+        label = text[a:b]
+        members = vocabulary.candidates(ev['field'],label)
+        if (len(scope['source_ids'])!=1 or scope['ruleset'] not in {'5e','5r'}
+                or resolver.sources.get(scope['source_ids'][0],{}).get('ruleset_hint')!=scope['ruleset']):
+            result = {'status':'review','reason':'slot_scope_unconfirmed','targets':sorted(members)}
+        else:
+            result = resolver.resolve(label,'concept',path,a,scope=scope,types={'rule'},member_ids=members)
+        declarations = [d for i in sorted(result['targets']) for d in members.get(i,())]
+        slots[a,b] = (signal,{**ev,'scope':scope,'declarations':declarations},result)
+    return slots

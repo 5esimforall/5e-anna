@@ -221,3 +221,25 @@ test('class table name lists link their class feature in the reader',async({page
   await expect(page).toHaveURL(topic(book,t.target.path)+'#'+t.target.fragment);await ready(page);
   await expect(page.getByRole('link',{name:'查看 Anna 条目: '+t.target.name,exact:true})).toBeInViewport();
 });
+
+test('field symbols and weapon columns navigate to the same rule that Anna displays',async({page})=>{
+  for (const [source,label,path,name] of [
+    ['法术详述/0环.htm','V','法术/法术成分.htm','言语'],
+    ['法术详述/0环.htm','专注','术语汇编/其他术语.htm','专注'],
+    ['法术详述/0环.htm','1分钟','法术/持续时间.htm','持续时间段'],
+    ['装备/武器.htm','穿刺','术语汇编/其他术语.htm','穿刺'],
+    ['装备/武器.htm','迅击','装备/精通词条.htm','迅击'],
+    ['装备/武器.htm','灵巧','装备/词条.htm','灵巧'],
+  ]){
+    const prefix='topics/玩家手册2024/';
+    await page.goto(topic(book,prefix+source));await ready(page);
+    const link=page.getByRole('link',{name:'查看定义: '+label,exact:true}).first();
+    const target=(await link.getAttribute('href')).split('/').pop();
+    const entry=await (await page.request.get(anna+'/api/entry?id='+target)).json();
+    expect(entry).toMatchObject({name_zh:name,type:'rule',ruleset:'5r',page_path:prefix+path});
+    await link.focus();await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(topic(book,prefix+path)+'#anna-'+target);
+    await ready(page);
+    await expect(page.locator('anna-links a[href="/?entry='+target+'"]').first()).toBeInViewport();
+  }
+});

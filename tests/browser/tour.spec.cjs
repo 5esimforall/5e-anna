@@ -236,6 +236,41 @@ test('moving onto a row opens it beside, a held key opens where it rests, Space 
   await expect(row(page,1,'战士')).not.toHaveAttribute('aria-current','true');
 });
 
+test('h j k l move as the arrow keys do, and j k scroll a detail’s text',async({page})=>{
+  await page.goto(anna+'/tour?at=classes');await ready(page,1);
+  const barbarian=row(page,1,'野蛮人');
+  await barbarian.focus();
+  await page.keyboard.press('j');await ready(page,2);
+  await expect(level(page,2).locator('h2')).toHaveText('吟游诗人');
+  await page.keyboard.press('k');
+  await expect(level(page,2).locator('h2')).toHaveText('野蛮人');
+  await expect(barbarian).toBeFocused();
+  await page.keyboard.press('l');await ready(page,3);
+  await expect(level(page,2).locator('.tour-item').first()).toBeFocused();
+  await page.keyboard.press('h');
+  await expect(barbarian).toBeFocused();
+  // Shifted letters and keys pressed while an input method is composing move nothing.
+  await page.keyboard.press('Shift+J');
+  await expect(barbarian).toBeFocused();
+  await barbarian.evaluate(e=>e.dispatchEvent(new KeyboardEvent('keydown',{key:'j',isComposing:true,bubbles:true,cancelable:true})));
+  await page.waitForTimeout(300);
+  await expect(barbarian).toBeFocused();
+  await expect(level(page,2).locator('h2')).toHaveText('野蛮人');
+  // In a detail's text, j and k scroll it; l moves on to its rows.
+  await page.setViewportSize({width:1000,height:600});
+  await page.goto(anna+'/tour');await ready(page,0);
+  await level(page,0).locator('.tour-item').first().focus();
+  await page.keyboard.press('l');await ready(page,1);
+  await expect(level(page,1)).toBeFocused();
+  const scrolled=()=>level(page,1).evaluate(e=>e.scrollTop);
+  for(let i=0;i<3;i++)await page.keyboard.press('j');
+  await expect.poll(scrolled).toBe(120);
+  await page.keyboard.press('k');
+  await expect.poll(scrolled).toBe(80);
+  await page.keyboard.press('l');await ready(page,2);
+  await expect(level(page,1).locator('.tour-item').first()).toBeFocused();
+});
+
 test('moving onto a row that leads to Anna closes the levels beside it',async({page})=>{
   await page.goto(anna+'/tour?at=ver_46fd8d38c8840ad0d29b58ab');await ready(page,1);
   const subclasses=level(page,1).locator('[data-group=subclasses] .tour-item');

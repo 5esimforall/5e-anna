@@ -40,6 +40,8 @@ const annaTour = (() => {
   const openLevels = () => roomy.matches ? 3 : phone.matches ? 1 : 2;
   // A held key passes over rows; the row it rests on opens once the key is released or after this long.
   const FOLLOW_DELAY = 150;
+  // h j k l move as ← ↓ ↑ → do; in a detail's text, j and k scroll it by about the step of the arrow keys.
+  const VIM_KEYS = {h:'ArrowLeft', j:'ArrowDown', k:'ArrowUp', l:'ArrowRight'}, LINE_STEP = 40;
   // Levels that answer within this time open in one step; slower ones first show that they are loading.
   const LOADING_DELAY = 180;
   // How long the columns take to reach their new widths, on the shared easing curve.
@@ -447,18 +449,21 @@ const annaTour = (() => {
     clearTimeout(restTimer);
     openOnRest = null;
   }
+  // Scrolls a level's text; presses that come before the last one has finished scrolling add to where it was going.
+  function scrollText(section, distance) {
+    const from = reading.get(section) ?? section.scrollTop;
+    const top = Math.max(0, Math.min(section.scrollHeight - section.clientHeight, from + distance));
+    if (top === section.scrollTop) return;
+    reading.set(section, top);
+    section.addEventListener('scrollend', () => reading.delete(section), {once:true});
+    section.scrollTo({top, behavior:reduced.matches ? 'auto' : 'smooth'});
+  }
   // From a level to the left, Space and Page Up/Down read on in the deepest level without leaving the rows.
   function readOn(event, section) {
     const last = deepest();
     if (section === last || !last || ![' ', 'PageDown', 'PageUp'].includes(event.key)) return false;
     const down = event.key === 'PageDown' || (event.key === ' ' && !event.shiftKey);
-    // Presses that come before the last page has finished scrolling add to where it was going.
-    const from = reading.get(last) ?? last.scrollTop;
-    const top = Math.max(0, Math.min(last.scrollHeight - last.clientHeight, from + (down ? 1 : -1) * last.clientHeight * 0.85));
-    if (top === last.scrollTop) return true;
-    reading.set(last, top);
-    last.addEventListener('scrollend', () => reading.delete(last), {once:true});
-    last.scrollTo({top, behavior:reduced.matches ? 'auto' : 'smooth'});
+    scrollText(last, (down ? 1 : -1) * last.clientHeight * 0.85);
     return true;
   }
   columns.addEventListener('keydown', event => {
@@ -466,22 +471,27 @@ const annaTour = (() => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
     const section = event.target.closest('.tour-column');
     if (!section) return;
-    const depth = Number(section.dataset.depth);
+    const depth = Number(section.dataset.depth), key = VIM_KEYS[event.key] || event.key;
     const spine = event.target.closest('.tour-spine');
     if (spine) {
       if (event.shiftKey) return;
       const next = section.nextElementSibling;
-      if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); }
-      else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next.dataset.place === 'folded' ? unfold(next) : enter(next, true); }
+      if (key === 'ArrowLeft') { event.preventDefault(); climb(section); }
+      else if (key === 'ArrowRight' && next) { event.preventDefault(); next.dataset.place === 'folded' ? unfold(next) : enter(next, true); }
       return;
     }
     // Escape closes the levels to the right of this one; the focus stays where it is.
     if (event.key === 'Escape' && section !== deepest() && !event.shiftKey) { event.preventDefault(); go(path.slice(0, depth)); return; }
-    // Reading a detail: the arrow keys scroll its text natively; → moves on to its rows, ← climbs.
+    // Reading a detail: the arrow keys scroll its text natively, and j k by the same step; → moves on to its rows,
+    // ← climbs.
     if (event.target === section) {
       if (event.shiftKey) return;
-      if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); }
-      else if (event.key === 'ArrowRight' && section.querySelector('.tour-item')) { event.preventDefault(); focusRows(section, true); }
+      if (key === 'ArrowLeft') { event.preventDefault(); climb(section); }
+      else if (key === 'ArrowRight' && section.querySelector('.tour-item')) { event.preventDefault(); focusRows(section, true); }
+      else if (key !== event.key && (key === 'ArrowDown' || key === 'ArrowUp')) {
+        event.preventDefault();
+        scrollText(section, (key === 'ArrowDown' ? 1 : -1) * LINE_STEP);
+      }
       return;
     }
     const link = event.target.closest('.tour-item');
@@ -490,16 +500,16 @@ const annaTour = (() => {
     if (event.shiftKey) return;
     const items = [...section.querySelectorAll('.tour-item')], i = items.indexOf(link);
     let target = null;
-    if (event.key === 'ArrowDown') target = items[Math.min(i + 1, items.length - 1)];
-    else if (event.key === 'ArrowUp') {
+    if (key === 'ArrowDown') target = items[Math.min(i + 1, items.length - 1)];
+    else if (key === 'ArrowUp') {
       if (i === 0 && detailReady(section)) { event.preventDefault(); read(section); return; }
       target = items[Math.max(i - 1, 0)];
     }
-    else if (event.key === 'Home') target = items[0];
-    else if (event.key === 'End') target = items.at(-1);
-    else if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); return; }
+    else if (key === 'Home') target = items[0];
+    else if (key === 'End') target = items.at(-1);
+    else if (key === 'ArrowLeft') { event.preventDefault(); climb(section); return; }
     // → and Enter enter the level the row opened, opening it first when it is not open yet.
-    else if (event.key === 'ArrowRight' || event.key === 'Enter') {
+    else if (key === 'ArrowRight' || key === 'Enter') {
       if (!opens(link)) return;
       event.preventDefault();
       const focus = {depth:depth + 1, enter:true, open:true};

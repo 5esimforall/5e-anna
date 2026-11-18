@@ -17,7 +17,7 @@ import threading
 import anna.catalog.views as browse
 import anna.paths as paths
 from anna.presentation import catalog
-from anna.presentation.layout import text_start
+from anna.presentation.layout import span_layout, text_start
 from anna.source.registry import QUICK_REFERENCE
 
 CURATION = paths.PROJECT / 'tour' / 'tour.json'
@@ -263,37 +263,86 @@ class Tour:
             self.texts[path] = row[0] if row else None
             return self.texts[path]
 
-    def entry_lead(self, e):
-        """The entry's own words before its first part: what it says before it divides into details."""
-        text = self.page_text(e.path)
-        if text is None:
-            return ''
+    # A level's own words: what it says before it divides into the rows below. The lead quotes the start of this
+    # range; a level whose own words run past the lead reads as a page.
+
+    def entry_span(self, e):
+        """The entry's own words: after its title line and before its first part."""
         start = text_start({'start': e.start, 'end': e.end, 'title_end': e.title_end})
         parts = self.parts.get(e.id)
         stop = self.entries[parts[0]].start if parts else e.end
-        return ' '.join(text[start:max(start, stop)].split())
+        return e.path, start, max(start, stop), e.id
 
     def page_entry(self, path):
         """The entry a page is about: its one primary root, as the build recognised it from the page title."""
         primary = [r for r in self.roots.get(path, []) if self.entries[r].primary]
         return self.entries[primary[0]] if len(primary) == 1 else None
 
-    def page_lead(self, path):
+    def page_span(self, path):
         entry = self.page_entry(path)
         if entry:
-            return self.entry_lead(entry)
-        # Without a page entry the lead is the text between the title line and the first entry.
+            return self.entry_span(entry)
+        # Without a page entry the page's own words lie between its title line and its first entry.
         text = self.page_text(path) or ''
         title = re.match(r'\s*[^\n]*', text)
+        start = title.end() if title else 0
         roots = self.roots.get(path, [])
         stop = self.entries[roots[0]].start if roots else len(text)
-        return ' '.join(text[title.end() if title else 0:stop].split())
+        return path, start, max(start, stop), None
+
+    def span_text(self, span):
+        path, start, stop, _ = span
+        text = self.page_text(path)
+        return ' '.join(text[start:stop].split()) if text else ''
+
+    def entry_lead(self, e):
+        return self.span_text(self.entry_span(e))
+
+    def page_lead(self, path):
+        return self.span_text(self.page_span(path))
+
+    def own_span(self, segment):
+        """The range a level's lead quotes, or None for a level that only leads on."""
+        if not segment:
+            return None
+        if CONTENTS_SEGMENT.fullmatch(segment):
+            node = self.nodes.get(segment[1:])
+            if node is None:
+                raise TourError('node_missing', 404)
+            return self.page_span(node['path']) if node['status'] == 'present' else None
+        if ENTRY_SEGMENT.fullmatch(segment):
+            if segment not in self.entries:
+                raise TourError('node_missing', 404)
+            return self.entry_span(self.entries[segment])
+        if TOPIC_KEY.fullmatch(segment):
+            if segment not in self.topics:
+                raise TourError('node_missing', 404)
+            node = self.topic_nodes.get(segment, (None, None))[1]
+            return self.own_span('n' + node) if node else None
+        raise TourError('invalid_node', 400)
+
+    def layout(self, segment, source_root):
+        """A level's own words as the book sets them: what an expanded detail shows in place of its lead."""
+        span = self.own_span(segment)
+        if span is None:
+            return {'status': 'empty'}
+        path, start, stop, owner = span
+        with closing(catalog.connect(self.db_path)) as db:
+            return span_layout(db, path, start, stop, Path(source_root), owner)
 
     def lead(self, text):
         if not text:
             return None
         shown, truncated = clip(text, LEAD_LIMIT)
         return {'text': shown, 'truncated': truncated}
+
+    @staticmethod
+    def shaped(view):
+        """A level with more of its own words than its lead shows, or nothing below them, reads as a detail;
+        one whose lead already says all it has before the rows below reads as an index."""
+        lead = view.get('lead')
+        view['shape'] = 'detail' if lead and (lead['truncated'] or not view['groups']) else 'index'
+        return view
 
     # Items: one row in a column, enough to name the node and say what lies below it
 
@@ -356,6 +405,9 @@ class Tour:
     # Views: one column
 
     def view(self, segment):
+        return self.shaped(self.level(segment))
+
+    def level(self, segment):
         if not segment:
             return self.root_view()
         if CONTENTS_SEGMENT.fullmatch(segment):

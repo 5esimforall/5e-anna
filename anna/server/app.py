@@ -207,7 +207,7 @@ class AnnaHandler(serve.Handler):
         if (url.path.startswith('/api/') or url.path == '/source') and not self.server.bundle_intact(self.current):
             self.send(self.stale(), status=409)
             return
-        if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour'}:
+        if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour', '/api/tour-layout'}:
             super().do_GET()
             return
         params = parse_qs(url.query, keep_blank_values=True)
@@ -221,6 +221,10 @@ class AnnaHandler(serve.Handler):
                 if any(len(v) != 1 for v in params.values()):
                     raise TourError('invalid_node', 400)
                 self.send(self.current.tour().view(catalog.first(params, 'node')) | {'snapshot': self.current.snapshot})
+            elif url.path == '/api/tour-layout':
+                if any(len(v) != 1 for v in params.values()):
+                    raise TourError('invalid_node', 400)
+                self.send(self.current.tour().layout(catalog.first(params, 'node'), self.current.source))
             elif url.path == '/api/reader-page':
                 if any(len(v) != 1 for v in params.values()):
                     raise ReaderError('invalid_location', 400)

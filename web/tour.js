@@ -1,7 +1,9 @@
 'use strict';
 /* Anna's tour: where to start and what to read next. Each column is one level of the way down, from a purpose
-   to the book's chapters, steps and entries; choosing a row opens the next level beside it and keeps the levels
-   above in view. Leads quote the source; rows lead on to the next level, to Stella's reading or to Anna's table. */
+   to the book's chapters, steps and entries; choosing a row opens the next level beside it. At most three levels
+   stay open and the ones above them fold into spines on the left. Only the deepest level widens, and only when it
+   reads as a detail: then its own words show as the book sets them, and once a row below it opens it narrows back
+   to its quoted lead. Rows lead on to the next level, to Stella's reading or to Anna's table. */
 const annaTourLabels = {
   zh:{title:'导览', skip:'跳到导览', intro:'从想做的事出发，逐层走进原书的章节、步骤与条目。',
     groups:{choices:'这一步要选择', contents:'目录', outline:'本页', parts:'包含', subclasses:'子职', class:'所属职业',
@@ -9,6 +11,7 @@ const annaTourLabels = {
     facet:'按{field}', readBook:'在 Stella 中阅读', openEntry:'在 Anna 中查看', openQuery:'在 Anna 中查看 {count} 条',
     spellList:'可用法术', more:'另有 {count} 项', moreInAnna:'另有 {count} 项，在 Anna 中查看全部',
     previous:'上一项：{name}', next:'下一项：{name}', back:'‹ {name}', table:'表', versions:'其他版本',
+    rest:'选择一项，它会在这里展开', unfold:'展开「{name}」',
     loading:'正在读取…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
     bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。',
     status:{missing:'未找到对应原文', ambiguous:'原文对应不唯一', placeholder:'分组'},
@@ -19,6 +22,7 @@ const annaTourLabels = {
     facet:'By {field}', readBook:'Read in Stella', openEntry:'Open in Anna', openQuery:'Open {count} in Anna',
     spellList:'Spell list', more:'{count} more', moreInAnna:'{count} more; open them all in Anna',
     previous:'Previous: {name}', next:'Next: {name}', back:'‹ {name}', table:'Table', versions:'Other versions',
+    rest:'Choose an item to open it here', unfold:'Show {name}',
     loading:'Loading…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
     bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.',
     status:{missing:'Source not found', ambiguous:'Source match not unique', placeholder:'Group'},
@@ -30,7 +34,10 @@ const annaTour = (() => {
   const MEMORY = 'anna.tour', SEGMENTS = /^[\w-]+(\.[\w-]+)*$/;
   const columns = document.querySelector('#tour-columns'), notice = document.querySelector('#tour-notice');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const views = new Map();
+  // How many levels stay open side by side; the rest fold. Phones read one level at a time.
+  const roomy = window.matchMedia('(min-width: 1180px)'), phone = window.matchMedia('(max-width: 760px)');
+  const openLevels = () => roomy.matches ? 3 : phone.matches ? 1 : 2;
+  const views = new Map(), layouts = new Map();
   let snapshot = null, path = [], generation = 0, mounted = false, topic = null;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
@@ -51,18 +58,19 @@ const annaTour = (() => {
   class LoadError extends Error {
     constructor(code, status) { super(code); this.code = code; this.status = status; }
   }
-  async function fetchView(segment) {
-    if (views.has(segment)) return views.get(segment);
+  async function load(api, cache, segment) {
+    if (cache.has(segment)) return cache.get(segment);
     const params = new URLSearchParams({node:segment});
     if (snapshot) params.set('snapshot', snapshot);
     let response, body = null;
-    try { response = await fetch('/api/tour?' + params); } catch { throw new LoadError('network', 0); }
+    try { response = await fetch(api + '?' + params); } catch { throw new LoadError('network', 0); }
     try { body = await response.json(); } catch { body = null; }
     if (!response.ok || !body) throw new LoadError(body?.code || 'error', response.status);
     snapshot ||= body.snapshot;
-    views.set(segment, body);
+    cache.set(segment, body);
     return body;
   }
+  const fetchView = segment => load('/api/tour', views, segment);
 
   // One row. Rows that open a level carry the path they lead to; rows that leave for Anna's table do not.
   function item(row, group, index, depth, view) {
@@ -131,31 +139,62 @@ const annaTour = (() => {
       steps(view, depth) + sequence;
   }
 
+  // A folded level keeps a spine that names it; the spine brings it back into view.
   function column(segment, depth) {
     const section = document.createElement('section');
     section.className = 'tour-column'; section.dataset.depth = depth; section.dataset.segment = segment;
     section.setAttribute('aria-labelledby', `tour-title-${depth}`);
     section.setAttribute('aria-busy', 'true');
-    section.innerHTML = `<div class="tour-column-body"><h2 id="tour-title-${depth}">${esc(ui.loading)}</h2></div>`;
+    section.innerHTML = `<button type="button" class="tour-spine"><span>${esc(ui.loading)}</span>${icon}</button><div class="tour-column-body"><h2 id="tour-title-${depth}">${esc(ui.loading)}</h2></div>`;
     return section;
   }
   function render(section, view, depth) {
-    section.dataset.state = 'ready'; section.removeAttribute('aria-busy');
-    section.firstElementChild.innerHTML = body(view, depth);
-    // An entry with no parts of its own is a leaf: show it as the book sets it, in place of the quoted lead.
-    if (view.kind === 'entry' && !view.groups.some(g => g.key === 'parts')) preview(section, view);
+    section.dataset.state = 'ready'; section.dataset.shape = view.shape; section.removeAttribute('aria-busy');
+    const name = view.kind === 'root' ? ui.title : nameOf(view), spine = section.querySelector('.tour-spine');
+    spine.querySelector('span').textContent = name; spine.title = name;
+    spine.setAttribute('aria-label', fill(ui.unfold, {name}));
+    section.querySelector('.tour-column-body').innerHTML = body(view, depth);
   }
-  async function preview(section, view) {
+  // A detail shows its own words as the book sets them while it is the deepest level; its lead stands in for them
+  // while they load, when they cannot be laid out, and once a deeper level opens.
+  async function expand(section) {
+    if (section.dataset.shape !== 'detail' || section.dataset.layout) return;
+    section.dataset.layout = 'loading';
+    const segment = section.dataset.segment;
     let layout = null;
-    try { layout = await (await fetch('/api/entry-layout?id=' + encodeURIComponent(view.id))).json(); } catch { return; }
-    if (layout?.status !== 'ok' || !section.isConnected || section.dataset.segment !== view.id) return;
-    const box = document.createElement('div'); box.className = 'tour-preview layout-text'; box.lang = 'zh-CN'; box.innerHTML = layout.html;
-    const lead = section.querySelector('.tour-lead');
-    lead ? lead.replaceWith(box) : section.querySelector('header').after(box);
+    try { layout = await load('/api/tour-layout', layouts, segment); } catch { layout = null; }
+    if (!section.isConnected || section.dataset.segment !== segment) return;
+    if (layout?.status !== 'ok') { section.dataset.layout = 'none'; return; }
+    const box = document.createElement('div'); box.className = 'tour-body layout-text'; box.lang = 'zh-CN'; box.innerHTML = layout.html;
+    (section.querySelector('.tour-lead') || section.querySelector('.tour-column-body > header')).after(box);
+    section.dataset.layout = 'ready';
   }
   function failed(section, error, depth) {
     section.dataset.state = 'failed'; section.removeAttribute('aria-busy');
-    section.firstElementChild.innerHTML = `<h2 id="tour-title-${depth}">${esc(ui.readError)}</h2><p class="tour-status">${esc(error.code)}<button type="button" class="tour-retry">${esc(ui.retry)}</button></p>`;
+    section.querySelector('.tour-column-body').innerHTML = `<h2 id="tour-title-${depth}">${esc(ui.readError)}</h2><p class="tour-status">${esc(error.code)}<button type="button" class="tour-retry">${esc(ui.retry)}</button></p>`;
+  }
+  function keepCurrent(section) {
+    const row = section.querySelector('.tour-item[aria-current=true]');
+    if (!row) return;
+    const top = row.getBoundingClientRect().top - section.getBoundingClientRect().top;
+    if (top < 0 || top + row.offsetHeight > section.clientHeight) section.scrollTop = Math.max(0, section.scrollTop + top - section.clientHeight / 3);
+  }
+  // Places each level: the deepest is last, up to two more stay open beside it, and the rest fold.
+  function arrange() {
+    const sections = [...columns.children], open = openLevels();
+    sections.forEach((section, i) => {
+      const place = i === sections.length - 1 ? 'last' : i < sections.length - open ? 'folded' : 'open';
+      const was = section.dataset.place;
+      section.dataset.place = place;
+      // A detail that narrows back to its lead keeps the row it opened in view.
+      if (was === 'last' && place === 'open') keepCurrent(section);
+      // One that widens again reads from the start of its own words.
+      if (was && was !== 'last' && place === 'last' && section.dataset.shape === 'detail') section.scrollTop = 0;
+    });
+    const last = sections.at(-1);
+    if (last?.dataset.state === 'ready' && last.dataset.shape === 'index' && !phone.matches) columns.dataset.rest = ui.rest;
+    else delete columns.dataset.rest;
+    if (last?.dataset.place === 'last') expand(last);
   }
   function say(message) { notice.textContent = message; notice.hidden = !message; }
 
@@ -183,6 +222,7 @@ const annaTour = (() => {
       columns.scrollTo({left:Math.max(0, right - columns.clientWidth), behavior:reduced.matches ? 'auto' : 'smooth'});
   }
   function focusLevel(section) {
+    if (section?.dataset.place === 'folded') { section.querySelector('.tour-spine').focus(); return; }
     const target = section?.querySelector('.tour-item[aria-current=true]') || section?.querySelector('.tour-item') || section?.querySelector('h2');
     if (!target) return;
     if (target.matches('h2')) { target.tabIndex = -1; }
@@ -200,7 +240,7 @@ const annaTour = (() => {
     while (keep < existing.length && keep < wanted.length && existing[keep].dataset.segment === wanted[keep] && existing[keep].dataset.state === 'ready') keep++;
     existing.slice(keep).forEach(section => section.remove());
     const fresh = wanted.slice(keep).map((segment, i) => columns.appendChild(column(segment, keep + i)));
-    markCurrent(); reveal();
+    markCurrent(); arrange(); reveal();
     const loaded = await Promise.allSettled(wanted.slice(keep).map(fetchView));
     if (run !== generation) return;
     for (const [i, result] of loaded.entries()) {
@@ -221,9 +261,11 @@ const annaTour = (() => {
       fresh.slice(i + 1).forEach(rest => rest.remove());
       break;
     }
-    markCurrent(); reveal();
+    markCurrent(); arrange(); reveal();
+    fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
     settle();
     if (options.focus === 'new') focusLevel(columns.lastElementChild);
+    else if (Number.isInteger(options.focus)) focusLevel(columns.children[options.focus]);
   }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
   function settle() {
@@ -252,7 +294,9 @@ const annaTour = (() => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     const retry = event.target.closest('.tour-retry');
     if (retry) { show(path); return; }
-    // A reference inside a previewed entry opens its definition as the next level.
+    const spine = event.target.closest('.tour-spine');
+    if (spine) { unfold(spine.closest('.tour-column')); return; }
+    // A reference inside a detail's own words opens its definition as the next level.
     const ref = event.target.closest('button.ref[data-entry]');
     if (ref) { go([...path.slice(0, Number(ref.closest('.tour-column').dataset.depth)), ref.dataset.entry], {focus:'new'}); return; }
     const link = event.target.closest('a[data-at]');
@@ -261,7 +305,19 @@ const annaTour = (() => {
     if (link.getAttribute('aria-disabled') === 'true') return;
     go(segmentsOf(new URL(link.href).search));
   });
+  // Unfolding a level closes just enough levels below it to bring it back among the open ones.
+  function unfold(section) {
+    const depth = Number(section.dataset.depth);
+    go(path.slice(0, depth + openLevels() - 1), {focus:depth});
+  }
   columns.addEventListener('keydown', event => {
+    const spine = event.target.closest('.tour-spine');
+    if (spine && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      const section = spine.closest('.tour-column');
+      const target = event.key === 'ArrowLeft' ? section.previousElementSibling : section.nextElementSibling;
+      if (target) { event.preventDefault(); focusLevel(target); }
+      return;
+    }
     const link = event.target.closest('.tour-item');
     if (!link || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const section = link.closest('.tour-column'), items = [...section.querySelectorAll('.tour-item')];
@@ -287,6 +343,7 @@ const annaTour = (() => {
     target.focus();
   });
   window.addEventListener('popstate', () => show(segmentsOf(location.search)));
+  for (const query of [roomy, phone]) query.addEventListener('change', () => { arrange(); reveal(); });
 
   const start = segmentsOf(location.search);
   history.replaceState({tour:start.join('.')}, '', tourHref(start));

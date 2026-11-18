@@ -1,4 +1,5 @@
-/* Anna's tour on the real corpus: levels opened beside each other, keyboard travel, history and narrow screens. */
+/* Anna's tour on the real corpus: levels opened beside each other, folding and widening, keyboard travel, history
+   and narrow screens. */
 const {test:base,expect}=require('@playwright/test');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
 const anna=`http://127.0.0.1:${port}`;
@@ -26,9 +27,16 @@ test('a newcomer walks from a purpose to the steps, a step’s checklist and the
   await expect(steps).toHaveCount(5);
   await expect(steps.locator('.tour-step')).toHaveText(['1','2','3','4','5']);
   await expect(steps.first().locator('.tour-item-hint')).toHaveText('选择一个职业，把它写在你的角色卡上。');
-  await expect(level(page,1).locator('.tour-lead')).toContainText('下面是创建角色的步骤');
+  // The deepest level reads as a detail: its own words as the book sets them, in place of the quoted lead.
+  await expect(level(page,1).locator('.tour-body')).toContainText('下面是创建角色的步骤');
+  await expect(level(page,1).locator('.tour-lead')).toBeHidden();
   await expect(level(page,1).locator('.tour-go').first()).toHaveAttribute('href',/^\/read\?root=\d+$/);
   await steps.first().click();await ready(page,2);
+  // Once a step opens, the detail narrows back to its lead and the step, an index, stays narrow beside it.
+  await expect(level(page,1).locator('.tour-body')).toBeHidden();
+  await expect(level(page,1).locator('.tour-lead')).toContainText('下面是创建角色的步骤');
+  await expect(level(page,2)).toHaveAttribute('data-shape','index');
+  await expect(page.locator('#tour-columns')).toHaveAttribute('data-rest','选择一项，它会在这里展开');
   await expect(row(page,0,'创建角色')).toHaveAttribute('aria-current','true');
   await expect(steps.first()).toHaveAttribute('aria-current','true');
   await expect(level(page,2).locator('[data-group=choices] .tour-item-title')).toHaveText(['职业']);
@@ -36,8 +44,8 @@ test('a newcomer walks from a purpose to the steps, a step’s checklist and the
   await expect(table.locator('.tour-tag')).toHaveText('表');
   await table.click();await ready(page,3);
   // A leaf entry is shown as the book sets it, and becomes the topic Stella turns to.
-  await expect(level(page,3).locator('.tour-preview table')).toBeVisible();
-  await expect(level(page,3).locator('.tour-preview')).toContainText('野蛮人');
+  await expect(level(page,3).locator('.tour-body table')).toBeVisible();
+  await expect(level(page,3).locator('.tour-body')).toContainText('野蛮人');
   await expect(page.locator('.companion-go')).toHaveAccessibleName(/^5e Stella：翻到 职业简介/);
   // The next step replaces the step column without climbing back up.
   await page.goBack();await ready(page,2);
@@ -49,6 +57,39 @@ test('a newcomer walks from a purpose to the steps, a step’s checklist and the
   await expect(level(page,2).locator('h2')).toHaveText('第一步：选择职业');
   await page.reload();await ready(page,2);
   await expect(level(page,2).locator('h2')).toHaveText('第一步：选择职业');
+});
+
+test('three levels stay open; the ones above fold into spines that bring them back',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  await row(page,2,'职业简介Class Overview').click();await ready(page,3);
+  await expect(level(page,0)).toHaveAttribute('data-place','folded');
+  await expect(level(page,0).locator('.tour-column-body')).toBeHidden();
+  const spine=level(page,0).locator('.tour-spine');
+  await expect(spine).toHaveAccessibleName('展开「导览」');
+  const width=depth=>level(page,depth).evaluate(e=>e.getBoundingClientRect().width);
+  // Only the deepest level widens; the open levels above it keep the index width.
+  await expect.poll(()=>width(0)).toBeLessThan(60);
+  await expect.poll(async()=>await width(1)-await width(2)).toBe(0);
+  await expect.poll(async()=>await width(3)-2*await width(2)).toBeGreaterThan(0);
+  await expect(page.locator('#tour-columns')).not.toHaveAttribute('data-rest',/./);
+  // From the shallowest open level, ← reaches the spine; choosing it closes just enough levels to show it again.
+  await row(page,1,'第一步：选择职业').focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(spine).toBeFocused();
+  await page.keyboard.press('Enter');await ready(page,2);
+  expect(at(page)).toBe('create.n924');
+  await expect(level(page,0)).toHaveAttribute('data-place','open');
+  await expect(row(page,0,'创建角色')).toBeFocused();
+  await page.goBack();await ready(page,3);
+  // A narrower window keeps two levels open.
+  await page.setViewportSize({width:1000,height:800});
+  await expect(level(page,1)).toHaveAttribute('data-place','folded');
+  await expect(level(page,2)).toHaveAttribute('data-place','open');
+  await level(page,1).locator('.tour-spine').click();await ready(page,2);
+  expect(at(page)).toBe('create.n924');
+  await expect(level(page,1)).toHaveAttribute('data-place','open');
+  await expect(level(page,0)).toHaveAttribute('data-place','folded');
 });
 
 test('arrow keys move within a level, open the next and return to the row that opened it',async({page})=>{

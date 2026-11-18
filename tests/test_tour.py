@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 
+from anna import paths
 from anna.presentation import catalog, tour
 from anna.presentation.tour import Tour, TourError, clip, first_sentence, load
 from anna.server.app import create_server
@@ -224,12 +225,34 @@ class TourTests(unittest.TestCase):
         background = self.tour.view('ver_d1')
         self.assertEqual([i['id'] for i in self.items(background, 'feats')], ['ver_d2'])
 
+    def test_a_level_reads_as_a_detail_when_its_own_words_outrun_its_lead(self):
+        shapes = {s: self.tour.view(s)['shape'] for s in ('', 'create', 'n13', 'ver_b1', 'ver_d1', 'ver_a2', 'ver_a3')}
+        # Levels whose lead already says everything before their rows are indexes; leaves read as details.
+        self.assertEqual(shapes, {'': 'index', 'create': 'index', 'n13': 'index', 'ver_b1': 'index',
+                                  'ver_d1': 'index', 'ver_a2': 'detail', 'ver_a3': 'detail'})
+        parted = {'lead': {'text': '学术派奥术施法者。', 'truncated': True}, 'groups': [{'key': 'parts', 'items': []}]}
+        self.assertEqual(Tour.shaped(parted)['shape'], 'detail')
+
+    def test_a_levels_own_words_are_the_range_its_lead_quotes(self):
+        for segment in ('n3', 'n13', 'wizard', 'ver_b1', 'ver_a3'):
+            with self.subTest(segment=segment):
+                self.assertEqual(self.tour.span_text(self.tour.own_span(segment)), self.tour.view(segment)['lead']['text'])
+        # An entry's own words stop where its first part begins, and its own references are not links.
+        self.assertEqual(self.tour.own_span('ver_b1'), ('topics/wizard.htm', WIZARD.index('\n', WIZARD.index('法师')), WIZARD.index('1级'), 'ver_b1'))
+        source = Path(self.tmp.name) / 'source'
+        for segment in ('', 'spells', 'gone', 'twin'):
+            with self.subTest(segment=segment):
+                self.assertIsNone(self.tour.own_span(segment))
+                self.assertEqual(self.tour.layout(segment, source), {'status': 'empty'})
+        self.assertEqual(self.tour.layout('ver_a3', source), {'status': 'missing', 'path': 'topics/step1.htm'})
+
     def test_unknown_and_malformed_nodes_are_explicit(self):
         for segment, code, status in [('bad.seg', 'invalid_node', 400), ('N13', 'invalid_node', 400), ('n999', 'node_missing', 404),
                                       ('ver_ffff', 'node_missing', 404), ('nope', 'node_missing', 404)]:
-            with self.subTest(segment=segment), self.assertRaises(TourError) as caught:
-                self.tour.view(segment)
-            self.assertEqual((caught.exception.code, caught.exception.status), (code, status))
+            for ask in (self.tour.view, lambda segment: self.tour.layout(segment, Path(self.tmp.name))):
+                with self.subTest(segment=segment, ask=ask), self.assertRaises(TourError) as caught:
+                    ask(segment)
+                self.assertEqual((caught.exception.code, caught.exception.status), (code, status))
 
 
 class RouteTests(unittest.TestCase):
@@ -257,6 +280,12 @@ class RouteTests(unittest.TestCase):
                 self.assertEqual(self.request(server, '/api/tour?node=n13&node=n15'), (400, {'code': 'invalid_node'}))
                 self.assertEqual(self.request(server, '/api/tour?node=n999'), (404, {'code': 'node_missing'}))
                 self.assertEqual(self.request(server, '/api/tour?node=n13&snapshot=old'), (409, {'code': 'snapshot_changed'}))
+                self.assertEqual(self.request(server, '/api/tour-layout?node=ver_a3'), (200, {'status': 'missing', 'path': 'topics/step1.htm'}))
+                self.assertEqual(self.request(server, '/api/tour-layout?node='), (200, {'status': 'empty'}))
+                self.assertEqual(self.request(server, '/api/tour-layout?node=bad.seg'), (400, {'code': 'invalid_node'}))
+                self.assertEqual(self.request(server, '/api/tour-layout?node=n13&node=n15'), (400, {'code': 'invalid_node'}))
+                self.assertEqual(self.request(server, '/api/tour-layout?node=n999'), (404, {'code': 'node_missing'}))
+                self.assertEqual(self.request(server, '/api/tour-layout?node=n13&snapshot=old'), (409, {'code': 'snapshot_changed'}))
             finally:
                 server.shutdown(); server.server_close(); thread.join()
 
@@ -317,6 +346,15 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(spells['query'], {'type': ['spell'], 'f_spell_classes': ['法师'], 'ruleset': ['5r']})
         self.assertEqual(spells['count'], catalog.query(self.db, spells['query'])['versions_total'])
         self.assertEqual(view['trail'][0], '玩家手册2024')
+
+    def test_a_detail_lays_out_its_own_words_and_an_index_stays_a_list(self):
+        create = self.tour.view('create')
+        self.assertEqual(create['shape'], 'detail')
+        layout = self.tour.layout('create', paths.WEB)
+        self.assertEqual(layout['status'], 'ok')
+        self.assertIn('选择职业', layout['html'])
+        self.assertEqual([self.tour.view(s['id'])['shape'] for s in self.items(create, 'contents')], ['index'] * 5)
+        self.assertEqual({self.tour.view(k)['shape'] for k in ('classes', 'spells', 'monsters')}, {'index'})
 
 
 if __name__ == '__main__':

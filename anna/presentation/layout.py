@@ -166,18 +166,47 @@ def text_start(entry):
     return entry['title_end'] if entry['start']<entry.get('title_end',entry['start'])<entry['end'] else entry['start']
 
 
+def open_page(db, path, source_root):
+    """The source page as the build read it, or why it cannot be laid out: missing, or changed since the build."""
+    page = db.execute('SELECT text, sha256 FROM pages WHERE path=?',(path,)).fetchone()
+    source = source_root/path
+    if not page or not source.is_file():return None,'missing'
+    raw,_,sha = read_page(source)
+    if sha!=page[1]:return None,'stale'
+    doc = Document(path,raw)
+    if doc.text!=page[0]:
+        doc.close();return None,'stale'
+    return doc,'ok'
+
+
+def reference_layers(db, path, start, end, owner=None):
+    """Resolved references within a range, each pointing at an entry other than the one being read."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():return []
+    layers = []
+    for (data,) in db.execute('SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id',(path,start,end)):
+        r = json.loads(data)
+        if r.get('target_id') and r['target_id']!=owner and r['end']>r['start']:layers.append((r['start'],r['end'],'ref',r['target_id']))
+    return layers
+
+
+def span_layout(db, path, start, end, source_root, owner=None):
+    """A range of one page as the book sets it, with resolved references marked and no field notes."""
+    doc,status = open_page(db,path,source_root)
+    if doc is None:return {'status':status,'path':path}
+    try:
+        body = render(doc,start,end,reference_layers(db,path,start,end,owner))
+    finally:
+        doc.close()
+    return {'status':'ok','path':path,'html':body} if body.strip() else {'status':'empty','path':path}
+
+
 def entry_layout(db, entry_id, source_root):
     row = db.execute('SELECT data FROM entries WHERE id=?',(entry_id,)).fetchone()
     if not row:raise LookupError('条目不存在')
     e = json.loads(row[0]);path = e['page_path']
-    page = db.execute('SELECT text, sha256 FROM pages WHERE path=?',(path,)).fetchone()
-    source = source_root/path
-    if not page or not source.is_file():return {'status':'missing','path':path}
-    raw,_,sha = read_page(source)
-    if sha!=page[1]:return {'status':'stale','path':path}
-    doc = Document(path,raw)
+    doc,status = open_page(db,path,source_root)
+    if doc is None:return {'status':status,'path':path}
     try:
-        if doc.text!=page[0]:return {'status':'stale','path':path}
         start,end = e['start'],e['end']
         body_start = text_start(e)
         facts = []
@@ -187,10 +216,7 @@ def entry_layout(db, entry_id, source_root):
             located = bool(span and start<=span[0]<span[1]<=end and doc.text[span[0]:span[1]].strip())
             facts.append({'field':field,'value':json.loads(value),'rule':rule,'status':status,'span':span if located else None})
         layers = [(f['span'][0],f['span'][1],'note',f) for f in facts if f['span']]
-        if db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():
-            for (data,) in db.execute('SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id',(path,body_start,end)):
-                r = json.loads(data)
-                if r.get('target_id') and r['target_id']!=entry_id and r['end']>r['start']:layers.append((r['start'],r['end'],'ref',r['target_id']))
+        layers += reference_layers(db,path,body_start,end,entry_id)
         body = render(doc,body_start,end,layers)
     finally:
         doc.close()

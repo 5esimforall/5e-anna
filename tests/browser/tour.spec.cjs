@@ -73,11 +73,9 @@ test('three levels stay open; the ones above fold into spines that bring them ba
   await expect.poll(async()=>await width(1)-await width(2)).toBe(0);
   await expect.poll(async()=>await width(3)-1.5*await width(2)).toBeGreaterThan(0);
   await expect(page.locator('#tour-columns')).not.toHaveAttribute('data-rest',/./);
-  // From the shallowest open level, ← reaches the spine; choosing it closes just enough levels to show it again.
+  // From the shallowest open level, ← unfolds the level above, closing just enough levels to show it again.
   await row(page,1,'第一步：选择职业').focus();
-  await page.keyboard.press('ArrowLeft');
-  await expect(spine).toBeFocused();
-  await page.keyboard.press('Enter');await ready(page,2);
+  await page.keyboard.press('ArrowLeft');await ready(page,2);
   expect(at(page)).toBe('create.n924');
   await expect(level(page,0)).toHaveAttribute('data-place','open');
   await expect(row(page,0,'创建角色')).toBeFocused();
@@ -155,29 +153,38 @@ test('a slow level keeps the levels it replaces until it shows that it is loadin
   await expect(level(page,2).locator('h2')).toHaveText('第二步：确定起源');
 });
 
-test('the keys follow the levels: → enters, ← climbs, and a detail is read before its rows',async({page})=>{
+test('the keys move through the levels like a file manager’s columns: the focused row is the open one',async({page})=>{
   await page.goto(anna+'/tour');await ready(page,0);
   const first=level(page,0).locator('.tour-item').first();
   await expect(first).toHaveAttribute('tabindex','0');
   await first.focus();
-  // Entering a detail lands on its text; → moves on to its rows, and ↑ from the first row returns to the text.
+  // Entering a detail lands on its text; → moves on to its rows and opens the first one.
   await page.keyboard.press('ArrowRight');await ready(page,1);
   expect(at(page)).toBe('create');
   await expect(level(page,1)).toBeFocused();
-  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');await ready(page,2);
   await expect(level(page,1).locator('.tour-item').first()).toBeFocused();
-  await page.keyboard.press('ArrowUp');
+  expect(at(page)).toBe('create.n924');
+  // ↑ from the first row returns to the text, closing the level beside so the detail widens again.
+  await page.keyboard.press('ArrowUp');await ready(page,1);
   await expect(level(page,1)).toBeFocused();
-  await page.keyboard.press('ArrowRight');
+  await expect(level(page,1).locator('.tour-body')).toBeVisible();
+  // Moving onto a row opens it.
+  await page.keyboard.press('ArrowRight');await ready(page,2);
   await page.keyboard.press('ArrowDown');
   await expect(level(page,1).locator('.tour-item').nth(1)).toBeFocused();
-  // Entering an index lands on its first row.
-  await page.keyboard.press('ArrowRight');await ready(page,2);
   await expect(level(page,2).locator('h2')).toHaveText('第二步：确定起源');
-  await expect(level(page,2).locator('.tour-item').first()).toBeFocused();
+  // Enter, like →, enters an index on its first row, which opens in turn; the first level folds.
+  await page.keyboard.press('Enter');await ready(page,3);
+  const origin=level(page,2).locator('.tour-item').first();
+  await expect(origin).toBeFocused();
+  await expect(origin).toHaveAttribute('aria-current','true');
+  await expect(level(page,0)).toHaveAttribute('data-place','folded');
+  // ← climbs onto the row that opened the level, and a folded level unfolds to take the focus.
   await page.keyboard.press('ArrowLeft');
   await expect(row(page,1,'第二步：确定起源')).toBeFocused();
-  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');await ready(page,2);
+  expect(at(page)).toBe('create.n925');
   await expect(first).toBeFocused();
   // Only one row per level waits in the Tab order.
   await expect(level(page,1).locator('.tour-item[tabindex="0"]')).toHaveCount(1);
@@ -190,32 +197,56 @@ test('the keys follow the levels: → enters, ← climbs, and a detail is read b
   await expect(row(page,2,'职业简介Class Overview')).toBeFocused();
 });
 
-test('once a level is open beside, ↑↓ keep it in step, Space reads on in it and Escape closes it',async({page})=>{
+test('moving onto a row opens it beside, a held key opens where it rests, Space reads on and Escape closes',async({page})=>{
   await page.goto(anna+'/tour?at=classes');await ready(page,1);
   const barbarian=row(page,1,'野蛮人'), bard=row(page,1,'吟游诗人');
   await barbarian.focus();
-  await page.keyboard.press('Enter');await ready(page,2);
-  await expect(barbarian).toBeFocused();
   const steps=await page.evaluate(()=>history.length);
-  await page.keyboard.press('ArrowDown');
+  // A level opened past the deepest one is a step in history; moving on replaces it instead of adding one per row.
+  await page.keyboard.press('ArrowDown');await ready(page,2);
   await expect(level(page,2).locator('h2')).toHaveText('吟游诗人');
   await expect(bard).toHaveAttribute('aria-current','true');
   await expect(bard).toBeFocused();
-  // Following replaces the history step instead of adding one per row passed.
-  expect(await page.evaluate(()=>history.length)).toBe(steps);
+  await page.keyboard.press('ArrowUp');
+  await expect(level(page,2).locator('h2')).toHaveText('野蛮人');
+  await expect(barbarian).toHaveAttribute('aria-current','true');
+  await page.keyboard.press('ArrowDown');
+  await expect(level(page,2).locator('h2')).toHaveText('吟游诗人');
+  expect(await page.evaluate(()=>history.length)).toBe(steps+1);
+  // Holding ↓ passes over rows without opening them, and opens the row it rests on once released.
+  const asked=[];
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/tour')asked.push(url.searchParams.get('node'));});
+  const passed=await row(page,1,'德鲁伊').getAttribute('data-segment');
+  for(let i=0;i<3;i++)await page.keyboard.down('ArrowDown');
+  await expect(row(page,1,'战士')).toBeFocused();
+  await page.keyboard.up('ArrowDown');
+  await expect(level(page,2).locator('h2')).toHaveText('战士');
+  await expect(row(page,1,'战士')).toHaveAttribute('aria-current','true');
+  expect(asked).not.toContain(passed);
+  expect(await page.evaluate(()=>history.length)).toBe(steps+1);
   const scrolled=()=>level(page,2).evaluate(e=>e.scrollTop);
   await page.keyboard.press('Space');
   await expect.poll(scrolled).toBeGreaterThan(0);
-  await expect(bard).toBeFocused();
+  await expect(row(page,1,'战士')).toBeFocused();
   await page.keyboard.press('Shift+Space');
   await expect.poll(scrolled).toBe(0);
   await page.keyboard.press('Escape');await ready(page,1);
   expect(at(page)).toBe('classes');
-  await expect(bard).toBeFocused();
-  // With nothing open beside it, moving through a level opens nothing.
-  await page.keyboard.press('ArrowDown');
-  await page.waitForTimeout(400);
-  await expect(page.locator('.tour-column')).toHaveCount(2);
+  await expect(row(page,1,'战士')).toBeFocused();
+  await expect(row(page,1,'战士')).not.toHaveAttribute('aria-current','true');
+});
+
+test('moving onto a row that leads to Anna closes the levels beside it',async({page})=>{
+  await page.goto(anna+'/tour?at=ver_46fd8d38c8840ad0d29b58ab');await ready(page,1);
+  const subclasses=level(page,1).locator('[data-group=subclasses] .tour-item');
+  await subclasses.first().focus();
+  await page.keyboard.press('ArrowDown');await ready(page,2);
+  await expect(subclasses.nth(1)).toHaveAttribute('aria-current','true');
+  // The spell list hands over to Anna's table, so nothing stays open beside it.
+  const spells=level(page,1).locator('[data-group=spells] .tour-item');
+  await page.keyboard.press('End');await ready(page,1);
+  await expect(spells).toBeFocused();
+  expect(at(page)).toBe('ver_46fd8d38c8840ad0d29b58ab');
 });
 
 test('a class opens onto its subclasses and its spell list in Anna',async({page})=>{
@@ -269,4 +300,12 @@ test('a phone shows one level with the way back, in either theme',async({page})=
   await page.keyboard.press('ArrowLeft');await ready(page,1);
   expect(at(page)).toBe('create');
   await expect(row(page,1,'第一步：选择职业')).toBeFocused();
+  // Moving opens nothing when it would replace the level in view; Enter goes into the row's level.
+  await page.keyboard.press('ArrowDown');
+  await page.waitForTimeout(400);
+  await expect(page.locator('.tour-column')).toHaveCount(2);
+  await page.keyboard.press('Enter');await ready(page,2);
+  expect(at(page)).toBe('create.n925');
+  await expect(level(page,2).locator('.tour-item').first()).toBeFocused();
+  await expect(page.locator('.tour-column')).toHaveCount(3);
 });

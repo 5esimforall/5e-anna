@@ -38,14 +38,17 @@ const annaTour = (() => {
   // How many levels stay open side by side; the rest fold. Phones read one level at a time.
   const roomy = window.matchMedia('(min-width: 1280px)'), phone = window.matchMedia('(max-width: 760px)');
   const openLevels = () => roomy.matches ? 3 : phone.matches ? 1 : 2;
-  // A level whose next level is open keeps it in step with the focused row, once the focus rests there this long.
+  // A held key passes over rows; the row it rests on opens once the key is released or after this long.
   const FOLLOW_DELAY = 150;
   // Levels that answer within this time open in one step; slower ones first show that they are loading.
   const LOADING_DELAY = 180;
   // How long the columns take to reach their new widths, on the shared easing curve.
   const MOVE_TIME = 200, ease = getComputedStyle(document.documentElement).getPropertyValue('--anna-ease').trim() || 'ease-out';
   const views = new Map(), layouts = new Map(), reading = new WeakMap(), motions = new WeakMap();
-  let snapshot = null, path = [], generation = 0, mounted = false, topic = null, following = 0;
+  /* `shown` is the generation whose levels are in place; `landing` is where the focus goes once the levels on their
+     way are. `openOnRest` opens the row a held key rests on, when the key is released or `restTimer` runs out. */
+  let snapshot = null, path = [], generation = 0, shown = 0, landing = null, mounted = false, topic = null;
+  let restTimer = 0, openOnRest = null;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
   const fill = (template, values) => Object.entries(values).reduce((s, [k, v]) => s.replaceAll('{' + k + '}', v), template);
@@ -259,12 +262,15 @@ const annaTour = (() => {
       columns.scrollTo({left:Math.max(0, right - columns.clientWidth), behavior:reduced.matches ? 'auto' : 'smooth'});
   }
   /* Focus has two places in a level: its rows, where the reader chooses, and, in the deepest level when it is a
-     detail, the column itself, where the reader reads and the arrow keys scroll the text. Entering a level from the
-     left lands where it starts: a detail's text, otherwise the row it opened before or its first row. */
+     detail, the column itself, where the reader reads and the arrow keys scroll the text. As in a file manager's
+     columns, the row holding the focus is the one open beside its level: moving onto a row opens it. Entering a
+     level from the left lands where it starts: a detail's text, otherwise the row it opened before or its first
+     row, which opens in turn. */
   const deepest = () => columns.lastElementChild;
-  const readable = section => section === deepest() && section.dataset.shape === 'detail' && section.dataset.state === 'ready';
+  const detailReady = section => section.dataset.shape === 'detail' && section.dataset.state === 'ready';
+  const readable = section => section === deepest() && detailReady(section);
   const opens = link => link.hasAttribute('data-at') && link.getAttribute('aria-disabled') !== 'true';
-  function focusRows(section) {
+  function focusRows(section, open = false) {
     if (!section) return;
     if (section.dataset.place === 'folded') { section.querySelector('.tour-spine').focus(); return; }
     const target = section.querySelector('.tour-item[aria-current=true]') || section.querySelector('.tour-item[tabindex="0"]') ||
@@ -274,17 +280,43 @@ const annaTour = (() => {
     else section.querySelectorAll('.tour-item').forEach(link => { link.tabIndex = link === target ? 0 : -1; });
     target.focus({preventScroll:true});
     target.scrollIntoView({block:'nearest'});
+    if (open && target.matches('.tour-item')) follow(target);
   }
   function focusReading(section) {
     section.tabIndex = -1;
     section.focus({preventScroll:true});
   }
-  function enter(section) {
+  function enter(section, open = false) {
     if (section && readable(section)) focusReading(section);
-    else focusRows(section);
+    else focusRows(section, open);
+  }
+  // A detail's text lies above its first row; reading it again closes the levels beside it, so it widens.
+  function read(section) {
+    const depth = Number(section.dataset.depth);
+    if (section === deepest()) focusReading(section);
+    else go(path.slice(0, depth), {replace:true, focus:{depth, enter:true}});
+  }
+  // Places the focus once the levels being shown are in place: at once when none are on their way.
+  function aim(focus) {
+    landing = focus;
+    if (shown === generation) land();
+  }
+  function land() {
+    const focus = landing;
+    landing = null;
+    if (focus === 'kept') keepFocus();
+    else if (focus) focus.enter ? enter(columns.children[focus.depth], focus.open) : focusRows(columns.children[focus.depth]);
+  }
+  // Going back or forward through history keeps the focus in the tour: on the open row of a level that stays,
+  // otherwise where the deepest level starts.
+  function keepFocus() {
+    const active = document.activeElement;
+    if (!columns.contains(active)) { enter(deepest()); return; }
+    const row = active.closest('.tour-item'), section = row?.closest('.tour-column');
+    if (section?.querySelector('.tour-item[aria-current=true]') && row.getAttribute('aria-current') !== 'true') focusRows(section);
   }
 
-  async function show(segments, options = {}) {
+  async function show(segments) {
     const run = ++generation, wanted = ['', ...segments];
     path = segments;
     say('');
@@ -312,7 +344,7 @@ const annaTour = (() => {
       if (error.status === 404 && depth > 0) {
         const kept = segments.slice(0, depth - 1);
         history.replaceState({tour:kept.join('.')}, '', tourHref(kept));
-        await show(kept, options);
+        await show(kept);
         if (run + 1 === generation) say(ui.nodeMissing);
         return;
       }
@@ -331,10 +363,8 @@ const annaTour = (() => {
     }
     fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
     settle();
-    if (options.focus === 'new') enter(deepest());
-    else if (Number.isInteger(options.focus)) focusRows(columns.children[options.focus]);
-    // Going back or forward through history keeps the focus in the tour when the level holding it closed.
-    else if (options.focus === 'kept' && !columns.contains(document.activeElement)) enter(deepest());
+    shown = run;
+    land();
     return moved;
   }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
@@ -351,14 +381,17 @@ const annaTour = (() => {
     if (shown && topic !== shown.id) annaWorkspace.update(snapshot, state => annaWorkspace.setTopic(state, {entry:shown.id, name:shown.title, from:'query', at:Date.now()}));
     topic = shown?.id || null;
   }
-  // Opening a level is a step in history; a level that only follows the focused row replaces the step it follows.
+  // Opening a level is a step in history; `replace` changes the current step instead. `focus` is where the focus
+  // lands once the levels are in place: `depth` names the level, `enter` enters it rather than its rows, and `open`
+  // opens the row it lands on.
   function go(segments, options = {}) {
     if (segments.join('.') === path.join('.')) {
-      if (options.focus === 'new') enter(deepest());
+      if (options.focus) aim(options.focus);
       return;
     }
+    landing = options.focus ?? null;
     history[options.replace ? 'replaceState' : 'pushState']({tour:segments.join('.')}, '', tourHref(segments));
-    return show(segments, options);
+    return show(segments);
   }
 
   columns.addEventListener('click', event => {
@@ -369,7 +402,11 @@ const annaTour = (() => {
     if (spine) { unfold(spine.closest('.tour-column')); return; }
     // A reference inside a detail's own words opens its definition as the next level.
     const ref = event.target.closest('button.ref[data-entry]');
-    if (ref) { go([...path.slice(0, Number(ref.closest('.tour-column').dataset.depth)), ref.dataset.entry], {focus:'new'}); return; }
+    if (ref) {
+      const depth = Number(ref.closest('.tour-column').dataset.depth);
+      go([...path.slice(0, depth), ref.dataset.entry], {focus:{depth:depth + 1, enter:true}});
+      return;
+    }
     const link = event.target.closest('a[data-at]');
     if (!link) return;
     event.preventDefault();
@@ -379,21 +416,36 @@ const annaTour = (() => {
   // Unfolding a level closes just enough levels below it to bring it back among the open ones.
   function unfold(section) {
     const depth = Number(section.dataset.depth);
-    go(path.slice(0, depth + openLevels() - 1), {focus:depth});
+    go(path.slice(0, depth + openLevels() - 1), {focus:{depth}});
   }
-  // ← climbs to the level above: beside this one, or, where only one level shows, back to it.
+  // ← climbs to the row that opened this level. A folded level above unfolds to take the focus; where only one
+  // level shows, every level above is folded, so climbing goes back to it.
   function climb(section) {
-    const depth = Number(section.dataset.depth);
-    if (depth === 0) return;
-    if (openLevels() === 1) go(path.slice(0, depth - 1), {focus:depth - 1});
-    else focusRows(section.previousElementSibling);
+    const above = section.previousElementSibling;
+    if (!above) return;
+    if (above.dataset.place === 'folded') unfold(above);
+    else focusRows(above);
   }
-  function follow(link) {
-    const section = link.closest('.tour-column');
-    if (!opens(link) || section === deepest() || link.getAttribute('aria-current') === 'true') return;
-    following = setTimeout(() => {
-      if (document.activeElement === link && link.isConnected) go(segmentsOf(new URL(link.href).search), {replace:true});
-    }, FOLLOW_DELAY);
+  /* Moving onto a row opens it: its level beside, or, for a row that leads elsewhere, no level beside. A level opened
+     past the deepest one is a step in history; changing the levels already open replaces the step. A held key
+     opens only the row it rests on. Where one level shows at a time, moving opens nothing. */
+  function follow(link, held = false) {
+    stopFollowing();
+    if (openLevels() === 1) return;
+    const open = () => {
+      openOnRest = null;
+      if (document.activeElement !== link || !link.isConnected || link.getAttribute('aria-current') === 'true') return;
+      const depth = Number(link.closest('.tour-column').dataset.depth);
+      const segments = opens(link) ? segmentsOf(new URL(link.href).search) : path.slice(0, depth);
+      go(segments, {replace:segments.length <= path.length});
+    };
+    if (!held) { open(); return; }
+    openOnRest = open;
+    restTimer = setTimeout(open, FOLLOW_DELAY);
+  }
+  function stopFollowing() {
+    clearTimeout(restTimer);
+    openOnRest = null;
   }
   // From a level to the left, Space and Page Up/Down read on in the deepest level without leaving the rows.
   function readOn(event, section) {
@@ -410,15 +462,17 @@ const annaTour = (() => {
     return true;
   }
   columns.addEventListener('keydown', event => {
-    clearTimeout(following);
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    stopFollowing();
+    if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
     const section = event.target.closest('.tour-column');
     if (!section) return;
     const depth = Number(section.dataset.depth);
     const spine = event.target.closest('.tour-spine');
     if (spine) {
-      const target = event.key === 'ArrowLeft' ? section.previousElementSibling : event.key === 'ArrowRight' ? section.nextElementSibling : null;
-      if (target && !event.shiftKey) { event.preventDefault(); target.dataset.place === 'folded' ? focusRows(target) : enter(target); }
+      if (event.shiftKey) return;
+      const next = section.nextElementSibling;
+      if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); }
+      else if (event.key === 'ArrowRight' && next) { event.preventDefault(); next.dataset.place === 'folded' ? unfold(next) : enter(next, true); }
       return;
     }
     // Escape closes the levels to the right of this one; the focus stays where it is.
@@ -427,7 +481,7 @@ const annaTour = (() => {
     if (event.target === section) {
       if (event.shiftKey) return;
       if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); }
-      else if (event.key === 'ArrowRight' && section.querySelector('.tour-item')) { event.preventDefault(); focusRows(section); }
+      else if (event.key === 'ArrowRight' && section.querySelector('.tour-item')) { event.preventDefault(); focusRows(section, true); }
       return;
     }
     const link = event.target.closest('.tour-item');
@@ -438,27 +492,33 @@ const annaTour = (() => {
     let target = null;
     if (event.key === 'ArrowDown') target = items[Math.min(i + 1, items.length - 1)];
     else if (event.key === 'ArrowUp') {
-      // Above a detail's first row lies its text.
-      if (i === 0 && readable(section)) { event.preventDefault(); focusReading(section); return; }
+      if (i === 0 && detailReady(section)) { event.preventDefault(); read(section); return; }
       target = items[Math.max(i - 1, 0)];
     }
     else if (event.key === 'Home') target = items[0];
     else if (event.key === 'End') target = items.at(-1);
     else if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); return; }
-    else if (event.key === 'ArrowRight') {
+    // → and Enter enter the level the row opened, opening it first when it is not open yet.
+    else if (event.key === 'ArrowRight' || event.key === 'Enter') {
       if (!opens(link)) return;
       event.preventDefault();
-      if (link.getAttribute('aria-current') === 'true' && section.nextElementSibling) enter(section.nextElementSibling);
-      else go(segmentsOf(new URL(link.href).search), {focus:'new'});
+      const focus = {depth:depth + 1, enter:true, open:true};
+      if (link.getAttribute('aria-current') === 'true') aim(focus);
+      else go(segmentsOf(new URL(link.href).search), {focus});
       return;
     } else return;
     event.preventDefault();
     items.forEach(each => { each.tabIndex = each === target ? 0 : -1; });
     target.focus();
-    follow(target);
+    follow(target, event.repeat);
   });
-  columns.addEventListener('pointerdown', () => clearTimeout(following));
-  window.addEventListener('popstate', () => show(segmentsOf(location.search), columns.contains(document.activeElement) ? {focus:'kept'} : {}));
+  columns.addEventListener('keyup', () => openOnRest?.());
+  columns.addEventListener('pointerdown', stopFollowing);
+  window.addEventListener('popstate', () => {
+    stopFollowing();
+    landing = columns.contains(document.activeElement) ? 'kept' : null;
+    show(segmentsOf(location.search));
+  });
   for (const query of [roomy, phone]) query.addEventListener('change', () => move(arrange).then(reveal));
 
   const start = segmentsOf(location.search);

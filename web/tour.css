@@ -4,14 +4,22 @@
 .tour-app { overflow: hidden; }
 #tour-main { display: flex; flex-direction: column; height: calc(100dvh - 56px); min-height: 420px; background: var(--anna-canvas); }
 #tour-notice { margin: 0; padding: 8px 22px; border-bottom: 1px solid var(--anna-line); background: var(--anna-warning-bg); color: var(--anna-warning); }
-#tour-columns { --tour-column: 320px; --tour-spine: 40px; --tour-detail: 440px; display: flex; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-padding-inline: 0; }
+#tour-columns { --tour-column: 360px; --tour-spine: 40px; --tour-detail: 440px; display: flex; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-padding-inline: 0; }
 #tour-columns:focus { outline: 0; }
-.tour-column { flex: 0 0 var(--tour-column); min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--anna-line); background: var(--anna-paper); transition: flex-basis .18s ease, flex-grow .18s ease; }
-.tour-column[data-depth="0"] { --tour-column: 290px; background: var(--anna-surface); }
+.tour-column { flex: 0 0 var(--tour-column); min-width: 0; container-type: inline-size; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--anna-line); background: var(--anna-paper); transition: flex-basis .18s ease, flex-grow .18s ease; }
+.tour-column[data-depth="0"] { --tour-column: 320px; background: var(--anna-surface); }
 /* The deepest level is where the reader is reading: a detail takes the room the levels above leave, an index
    stays narrow and the room beside it waits for the next choice. */
 .tour-column[data-place=last][data-shape=detail] { flex: 1 1 var(--tour-detail); }
-.tour-column[data-place=last][data-shape=detail] .tour-column-body { max-width: 880px; padding-inline: 28px; }
+.tour-column[data-place=last][data-shape=detail] .tour-column-body { padding-inline: 28px; }
+/* Prose keeps its reading measure, so a wide detail sets where it leads in a rail beside its own words and
+   reaches the right edge; tables in the text take the rest of the main track. */
+@container (min-width: 880px) {
+  .tour-column[data-place=last][data-shape=detail] .tour-column-body:has(> .tour-rail) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 30%, 380px); align-items: start; column-gap: 32px; }
+  .tour-column[data-place=last][data-shape=detail] .tour-column-body > header { grid-column: 1 / -1; }
+  .tour-column[data-place=last][data-shape=detail] .tour-rail { margin-top: 14px; padding-left: 24px; border-left: 1px solid var(--anna-line); }
+  .tour-column[data-place=last][data-shape=detail] .tour-rail > :first-child { margin-top: 0; }
+}
 .tour-column-body { padding: 20px 18px 28px; }
 #tour-columns[data-rest]::after { content: attr(data-rest); flex: 1 0 200px; align-self: center; padding: 0 32px; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: center; }
 

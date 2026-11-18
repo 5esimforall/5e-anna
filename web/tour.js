@@ -35,7 +35,7 @@ const annaTour = (() => {
   const columns = document.querySelector('#tour-columns'), notice = document.querySelector('#tour-notice');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   // How many levels stay open side by side; the rest fold. Phones read one level at a time.
-  const roomy = window.matchMedia('(min-width: 1180px)'), phone = window.matchMedia('(max-width: 760px)');
+  const roomy = window.matchMedia('(min-width: 1280px)'), phone = window.matchMedia('(max-width: 760px)');
   const openLevels = () => roomy.matches ? 3 : phone.matches ? 1 : 2;
   const views = new Map(), layouts = new Map();
   let snapshot = null, path = [], generation = 0, mounted = false, topic = null;
@@ -135,8 +135,9 @@ const annaTour = (() => {
       const sibling = view.sequence[key];
       return sibling ? `<a rel="${rel}" href="${esc(tourHref([...path.slice(0, depth - 1), sibling.id]))}" data-at title="${esc(sibling.title)}">${esc(fill(ui[key], {name:sibling.title}))}</a>` : '';
     }).join('')}</nav>` : '';
-    return head(view, depth) + status + lead + (actions.length ? `<div class="tour-actions">${actions.join('')}</div>` : '') +
-      steps(view, depth) + sequence;
+    // The level's own words, then where it leads; a wide detail sets the second beside the first.
+    const rail = (actions.length ? `<div class="tour-actions">${actions.join('')}</div>` : '') + steps(view, depth) + sequence;
+    return head(view, depth) + `<div class="tour-main">${status}${lead}</div>` + (rail ? `<div class="tour-rail">${rail}</div>` : '');
   }
 
   // A folded level keeps a spine that names it; the spine brings it back into view.
@@ -166,7 +167,8 @@ const annaTour = (() => {
     if (!section.isConnected || section.dataset.segment !== segment) return;
     if (layout?.status !== 'ok') { section.dataset.layout = 'none'; return; }
     const box = document.createElement('div'); box.className = 'tour-body layout-text'; box.lang = 'zh-CN'; box.innerHTML = layout.html;
-    (section.querySelector('.tour-lead') || section.querySelector('.tour-column-body > header')).after(box);
+    const lead = section.querySelector('.tour-lead');
+    lead ? lead.after(box) : section.querySelector('.tour-main').append(box);
     section.dataset.layout = 'ready';
   }
   function failed(section, error, depth) {

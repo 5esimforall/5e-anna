@@ -71,7 +71,7 @@ test('three levels stay open; the ones above fold into spines that bring them ba
   // Only the deepest level widens; the open levels above it keep the index width.
   await expect.poll(()=>width(0)).toBeLessThan(60);
   await expect.poll(async()=>await width(1)-await width(2)).toBe(0);
-  await expect.poll(async()=>await width(3)-2*await width(2)).toBeGreaterThan(0);
+  await expect.poll(async()=>await width(3)-1.5*await width(2)).toBeGreaterThan(0);
   await expect(page.locator('#tour-columns')).not.toHaveAttribute('data-rest',/./);
   // From the shallowest open level, ← reaches the spine; choosing it closes just enough levels to show it again.
   await row(page,1,'第一步：选择职业').focus();
@@ -90,6 +90,22 @@ test('three levels stay open; the ones above fold into spines that bring them ba
   expect(at(page)).toBe('create.n924');
   await expect(level(page,1)).toHaveAttribute('data-place','open');
   await expect(level(page,0)).toHaveAttribute('data-place','folded');
+});
+
+test('a wide detail keeps its reading measure and sets where it leads in a rail out to the right edge',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(anna+'/tour?at=create');await ready(page,1);
+  await expect(level(page,1).locator('.tour-body')).toBeVisible();
+  await expect(level(page,1).locator('.tour-column-body')).toHaveCSS('display','grid');
+  const rail=level(page,1).locator('.tour-rail');
+  await expect(rail.locator('.tour-go')).toHaveCount(1);
+  await expect(rail.locator('.tour-group.ordered .tour-item')).toHaveCount(5);
+  await expect.poll(()=>rail.evaluate(e=>e.getBoundingClientRect().right)).toBeGreaterThan(1440-40);
+  // Narrowed beside a deeper level, the same column stacks its lead above its rows.
+  await row(page,1,'第一步：选择职业').click();await ready(page,2);
+  await expect(level(page,1).locator('.tour-column-body')).toHaveCSS('display','block');
+  // The index column keeps its width.
+  await expect.poll(()=>level(page,2).evaluate(e=>e.getBoundingClientRect().width)).toBe(360);
 });
 
 test('arrow keys move within a level, open the next and return to the row that opened it',async({page})=>{

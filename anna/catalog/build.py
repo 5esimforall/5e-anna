@@ -23,7 +23,7 @@ from anna.source.html import Document, compact, key, digest, parse_name, split_n
 from anna.catalog.frames import extract_page_entries, quickref_rows
 from anna.catalog.signatures import CLASSES, CLASS_SHORT, printed_generation, skill_notation
 from anna.catalog.types import TYPE_LABELS, evidence_status, type_conflicts
-from anna.source.registry import SourceRegistry
+from anna.source.registry import QUICK_REFERENCE, SourceRegistry
 from anna.source.search import extract_body_text as extract_search_body, extract_title as extract_search_title, index_signature, load_toc_titles
 
 from anna.paths import PROJECT, WEB as DEFAULT_WEB, FIVETOOLS as DEFAULT_FIVETOOLS
@@ -439,7 +439,7 @@ class Build:
         # Cross-page class ownership is recorded from the original TOC, not quick lookup placement.
         for e in self.entries:
             if e['type'] not in {'subclass','class_feature'}:continue
-            ns=[n for n in self.registry.page_toc.get(e['page_path'],[]) if not n['toc_path'].startswith('本书速查')]
+            ns=[n for n in self.registry.page_toc.get(e['page_path'],[]) if not n['toc_path'].startswith(QUICK_REFERENCE)]
             for node in ns:
                 pid=node['parent_id']
                 while pid:

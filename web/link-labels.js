@@ -11,7 +11,8 @@ const annaLinkLabels = {
     bookDefinition: 'Read in Stella', extractedRange: 'Open extracted text and entry range'
   }
 };
-// Each page belongs to one product: anna browses entries, stella reads the book. Names are not translated.
-const annaBrands = {query:'5e Anna', book:'5e Stella'};
+// Each page belongs to one companion: Anna answers queries and keeps the tour, Stella reads the book.
+// Names are not translated.
+const annaBrands = {query:'5e Anna', tour:'5e Anna', book:'5e Stella'};
 // One title shape for every page: what is open, then the product.
 function annaPageTitle(page, subject = '') { return [subject, annaBrands[page]].filter(Boolean).join(' · '); }

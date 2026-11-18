@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "sections": [
+    {
+      "key": "start",
+      "label": {"zh": "开始游戏", "en": "Getting started"},
+      "topics": [
+        {"key": "create", "label": {"zh": "创建角色", "en": "Create a character"}, "ruleset": "5r",
+         "contents": "玩家手册2024 / 第二章：创建角色 / 创建你的角色", "sequence": true},
+        {"key": "level-up", "label": {"zh": "等级提升", "en": "Level advancement"}, "ruleset": "5r",
+         "contents": "玩家手册2024 / 第二章：创建角色 / 等级提升"},
+        {"key": "play", "label": {"zh": "进行游戏", "en": "Playing the game"}, "ruleset": "5r",
+         "contents": "玩家手册2024 / 第一章：进行游戏"},
+        {"key": "spellcasting", "label": {"zh": "施展法术", "en": "Spellcasting"}, "ruleset": "5r",
+         "contents": "玩家手册2024 / 第七章：法术"},
+        {"key": "glossary", "label": {"zh": "术语汇编", "en": "Rules glossary"}, "ruleset": "5r",
+         "contents": "玩家手册2024 / 附录C：术语汇编"},
+        {"key": "create-legacy", "label": {"zh": "创建角色", "en": "Create a character"}, "ruleset": "5e",
+         "contents": "玩家手册2014（旧版） / 第一章：一步步创建你的角色"}
+      ]
+    },
+    {
+      "key": "options",
+      "label": {"zh": "角色选项", "en": "Character options"},
+      "topics": [
+        {"key": "classes", "label": {"zh": "职业", "en": "Classes"},
+         "contents": "本书速查 / 职业速查", "query": {"type": ["class"]}},
+        {"key": "backgrounds", "label": {"zh": "背景", "en": "Backgrounds"}, "ruleset": "5r",
+         "contents": "本书速查 / 起源速查 / 2024背景", "query": {"type": ["background"], "ruleset": ["5r"]}},
+        {"key": "backgrounds-legacy", "label": {"zh": "背景", "en": "Backgrounds"}, "ruleset": "5e",
+         "contents": "本书速查 / 起源速查 / 2014背景", "query": {"type": ["background"], "ruleset": ["5e"]}},
+        {"key": "species", "label": {"zh": "种族", "en": "Species"},
+         "contents": "本书速查 / 起源速查 / 种族", "query": {"type": ["species"]}},
+        {"key": "feats", "label": {"zh": "专长", "en": "Feats"},
+         "contents": "本书速查 / 专长速查", "query": {"type": ["feat"]}},
+        {"key": "spells", "label": {"zh": "法术", "en": "Spells"},
+         "query": {"type": ["spell"]}, "facet": "spell_level"},
+        {"key": "equipment", "label": {"zh": "装备", "en": "Equipment"}, "ruleset": "5r",
+         "contents": "玩家手册2024 / 第六章：装备", "query": {"type": ["equipment"], "ruleset": ["5r"]}}
+      ]
+    },
+    {
+      "key": "dm",
+      "label": {"zh": "城主资料", "en": "For the DM"},
+      "topics": [
+        {"key": "dmg", "label": {"zh": "城主指南", "en": "Dungeon Master's Guide"}, "ruleset": "5r",
+         "contents": "城主指南2024"},
+        {"key": "monsters", "label": {"zh": "怪物图鉴", "en": "Monster Manual"}, "ruleset": "5r",
+         "contents": "怪物图鉴2025", "query": {"type": ["creature"], "ruleset": ["5r"]}},
+        {"key": "magic-items", "label": {"zh": "魔法物品", "en": "Magic items"},
+         "query": {"type": ["magic_item"]}, "facet": "rarity"},
+        {"key": "hazards", "label": {"zh": "危害、陷阱与毒药", "en": "Hazards, traps and poisons"},
+         "query": {"type": ["hazard", "trap", "poison", "disease"]}, "facet": "type"}
+      ]
+    },
+    {
+      "key": "rules",
+      "label": {"zh": "规则参考", "en": "Rules reference"},
+      "topics": [
+        {"key": "conditions", "label": {"zh": "状态", "en": "Conditions"}, "query": {"type": ["condition"]}},
+        {"key": "actions", "label": {"zh": "动作", "en": "Actions"}, "query": {"type": ["action"]}},
+        {"key": "abilities", "label": {"zh": "属性与技能", "en": "Abilities and skills"},
+         "query": {"type": ["ability", "skill"]}}
+      ]
+    }
+  ],
+  "choices": {
+    "玩家手册2024 / 第二章：创建角色 / 创建你的角色 / 第一步：选择职业": ["classes"],
+    "玩家手册2024 / 第二章：创建角色 / 创建你的角色 / 第二步：确定起源": ["backgrounds", "species", "feats"],
+    "玩家手册2024 / 第二章：创建角色 / 创建你的角色 / 第三步：确定属性值": ["abilities"],
+    "玩家手册2024 / 第二章：创建角色 / 创建你的角色 / 第五步：丰富细节": ["equipment", "spells"],
+    "玩家手册2014（旧版） / 第一章：一步步创建你的角色": ["species", "classes", "backgrounds-legacy"]
+  }
+}

@@ -45,6 +45,8 @@ class Handler(BaseHTTPRequestHandler):
             static['/anna-logo.png']=('anna-logo.png','image/png')
             static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace','companions')})
             static['/read']=('reader.html','text/html; charset=utf-8')
+            static['/tour']=('tour.html','text/html; charset=utf-8')
+            static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
             static['/stella-logo.png']=('stella-logo.png','image/png')
             static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')
             static.update({f'/reader.{ext}':(f'reader.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})

@@ -111,8 +111,14 @@ class WebTests(unittest.TestCase):
         self.assertIn(b'<header class="topbar" data-page="query">',page)
         self.assertIn(b'<script src="/topbar.js"></script>',page)
         topbar=self.request('/topbar.js')[2]
-        self.assertIn(b"query:{home:'/', logo:'/anna-logo.png'}",topbar)
-        self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png'}",topbar)
+        # Anna keeps two pages under her avatar; Stella keeps one.
+        self.assertIn(b"query:{home:'/', logo:'/anna-logo.png', companion:'query'}",topbar)
+        self.assertIn(b"tour:{home:'/tour', logo:'/anna-logo.png', companion:'query'",topbar)
+        self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png', companion:'book'}",topbar)
+        tour=self.request('/tour')[2]
+        self.assertIn(b'<header class="topbar" data-page="tour">',tour)
+        self.assertIn('<title>导览 · 5e Anna</title>'.encode(),tour)
+        self.assertEqual(self.request('/tour.js')[0],200);self.assertEqual(self.request('/tour.css')[0],200)
         self.assertEqual(self.request('/review')[0],404)
         self.assertIn(b'href="/favicon.ico"',page)
         for size in (16,32,48):

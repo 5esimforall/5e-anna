@@ -22,7 +22,9 @@ def bucket(rel):
         n = 3
     return '/'.join(p[:n])
 
-CONTAINERS={'本书速查','模组相关','电子资源','纸质出版物','电子出版物','破解奥秘UA','空际远坠Drop','穆克系列','鬼魅幽谷','德拉肯海姆','瓦尔达的秘密尖塔','谦卑林','异界传送系列','怪物纲要系列'}
+# The contents root where the collection's editors index every book; its nodes never own a page.
+QUICK_REFERENCE='本书速查'
+CONTAINERS={QUICK_REFERENCE,'模组相关','电子资源','纸质出版物','电子出版物','破解奥秘UA','空际远坠Drop','穆克系列','鬼魅幽谷','德拉肯海姆','瓦尔达的秘密尖塔','谦卑林','异界传送系列','怪物纲要系列'}
 WORLD_WORDS=['被遗忘的国度','艾伯伦','拉尼卡','荒洲','塞洛斯','鸦阁','斯翠海文','克莱恩','塔尔多雷','德拉肯海姆','谦卑林','胧忆岛','鬼魅幽谷']
 
 
@@ -104,7 +106,7 @@ class SourceRegistry:
             if re.match(r'^[—－-]{2,}',label):
                 if any(x in label for x in ['核心','规则扩展','战役设定','旧版','合作','其余']):current=label.strip('—－-')
                 continue
-            if label in {'写在前面','更新日志','鸣谢列表'} or clean_label(label)=='本书速查':continue
+            if label in {'写在前面','更新日志','鸣谢列表'} or clean_label(label)==QUICK_REFERENCE:continue
             self._visit_source(node_id,current,[])
         self.toc_references={p:set(ids) for p,ids in self.page_sources.items()}
         # A TOC link is not proof of publication: books also link to other books.
@@ -324,14 +326,14 @@ class SourceRegistry:
         return sorted(overlap or exact or owners)
 
     def context(self,path):
-        nodes=[n for n in self.page_toc.get(path,[]) if not n['toc_path'].startswith('本书速查')]
+        nodes=[n for n in self.page_toc.get(path,[]) if not n['toc_path'].startswith(QUICK_REFERENCE)]
         return ' | '.join(n['toc_path'] for n in nodes) or path
 
     def toc_place(self,path):
         """Where a page sits in the table of contents: the labels above it, and whether its node lists other pages."""
         above=[];lists_pages=False
         for n in self.page_toc.get(path,[]):
-            if n['toc_path'].startswith('本书速查'):continue
+            if n['toc_path'].startswith(QUICK_REFERENCE):continue
             chain=[];parent=n['parent_id']
             while parent:chain.append(self.nodes[parent]['label']);parent=self.nodes[parent]['parent_id']
             above.extend(reversed(chain))

@@ -18,6 +18,7 @@ from anna.presentation.reader import SCHEMA, ReaderError, page_data
 from anna.review.store import load_annotations
 import anna.server.query as serve
 from anna.presentation import catalog
+from anna.presentation.tour import TourCache, TourError
 import anna.source.search as search
 
 
@@ -64,10 +65,16 @@ class Bundle:
         self.reader = json.loads((self.book / 'anna-reader.json').read_text())
         self.entries = entries
         self.signature = bundle_signature(self.db, self.book)
+        self.tours = TourCache()
 
     @property
     def snapshot(self):
         return self.reader['snapshot']
+
+    def tour(self):
+        """The tour over this snapshot, read on first use; a changed curation file is read again."""
+        locatable = lambda: {eid for eid, e in self.manifest['entries'].items() if e['locatable']}
+        return self.tours.get(self.db, self.reader['nodes'], locatable, self.snapshot)
 
 
 def load_bundle(source, db, book, quiet=True):
@@ -200,7 +207,7 @@ class AnnaHandler(serve.Handler):
         if (url.path.startswith('/api/') or url.path == '/source') and not self.server.bundle_intact(self.current):
             self.send(self.stale(), status=409)
             return
-        if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search'}:
+        if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour'}:
             super().do_GET()
             return
         params = parse_qs(url.query, keep_blank_values=True)
@@ -210,6 +217,10 @@ class AnnaHandler(serve.Handler):
             if url.path == '/api/reader':
                 reader = self.current.reader
                 self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page', 'source_release')} | {'content_base': '/book/'})
+            elif url.path == '/api/tour':
+                if any(len(v) != 1 for v in params.values()):
+                    raise TourError('invalid_node', 400)
+                self.send(self.current.tour().view(catalog.first(params, 'node')) | {'snapshot': self.current.snapshot})
             elif url.path == '/api/reader-page':
                 if any(len(v) != 1 for v in params.values()):
                     raise ReaderError('invalid_location', 400)
@@ -218,7 +229,7 @@ class AnnaHandler(serve.Handler):
                 if len(catalog.first(params, 'keyword')) > 2000:
                     raise ReaderError('invalid_search', 400)
                 self.send(search.search_entries(self.search_entries, params))
-        except ReaderError as exc:
+        except (ReaderError, TourError) as exc:
             self.send({'code': exc.code}, status=exc.status)
         except (BrokenPipeError, ConnectionResetError):
             pass

@@ -10,7 +10,8 @@ const annaCompanionLabels = {
 };
 const annaCompanions = (() => {
   let labels;
-  const other = {query:'book', book:'query'};
+  // The companion each page turns to; Anna's tour faces Stella like her query page does.
+  const other = {query:'book', tour:'book', book:'query'};
   const fill = (template, values) => Object.entries(values).reduce((s,[k,v]) => s.replaceAll('{'+k+'}', v), template);
   let page, snapshot, slot, go, more, menu;
   // Where each choice leads. A recent place also asks the page it opens to restore that place.

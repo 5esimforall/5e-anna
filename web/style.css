@@ -112,6 +112,12 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .topbar { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 22px; border-bottom: 1px solid var(--anna-line); }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--anna-ink); font-family: var(--anna-serif); font-size: 21px; font-weight: 600; }
 .brand-logo { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
+.topbar-lead { display: flex; align-items: center; gap: 18px; min-width: 0; }
+/* Anna's two pages: the tour that points the way and the query that answers. The current page reads as pressed. */
+.page-switch { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--anna-line); border-radius: 17px; }
+.page-switch a { padding: 5px 12px; border-radius: 15px; color: var(--anna-secondary); font-size: var(--anna-type-ui); line-height: 20px; text-decoration: none; white-space: nowrap; }
+.page-switch a:hover { background: var(--anna-hover); color: var(--anna-ink); }
+.page-switch a[aria-current=page] { background: var(--anna-selected); color: var(--anna-brand); font-weight: 600; }
 .topbar-actions { display: flex; align-items: center; gap: 10px; }
 .topbar-actions>a { font-size: var(--anna-type-ui); }
 /* The other companion: her avatar and where turning to her leads, then recent places. */
@@ -520,6 +526,10 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 }
 @media(max-width:760px) {
   .topbar { padding: 0 16px; height: 52px; }
+  /* The avatar stays as the link home; the page switch takes the brand name's room. */
+  .topbar-lead { gap: 10px; }
+  .topbar-lead:has(.page-switch) .brand { font-size: 0; gap: 0; }
+  .page-switch a { padding-inline: 10px; }
   /* Phones give the condition bar its own row: typing on the first line, the chips scrolling on the second. */
   .toolbar { flex-wrap: wrap; }
   .condition-bar { flex: 1 1 100%; flex-wrap: wrap; height: auto; min-height: 40px; padding-block: 4px; row-gap: 3px; }

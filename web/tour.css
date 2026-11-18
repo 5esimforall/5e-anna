@@ -1,0 +1,84 @@
+/* Anna's tour: columns that keep the way down in view. Each column is one level; the source's own words lead
+   it in serif, and the rows below lead on to the next level, to Stella or to Anna's table. */
+.tour-app { overflow: hidden; }
+#tour-main { display: flex; flex-direction: column; height: calc(100dvh - 56px); min-height: 420px; background: var(--anna-canvas); }
+#tour-notice { margin: 0; padding: 8px 22px; border-bottom: 1px solid var(--anna-line); background: var(--anna-warning-bg); color: var(--anna-warning); }
+#tour-columns { --tour-column: 320px; display: flex; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-padding-inline: 0; }
+#tour-columns:focus { outline: 0; }
+.tour-column { flex: 0 0 var(--tour-column); min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--anna-line); background: var(--anna-paper); }
+.tour-column[data-depth="0"] { --tour-column: 290px; background: var(--anna-surface); }
+/* The deepest level is where the reader is reading; it takes the room the shallower levels leave. */
+.tour-column:last-child { flex: 1 0 var(--tour-column); max-width: 680px; }
+.tour-column-body { padding: 20px 18px 28px; }
+.tour-column[aria-busy=true] .tour-column-body { color: var(--anna-muted); }
+
+.tour-back { display: none; margin: 0 0 10px; font-size: var(--anna-type-ui); text-decoration: none; }
+.tour-trail { margin: 0 0 4px; overflow: hidden; color: var(--anna-muted); font-size: var(--anna-type-small); text-overflow: ellipsis; white-space: nowrap; }
+.tour-column h2 { margin: 0; font-family: var(--anna-serif); font-size: 21px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.tour-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0 0; color: var(--anna-muted); font-size: var(--anna-type-ui); }
+.tour-ruleset { display: inline-block; padding: 0 6px; border: 1px solid var(--anna-line-strong); border-radius: 4px; color: var(--anna-secondary); font-size: var(--anna-type-small); line-height: 18px; white-space: nowrap; }
+.tour-ruleset.unverified { border-style: dashed; border-color: var(--anna-warning); color: var(--anna-warning); }
+.tour-intro { margin: 8px 0 0; color: var(--anna-secondary); }
+
+/* The source's own words: quoted, in the book's serif, set off from what anna adds. */
+.tour-lead { margin: 14px 0 0; padding: 2px 0 2px 12px; border-left: 2px solid var(--anna-line-strong); color: var(--anna-ink); font-family: var(--anna-serif); font-size: var(--anna-type-reading); line-height: 1.7; overflow-wrap: anywhere; }
+.tour-lead .tour-ellipsis { color: var(--anna-muted); }
+.tour-preview { margin-top: 14px; overflow-x: auto; }
+.tour-preview.layout-text mark.note { background: none; color: inherit; box-shadow: none; text-decoration: none; }
+.tour-preview .ref { cursor: pointer; }
+
+.tour-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.tour-go { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px 0 4px; border: 1px solid var(--anna-line); border-radius: 16px; color: var(--anna-secondary); font-size: var(--anna-type-ui); text-decoration: none; white-space: nowrap; }
+.tour-go:hover { background: var(--anna-hover); color: var(--anna-ink); }
+.tour-go img { width: 24px; height: 24px; object-fit: contain; }
+
+.tour-group { margin-top: 20px; }
+.tour-group h3 { margin: 0 0 6px; padding: 0 10px; color: var(--anna-muted); font-size: var(--anna-type-ui); font-weight: 600; }
+.tour-group h3 .tour-group-note { margin-left: 6px; font-weight: 400; }
+.tour-group :is(ul,ol) { margin: 0; padding: 0; list-style: none; }
+.tour-group li { position: relative; }
+.tour-item { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 7px 10px; border-radius: var(--anna-radius-sm); color: var(--anna-ink); text-decoration: none; }
+.tour-item:hover { background: var(--anna-hover); color: var(--anna-ink); }
+.tour-item[aria-current=true] { background: var(--anna-selected); }
+.tour-item[aria-current=true] .tour-item-title { color: var(--anna-brand); font-weight: 600; }
+.tour-item:focus-visible { outline-offset: -2px; }
+.tour-item[aria-disabled=true] { color: var(--anna-muted); cursor: default; }
+.tour-item-main { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.tour-item-title { overflow-wrap: anywhere; font-size: 14px; line-height: 1.45; }
+.tour-item-hint { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; color: var(--anna-muted); font-size: var(--anna-type-small); line-height: 1.5; }
+.tour-item-tags { display: inline-flex; flex-shrink: 0; gap: 4px; }
+.tour-tag { padding: 0 5px; border-radius: 4px; background: var(--anna-surface); color: var(--anna-muted); font-size: var(--anna-type-small); line-height: 18px; white-space: nowrap; }
+.tour-item-count { flex-shrink: 0; color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
+.tour-item-go { flex-shrink: 0; width: 14px; height: 14px; fill: none; stroke: var(--anna-muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.tour-item-out { flex-shrink: 0; width: 18px; height: 18px; object-fit: contain; opacity: .85; }
+.tour-versions { display: flex; gap: 4px; padding: 0 10px 4px 10px; color: var(--anna-muted); font-size: var(--anna-type-small); }
+.tour-versions a { padding: 0 6px; border: 1px solid var(--anna-line); border-radius: 4px; color: var(--anna-secondary); line-height: 18px; text-decoration: none; }
+.tour-versions a:hover { border-color: var(--anna-line-strong); color: var(--anna-ink); }
+.tour-versions a[aria-current=true] { border-color: var(--anna-brand); background: var(--anna-selected); color: var(--anna-brand); }
+
+/* Steps the book numbers read as a path: numbered stops joined by a line. */
+.tour-step { display: inline-grid; place-items: center; flex-shrink: 0; width: 24px; height: 24px; border: 1px solid var(--anna-line-strong); border-radius: 50%; background: var(--anna-paper); color: var(--anna-secondary); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
+.tour-item[aria-current=true] .tour-step { border-color: var(--anna-brand); background: var(--anna-brand); color: var(--anna-on-brand); }
+.tour-group.ordered li:not(:last-child)::after { content: ''; position: absolute; left: 22px; top: 31px; bottom: -7px; border-left: 1px solid var(--anna-line-strong); pointer-events: none; }
+.tour-group.ordered .tour-item { align-items: flex-start; }
+.tour-group.ordered .tour-step { margin-top: 1px; }
+
+.tour-more { margin: 6px 10px 0; color: var(--anna-muted); font-size: var(--anna-type-ui); }
+.tour-sequence { display: flex; justify-content: space-between; gap: 10px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--anna-line); font-size: var(--anna-type-ui); }
+.tour-sequence a { min-width: 0; overflow: hidden; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.tour-sequence a[rel=next] { margin-left: auto; text-align: right; }
+.tour-status { margin: 14px 0 0; padding: 8px 10px; border-radius: var(--anna-radius-sm); background: var(--anna-warning-bg); color: var(--anna-warning); }
+.tour-status button { margin-left: 8px; }
+
+/* Phones read one level at a time; the way back names the level above. */
+@media(max-width:760px) {
+  #tour-main { height: calc(100dvh - 52px); }
+  #tour-columns { overflow-x: hidden; }
+  .tour-column { display: none; }
+  .tour-column:last-child { display: block; flex: 1 1 100%; max-width: none; border-right: 0; }
+  .tour-back { display: inline-block; }
+  .tour-column-body { padding: 16px 14px 28px; }
+}
+@media(hover:none) and (pointer:coarse) {
+  .tour-item { min-height: 44px; }
+}

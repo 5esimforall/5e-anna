@@ -21,6 +21,8 @@
   .tour-column[data-place=last][data-shape=detail] .tour-rail > :first-child { margin-top: 0; }
 }
 .tour-column-body { padding: 20px 18px 28px; }
+/* A detail being read holds the focus itself, so the arrow keys scroll its text. */
+.tour-column:focus-visible { outline-offset: -3px; }
 #tour-columns[data-rest]::after { content: attr(data-rest); flex: 1 0 200px; align-self: center; padding: 0 32px; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: center; }
 
 /* A folded level is a spine that names it, read top to bottom; choosing it brings the level back into view. */

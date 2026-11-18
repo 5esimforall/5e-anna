@@ -37,8 +37,10 @@ const annaTour = (() => {
   // How many levels stay open side by side; the rest fold. Phones read one level at a time.
   const roomy = window.matchMedia('(min-width: 1280px)'), phone = window.matchMedia('(max-width: 760px)');
   const openLevels = () => roomy.matches ? 3 : phone.matches ? 1 : 2;
-  const views = new Map(), layouts = new Map();
-  let snapshot = null, path = [], generation = 0, mounted = false, topic = null;
+  // A level whose next level is open keeps it in step with the focused row, once the focus rests there this long.
+  const FOLLOW_DELAY = 150;
+  const views = new Map(), layouts = new Map(), reading = new WeakMap();
+  let snapshot = null, path = [], generation = 0, mounted = false, topic = null, following = 0;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
   const fill = (template, values) => Object.entries(values).reduce((s, [k, v]) => s.replaceAll('{' + k + '}', v), template);
@@ -223,14 +225,30 @@ const annaTour = (() => {
     if (right > columns.scrollLeft + columns.clientWidth || last.offsetLeft < columns.scrollLeft)
       columns.scrollTo({left:Math.max(0, right - columns.clientWidth), behavior:reduced.matches ? 'auto' : 'smooth'});
   }
-  function focusLevel(section) {
-    if (section?.dataset.place === 'folded') { section.querySelector('.tour-spine').focus(); return; }
-    const target = section?.querySelector('.tour-item[aria-current=true]') || section?.querySelector('.tour-item') || section?.querySelector('h2');
+  /* Focus has two places in a level: its rows, where the reader chooses, and, in the deepest level when it is a
+     detail, the column itself, where the reader reads and the arrow keys scroll the text. Entering a level from the
+     left lands where it starts: a detail's text, otherwise the row it opened before or its first row. */
+  const deepest = () => columns.lastElementChild;
+  const readable = section => section === deepest() && section.dataset.shape === 'detail' && section.dataset.state === 'ready';
+  const opens = link => link.hasAttribute('data-at') && link.getAttribute('aria-disabled') !== 'true';
+  function focusRows(section) {
+    if (!section) return;
+    if (section.dataset.place === 'folded') { section.querySelector('.tour-spine').focus(); return; }
+    const target = section.querySelector('.tour-item[aria-current=true]') || section.querySelector('.tour-item[tabindex="0"]') ||
+      section.querySelector('.tour-item') || section.querySelector('h2');
     if (!target) return;
     if (target.matches('h2')) { target.tabIndex = -1; }
     else section.querySelectorAll('.tour-item').forEach(link => { link.tabIndex = link === target ? 0 : -1; });
     target.focus({preventScroll:true});
     target.scrollIntoView({block:'nearest'});
+  }
+  function focusReading(section) {
+    section.tabIndex = -1;
+    section.focus({preventScroll:true});
+  }
+  function enter(section) {
+    if (section && readable(section)) focusReading(section);
+    else focusRows(section);
   }
 
   async function show(segments, options = {}) {
@@ -266,8 +284,10 @@ const annaTour = (() => {
     markCurrent(); arrange(); reveal();
     fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
     settle();
-    if (options.focus === 'new') focusLevel(columns.lastElementChild);
-    else if (Number.isInteger(options.focus)) focusLevel(columns.children[options.focus]);
+    if (options.focus === 'new') enter(deepest());
+    else if (Number.isInteger(options.focus)) focusRows(columns.children[options.focus]);
+    // Going back or forward through history keeps the focus in the tour when the level holding it closed.
+    else if (options.focus === 'kept' && !columns.contains(document.activeElement)) enter(deepest());
   }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
   function settle() {
@@ -283,12 +303,13 @@ const annaTour = (() => {
     if (shown && topic !== shown.id) annaWorkspace.update(snapshot, state => annaWorkspace.setTopic(state, {entry:shown.id, name:shown.title, from:'query', at:Date.now()}));
     topic = shown?.id || null;
   }
+  // Opening a level is a step in history; a level that only follows the focused row replaces the step it follows.
   function go(segments, options = {}) {
     if (segments.join('.') === path.join('.')) {
-      if (options.focus === 'new') focusLevel(columns.lastElementChild);
+      if (options.focus === 'new') enter(deepest());
       return;
     }
-    history.pushState({tour:segments.join('.')}, '', tourHref(segments));
+    history[options.replace ? 'replaceState' : 'pushState']({tour:segments.join('.')}, '', tourHref(segments));
     return show(segments, options);
   }
 
@@ -312,39 +333,84 @@ const annaTour = (() => {
     const depth = Number(section.dataset.depth);
     go(path.slice(0, depth + openLevels() - 1), {focus:depth});
   }
+  // ← climbs to the level above: beside this one, or, where only one level shows, back to it.
+  function climb(section) {
+    const depth = Number(section.dataset.depth);
+    if (depth === 0) return;
+    if (openLevels() === 1) go(path.slice(0, depth - 1), {focus:depth - 1});
+    else focusRows(section.previousElementSibling);
+  }
+  function follow(link) {
+    const section = link.closest('.tour-column');
+    if (!opens(link) || section === deepest() || link.getAttribute('aria-current') === 'true') return;
+    following = setTimeout(() => {
+      if (document.activeElement === link && link.isConnected) go(segmentsOf(new URL(link.href).search), {replace:true});
+    }, FOLLOW_DELAY);
+  }
+  // From a level to the left, Space and Page Up/Down read on in the deepest level without leaving the rows.
+  function readOn(event, section) {
+    const last = deepest();
+    if (section === last || !last || ![' ', 'PageDown', 'PageUp'].includes(event.key)) return false;
+    const down = event.key === 'PageDown' || (event.key === ' ' && !event.shiftKey);
+    // Presses that come before the last page has finished scrolling add to where it was going.
+    const from = reading.get(last) ?? last.scrollTop;
+    const top = Math.max(0, Math.min(last.scrollHeight - last.clientHeight, from + (down ? 1 : -1) * last.clientHeight * 0.85));
+    if (top === last.scrollTop) return true;
+    reading.set(last, top);
+    last.addEventListener('scrollend', () => reading.delete(last), {once:true});
+    last.scrollTo({top, behavior:reduced.matches ? 'auto' : 'smooth'});
+    return true;
+  }
   columns.addEventListener('keydown', event => {
+    clearTimeout(following);
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const section = event.target.closest('.tour-column');
+    if (!section) return;
+    const depth = Number(section.dataset.depth);
     const spine = event.target.closest('.tour-spine');
-    if (spine && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
-      const section = spine.closest('.tour-column');
-      const target = event.key === 'ArrowLeft' ? section.previousElementSibling : section.nextElementSibling;
-      if (target) { event.preventDefault(); focusLevel(target); }
+    if (spine) {
+      const target = event.key === 'ArrowLeft' ? section.previousElementSibling : event.key === 'ArrowRight' ? section.nextElementSibling : null;
+      if (target && !event.shiftKey) { event.preventDefault(); target.dataset.place === 'folded' ? focusRows(target) : enter(target); }
+      return;
+    }
+    // Escape closes the levels to the right of this one; the focus stays where it is.
+    if (event.key === 'Escape' && section !== deepest() && !event.shiftKey) { event.preventDefault(); go(path.slice(0, depth)); return; }
+    // Reading a detail: the arrow keys scroll its text natively; → moves on to its rows, ← climbs.
+    if (event.target === section) {
+      if (event.shiftKey) return;
+      if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); }
+      else if (event.key === 'ArrowRight' && section.querySelector('.tour-item')) { event.preventDefault(); focusRows(section); }
       return;
     }
     const link = event.target.closest('.tour-item');
-    if (!link || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    const section = link.closest('.tour-column'), items = [...section.querySelectorAll('.tour-item')];
-    const i = items.indexOf(link);
+    if (!link) return;
+    if (readOn(event, section)) { event.preventDefault(); return; }
+    if (event.shiftKey) return;
+    const items = [...section.querySelectorAll('.tour-item')], i = items.indexOf(link);
     let target = null;
     if (event.key === 'ArrowDown') target = items[Math.min(i + 1, items.length - 1)];
-    else if (event.key === 'ArrowUp') target = items[Math.max(i - 1, 0)];
+    else if (event.key === 'ArrowUp') {
+      // Above a detail's first row lies its text.
+      if (i === 0 && readable(section)) { event.preventDefault(); focusReading(section); return; }
+      target = items[Math.max(i - 1, 0)];
+    }
     else if (event.key === 'Home') target = items[0];
     else if (event.key === 'End') target = items.at(-1);
-    else if (event.key === 'ArrowLeft') {
-      const above = section.previousElementSibling;
-      if (above) { event.preventDefault(); focusLevel(above); }
-      return;
-    } else if (event.key === 'ArrowRight') {
-      if (!link.hasAttribute('data-at') || link.getAttribute('aria-disabled') === 'true') return;
+    else if (event.key === 'ArrowLeft') { event.preventDefault(); climb(section); return; }
+    else if (event.key === 'ArrowRight') {
+      if (!opens(link)) return;
       event.preventDefault();
-      if (link.getAttribute('aria-current') === 'true' && section.nextElementSibling) focusLevel(section.nextElementSibling);
+      if (link.getAttribute('aria-current') === 'true' && section.nextElementSibling) enter(section.nextElementSibling);
       else go(segmentsOf(new URL(link.href).search), {focus:'new'});
       return;
     } else return;
     event.preventDefault();
     items.forEach(each => { each.tabIndex = each === target ? 0 : -1; });
     target.focus();
+    follow(target);
   });
-  window.addEventListener('popstate', () => show(segmentsOf(location.search)));
+  columns.addEventListener('pointerdown', () => clearTimeout(following));
+  window.addEventListener('popstate', () => show(segmentsOf(location.search), columns.contains(document.activeElement) ? {focus:'kept'} : {}));
   for (const query of [roomy, phone]) query.addEventListener('change', () => { arrange(); reveal(); });
 
   const start = segmentsOf(location.search);

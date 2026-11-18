@@ -223,7 +223,12 @@ test('class table name lists link their class feature in the reader',async({page
 });
 
 test('field symbols and weapon columns navigate to the same rule that Anna displays',async({page})=>{
-  for (const [source,label,path,name] of [
+  for (const [source,label,path,name,kind='rule'] of [
+    ['法术详述/0环.htm','强酸','术语汇编/其他术语.htm','强酸'],
+    ['法术详述/0环.htm','法术成分','法术/法术成分.htm','法术成分'],
+    ['装备/武器.htm','弩矢','装备/冒险装备.htm','弩矢','equipment'],
+    ['角色职业/吟游诗人/吟游诗人法术列表.htm','防护','法术/魔法学派.htm','防护'],
+    ['角色职业/吟游诗人/吟游诗人法术列表.htm','M','角色职业/吟游诗人/吟游诗人法术列表.htm','M'],
     ['法术详述/0环.htm','V','法术/法术成分.htm','言语'],
     ['法术详述/0环.htm','专注','术语汇编/其他术语.htm','专注'],
     ['法术详述/0环.htm','1分钟','法术/持续时间.htm','持续时间段'],
@@ -236,7 +241,8 @@ test('field symbols and weapon columns navigate to the same rule that Anna displ
     const link=page.getByRole('link',{name:'查看定义: '+label,exact:true}).first();
     const target=(await link.getAttribute('href')).split('/').pop();
     const entry=await (await page.request.get(anna+'/api/entry?id='+target)).json();
-    expect(entry).toMatchObject({name_zh:name,type:'rule',ruleset:'5r',page_path:prefix+path});
+    expect(entry.name_zh || entry.name_en).toBe(name);
+    expect(entry).toMatchObject({type:kind,ruleset:'5r',page_path:prefix+path});
     await link.focus();await page.keyboard.press('Enter');
     await expect(page).toHaveURL(topic(book,prefix+path)+'#anna-'+target);
     await ready(page);

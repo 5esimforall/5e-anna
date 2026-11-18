@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from bs4 import BeautifulSoup
 from anna.source.pages import read_page
 from anna.source.html import Document
 from anna.presentation.layout import entry_layout, render
@@ -129,7 +130,12 @@ class CorpusLayoutTests(unittest.TestCase):
     def test_spell_header_lines_form_a_card_and_text_starts_after_the_title(self):
         from anna.presentation.catalog import detail
         eid=self.entry('spell','Toll the Dead','5r');layout=entry_layout(self.db,eid,paths.WEB)
-        self.assertEqual(re.findall(r'<dt>(?:<mark[^>]*>)?([^<]+)',layout['html']),['施法时间','施法距离','法术成分','持续时间'])
+        labels=BeautifulSoup(layout['html'],'html.parser').select('dt')
+        self.assertEqual([dt.get_text() for dt in labels],['施法时间','施法距离','法术成分','持续时间'])
+        for dt,role in zip(labels[2:],('components','duration')):
+            target=dt.select_one('button.ref')['data-entry']
+            row=self.db.execute("SELECT ruleset,json_extract(data,'$.slot_collection') FROM entries WHERE id=?",(target,)).fetchone()
+            self.assertEqual(tuple(row),('5r',role))
         self.assertNotIn('Toll the Dead',layout['html'])
         # The extracted-text fallback starts at the same place as the layout.
         self.assertTrue(detail(self.db,eid)['body'].startswith('死灵 戏法'))

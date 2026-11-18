@@ -14,13 +14,16 @@ FAMILY_HEADINGS = {
     ('词条', 'properties'): 'properties',
     ('武器词条', 'weaponproperties'): 'properties',
     ('精通词条', 'masteryproperties'): 'mastery',
+    ('魔法学派', 'schoolsofmagic'): 'school',
     ('伤害类型', 'damagetypes'): 'damage',
 }
 
 
 def heading_family(name):
     zh, en = split_name(name)
-    return FAMILY_HEADINGS.get((zh, key(en)))
+    if re.search(r'弹药(?:种类|类型)?$',zh) and re.search(r'\bammunition(?: types?)?$',en,re.I):
+        return 'ammunition'
+    return FAMILY_HEADINGS.get((re.sub(r'^边栏[：:]\s*','',zh), key(en)))
 
 
 SYMBOL = re.compile(r'[（(]([A-Z])[）)]$')
@@ -117,18 +120,32 @@ class SlotVocabulary:
     """Family-local spellings with source-backed target identities, kept out of global aliases."""
     def __init__(self, resolver, pages):
         self.members = defaultdict(lambda: defaultdict(list))
+        self.collections = defaultdict(dict)
+        self.legends = defaultdict(list)
+        self.parameter_roles = {}
         self.measured = defaultdict(list)
         self.parameterized = defaultdict(lambda: defaultdict(list))
         for entry in resolver.entries.values():
+            if collection := entry.get('slot_collection'):
+                self.collections[collection][entry['id']] = [{'member_id':entry['id'],'member_name':entry['name'],
+                                                              'heading':entry['name'],'via':'collection'}]
             definition = entry.get('slot_definition')
             if not definition:
                 continue
             family = definition['family']
+            if family == 'legend':
+                self.legends[entry['page_path'],definition['column']].append(entry)
+                continue
             names = {entry['name_zh'], entry.get('name_en','')}
             if family == 'components' and (m := SYMBOL.search(entry['name'])):
                 names.add(m[1])
             ids = {entry['id']}
             body = pages[entry['page_path']]['text'][entry['title_end']:entry['end']]
+            if family=='properties':
+                declared = re.findall(r'(?:^|[。；\n])\s*(?:其)?(?:所需的?)?([\u3400-\u9fff]+?)(?:的种类|类型)'
+                                      r'(?:会|应|须)?(?:与武器的射程(?:写|列)在一起|在(?:该)?武器的射程旁(?:边)?注明)',body)
+                if set(declared)=={'弹药'}:
+                    self.parameter_roles[entry['id']] = 'ammunition'
             # Some families print a named parameter form, e.g. 标识为“名称X”. A number alone
             # is never reason to throw away part of the printed name.
             parameter = (re.search(r'(?:标识为|记作|写作)[“「](' + re.escape(entry['name_zh']) + r'X)[”」]',body)
@@ -180,6 +197,7 @@ def field_occurrences(facts, entries, text, cells):
             label = LABEL_RE.match(text,a,b)
             if not label or LABEL_TO_FIELD[label[1]] != field:
                 continue
+            yield owner, *label.span(1), 'field', {**evidence,'slot_role':'collection'}
             start = label.end()
             signal = 'field'
         elif owner['type']=='equipment' and field in {'damage','properties','mastery'}:
@@ -205,7 +223,7 @@ def resolve_field_slots(occurrences, resolver, vocabulary, path, text):
         owner,signal,ev = readings[0]
         owners = sorted({e['id'] for e,_,_ in readings})
         scope = {'source_ids':owner['source_ids'], 'ruleset':owner['ruleset'], 'owner_ids':owners}
-        meanings = {(s, f['field'], tuple(f['field_span']), tuple(sorted(e['source_ids'])), e['ruleset'])
+        meanings = {(s, f['field'], f.get('slot_role','value'), tuple(f['field_span']), tuple(sorted(e['source_ids'])), e['ruleset'])
                     for e,s,f in readings}
         if len(meanings)!=1:
             # No competing owner, field or generation wins merely because it was loaded first.
@@ -214,12 +232,27 @@ def resolve_field_slots(occurrences, resolver, vocabulary, path, text):
                           {'status':'review','reason':'slot_conflict','targets':[]})
             continue
         label = text[a:b]
-        members = vocabulary.candidates(ev['field'],label)
-        if (len(scope['source_ids'])!=1 or scope['ruleset'] not in {'5e','5r'}
-                or resolver.sources.get(scope['source_ids'][0],{}).get('ruleset_hint')!=scope['ruleset']):
-            result = {'status':'review','reason':'slot_scope_unconfirmed','targets':sorted(members)}
-        else:
-            result = resolver.resolve(label,'concept',path,a,scope=scope,types={'rule'},member_ids=members)
-        declarations = [d for i in sorted(result['targets']) for d in members.get(i,())]
-        slots[a,b] = (signal,{**ev,'scope':scope,'declarations':declarations},result)
+        members = (vocabulary.collections[ev['field']] if ev.get('slot_role')=='collection'
+                   else vocabulary.candidates(ev['field'],label))
+        result, proof = resolve_members(resolver,path,a,label,scope,members)
+        slots[a,b] = signal,{**ev,**proof},result
+        if (ev['field']=='properties' and result['status']=='resolved'
+                and (role := vocabulary.parameter_roles.get(result['targets'][0]))):
+            # Only a parameter expressly declared by the resolved property may contain another reference.
+            suffix = re.match(r'\s*[（(]\s*射程\s*\d+\s*/\s*\d+\s*[；;]\s*('+NAME+r')\s*[）)]',text[b:ev['field_span'][1]])
+            if suffix:
+                lo,hi = b+suffix.start(1), b+suffix.end(1)
+                sub, proof = resolve_members(resolver,path,lo,suffix[1],scope,vocabulary.candidates(role,suffix[1]),'equipment')
+                slots[lo,hi] = signal,{**ev,**proof,'slot_role':'parameter','family':role,'property':label},sub
     return slots
+
+
+def resolve_members(resolver,path,position,label,scope,members,kind='rule'):
+    """Resolve a structurally restricted set using the same source/edition policy as other slots."""
+    if (not scope or len(scope['source_ids'])!=1 or scope['ruleset'] not in {'5e','5r'}
+            or resolver.sources.get(scope['source_ids'][0],{}).get('ruleset_hint')!=scope['ruleset']):
+        result = {'status':'review','reason':'slot_scope_unconfirmed','targets':sorted(members)}
+    else:
+        result = resolver.resolve(label,'concept',path,position,scope=scope,types={kind},member_ids=members)
+    declarations = [d for i in result['targets'] for d in members.get(i,())]
+    return result, {'scope':scope or {},'declarations':declarations}

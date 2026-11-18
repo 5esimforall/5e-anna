@@ -111,6 +111,7 @@ class SlotTests(unittest.TestCase):
         for i,n,f in [('q','气音 Echo（Q）','components'),('d','轻灵 Nimble','duration'),
                       ('p','轻灵 Nimble','properties'),('m','轻灵 Nimble','mastery'),('x','轻灵 Nimble','damage')]:
             entries.append(entry(i,n,'rule',defs,generation,slot_definition={'family':f,'heading':'一组定义'}))
+        entries.append(entry('c','成分合集','rule',defs,generation,slot_collection='components'))
         entries.append(entry('global','Q','spell',defs))
         if duplicate:
             entries.append({**entries[2],'id':'q2'})
@@ -136,13 +137,13 @@ class SlotTests(unittest.TestCase):
     def test_same_text_resolves_by_family_and_letter_does_not_escape_its_field(self):
         rows=self.observations()
         self.assertEqual([(r['text'],r['target_id']) for r in rows],
-                         [('Q','q'),('Z',None),('轻灵','d'),('1分钟',None),('轻灵','x'),('轻灵','p'),('轻灵','m')])
-        self.assertEqual(rows[1]['reason'],'no_definition')
+                         [('法术成分','c'),('Q','q'),('Z',None),('持续时间',None),('轻灵','d'),('1分钟',None),('轻灵','x'),('轻灵','p'),('轻灵','m')])
+        self.assertEqual(rows[2]['reason'],'no_definition')
         self.assertEqual(rows[-1]['evidence']['table']['headers'][3],'精通')
 
     def test_ambiguous_missing_and_wrong_generation_are_not_linked(self):
-        duplicated=self.observations(duplicate=True)[0]
+        duplicated=self.observations(duplicate=True)[1]
         self.assertEqual((duplicated['status'],duplicated['candidates']),('ambiguous',['q','q2']))
         for kwargs,reason in [({'generation':'5e'},'ruleset_mismatch'),({'unknown_scope':True},'slot_scope_unconfirmed')]:
-            row=self.observations(**kwargs)[0]
+            row=self.observations(**kwargs)[1]
             self.assertIsNone(row['target_id']);self.assertEqual(row['reason'],reason)

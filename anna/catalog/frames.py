@@ -173,7 +173,7 @@ def collect_slot_definitions(doc, cs, entries, core_rule_source):
         if container.method not in STRUCTURAL_HEADING_METHODS:
             continue
         family = heading_family(container.name)
-        if not family:
+        if not family or family=='ammunition':
             continue
         end = min(container.end, cs[i+1].start) if i+1<len(cs) else container.end
         weapon_family = family in {'properties','mastery'}
@@ -206,6 +206,8 @@ def collect_slot_definitions(doc, cs, entries, core_rule_source):
             if family=='duration' and (rule := measurement_rule(description)):
                 declaration['measure'] = rule
             member['slot_definition'] = declaration
+            if family in {'components','duration'} and entries[i]['type']=='rule':
+                entries[i]['slot_collection'] = family
 
         # Earlier layouts describe measured durations in the parent introduction instead of a member.
         intro = doc.text[container.title_end:leads[0][0] if leads else end]
@@ -237,6 +239,41 @@ def collect_slot_definitions(doc, cs, entries, core_rule_source):
                 by_start[a] = member
             if member['type']=='rule':
                 register(member, doc.text[b:stop])
+
+
+def legend_entries(doc, candidates):
+    """A column legend defines symbols for subsequent tables in its own spell-list section."""
+    if '一栏中' not in doc.text:
+        return
+    tables = doc.tables()
+    for index, heading in enumerate(candidates):
+        if heading.method not in STRUCTURAL_HEADING_METHODS:
+            continue
+        # Captions may separate successive spell levels; a new section ends this legend's reach.
+        scope_end = next((c.start for c in candidates[index+1:] if c.start<heading.end
+                          and c.method in STRUCTURAL_HEADING_METHODS),heading.end)
+        local = [t for t in tables if heading.title_end<=t['span'][0]<t['span'][1]<=scope_end]
+        if not local:
+            continue
+        intro_end = min(local[0]['span'][0],candidates[index+1].start if index+1<len(candidates) else scope_end)
+        intro = doc.text[heading.title_end:intro_end]
+        for sentence in re.finditer(r'(?:^|[。\n])\s*([\u3400-\u9fff]{1,12})一栏中[，,]([^。\n]+)',intro):
+            column, clauses = sentence.groups()
+            if not any({column,'法术','学派'}<=set(tab['rows'][0]['cells']) for tab in local):
+                continue
+            # Require the entire declaration to consist of symbol/meaning pairs.
+            pair = r'(?:而)?([A-Z])(?:则)?代表([^，,；;。]+)'
+            if not re.fullmatch(pair + '(?:[，,；;]'+pair+')*', clauses):
+                continue
+            for item in re.finditer(pair, clauses):
+                base = heading.title_end + sentence.start(2)
+                a,b,stop = base+item.start(1),base+item.end(1),base+item.end()
+                member = entry_draft(item[1],a,b,stop,doc.text[a:stop],kind='rule',
+                                     classification_rule='reference_family_member',boundary_rule='column_legend',
+                                     level=heading.rank+1,parent_index=index)
+                member['slot_definition'] = {'family':'legend','heading':heading.name,'column':column,
+                    'symbol':item[1], 'meaning':item[2], 'scope_span':[intro_end,scope_end]}
+                yield member
 
 
 def _valid_candidate_name(name: str) -> bool:
@@ -533,8 +570,9 @@ def _definition_table_entries(doc: Document, table: dict, family_heading=None) -
     rows = table['rows']
     headers = [re.sub(r'\s+', '', h) for h in rows[0]['cells']]
     kind = DEFINITION_TABLE_KINDS.get(headers[0]) if headers else None
-    damage_table = family_heading is not None and headers == ['类型','例子']
-    if damage_table:
+    family = heading_family(family_heading.name) if family_heading else None
+    family_table = {'damage':['类型','例子'], 'school':['学派','典型效果']}.get(family)==headers
+    if family_table:
         kind = 'rule'
     body = rows[1:]
     if not kind or len(body) < 2:
@@ -542,7 +580,7 @@ def _definition_table_entries(doc: Document, table: dict, family_heading=None) -
     if any(
         len(r['cells']) != len(headers)
         or any(s != '1' for s in r['rowspan'] + r['colspan'])
-        or not all(split_name(r['cells'][0])) or (damage_table and not r['cells'][1])
+        or not all(split_name(r['cells'][0])) or (family_table and not r['cells'][1])
         for r in body
     ):
         return []
@@ -564,15 +602,15 @@ def _definition_table_entries(doc: Document, table: dict, family_heading=None) -
             entry_draft(
                 row['cells'][0], left, row['cell_spans'][0][1], right, doc.text[left:right],
                 kind=kind,
-                classification_rule='reference_family_member' if damage_table else 'definition_table',
+                classification_rule='reference_family_member' if family_table else 'definition_table',
                 boundary_rule='table_row',
                 level=9,
                 fields=fields,
                 extra_facts=[],
             )
         )
-        if damage_table:
-            entries[-1]['slot_definition'] = {'family':'damage','heading':family_heading.name,
+        if family_table:
+            entries[-1]['slot_definition'] = {'family':family,'heading':family_heading.name,
                                                'heading_span':[family_heading.start,family_heading.title_end]}
     return entries
 
@@ -584,7 +622,8 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
     issues: list[dict] = []
 
     family_tables = {tuple(c.fields['table_span']): c for c in page_candidates
-                     if core_rule_source and c.fields.get('table_span') and heading_family(c.name)=='damage'}
+                     if c.fields.get('table_span') and (heading_family(c.name)=='ammunition' or
+                         core_rule_source and heading_family(c.name) in {'damage','school'})}
     for ti, t in enumerate(doc.tables()):
         rows = t['rows']
         a, b = t['span']
@@ -598,7 +637,15 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
             'layout_warning': any(any(x != '1' for x in r['rowspan'] + r['colspan']) for r in rows),
         })
 
-        defined = _definition_table_entries(doc, t, family_tables.get((a,b)))
+        family_heading = family_tables.get((a,b))
+        # A supplement may place the ammunition table directly under a section heading
+        # rather than giving it a second, separately marked caption.
+        if not family_heading and {'quantity','container'} <= {_header_field(h) for h in rows[0]['cells']}:
+            prior=next((c for c in reversed(page_candidates) if c.start<a),None)
+            if (prior and prior.method in STRUCTURAL_HEADING_METHODS and b<=prior.end
+                    and not doc.text[prior.title_end:a].strip() and heading_family(prior.name)=='ammunition'):
+                family_heading=prior
+        defined = _definition_table_entries(doc, t, family_heading)
         if defined:
             entries.extend(defined)
             continue
@@ -705,6 +752,11 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
                         extra_facts=extra,
                     )
                 )
+                if (family_heading and heading_family(family_heading.name)=='ammunition'
+                        and actual=='equipment' and headers[nc] in {'种类','类型'}
+                        and {'quantity','container','price','weight'}<={column_field(h) for h in headers}):
+                    entries[-1]['slot_definition'] = {'family':'ammunition','heading':family_heading.name,
+                        'heading_span':[family_heading.start,family_heading.title_end]}
     return entries, tables, issues
 
 
@@ -774,6 +826,7 @@ def extract_page_entries(
     entries.extend(subrules)
     refine_page_types(entries, doc.text, toc_place)
     collect_slot_definitions(doc, cs, entries, core_rule_source)
+    entries.extend(legend_entries(doc,cs))
     entries.extend(facility_list_entries(doc))
     table_entries, tables, table_issues = extract_tables(doc, cs, core_rule_source)
     entries.extend(table_entries)

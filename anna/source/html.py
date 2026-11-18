@@ -474,7 +474,9 @@ class Document:
                 for ci, cell_span in enumerate(row['cell_spans']):
                     cells.append([ri, ci, cell_span[0], cell_span[1]])
             concept_tables.append({'index': ti, 'span': list(table['span']), 'headers': headers, 'cells': cells,
-                                   'repeated_headers': repeated_headers})
+                                   'repeated_headers': repeated_headers,
+                                   'irregular_columns': any(any(n!='1' for n in r['rowspan']) or
+                                       len(r['cells'])>1 and any(n!='1' for n in r['colspan']) for r in rows)})
         non_prose_spans = [
             list(self.span(t)) for t in self.elements
             if t.name in {'table', 'blockquote'} or EXAMPLE_CLASSES.intersection(t.get('class', []))

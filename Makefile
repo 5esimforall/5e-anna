@@ -12,7 +12,7 @@ ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status clean build test audit check up upper linked test-unit test-browser browser-setup icons
+.PHONY: usage clone update status clean build test audit audit-links check up upper linked test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -77,6 +77,9 @@ test-unit:
 
 audit:
 	@"$(PYTHON)" -m anna.catalog.audit
+
+audit-links:
+	@"$(PYTHON)" -m anna.catalog.reference_coverage
 
 check: test audit
 

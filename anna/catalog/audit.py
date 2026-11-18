@@ -46,6 +46,12 @@ def audit_concepts(db,folder=None):
                       for e in [json.loads(raw)] if e.get('type') in RULE_TYPES}
     else:
         rule_targets={}
+    typed_targets = {}
+    if 'data' in entry_cols:
+        typed_targets = {i:(kind,ruleset,family,collection) for i,kind,ruleset,family,collection in db.execute(
+            "SELECT id,json_extract(data,'$.type'),json_extract(data,'$.ruleset'),json_extract(data,'$.slot_definition.family'),"
+            "json_extract(data,'$.slot_collection') FROM entries WHERE json_type(data,'$.slot_definition') IS NOT NULL "
+            "OR json_type(data,'$.slot_collection') IS NOT NULL")}
     for row in db.execute("SELECT id,page_path,start,end,signal,status,target_id,is_effective,data FROM effective_references WHERE signal!='explicit'"):
         mid,path,a,b,signal,col_status,col_target,is_eff,raw=row
         eff=json.loads(raw)
@@ -65,7 +71,7 @@ def audit_concepts(db,folder=None):
             scope=o['evidence'].get('scope',{})
             cue=syntax.get('cue_span',[])
             # A rules-use clause ends where the name starts; a d20-test notation contains the name it applies.
-            located=len(cue)==2 and (cue[0]<=a<b<=cue[1] if syntax.get('rule')=='check_notation' else 0<=cue[0]<cue[1]==a)
+            located=len(cue)==2 and (cue[0]<=a<b<=cue[1] if syntax.get('rule') in {'check_notation','damage_notation'} else 0<=cue[0]<cue[1]==a)
             if (o['role']!='mention' or not located
                 or scope.get('ruleset') not in {'5e','5r'} or len(scope.get('source_ids',[]))!=1
                 or not scope.get('owner_ids') or any(e not in entries for e in scope['owner_ids'])):
@@ -80,11 +86,28 @@ def audit_concepts(db,folder=None):
                 or texts[path][slice(*span)]!=ev.get('field_text') or texts[path][a:b]!=o['text']
                 or len(scope.get('source_ids',[]))!=1 or not scope.get('owner_ids')
                 or not set(scope['owner_ids'])<=entries or scope.get('ruleset') not in {'5r','5e'}
-                or rule_targets.get(target)!=scope['ruleset'] or not declarations
+                or (typed_targets.get(target,())[:2]!=('equipment',scope['ruleset']) if ev.get('slot_role')=='parameter'
+                    else rule_targets.get(target)!=scope['ruleset']) or not declarations
                 or not all(d.get('member_id') in entries and d.get('heading') and d.get('member_name')
-                           and (d.get('via')=='glossary_referral' or d.get('via')=='member' and d['member_id']==target)
+                           and (d.get('via')=='glossary_referral' or d.get('via') in {'member','collection'} and d['member_id']==target)
                            for d in declarations)):
                 errors.append(mid+': missing typed field provenance')
+        if status=='resolved' and ('family' in ev or ev.get('slot_role')=='collection'):
+            family = ev.get('family') or ev.get('field')
+            kind = 'equipment' if family=='ammunition' else 'rule'
+            scope = ev.get('scope',{})
+            identity = typed_targets.get(target,(None,)*4)
+            collection = ev.get('slot_role')=='collection'
+            if (identity[:2]!=(kind,scope.get('ruleset')) or identity[3 if collection else 2]!=family
+                    or len(scope.get('source_ids',[]))!=1 or not scope.get('owner_ids')
+                    or not set(scope['owner_ids'])<=entries or not ev.get('declarations')
+                    or not all(d.get('member_id')==target for d in ev['declarations'])):
+                errors.append(mid+': invalid typed reference target')
+            if family=='damage':
+                syntax=ev.get('syntax',{}); cue=syntax.get('cue_span',[])
+                if (syntax.get('rule')!='damage_notation' or len(cue)!=2 or not 0<=cue[0]<=a<b<=cue[1]<=pages.get(path,-1)
+                        or texts[path][slice(*cue)]!=syntax.get('notation')):
+                    errors.append(mid+': invalid damage notation')
         if signal=='table' and status=='resolved':
             table=o['evidence'].get('table',{})
             cell=table.get('cell_span',[]);outer=table.get('span',[])

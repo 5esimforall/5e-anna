@@ -8,6 +8,7 @@ import re
 from bs4 import BeautifulSoup
 from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name,underline_style
 from anna.catalog.types import RULE_TYPES
+from anna.catalog.typed_mentions import column_mentions, damage_mentions, damage_notation
 from anna.catalog.frames import weapon_cells
 from anna.catalog.reference_slots import SlotVocabulary, field_occurrences, resolve_field_slots
 
@@ -382,6 +383,7 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
             row=observe(path,*link['span'],link['link_text'],'index','entry',ids,'explicit_locator',role='index',evidence={'href':link['href'],'target_path':dest[0],'fragment':dest[1]})
             if row['status']=='resolved':resolver.indexed.add(row['target_id'])
     families=SlotVocabulary(resolver,pages)
+    damage_pattern = damage_notation(families)
     facts_by_page=defaultdict(list)
     for f in field_facts:
         if f['rule']=='body_label' and f['field'] in {'components','duration','damage','properties','mastery'}:
@@ -435,6 +437,11 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
         cells = weapon_cells(path,page_text,dom['concept_tables']) if fields else {}
         slots = resolve_field_slots(field_occurrences(fields,resolver.entries,page_text,cells),
                                     resolver,families,path,page_text)
+        non_prose=overlap_check(tuple(s) for s in dom['non_prose_spans'])
+        slots.update(column_mentions(page_text,path,dom['concept_tables'],resolver,families))
+        # A formula inside a typed cell yields to the more specific structural reading.
+        for span, reading in damage_mentions(page_text,path,resolver,families,damage_pattern,non_prose):
+            slots.setdefault(span,reading)
         overlaps_slot = overlap_check(slots)
         for mark in dom['u_marks']:
             if mark['has_parent_u']:continue
@@ -465,7 +472,8 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
         reserved = overlap_check(occupied+titles)
         for (a,b),(signal,evidence,result) in slots.items():
             if not reserved(a,b):
-                observe(path,a,b,page_text[a:b],signal,'concept',evidence=evidence,**result)
+                kind = 'equipment' if evidence.get('family')=='ammunition' else 'concept'
+                observe(path,a,b,page_text[a:b],signal,kind,evidence=evidence,**result)
                 occupied.append((a,b))
         # A class table cell that is only a list of class-feature names is a reference-bearing
         # structure of its own, like a rules-use clause in prose. Existing links, format marks and
@@ -506,7 +514,6 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
             observe(path,m.start(1),m.end(1),m[1],'definition_phrase','concept',reason='semantic_candidate',status='review',role='definition_candidate')
         if scan_terms:
             covered=overlap_check(occupied+titles)
-            non_prose=overlap_check(tuple(s) for s in dom['non_prose_spans'])
             previous=None
             for m in scan_terms(page_text):
                 a,b=m.span()

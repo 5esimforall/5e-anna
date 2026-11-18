@@ -215,6 +215,7 @@ class Build:
                 'type_conflicts':type_conflicts(c['type'],c.get('printed_types',[])),
                 'fields':{},'field_conflicts':[],'observation_ids':c['observation_ids'],'parent_id':'','is_primary':c['is_primary'], 'snapshot':self.commit}
             local_entries.append(e);self.entries.append(e);self.entry_by_id[eid]=e;self.page_entries[path].append(e)
+            if c.get('slot_collection'):e['slot_collection']=c['slot_collection']
             if c.get('slot_definition'):e['slot_definition']=c['slot_definition']
             if c.get('table_span'):e['table_span']=c['table_span']
             self.locators[path].add(eid) if c['is_primary'] else None

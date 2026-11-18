@@ -1,14 +1,12 @@
 """Loopback-only HTTP transport for the read-only presentation services."""
-from contextlib import closing
 import html
 import json
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 import anna.paths as paths
-import anna.catalog.views as browse
 from anna.presentation import catalog
-from anna.presentation.layout import entry_layout
+from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
 
 WEB = paths.PROJECT / 'web'
 
@@ -20,6 +18,18 @@ class Handler(BaseHTTPRequestHandler):
     snapshot=None
     db_signature=None
     source_root=paths.WEB
+    additional_collections=()
+
+    def collection_registry(self):
+        return CollectionRegistry(BookCatalog(self.db_path, Path(self.source_root)), self.additional_collections)
+
+    def collection_conflict(self, key):
+        if key == DEFAULT and self.db_signature is not None:
+            stat = Path(self.db_path).stat()
+            if (stat.st_ino, stat.st_size, stat.st_mtime_ns) != self.db_signature:
+                return {'error':'数据库已重建，请重启 make up 以同步链接版。'}
+        return None
+
     def log_message(self,*args): pass
     def send(self,body,kind='application/json; charset=utf-8',status=200,download=False):
         if not isinstance(body,bytes): body=json.dumps(body,ensure_ascii=False).encode()
@@ -34,12 +44,8 @@ class Handler(BaseHTTPRequestHandler):
         # Reject DNS-rebinding hosts; never expose local data to a remote origin.
         if self.headers.get('Host','') not in {f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'}:
             self.send({'error':'仅限本机访问'},status=403); return
-        url=urlsplit(self.path); p=parse_qs(url.query)
+        url=urlsplit(self.path)
         try:
-            if self.db_signature is not None:
-                stat=Path(self.db_path).stat()
-                if (stat.st_ino,stat.st_size,stat.st_mtime_ns)!=self.db_signature:
-                    self.send({'error':'数据库已重建，请重启 make up 以同步链接版。'},status=409);return
             static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
@@ -54,25 +60,43 @@ class Handler(BaseHTTPRequestHandler):
             static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
-            with closing(catalog.connect(self.db_path)) as db:
-                if url.path=='/api/meta': self.send({**catalog.meta(db),'reader_url':self.reader_url,'snapshot':self.snapshot})
-                elif url.path=='/api/facets': self.send(catalog.facets(db,p))
-                elif url.path=='/api/entries': self.send(catalog.query(db,p))
-                elif url.path=='/api/entry': self.send(catalog.detail(db,catalog.first(p,'id')))
-                elif url.path=='/api/entry-layout': self.send(entry_layout(db,catalog.first(p,'id'),Path(self.source_root)))
-                elif url.path=='/api/export': self.send(catalog.csv_export(catalog.query(db,p,export=True)['rows'],browse.schema_for(catalog.entry_types(p))),'text/csv; charset=utf-8',download=True)
-                elif url.path=='/source':
-                    row=db.execute('SELECT text,sha256 FROM pages WHERE path=?',(catalog.first(p,'path'),)).fetchone()
-                    if not row: raise LookupError('页面不存在')
-                    if catalog.first(p,'sha256') and catalog.first(p,'sha256') != row[1]:
-                        self.send({'error':'source_snapshot_mismatch','path':catalog.first(p,'path')},status=409); return
-                    text=row[0]; start=max(0,min(len(text),int(catalog.first(p,'start','0')))); end=max(start,min(len(text),int(catalog.first(p,'end',str(start)))))
-                    body='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页面文本 · 5e Anna</title><script src="/kit.js"></script><script src="/theme.js"></script><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/style.css"><main class="source-page"><a href="/">← 条目查询</a><h1>页面文本</h1><p>提取后的文本；高亮为所选证据范围。</p><p>'+html.escape(catalog.first(p,'path'))+'</p><pre>'+html.escape(text[:start])+'<mark id="evidence">'+html.escape(text[start:end])+'</mark>'+html.escape(text[end:])+'</pre></main></html>'
-                    self.send(body.encode(),'text/html; charset=utf-8')
-                else: raise LookupError('页面不存在')
+            if url.path not in {'/api/meta','/api/facets','/api/entries','/api/entry','/api/entry-layout','/api/export','/source'}:
+                raise LookupError('页面不存在')
+            registry = self.collection_registry()
+            requested = parse_qs(url.query, keep_blank_values=True).get('collection')
+            collection = registry.select(requested, book_only=url.path=='/source')
+            if issue := self.collection_conflict(collection.key):
+                self.send(issue, status=409); return
+            p = parse_qs(url.query)
+            p.pop('collection', None)
+            provider = collection.provider
+            if url.path=='/api/meta':
+                native = collection.key == DEFAULT
+                self.send({**provider.meta(), 'collection':collection.key, 'default_collection':DEFAULT,
+                           'collections':registry.describe(), 'source_text':native,
+                           'reader_url':self.reader_url if native else None, 'snapshot':self.snapshot if native else None})
+            elif url.path=='/api/facets': self.send(provider.facets(p))
+            elif url.path=='/api/entries': self.send(provider.entries(p))
+            elif url.path=='/api/entry': self.send(provider.detail(catalog.first(p,'id')))
+            elif url.path=='/api/entry-layout': self.send(provider.layout(catalog.first(p,'id')))
+            elif url.path=='/api/export':
+                filename = '5e-anna.csv' if collection.key==DEFAULT else f'5e-anna-{collection.key}.csv'
+                self.send(provider.export(p),'text/csv; charset=utf-8',download=filename)
+            else:
+                self.serve_source(registry.book, p)
+        except CollectionError as exc: self.send({'code':exc.code},status=exc.status)
         except ValueError as exc: self.send({'error':str(exc)},status=400)
         except LookupError as exc: self.send({'error':str(exc)},status=404)
         except (BrokenPipeError,ConnectionResetError): pass
         except Exception:
             self.send({'error':'读取失败；请检查数据库并重启服务。'},status=500)
             raise
+
+    def serve_source(self, book, p):
+        path = catalog.first(p,'path')
+        text, checksum = book.source_text(path)
+        if catalog.first(p,'sha256') and catalog.first(p,'sha256') != checksum:
+            self.send({'error':'source_snapshot_mismatch','path':path},status=409); return
+        start=max(0,min(len(text),int(catalog.first(p,'start','0')))); end=max(start,min(len(text),int(catalog.first(p,'end',str(start)))))
+        body='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页面文本 · 5e Anna</title><script src="/kit.js"></script><script src="/theme.js"></script><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/style.css"><main class="source-page"><a href="/">← 条目查询</a><h1>页面文本</h1><p>提取后的文本；高亮为所选证据范围。</p><p>'+html.escape(path)+'</p><pre>'+html.escape(text[:start])+'<mark id="evidence">'+html.escape(text[start:end])+'</mark>'+html.escape(text[end:])+'</pre></main></html>'
+        self.send(body.encode(),'text/html; charset=utf-8')

@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import sqlite3
 import sys
+from tempfile import TemporaryDirectory
 import threading
 from urllib.parse import unquote, urlsplit
 
@@ -15,6 +16,7 @@ sys.path.insert(0,str(PROJECT))
 from anna.source.html import Document
 from anna.server.linked_book import BOOK,inject,text_slice
 from anna.paths import WEB
+from anna.presentation.collections import BookCatalog, Collection
 import anna.server.app as up
 import anna.source.search as search
 
@@ -68,11 +70,19 @@ def cases(manifest):
                            'target':{**manifest['entries'][table_ref['target_id']],'name':table_name}}}
 
 
-def main():
+def demo_collection(root):
+    fixture = json.loads((PROJECT/'tests/fixtures/presentation-catalog.json').read_text())
+    path = root/'demo.sqlite'
+    with closing(sqlite3.connect(path)) as db:
+        db.executescript('\n'.join(fixture['sql']))
+    return Collection('demo', '测试资料库', 'Fixture collection', BookCatalog(path, root))
+
+
+def main(scratch):
     manifest=up.validate_bundle(WEB,DB,BOOK)
     data=json.dumps(cases(manifest),ensure_ascii=False).encode()
     raw,linked=fixture()
-    server=up.create_server(DB,BOOK,manifest,PORT)
+    server=up.create_server(DB,BOOK,manifest,PORT,additional_collections=(demo_collection(scratch),))
     app_handler=server.RequestHandlerClass
     class BrowserTestHandler(app_handler, SimpleHTTPRequestHandler):
         def __init__(self,*args,**kwargs):super().__init__(*args,directory=str(WEB),**kwargs)
@@ -108,4 +118,6 @@ def main():
         server.server_close()
         if thread:thread.join()
 
-if __name__=='__main__':main()
+if __name__=='__main__':
+    with TemporaryDirectory() as scratch:
+        main(Path(scratch))

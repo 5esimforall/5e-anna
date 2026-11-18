@@ -11,6 +11,8 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     body:'正文',fields:'属性',relations:'关系',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
+    collectionLabel:'资料库',collectionReserved:'{name}（未接入）',collectionHome:'回到默认资料库',collectionRestart:'服务还不支持资料库切换。若刚更新 Anna，请重启 make up。',
+    collectionErrors:{invalid_collection:'资料库地址无效。',unknown_collection:'未找到这个资料库。',collection_unavailable:'这个资料库尚未接入。'},
     moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
@@ -31,6 +33,8 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     body:'Text',fields:'Attributes',relations:'Relations',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
+    collectionLabel:'Collection',collectionReserved:'{name} (not connected)',collectionHome:'Return to the default collection',collectionRestart:'The running server does not support collections. If you just updated Anna, restart make up.',
+    collectionErrors:{invalid_collection:'Invalid collection address.',unknown_collection:'Collection not found.',collection_unavailable:'This collection is not connected yet.'},
     moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
@@ -44,7 +48,8 @@ const annaUiLabels = {
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']},
     flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a row for its text and evidence'}
 };
-const ui = annaUiLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+const locale = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
+const ui = annaUiLabels[locale];
 // A ruleset is a rules generation, not a publication year: short labels name it, the full label says so.
 const rulesetShort=r=>ui.rulesets[r]?.[0]||r, rulesetFull=r=>ui.rulesets[r]?.[1]||r;
 document.querySelector('#prefer').innerHTML=['5r','5e'].map(value=>`<option value="${value}" title="${esc(rulesetFull(value))}">${esc(rulesetShort(value))}</option>`).join('');
@@ -92,7 +97,33 @@ function fieldText(entry,field,short=false){
   if(raw===undefined||raw===null||raw==='')return '—';
   return Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
 }
-async function api(path,signal){const r=await fetch(path,{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:d.error||'请求失败');return d;}
+// Detail and layout requests carry the same collection as the list, even for IDs
+// that also occur in a different collection. Keep the unqualified book URLs valid.
+function collectionURL(path){
+  if(!params.has('collection'))return path;
+  const url=new URL(path,location.origin);
+  url.searchParams.delete('collection');
+  for(const key of params.getAll('collection'))url.searchParams.append('collection',key);
+  return url.pathname+url.search;
+}
+async function api(path,signal){const r=await fetch(collectionURL(path),{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败');return d;}
+function showCollections(){
+  if(!metadata.collections)return;
+  const select=$('#collection');
+  select.replaceChildren(...metadata.collections.map(({id,label,status})=>{
+    const option=new Option(status==='ready'?label[locale]:ui.collectionReserved.replace('{name}',label[locale]),id);
+    option.disabled=status!=='ready';
+    return option;
+  }));
+  select.value=metadata.collection;
+  $('#collection-picker').hidden=metadata.collections.length<2;
+  $('.heading-note').hidden=metadata.collection!==metadata.default_collection;
+  // A new collection has its own filters, IDs and result layout. Back restores this document's query.
+  select.onchange=()=>{if(select.value!==metadata.collection){
+    const query=new URLSearchParams({collection:select.value});
+    location.assign(select.value===metadata.default_collection?'/':'/?'+query);
+  }};
+}
 let restoringUi=false, uiSaveTimer, lastResultEntry=null;
 history.scrollRestoration='manual';
 function captureUiState(){
@@ -581,7 +612,7 @@ $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#fi
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
 $('#reset').onclick=()=>{
   clearDraft();committed=[];
-  for(const key of [...params.keys()])if(!['sort','dir','versions','prefer'].includes(key))params.delete(key);
+  for(const key of [...params.keys()])if(!['collection','sort','dir','versions','prefer'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 };
 function dropCondition(key){
@@ -781,7 +812,11 @@ initReaderLayout();
 async function init(){
   let saved=history.state?.anna;restoringUi=true;
   try{
-    metadata=await api('/api/meta');Object.assign(fieldNames,metadata.fields);
+    // Static files can be updated while the old Python process is still serving them.
+    // Leave its original unscoped queries usable, but never read it as a requested library.
+    const meta=await api('/api/meta');
+    if(!meta.collections&&params.has('collection'))throw new Error(ui.collectionRestart);
+    metadata=meta;Object.assign(fieldNames,metadata.fields);showCollections();
     if(sharing())annaCompanions.mount({page:'query',snapshot:metadata.snapshot});
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
@@ -792,7 +827,13 @@ async function init(){
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
-  }catch(e){$('#error').hidden=false;$('#error').textContent=e.message;$('#result-count').textContent='服务未就绪';}
+  }catch(e){
+    const error=$('#error');error.hidden=false;error.textContent=e.message;
+    if(params.has('collection')){
+      const back=document.createElement('a');back.href='/';back.textContent=ui.collectionHome;error.append(' ',back);
+    }
+    $('#result-count').textContent='服务未就绪';
+  }
   finally{restoringUi=false;quietTopic=false;saveUiState();}
 }
 init();

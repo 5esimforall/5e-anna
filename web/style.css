@@ -166,6 +166,8 @@ h1 { flex-shrink: 0; margin: 0; font-family: var(--anna-serif); font-size: 28px;
 #empty-elsewhere { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 10px; }
 .heading-row>.muted, .heading-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--anna-type-ui); }
 .heading-note { color: var(--anna-muted); margin-left: auto; }
+#collection-picker { margin-inline-start: auto; display: flex; align-items: baseline; gap: 6px; min-width: 0; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
+#collection-picker select { min-width: 0; max-width: min(34cqi, 180px); text-overflow: ellipsis; }
 .toolbar { display: flex; align-items: center; gap: 7px; margin-bottom: 14px; }
 .toolbar button { min-height: 38px; }
 .toolbar .quiet-button { border-color: transparent; background: transparent; color: var(--anna-secondary); }
@@ -498,6 +500,7 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .bottom-bar>.legend { display: none; }
 }
 @container query (max-width:520px) {
+  #collection-picker>span { position: absolute; clip-path: inset(50%); width: 1px; height: 1px; overflow: hidden; }
   .sort-label { display: none; }
   .facet { grid-template-columns: 1fr; }
   .facet legend { width: auto; float: none; padding: 0 0 6px; }

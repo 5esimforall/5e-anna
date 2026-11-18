@@ -18,6 +18,7 @@ from anna.presentation.reader import SCHEMA, ReaderError, page_data
 from anna.review.store import load_annotations
 import anna.server.query as serve
 from anna.presentation import catalog
+from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
 from anna.presentation.tour import TourCache, TourError
 import anna.source.search as search
 
@@ -94,11 +95,14 @@ def load_bundle(source, db, book, quiet=True):
 class AnnaServer(ThreadingHTTPServer):
     """Owns the bundle requests serve; in watch mode one thread swaps it after a rebuild."""
 
-    def __init__(self, address, handler, bundle, watch=False):
+    def __init__(self, address, handler, bundle, watch=False, *, additional_collections=()):
         # A failed bind closes the socket through server_close(), so the reload state must exist
         # before the socket is created; otherwise the bind error is masked by an AttributeError.
         self.bundle = bundle
         self.source = bundle.source
+        self.additional_collections = tuple(additional_collections)
+        # Reject invalid registrations before opening a listener.
+        CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections)
         self.watch = watch
         self.watch_stop = threading.Event()
         self.reload_lock = threading.Lock()
@@ -178,6 +182,10 @@ class AnnaHandler(serve.Handler):
         return self.current.source
 
     @property
+    def additional_collections(self):
+        return self.server.additional_collections
+
+    @property
     def search_entries(self):
         return self.current.entries
 
@@ -194,6 +202,11 @@ class AnnaHandler(serve.Handler):
             return {'code': 'reloading', 'error': '数据已更新，正在自动重载；完成后刷新页面。'}
         return {'code': 'bundle_changed'}
 
+    def collection_conflict(self, key):
+        if key == DEFAULT and not self.server.bundle_intact(self.current):
+            return self.stale()
+        return None
+
     def do_GET(self):
         self.current = self.server.bundle
         if self.headers.get('Host', '') not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}:
@@ -203,15 +216,16 @@ class AnnaHandler(serve.Handler):
         if url.path.startswith('/book/'):
             self.serve_book(url.path[len('/book'):])
             return
-        # Keep the independent UI loadable so a refresh can explain stale data.
-        if (url.path.startswith('/api/') or url.path == '/source') and not self.server.bundle_intact(self.current):
-            self.send(self.stale(), status=409)
-            return
         if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour', '/api/tour-layout'}:
             super().do_GET()
             return
         params = parse_qs(url.query, keep_blank_values=True)
         try:
+            if 'collection' in params:
+                self.collection_registry().select(params.pop('collection'), book_only=True)
+            if issue := self.collection_conflict(DEFAULT):
+                self.send(issue, status=409)
+                return
             if 'snapshot' in params and params['snapshot'] != [self.current.snapshot]:
                 raise ReaderError('snapshot_changed', 409)
             if url.path == '/api/reader':
@@ -233,7 +247,7 @@ class AnnaHandler(serve.Handler):
                 if len(catalog.first(params, 'keyword')) > 2000:
                     raise ReaderError('invalid_search', 400)
                 self.send(search.search_entries(self.search_entries, params))
-        except (ReaderError, TourError) as exc:
+        except (ReaderError, TourError, CollectionError) as exc:
             self.send({'code': exc.code}, status=exc.status)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -311,10 +325,11 @@ class AnnaHandler(serve.Handler):
         self.send_error(405)
 
 
-def create_server(db, book, manifest, port, watch=False, bundle=None):
+def create_server(db, book, manifest, port, watch=False, bundle=None, *, additional_collections=()):
     """Build the one-port server; an already loaded bundle carries the search index."""
     bundle = bundle or Bundle(manifest['source_root'], db, book, manifest, [])
-    return AnnaServer(('127.0.0.1', port), AnnaHandler, bundle, watch=watch)
+    return AnnaServer(('127.0.0.1', port), AnnaHandler, bundle, watch=watch,
+                      additional_collections=additional_collections)
 
 
 def main():

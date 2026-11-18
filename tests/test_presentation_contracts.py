@@ -11,9 +11,11 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import Mock
 from urllib.parse import urlencode
 
 from anna.presentation import catalog, contracts, reader
+from anna.presentation.collections import BookCatalog, CatalogProvider, Collection, CollectionRegistry, DEFAULT, FIVETOOLS
 from anna.presentation.layout import entry_layout
 from anna.server.linked_book import inject, text_slice
 from anna.server.query import Handler
@@ -33,12 +35,13 @@ def database(data, path=':memory:'):
 
 
 @contextmanager
-def endpoint(data):
+def endpoint(data, additional=()):
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / 'catalog.sqlite'
         database(data, path).close()
         class ContractHandler(Handler):
             db_path = path
+            additional_collections = additional
         server = ThreadingHTTPServer(('127.0.0.1', 0), ContractHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -110,6 +113,74 @@ class CatalogContractTests(unittest.TestCase):
                 actual, _, body = request(route)
                 self.assertEqual(actual, status)
                 self.assertIn(message, json.loads(body)['error'])
+
+    def test_collection_selection_does_not_silently_fall_back(self):
+        with endpoint(self.data) as request:
+            status, _, body = request('/api/meta')
+            self.assertEqual(status, 200)
+            meta = json.loads(body)
+            self.assertEqual(meta['collection'], DEFAULT)
+            self.assertEqual(meta['default_collection'], DEFAULT)
+            self.assertTrue(meta['source_text'])
+            self.assertEqual({c['id']: c['status'] for c in meta['collections']},
+                             {DEFAULT: 'ready', FIVETOOLS.key: 'reserved'})
+            for suffix, status, code in (
+                ('5etools', 409, 'collection_unavailable'),
+                ('not-registered', 404, 'unknown_collection'),
+                ('', 400, 'invalid_collection'),
+                ('5echm&collection=5etools', 400, 'invalid_collection'),
+            ):
+                actual, _, body = request('/api/entries?collection='+suffix)
+                self.assertEqual((actual, json.loads(body)), (status, {'code':code}))
+
+    def test_second_provider_serves_every_projection_in_its_own_scope(self):
+        detail = self.data['details'][1]
+        eid = detail['id']
+        external = Mock(spec=CatalogProvider)
+        external.meta.return_value = {'sources':[{'id':'external-book'}]}
+        external.entries.return_value = {'rows':[{'id':eid}]}
+        external.facets.return_value = {'groups':[]}
+        external.detail.return_value = {'id':eid,'body':'外部正文'}
+        external.layout.return_value = {'status':'empty'}
+        external.export.return_value = b'external\n'
+        # A future provider fills the reserved key without changing the router.
+        with endpoint(self.data, (Collection(FIVETOOLS.key, FIVETOOLS.zh, FIVETOOLS.en, external),)) as request:
+            def selected(path):
+                return request(path+('&' if '?' in path else '?')+'collection=5etools')
+            status, _, body = selected('/api/meta')
+            self.assertEqual(status, 200)
+            meta = json.loads(body)
+            self.assertEqual(meta['collection'], FIVETOOLS.key)
+            self.assertIn({'id':'5etools','label':{'zh':'5etools','en':'5etools'},'status':'ready'},meta['collections'])
+            self.assertIsNone(meta['reader_url'])
+            self.assertIsNone(meta['snapshot'])
+            self.assertFalse(meta['source_text'])
+            for path, expected in (
+                ('/api/entries?q=Shield', external.entries.return_value),
+                ('/api/facets?q=Shield', external.facets.return_value),
+                ('/api/entry?id='+eid, external.detail.return_value),
+                ('/api/entry-layout?id='+eid, external.layout.return_value),
+            ):
+                status, _, body = selected(path)
+                self.assertEqual((status, json.loads(body)), (200, expected))
+            status, headers, body = selected('/api/export?q=Shield')
+            self.assertEqual((status, body), (200, b'external\n'))
+            self.assertEqual(headers['Content-Disposition'], 'attachment; filename="5e-anna-5etools.csv"')
+            for method in (external.entries, external.facets, external.export):
+                method.assert_called_once_with({'q':['Shield']})
+            external.detail.assert_called_once_with(eid)
+            external.layout.assert_called_once_with(eid)
+            # The same raw ID in the default collection still opens the original record.
+            self.assertEqual(json.loads(request('/api/entry?id='+eid)[2]), detail['expected'])
+            status, _, body = selected('/source')
+            self.assertEqual((status, json.loads(body)), (400, {'code':'collection_unsupported'}))
+
+    def test_registration_requires_distinct_safe_keys(self):
+        book = BookCatalog(Path('unused.sqlite'), Path('.'))
+        with self.assertRaisesRegex(ValueError,'Duplicate collection'):
+            CollectionRegistry(book, (Collection(DEFAULT, '重复', 'Duplicate'),))
+        with self.assertRaisesRegex(ValueError,'Invalid collection key'):
+            CollectionRegistry(book, (Collection('../other', '无效', 'Invalid'),))
 
 
 class ProjectionContractTests(unittest.TestCase):

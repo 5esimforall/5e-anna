@@ -470,10 +470,11 @@ test('compact rows join names and versions on one line, as a per-browser prefere
 test('the condition bar keeps each search as its own ∧-joined chip and turns typed values into conditions',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await visit(page,spells);
   const q=page.locator('#q'),chips=page.locator('#active-filters');
+  const suggestions=page.getByRole('listbox',{name:'可添加的条件'}).getByRole('option');
   // The everyday path: typing filters live; Enter keeps the search and empties the field for the next one.
   // The text being typed is `typing`, not yet a kept search `q`.
   await q.fill('火');await expect(page).toHaveURL(/typing=%E7%81%AB/);await ready(page);
-  await expect(page.getByRole('option').first()).toContainText('包含“火”');
+  await expect(suggestions.first()).toContainText('包含“火”');
   await q.press('Enter');await expect(q).toHaveValue('');await expect(q).toBeFocused();
   await q.fill('球');await expect.poll(()=>new URL(page.url()).searchParams.get('typing')).toBe('球');await ready(page);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['火']);
@@ -492,7 +493,7 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   expect(new URL(page.url()).searchParams.getAll('f_school')).toEqual(['塑能']);
   await expect(chips).toContainText('学派：塑能');
   // The second suggestion searches the entry text instead of the name.
-  await q.fill('专注');await expect(page.getByRole('option').nth(1)).toContainText('正文');
+  await q.fill('专注');await expect(suggestions.nth(1)).toContainText('正文');
   await q.press('ArrowDown');await q.press('Enter');await ready(page);
   expect(new URL(page.url()).searchParams.getAll('body')).toEqual(['专注']);
   expect(new URL(page.url()).searchParams.has('typing')).toBeFalsy();

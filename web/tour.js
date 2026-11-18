@@ -7,8 +7,8 @@
    is ready, in its final form, and the columns change width without rewrapping the text in them. */
 const annaTourLabels = {
   zh:{title:'导览', skip:'跳到导览', intro:'从想做的事出发，逐层走进原书的章节、步骤与条目。',
-    groups:{choices:'这一步要选择', contents:'目录', outline:'本页', parts:'包含', subclasses:'子职', class:'所属职业',
-      feats:'授予专长', spells:'法术', entries:'条目', shelf:'书架'},
+    groups:{shelf:'书架', outline:'本页', choices:'这一步要选择', contents:'目录', entries:'条目',
+      parts:'包含', class:'所属职业', subclasses:'子职', feats:'授予专长', spells:'法术'},
     facet:'按{field}', readBook:'在 Stella 中阅读', openEntry:'在 Anna 中查看', openQuery:'在 Anna 中查看 {count} 条',
     spellList:'可用法术', more:'另有 {count} 项', moreInAnna:'另有 {count} 项，在 Anna 中查看全部',
     previous:'上一项：{name}', next:'下一项：{name}', back:'‹ {name}', table:'表', versions:'其他版本',
@@ -18,8 +18,8 @@ const annaTourLabels = {
     status:{missing:'未找到对应原文', ambiguous:'原文对应不唯一', placeholder:'分组'},
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']}},
   en:{title:'Tour', skip:'Skip to the tour', intro:'Start from what you want to do, then go down through the book\'s chapters, steps and entries.',
-    groups:{choices:'Choose in this step', contents:'Contents', outline:'On this page', parts:'Contains', subclasses:'Subclasses', class:'Class',
-      feats:'Granted feats', spells:'Spells', entries:'Entries', shelf:'Bookshelf'},
+    groups:{shelf:'Bookshelf', outline:'On this page', choices:'Choose in this step', contents:'Contents', entries:'Entries',
+      parts:'Contains', class:'Class', subclasses:'Subclasses', feats:'Granted feats', spells:'Spells'},
     facet:'By {field}', readBook:'Read in Stella', openEntry:'Open in Anna', openQuery:'Open {count} in Anna',
     spellList:'Spell list', more:'{count} more', moreInAnna:'{count} more; open them all in Anna',
     previous:'Previous: {name}', next:'Next: {name}', back:'‹ {name}', table:'Table', versions:'Other versions',
@@ -88,7 +88,7 @@ const annaTour = (() => {
   function item(row, group, index, depth, view) {
     const title = row.kind === 'query' && !row.title ? ui.spellList : nameOf(row);
     const tags = [];
-    if (['section', 'entries', 'subclasses', 'feats', 'class', 'choices'].includes(group.key) && row.ruleset !== view.ruleset) tags.push(rulesetTag(row.ruleset));
+    if (['section', 'choices', 'entries', 'class', 'subclasses', 'feats'].includes(group.key) && row.ruleset !== view.ruleset) tags.push(rulesetTag(row.ruleset));
     if (row.table) tags.push(`<span class="tour-tag">${esc(ui.table)}</span>`);
     const status = ui.status[row.status] && row.status !== 'placeholder' ? ui.status[row.status] : '';
     const hint = status || row.hint || '';

@@ -8,7 +8,9 @@ const test=base.extend({context:async({context},use)=>{
   await use(context);expect(errors,'tour JavaScript errors').toEqual([]);
 }});
 const level=(page,depth)=>page.locator(`.tour-column[data-depth="${depth}"]`);
-const row=(page,depth,name)=>level(page,depth).locator('.tour-item').filter({has:page.locator('.tour-item-title',{hasText:name})}).first();
+// A row by its name: the whole title, or the title's Chinese part before its English name.
+const named=name=>new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\s|$)');
+const row=(page,depth,name)=>level(page,depth).locator('.tour-item').filter({has:page.locator('.tour-item-title',{hasText:named(name)})}).first();
 async function ready(page,depth){
   await expect(level(page,depth)).toHaveAttribute('data-state','ready');
   await expect(page.locator('.tour-column')).toHaveCount(depth+1);

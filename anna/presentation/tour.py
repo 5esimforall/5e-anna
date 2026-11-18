@@ -189,7 +189,7 @@ class Tour:
                 entry = Entry(*row[:9], row[9], bool(row[10]), bool(row[11]))
                 self.entries[entry.id] = entry
                 self.on_page[entry.path].append(entry)
-            self.subclasses, self.parent_class, self.feats = defaultdict(list), {}, defaultdict(list)
+            self.parent_class, self.subclasses, self.feats = {}, defaultdict(list), defaultdict(list)
             for subject, predicate, target in db.execute(
                     "SELECT subject_id, predicate, object_id FROM relations "
                     "WHERE predicate IN ('belongs_to_class', 'grants_feat') AND object_id IS NOT NULL ORDER BY id"):
@@ -350,29 +350,30 @@ class Tour:
         return sum(divider(self.nodes[c]) is None for c in self.children.get(node_id, []))
 
     def below(self, node_id):
-        """The rows a contents node opens onto: its contents children and the entries on its page."""
-        return self.contents_count(node_id) + len(self.outline_ids(node_id)) or None
+        """The rows a contents node opens onto: the entries on its page and its contents children."""
+        return len(self.outline_ids(node_id)) + self.contents_count(node_id) or None
 
     def contents_item(self, node_id, hint=False):
         node = self.nodes[node_id]
-        item = {'id': 'n' + node_id, 'kind': 'contents', 'title': node['label'], 'status': node['status'],
-                'count': self.below(node_id)}
+        item = {'id': 'n' + node_id, 'kind': 'contents', 'title': node['label'], 'status': node['status']}
         if hint and node['status'] == 'present':
             item['hint'] = first_sentence(self.page_lead(node['path'])) or None
+        item['count'] = self.below(node_id)
         return item
 
     def entry_item(self, eid, hint=False):
         e = self.entries[eid]
-        item = {'id': eid, 'kind': 'entry', 'title': e.name, 'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type),
-                'ruleset': e.ruleset, 'table': e.table, 'count': len(self.parts.get(eid, [])) or None}
+        item = {'id': eid, 'kind': 'entry', 'title': e.name}
         # A table's text is its cells; only prose has a first sentence worth quoting.
         if hint and not e.table:
             item['hint'] = first_sentence(self.entry_lead(e)) or None
+        item.update({'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type), 'ruleset': e.ruleset, 'table': e.table,
+                     'count': len(self.parts.get(eid, [])) or None})
         return item
 
     def topic_item(self, key):
         topic = self.topics[key]
-        item = {'id': key, 'kind': 'topic', 'label': topic.label, 'ruleset': topic.ruleset, 'status': 'ok', 'count': None}
+        item = {'id': key, 'kind': 'topic', 'label': topic.label, 'status': 'ok', 'ruleset': topic.ruleset, 'count': None}
         if topic.contents:
             status, node = self.topic_nodes[key]
             item['status'] = status
@@ -487,8 +488,8 @@ class Tour:
         while parent:
             ancestors.append(self.nodes[parent]['label'])
             parent = self.nodes[parent]['parent_id']
-        view = {'id': 'n' + node_id, 'kind': 'contents', 'title': name or node['label'], 'status': node['status'],
-                'trail': ancestors[::-1], 'sources': [], 'lead': None, 'read': None, 'anna': None, 'groups': []}
+        view = {'id': 'n' + node_id, 'kind': 'contents', 'trail': ancestors[::-1], 'title': name or node['label'],
+                'sources': [], 'status': node['status'], 'lead': None, 'read': None, 'anna': None, 'groups': []}
         if node['status'] == 'present':
             view['sources'] = self.sources_of(self.page_sources.get(node['path'], []))
             view['lead'] = self.lead(self.page_lead(node['path']))
@@ -502,15 +503,17 @@ class Tour:
         entry = self.page_entry(node['path']) if node['status'] == 'present' else None
         if entry and entry.type != 'section':
             view['anna'] = {'entry': entry.id, 'type': entry.type}
+        # The page's own headings and tables carry on from its lead, as the book reads before its subpages;
+        # then the option sets this step leads to, then the contents below it.
+        outline = self.outline_ids(node_id)
+        if outline:
+            view['groups'].append(self.group('outline', [self.entry_item(e, len(outline) <= HINTED_GROUP) for e in outline]))
         if self.choices.get(node_id):
             view['groups'].append(self.group('choices', [self.topic_item(k) for k in self.choices[node_id]]))
         children = self.children.get(node_id, [])
         hinted = self.contents_count(node_id) <= HINTED_GROUP
         view['groups'] += [self.group('contents', [self.contents_item(c, hinted) for c in ids], label=label)
                            for label, ids in self.divided(children)]
-        outline = self.outline_ids(node_id)
-        if outline:
-            view['groups'].append(self.group('outline', [self.entry_item(e, len(outline) <= HINTED_GROUP) for e in outline]))
         view['sequence'] = self.sequence(node_id)
         return view
 
@@ -523,9 +526,9 @@ class Tour:
 
     def entry_view(self, e):
         node = self.owning_node(e.path)
-        view = {'id': e.id, 'kind': 'entry', 'title': e.name, 'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type),
-                'ruleset': e.ruleset, 'status': 'ok', 'trail': self.label_path[node].split(' / ') if node else [],
-                'sources': self.sources_of(self.entry_sources.get(e.id, [])), 'lead': self.lead(self.entry_lead(e)),
+        view = {'id': e.id, 'kind': 'entry', 'trail': self.label_path[node].split(' / ') if node else [], 'title': e.name,
+                'ruleset': e.ruleset, 'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type),
+                'sources': self.sources_of(self.entry_sources.get(e.id, [])), 'status': 'ok', 'lead': self.lead(self.entry_lead(e)),
                 'read': {'entry': e.id} if e.id in self.locatable else None,
                 'anna': {'entry': e.id, 'type': e.type} if e.type != 'section' else None, 'groups': []}
         parts = self.parts.get(e.id, [])
@@ -546,8 +549,8 @@ class Tour:
         return view
 
     def topic_view(self, topic):
-        view = {'id': topic.key, 'kind': 'topic', 'label': topic.label, 'ruleset': topic.ruleset, 'status': 'ok',
-                'trail': [], 'sources': [], 'lead': None, 'read': None, 'anna': None, 'groups': []}
+        view = {'id': topic.key, 'kind': 'topic', 'trail': [], 'label': topic.label, 'ruleset': topic.ruleset,
+                'sources': [], 'status': 'ok', 'lead': None, 'read': None, 'anna': None, 'groups': []}
         if topic.contents:
             status, node = self.topic_nodes[topic.key]
             view['status'] = status

@@ -192,10 +192,11 @@ class TourTests(unittest.TestCase):
         self.assertTrue(all(g['ordered'] for g in contents))
         self.assertEqual(contents[0]['items'][0]['hint'], '选择一个职业，写在角色卡上。')
 
-    def test_a_step_leads_with_source_words_then_choices_and_its_checklist(self):
+    def test_a_step_leads_with_source_words_and_its_checklist_then_choices(self):
         step = self.tour.view('n13')
         self.assertEqual(step['lead'], {'text': '选择一个职业，写在角色卡上。职业细节见第三章。', 'truncated': False})
         self.assertEqual(step['sources'], ['玩家手册'])
+        self.assertEqual([g['key'] for g in step['groups']], ['outline', 'choices'])
         self.assertEqual([i['id'] for i in self.items(step, 'choices')], ['wizard'])
         outline = self.items(step, 'outline')
         self.assertEqual([(i['id'], i['table'], i.get('hint')) for i in outline],
@@ -210,6 +211,10 @@ class TourTests(unittest.TestCase):
         page = self.tour.view('n3')
         self.assertEqual(page['anna'], {'entry': 'ver_b1', 'type': 'class'})
         self.assertEqual([i['id'] for i in self.items(page, 'outline')], ['ver_b2'])
+        # A chapter's own page reads before the subpages below it.
+        chapter = self.tour.view('n16')
+        self.assertEqual([(g['key'], [i['id'] for i in g['items']]) for g in chapter['groups']],
+                         [('outline', ['ver_b2']), ('contents', ['n17'])])
         entry = self.tour.view('ver_b1')
         # The quick-reference index lists the page but the book owns it.
         self.assertEqual(entry['trail'], ['玩家手册', '第三章'])

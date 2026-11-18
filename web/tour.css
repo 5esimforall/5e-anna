@@ -1,12 +1,15 @@
 /* Anna's tour: columns that keep the way down in view. Each column is one level; the source's own words lead
    it in serif, and the rows below lead on to the next level, to Stella or to Anna's table. Index levels keep a
-   narrow column; the deepest level widens when it reads as a detail; levels above the open three fold to spines. */
+   narrow column; the deepest level widens when it reads as a detail; levels above the open three fold to spines.
+   Columns change width without rewrapping their text: see tour.js `move`. */
 .tour-app { overflow: hidden; }
 #tour-main { display: flex; flex-direction: column; height: calc(100dvh - 56px); min-height: 420px; background: var(--anna-canvas); }
 #tour-notice { margin: 0; padding: 8px 22px; border-bottom: 1px solid var(--anna-line); background: var(--anna-warning-bg); color: var(--anna-warning); }
 #tour-columns { --tour-column: 360px; --tour-spine: 40px; --tour-detail: 440px; display: flex; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-padding-inline: 0; }
 #tour-columns:focus { outline: 0; }
-.tour-column { flex: 0 0 var(--tour-column); min-width: 0; container-type: inline-size; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--anna-line); background: var(--anna-paper); transition: flex-basis .18s ease, flex-grow .18s ease; }
+.tour-column { flex: 0 0 var(--tour-column); min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--anna-line); background: var(--anna-paper); }
+/* A level's sheet holds its text; the sheet's width decides how the text is set. */
+.tour-sheet { container-type: inline-size; }
 .tour-column[data-depth="0"] { --tour-column: 320px; background: var(--anna-surface); }
 /* The deepest level is where the reader is reading: a detail takes the room the levels above leave, an index
    stays narrow and the room beside it waits for the next choice. */
@@ -23,12 +26,18 @@
 .tour-column-body { padding: 20px 18px 28px; }
 /* A detail being read holds the focus itself, so the arrow keys scroll its text. */
 .tour-column:focus-visible { outline-offset: -3px; }
-#tour-columns[data-rest]::after { content: attr(data-rest); flex: 1 0 200px; align-self: center; padding: 0 32px; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: center; }
+#tour-columns[data-rest]::after { content: attr(data-rest); flex: 1 0 200px; align-self: center; padding: 0 32px; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: center; animation: tour-in var(--anna-fast) var(--anna-ease); }
+#tour-columns:has(> .tour-column[data-moving])::after { content: none; }
+@keyframes tour-in { from { opacity: 0; } }
+/* While the columns move, each keeps its text set at the width it settles to and its edge slides over that text,
+   so no line rewraps on the way. */
+.tour-column[data-moving] { overflow-x: hidden; }
+.tour-column[data-moving] > :is(.tour-sheet, .tour-spine) { min-width: var(--tour-settled); max-width: var(--tour-settled); }
 
 /* A folded level is a spine that names it, read top to bottom; choosing it brings the level back into view. */
 .tour-spine { display: none; }
 .tour-column[data-place=folded] { flex-basis: var(--tour-spine); overflow: hidden; background: var(--anna-surface); }
-.tour-column[data-place=folded] .tour-column-body { display: none; }
+.tour-column[data-place=folded] .tour-sheet { display: none; }
 .tour-column[data-place=folded] .tour-spine { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; height: 100%; padding: 18px 0; border: 0; border-radius: 0; background: none; color: var(--anna-secondary); font: inherit; font-size: var(--anna-type-ui); cursor: pointer; }
 .tour-spine span { overflow: hidden; min-height: 0; letter-spacing: .08em; text-overflow: ellipsis; white-space: nowrap; writing-mode: vertical-rl; }
 .tour-spine .tour-item-go { order: -1; }
@@ -106,9 +115,6 @@
   .tour-column[data-place=last][data-shape=detail] .tour-column-body { padding-inline: 14px; }
   .tour-back { display: inline-block; }
   .tour-column-body { padding: 16px 14px 28px; }
-}
-@media(prefers-reduced-motion:reduce) {
-  .tour-column { transition: none; }
 }
 @media(hover:none) and (pointer:coarse) {
   .tour-item { min-height: 44px; }

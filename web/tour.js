@@ -3,7 +3,8 @@
    to the book's chapters, steps and entries; choosing a row opens the next level beside it. At most three levels
    stay open and the ones above them fold into spines on the left. Only the deepest level widens, and only when it
    reads as a detail: then its own words show as the book sets them, and once a row below it opens it narrows back
-   to its quoted lead. Rows lead on to the next level, to Stella's reading or to Anna's table. */
+   to its quoted lead. Rows lead on to the next level, to Stella's reading or to Anna's table. A level opens once it
+   is ready, in its final form, and the columns change width without rewrapping the text in them. */
 const annaTourLabels = {
   zh:{title:'导览', skip:'跳到导览', intro:'从想做的事出发，逐层走进原书的章节、步骤与条目。',
     groups:{choices:'这一步要选择', contents:'目录', outline:'本页', parts:'包含', subclasses:'子职', class:'所属职业',
@@ -39,7 +40,11 @@ const annaTour = (() => {
   const openLevels = () => roomy.matches ? 3 : phone.matches ? 1 : 2;
   // A level whose next level is open keeps it in step with the focused row, once the focus rests there this long.
   const FOLLOW_DELAY = 150;
-  const views = new Map(), layouts = new Map(), reading = new WeakMap();
+  // Levels that answer within this time open in one step; slower ones first show that they are loading.
+  const LOADING_DELAY = 180;
+  // How long the columns take to reach their new widths, on the shared easing curve.
+  const MOVE_TIME = 200, ease = getComputedStyle(document.documentElement).getPropertyValue('--anna-ease').trim() || 'ease-out';
+  const views = new Map(), layouts = new Map(), reading = new WeakMap(), motions = new WeakMap();
   let snapshot = null, path = [], generation = 0, mounted = false, topic = null, following = 0;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
@@ -148,7 +153,7 @@ const annaTour = (() => {
     section.className = 'tour-column'; section.dataset.depth = depth; section.dataset.segment = segment;
     section.setAttribute('aria-labelledby', `tour-title-${depth}`);
     section.setAttribute('aria-busy', 'true');
-    section.innerHTML = `<button type="button" class="tour-spine"><span>${esc(ui.loading)}</span>${icon}</button><div class="tour-column-body"><h2 id="tour-title-${depth}">${esc(ui.loading)}</h2></div>`;
+    section.innerHTML = `<button type="button" class="tour-spine"><span>${esc(ui.loading)}</span>${icon}</button><div class="tour-sheet"><div class="tour-column-body"><h2 id="tour-title-${depth}">${esc(ui.loading)}</h2></div></div>`;
     return section;
   }
   function render(section, view, depth) {
@@ -159,19 +164,19 @@ const annaTour = (() => {
     section.querySelector('.tour-column-body').innerHTML = body(view, depth);
   }
   // A detail shows its own words as the book sets them while it is the deepest level; its lead stands in for them
-  // while they load, when they cannot be laid out, and once a deeper level opens.
+  // while they load, when they cannot be laid out, and once a deeper level opens. Words that arrive after the level
+  // is already on screen fade in over the lead.
   async function expand(section) {
     if (section.dataset.shape !== 'detail' || section.dataset.layout) return;
     section.dataset.layout = 'loading';
-    const segment = section.dataset.segment;
     let layout = null;
-    try { layout = await load('/api/tour-layout', layouts, segment); } catch { layout = null; }
-    if (!section.isConnected || section.dataset.segment !== segment) return;
+    try { layout = await load('/api/tour-layout', layouts, section.dataset.segment); } catch { layout = null; }
     if (layout?.status !== 'ok') { section.dataset.layout = 'none'; return; }
     const box = document.createElement('div'); box.className = 'tour-body layout-text'; box.lang = 'zh-CN'; box.innerHTML = layout.html;
     const lead = section.querySelector('.tour-lead');
     lead ? lead.after(box) : section.querySelector('.tour-main').append(box);
     section.dataset.layout = 'ready';
+    if (section.isConnected && !reduced.matches) box.animate({opacity:[0, 1]}, {duration:MOVE_TIME, easing:ease});
   }
   function failed(section, error, depth) {
     section.dataset.state = 'failed'; section.removeAttribute('aria-busy');
@@ -201,6 +206,34 @@ const annaTour = (() => {
     if (last?.dataset.place === 'last') expand(last);
   }
   function say(message) { notice.textContent = message; notice.hidden = !message; }
+
+  /* The columns move when a level opens, folds, unfolds, widens or narrows; the text in them does not. `change`
+     settles the columns at once, then each column whose width changed starts from the width its place had before
+     (a level replacing another at the same depth takes over its width, a new one starts from nothing) with its
+     sheet held at the width it settles to, so the column's edge uncovers or covers lines already set. Resolves once
+     the columns have settled. */
+  function move(change) {
+    const before = new Map([...columns.children].map(section => [section.dataset.depth, section.getBoundingClientRect().width]));
+    for (const section of columns.children) release(section);
+    change();
+    if (reduced.matches || phone.matches || !before.size) return Promise.resolve();
+    const moves = [...columns.children].map(section => ({section, from:before.get(section.dataset.depth) ?? 0,
+      to:section.getBoundingClientRect().width, sheet:section.clientWidth})).filter(({from, to}) => Math.abs(to - from) >= 1);
+    return Promise.all(moves.map(({section, from, to, sheet}) => {
+      section.style.setProperty('--tour-settled', sheet + 'px');
+      section.dataset.moving = '';
+      const motion = section.animate({flex:[`0 0 ${from}px`, `0 0 ${to}px`]}, {duration:MOVE_TIME, easing:ease});
+      motions.set(section, motion);
+      return motion.finished.then(() => { if (motions.get(section) === motion) release(section); }, () => {});
+    }));
+  }
+  // A column that stops moving, done or interrupted, lets its sheet follow its width again.
+  function release(section) {
+    if (!motions.has(section)) return;
+    motions.get(section).cancel(); motions.delete(section);
+    delete section.dataset.moving; section.style.removeProperty('--tour-settled');
+    section.scrollLeft = 0;
+  }
 
   // The row each level opened is marked in the level above; each level keeps one row in the Tab order.
   function markCurrent() {
@@ -258,15 +291,21 @@ const annaTour = (() => {
     const existing = [...columns.children];
     let keep = 0;
     while (keep < existing.length && keep < wanted.length && existing[keep].dataset.segment === wanted[keep] && existing[keep].dataset.state === 'ready') keep++;
-    existing.slice(keep).forEach(section => section.remove());
-    const fresh = wanted.slice(keep).map((segment, i) => columns.appendChild(column(segment, keep + i)));
-    markCurrent(); arrange(); reveal();
+    /* The levels being replaced stay until the new ones can take their place, and the row that opens them shows at
+       once. New levels that load within LOADING_DELAY open in one step, the deepest with a detail's own words; past
+       it they open showing that they are loading, and take their final form in a second step. */
+    const leaving = existing.slice(keep);
+    let fresh = wanted.slice(keep).map((segment, i) => column(segment, keep + i)), opening = null;
+    const placed = motion => motion.then(() => { if (run === generation) reveal(); });
+    const open = () => opening ||= placed(move(() => { leaving.forEach(section => section.remove()); columns.append(...fresh); markCurrent(); arrange(); }));
+    markCurrent();
+    const waited = new Promise(resolve => setTimeout(resolve, LOADING_DELAY));
+    waited.then(() => { if (run === generation) open(); });
     const loaded = await Promise.allSettled(wanted.slice(keep).map(fetchView));
     if (run !== generation) return;
-    for (const [i, result] of loaded.entries()) {
-      const depth = keep + i, section = fresh[i];
-      if (result.status === 'fulfilled') { render(section, result.value, depth); continue; }
-      const error = result.reason;
+    const failure = loaded.findIndex(result => result.status === 'rejected'), error = loaded[failure]?.reason;
+    if (error) {
+      const depth = keep + failure;
       if (error.status === 409) say(ui.bundleChanged);
       else if (depth === 0) say(ui.unavailable);
       // A level that no longer exists in this snapshot returns the reader to the level above it.
@@ -277,17 +316,26 @@ const annaTour = (() => {
         if (run + 1 === generation) say(ui.nodeMissing);
         return;
       }
-      failed(section, error, depth);
-      fresh.slice(i + 1).forEach(rest => rest.remove());
-      break;
+      // Levels below one that failed do not open.
+      fresh.slice(failure + 1).forEach(rest => rest.remove());
+      fresh = fresh.slice(0, failure + 1);
     }
-    markCurrent(); arrange(); reveal();
+    const draw = () => fresh.forEach((section, i) => i === failure ? failed(section, error, keep + i) : render(section, loaded[i].value, keep + i));
+    let moved;
+    if (opening) moved = placed(move(() => { draw(); markCurrent(); arrange(); }));
+    else {
+      draw();
+      if (fresh.length) await Promise.race([expand(fresh.at(-1)), waited]);
+      if (run !== generation) return;
+      moved = open();
+    }
     fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
     settle();
     if (options.focus === 'new') enter(deepest());
     else if (Number.isInteger(options.focus)) focusRows(columns.children[options.focus]);
     // Going back or forward through history keeps the focus in the tour when the level holding it closed.
     else if (options.focus === 'kept' && !columns.contains(document.activeElement)) enter(deepest());
+    return moved;
   }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
   function settle() {
@@ -411,7 +459,7 @@ const annaTour = (() => {
   });
   columns.addEventListener('pointerdown', () => clearTimeout(following));
   window.addEventListener('popstate', () => show(segmentsOf(location.search), columns.contains(document.activeElement) ? {focus:'kept'} : {}));
-  for (const query of [roomy, phone]) query.addEventListener('change', () => { arrange(); reveal(); });
+  for (const query of [roomy, phone]) query.addEventListener('change', () => move(arrange).then(reveal));
 
   const start = segmentsOf(location.search);
   history.replaceState({tour:start.join('.')}, '', tourHref(start));

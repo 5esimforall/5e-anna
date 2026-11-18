@@ -108,6 +108,53 @@ test('a wide detail keeps its reading measure and sets where it leads in a rail 
   await expect.poll(()=>level(page,2).evaluate(e=>e.getBoundingClientRect().width)).toBe(360);
 });
 
+// Every frame: each column's width, the width its text is set at, and whether it is moving or loading.
+async function watchColumns(page){
+  await page.evaluate(()=>{window.tourFrames=[];const tick=()=>{window.tourFrames.push([...document.querySelectorAll('.tour-column')].map(c=>({
+    depth:c.dataset.depth,column:Math.round(c.getBoundingClientRect().width),sheet:Math.round(c.querySelector('.tour-sheet').getBoundingClientRect().width),
+    moving:'moving' in c.dataset,busy:c.getAttribute('aria-busy')==='true',body:!!c.querySelector('.tour-body')})));requestAnimationFrame(tick);};requestAnimationFrame(tick);});
+}
+const framesOf=(page,depth)=>page.evaluate(depth=>window.tourFrames.splice(0).flatMap(frame=>frame.filter(c=>c.depth===String(depth))),String(depth));
+const settledColumns=page=>expect(page.locator('.tour-column[data-moving]')).toHaveCount(0);
+
+test('columns widen and narrow around text already set at the width they settle to',async({page})=>{
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(anna+'/tour');await ready(page,0);
+  await watchColumns(page);
+  // A detail opens once, with its own words, and unrolls from the level that opened it.
+  await row(page,0,'创建角色').click();await ready(page,1);await settledColumns(page);
+  const opening=await framesOf(page,1), wide=opening.at(-1).sheet;
+  expect(wide).toBeGreaterThan(880);
+  expect(opening.every(c=>!c.busy&&c.body&&c.sheet===wide)).toBe(true);
+  expect(new Set(opening.filter(c=>c.moving).map(c=>c.column)).size).toBeGreaterThan(2);
+  expect(opening[0].column).toBeLessThan(wide/2);
+  // Narrowing beside the step it opened, it is set at its narrow width from the first frame.
+  await row(page,1,'第一步：选择职业').click();await ready(page,2);await settledColumns(page);
+  const narrowing=(await framesOf(page,1)).filter(c=>c.column<wide), narrow=narrowing.at(-1).sheet;
+  expect(narrow).toBeLessThan(360);
+  expect(narrowing.some(c=>c.moving&&c.column>400)).toBe(true);
+  expect(narrowing.every(c=>c.sheet===narrow)).toBe(true);
+  // Reduced motion settles the columns at once.
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.goBack();await ready(page,1);
+  expect((await framesOf(page,1)).some(c=>c.moving)).toBe(false);
+});
+
+test('a slow level keeps the levels it replaces until it shows that it is loading',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  let release;const held=new Promise(resolve=>{release=resolve;});
+  await page.route(/\/api\/tour\?node=n925\b/,async route=>{await held;await route.continue();});
+  await row(page,1,'第二步：确定起源').click();
+  // The step it replaces stays at first, then gives way to a loading level.
+  await expect(row(page,1,'第二步：确定起源')).toHaveAttribute('aria-current','true');
+  await expect(level(page,2).locator('h2')).toHaveText('第一步：选择职业');
+  await expect(level(page,2)).toHaveAttribute('aria-busy','true');
+  release();await ready(page,2);
+  await expect(level(page,2).locator('h2')).toHaveText('第二步：确定起源');
+});
+
 test('the keys follow the levels: → enters, ← climbs, and a detail is read before its rows',async({page})=>{
   await page.goto(anna+'/tour');await ready(page,0);
   const first=level(page,0).locator('.tour-item').first();

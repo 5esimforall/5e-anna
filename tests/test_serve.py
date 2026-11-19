@@ -115,10 +115,17 @@ class WebTests(unittest.TestCase):
         self.assertIn(b'<header class="topbar" data-page="query">',page)
         self.assertIn(b'<script src="/topbar.js"></script>',page)
         topbar=self.request('/topbar.js')[2]
-        # Anna keeps two pages under her avatar; Stella keeps one.
-        self.assertIn(b"query:{home:'/', logo:'/anna-logo.png', companion:'query'}",topbar)
-        self.assertIn(b"tour:{home:'/tour', logo:'/anna-logo.png', companion:'query'",topbar)
-        self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png', companion:'book'}",topbar)
+        # Anna keeps two pages under her avatar; Stella keeps one. Each guide keeps her avatar across pages.
+        self.assertIn(b"query:{home:'/', logo:'/anna-logo.png', guide:'anna', companion:'query'}",topbar)
+        self.assertIn(b"tour:{home:'/tour', logo:'/anna-logo.png', guide:'anna', companion:'query'",topbar)
+        self.assertIn(b"book:{home:'/read', logo:'/stella-logo.png', guide:'stella', companion:'book'}",topbar)
+        # Every page loads the shared motion helpers after the shared kit and before the theme that uses them.
+        status,kind,motion=self.request('/motion.js')
+        self.assertEqual((status,kind),(200,'text/javascript; charset=utf-8'));self.assertIn(b'const annaMotion',motion)
+        for path in ('/','/tour','/read'):
+            body=self.request(path)[2]
+            self.assertLess(body.index(b'src="/kit.js"'),body.index(b'src="/motion.js"'))
+            self.assertLess(body.index(b'src="/motion.js"'),body.index(b'src="/theme.js"'))
         tour=self.request('/tour')[2]
         self.assertIn(b'<header class="topbar" data-page="tour">',tour)
         self.assertIn('<title>导览 · 5e Anna</title>'.encode(),tour)

@@ -51,10 +51,12 @@
 .book-sequence a:hover { background: var(--anna-hover); color: var(--anna-brand); }
 .book-sequence svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .book-sequence [aria-disabled=true] { color: var(--anna-muted); opacity: .35; pointer-events: none; }
-.book-workspace { display: grid; grid-template-columns: 280px minmax(0, 1fr); flex: 1; min-height: 0; }
+/* The workspace shows the source's paper wherever the text has not yet moved in (see Motion below). */
+.book-workspace { position: relative; display: grid; grid-template-columns: 280px minmax(0, 1fr); flex: 1; min-height: 0; background: var(--anna-source-bg); }
 .book-workspace.sidebar-closed { grid-template-columns: minmax(0, 1fr); }
 #book-sidebar { position: relative; inset: auto; margin: 0; padding: 0; border: 0; border-right: 1px solid var(--anna-line); width: auto; height: 100%; max-width: none; max-height: none; color: var(--anna-ink); background: var(--anna-surface); overflow: hidden; }
-#book-sidebar[open] { display: flex; flex-direction: column; }
+#book-sidebar { flex-direction: column; }
+#book-sidebar[open] { display: flex; }
 /* The sidebar head shares the reading bar's height and rule; equal tabs mark the current one with a quiet tint. */
 .book-sidebar-head { display: flex; align-items: center; flex-shrink: 0; height: var(--book-bar-height); box-sizing: border-box; padding: 0 5px 0 8px; gap: 6px; border-bottom: 1px solid var(--anna-line); }
 .book-sidebar-head [role=tablist] { display: flex; gap: 2px; flex: 1; }
@@ -152,11 +154,33 @@
 .book-app { --anna-source-bg: #f4f5f7; --anna-source-surface: #ffffff; --anna-source-rule: #e0e2e5; --anna-source-muted: #666a70; --anna-source-accent: #991b1b; }
 html[data-theme=dark] .book-app { --anna-source-bg: #111315; --anna-source-surface: #17191c; --anna-source-rule: #34383e; --anna-source-muted: #a8adb4; --anna-source-accent: #e16d6d; }
 #book-loading, #book-status { position: absolute; top: calc(var(--book-bar-height) + 10px); right: 14px; z-index: 1; max-width: calc(100% - 28px); margin: 0; color: var(--anna-secondary); background: var(--anna-paper); border: 1px solid var(--anna-line); border-radius: 5px; padding: 7px 11px; font-size: 13px; line-height: 1.6; pointer-events: none; }
-#book-loading { animation: book-loading-appear .18s step-end; }
-@keyframes book-loading-appear { from { opacity: 0; } to { opacity: 1; } }
+/* A wait shows only once it is long enough to notice, and the line fades in then. */
+#book-loading { animation: book-loading-appear var(--anna-enter) var(--anna-ease) 180ms both; }
+@keyframes book-loading-appear { from { opacity: 0; } }
 #book-error { position: absolute; inset: var(--book-bar-height) 0 0; z-index: 2; color: var(--anna-secondary); background: var(--anna-paper); padding: 32px; line-height: 1.8; }
 #book-error p { max-width: 42em; }
 #book-error a { margin-left: 16px; }
+/* Motion (style.css, Motion). On wide screens the contents push the text aside and the text moves with them
+   (reader.js); on narrow screens the drawer slides over a backdrop that dims in. Both move the whole way, at the pace
+   of the text beside them, and a leaving sidebar keeps its column's place. */
+[data-motion] #book-sidebar, [data-motion] #book-sidebar::backdrop {
+  transition: translate var(--anna-move) var(--anna-ease), opacity var(--anna-move) var(--anna-ease),
+    overlay var(--anna-move) allow-discrete, display var(--anna-move) allow-discrete;
+}
+[data-motion] #book-sidebar:not([open]) { translate: -100% 0; pointer-events: none; }
+[data-motion] #book-sidebar:not([open])::backdrop { opacity: 0; }
+@starting-style {
+  [data-motion] #book-sidebar[open] { translate: -100% 0; }
+  [data-motion] #book-sidebar[open]::backdrop { opacity: 0; }
+}
+@media(min-width:801px) { [data-motion] #book-sidebar:not([open]) { position: absolute; inset: 0 auto 0 0; width: 280px; } }
+/* The filter box opens from its icon's place. */
+[data-motion] .book-tree-tools.filtering .book-filter { transition: opacity var(--anna-enter) var(--anna-ease), translate var(--anna-enter) var(--anna-ease); }
+@starting-style { [data-motion] .book-tree-tools.filtering .book-filter { opacity: 0; translate: -8px 0; } }
+/* Notices fade in where they stand and out when what they report is over. */
+[data-motion] :is(#book-error, #book-status) { transition: opacity var(--anna-enter) var(--anna-ease), display var(--anna-enter) allow-discrete; }
+[data-motion] :is(#book-error, #book-status)[hidden] { opacity: 0; transition-duration: var(--anna-exit); }
+@starting-style { [data-motion] :is(#book-error, #book-status):not([hidden]) { opacity: 0; } }
 @media(max-width:800px) {
   #book-bar { padding-right: 6px; }
   #book-path > .book-path-outside { display: none; }

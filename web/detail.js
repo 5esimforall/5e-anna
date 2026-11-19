@@ -68,7 +68,15 @@ function setReaderShare(share,save=true){
   const [min,max]=readerShareBounds();readerShare=Math.min(max,Math.max(min,share));applyReaderLayout();
   if(save)annaKit.stored.set(READER_SHARE_KEY,Math.abs(readerShare-DEFAULT_READER_SHARE)<.005?null:readerShare.toFixed(3));
 }
-function setReaderFull(on,{save=true}={}){readerFull=on;applyReaderLayout();markTableFrames();if(save)saveUiState();}
+// Widening, the reader's edges move out over the results; narrowing, the results come back beside it. Either way the
+// text is set again for its new column.
+function setReaderFull(on,{save=true}={}){
+  const reader=$('#detail'),shown=reader.open,before=reader.getBoundingClientRect();
+  readerFull=on;applyReaderLayout();markTableFrames();if(save)saveUiState();
+  if(!shown)return;
+  if(on)annaMotion.grow(reader,before);else if(wideReader.matches)annaMotion.arrive($('#query-main'),'left',{distance:24});
+  annaMotion.arrive($('#detail-content'));
+}
 // Runs from app.js once the shared helpers and labels exist.
 function initReaderLayout(){
   const separator=$('#reader-resizer');
@@ -117,7 +125,8 @@ function focusResult(){
 async function stepEntry(delta){
   const index=(currentData?.rows||[]).findIndex(r=>rowHas(r,currentReaderId));if(index<0)return;
   if(delta>0&&index===currentData.rows.length-1&&!(await loadMore()))return;
-  const next=currentData?.rows[index+delta];if(next){openEntry(next.id,true,'body',true);revealResultRow(next.id);}
+  // The next entry comes up from below, as the rows run; the previous one comes down from above.
+  const next=currentData?.rows[index+delta];if(next){openEntry(next.id,true,'body',true,delta>0?'below':'above');revealResultRow(next.id);}
 }
 // An entry's book is its own collection's: the default book reads anna's extraction, the others their chapters.
 const nativeEntry=e=>(e?.collection||metadata.collection||'5echm')===(metadata.default_collection||'5echm');
@@ -222,11 +231,19 @@ function renderDetail(tab='body') {
   if(tab==='body')markDifferences(e);
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
+// A tab to the right of the current one comes in from the right, one to the left from the left.
+function switchTab(tab){
+  const order=[...$('#detail-content').querySelectorAll('[data-tab]')].map(b=>b.dataset.tab);
+  const from=order.indexOf(tab)>order.indexOf(detailTab)?'right':order.indexOf(tab)<order.indexOf(detailTab)?'left':null;
+  renderDetail(tab);annaMotion.arrive($('#detail-panel'),from);
+  params.delete('tab');historyUpdate(true);$('#tab-'+tab).focus();saveUiState();
+}
 // The entry and its source layout load together, and the text appears once, already in the book's layout;
 // a layout slower than this still follows, replacing the extracted text that stands in for it.
 const LAYOUT_WAIT=400;
 const layoutOf=id=>api('/api/entry-layout?id='+encodeURIComponent(id)).catch(()=>({status:'error'}));
-async function openEntry(id,update=true,tab='body',fromResult=false) {
+// `from` is the side the entry comes in from when it replaces another in an open reader; without it, it fades in.
+async function openEntry(id,update=true,tab='body',fromResult=false,from=null) {
   const gen=++detailGeneration,content=$('#detail-content');
   if(fromResult&&!currentReaderId)lastResultEntry=id;
   if(update){params.set('entry',id);params.delete('tab');historyUpdate();}
@@ -246,6 +263,7 @@ async function openEntry(id,update=true,tab='body',fromResult=false) {
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
     currentEntry=e;renderDetail(tab);content.scrollTop=0;
+    if(wasOpen)annaMotion.arrive(content,from);
   } catch(e) {
     if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
@@ -335,7 +353,7 @@ function loadLayout(e){
   if(e.layout||e.layoutAwaited)return;
   e.layoutAwaited=(e.layoutRequest||layoutOf(e.id)).then(layout=>{
     e.layout=layout;
-    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();markDifferences(e);}
+    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();markDifferences(e);annaMotion.arrive($('#detail-panel'));}
   });
 }
 // A note and the words it was read from light up together; activating a note brings its words into view.
@@ -357,6 +375,8 @@ function renderVersions(e){
 function closeEntry({update=true,restoreFocus=true}={}) {
   detailGeneration++;
   if(restoreFocus)lastResultEntry=lastResultEntry||currentReaderId;
+  // A wide reader leaves at the width it had, over the results that take their width back (style.css, Motion).
+  if($('#detail').open)$('#detail').style.setProperty('--anna-leaving-width',$('#detail').getBoundingClientRect().width+'px');
   holdResultRow(currentReaderId,()=>{
     if($('#detail').open)$('#detail').close();
     document.body.classList.remove('detail-open','detail-modal');

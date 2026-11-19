@@ -37,8 +37,14 @@
   --anna-radius: 8px;
   --anna-radius-lg: 12px;
   --anna-shadow: 0 12px 40px #1d20271f, 0 1px 4px #1d20270f;
+  /* Motion (web/README.md, 动效): feedback answers a control; what arrives takes a little longer than what leaves;
+     a move between two places takes longest. Arriving and moving start fast and settle; leaving gathers speed. */
   --anna-fast: 120ms;
+  --anna-enter: 180ms;
+  --anna-exit: 120ms;
+  --anna-move: 200ms;
   --anna-ease: cubic-bezier(.2,.8,.2,1);
+  --anna-ease-exit: cubic-bezier(.4,0,1,1);
   /* Type scale: Chinese UI text never drops below 13px; 12px is for codes, counts and English names. */
   --anna-type-small: 12px;
   --anna-type-ui: 13px;
@@ -94,7 +100,7 @@ a { color: var(--anna-brand); text-underline-offset: 3px; }
 a:hover { color: var(--anna-brand-hover); }
 button, input, select { font: inherit; }
 button, select, summary { cursor: pointer; }
-button { min-height: 32px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-sm); padding: 5px 10px; background: var(--anna-paper); color: var(--anna-ink); white-space: nowrap; transition: background var(--anna-fast), border-color var(--anna-fast); }
+button { min-height: 32px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-sm); padding: 5px 10px; background: var(--anna-paper); color: var(--anna-ink); white-space: nowrap; }
 button:hover:not(:disabled) { background: var(--anna-hover); border-color: var(--anna-line-strong); }
 button:disabled { opacity: .4; cursor: not-allowed; }
 :where(button,a,input,select,summary,[tabindex]):focus-visible { outline: 2px solid var(--anna-focus); outline-offset: 3px; }
@@ -108,8 +114,9 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .skip-link { position: fixed; top: -60px; left: 12px; z-index: 10; padding: 10px 16px; background: var(--anna-paper); border-radius: var(--anna-radius); }
 .skip-link:focus { top: 8px; }
 
-/* Shell: query and reader own their scroll positions. */
-.topbar { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 22px; border-bottom: 1px solid var(--anna-line); }
+/* Shell: query and reader own their scroll positions. The topbar stays put while the page beneath it changes
+   (see Motion), so its menus stack above the page. */
+.topbar { position: relative; z-index: 7; height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 22px; border-bottom: 1px solid var(--anna-line); }
 .brand { display: flex; align-items: center; gap: 9px; text-decoration: none; color: var(--anna-ink); font-family: var(--anna-serif); font-size: 21px; font-weight: 600; }
 .brand-logo { display: block; width: 36px; height: 36px; flex-shrink: 0; object-fit: contain; }
 .topbar-lead { display: flex; align-items: center; gap: 18px; min-width: 0; }
@@ -141,9 +148,11 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .library-summary { min-width: 0; overflow: hidden; color: var(--anna-muted); text-overflow: ellipsis; white-space: nowrap; }
 .library-summary:not(:empty)::before { content: '·'; margin-right: 6px; }
 .library-button.changed::after { content: ''; position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--anna-brand); box-shadow: 0 0 0 2px var(--anna-canvas); }
-.library-dialog { width: min(680px, calc(100vw - 32px)); max-height: min(88vh, 920px); padding: 0; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-lg);
+/* Placed explicitly, not only by the modal defaults, so it keeps its place while it leaves. */
+.library-dialog { position: fixed; inset: 0; margin: auto; width: min(680px, calc(100vw - 32px)); max-height: min(88vh, 920px); padding: 0; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-lg);
   background: var(--anna-paper); color: var(--anna-ink); box-shadow: var(--anna-shadow); font-size: var(--anna-type-ui); }
-.library-dialog[open] { display: flex; flex-direction: column; }
+.library-dialog { flex-direction: column; }
+.library-dialog[open] { display: flex; }
 .library-dialog::backdrop { background: var(--anna-backdrop); }
 .library-dialog input[type=checkbox] { accent-color: var(--anna-brand); width: 15px; height: 15px; margin: 0; flex-shrink: 0; }
 .library-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 10px 22px; border-bottom: 1px solid var(--anna-line); }
@@ -248,7 +257,7 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .theme-button[data-preference=system] .theme-icon-system,
 .theme-button[data-preference=light] .theme-icon-light,
 .theme-button[data-preference=dark] .theme-icon-dark { display: block; }
-.workspace { display: grid; grid-template-columns: minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }
+.workspace { position: relative; display: grid; grid-template-columns: minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }
 .workspace>main { container: query / inline-size; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: auto; padding: 22px 24px 14px; background: var(--anna-surface); }
 .workspace>main>* { flex-shrink: 0; }
 /* Every line above the table keeps one height at any width: text that does not fit is cut, never wrapped,
@@ -433,14 +442,17 @@ tbody tr:last-child td { border-bottom: 0; }
 #load-error { color: var(--anna-error); font-size: var(--anna-type-ui); }
 #empty { padding: 40px 20px; text-align: center; color: var(--anna-secondary); }
 #empty strong { display: block; color: var(--anna-ink); font-size: 16px; margin-bottom: 7px; }
-#results[aria-busy=true] { opacity: .45; pointer-events: none; }
-/* Counts and the empty notice describe the dimmed rows, so they wait with them. */
-.workspace>main:has(#results[aria-busy=true]) :is(#empty,#range,#load-more-row) { opacity: .45; }
+/* Rows that wait for the next query stop answering at once and dim only when the answer is slow, like the reader's
+   next entry. Counts and the empty notice describe the dimmed rows, so they wait with them. */
+:is(#results, #empty, #range, #load-more-row) { transition: opacity var(--anna-fast) var(--anna-ease); }
+#results[aria-busy=true] { opacity: .45; pointer-events: none; transition-delay: 180ms; }
+.workspace>main:has(#results[aria-busy=true]) :is(#empty,#range,#load-more-row) { opacity: .45; transition-delay: 180ms; }
 
 /* One reader, two modes: non-modal desktop column / native modal on narrow screens. Opening an entry
    adds the reader beside the results and changes nothing else: the categories and the rows stay put. */
-#detail { margin: 0; padding: 0; color: var(--anna-ink); background: var(--anna-paper); border: 0; overflow: hidden; }
-#detail[open] { display: flex; flex-direction: column; animation: reader-in 160ms var(--anna-ease); }
+/* The direction belongs to the reader, not to its open state, so a leaving reader keeps its layout. */
+#detail { flex-direction: column; margin: 0; padding: 0; color: var(--anna-ink); background: var(--anna-paper); border: 0; overflow: hidden; }
+#detail[open] { display: flex; }
 @keyframes reader-in { from { opacity: 0; } }
 /* The next entry replaces the current one in place; the current one fades only if the next is slow. */
 #detail-content[aria-busy=true]>:not(.reader-message) { opacity: .5; pointer-events: none; transition: opacity var(--anna-fast) 180ms; }
@@ -757,6 +769,73 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 .ref-unresolved { border-bottom: 1px dashed var(--anna-line-strong); color: inherit; cursor: help; }
 .ref-book, .ref-filter { color: var(--anna-brand); text-decoration: underline; text-underline-offset: 3px; }
 
+/* Motion. A change is complete at once; motion shows where it came from and where it went (web/README.md, 动效;
+   motion.js draws what script moves). Rules under [data-motion] apply once the page has settled, so a page
+   restoring itself appears in place. */
+:root { interpolate-size: allow-keywords; }
+/* Feedback: a control answers the pointer with a short change of colour. Rows, menu items and suggestions that the
+   arrow keys walk through change at once, so their highlight never trails the keys. */
+:where(button, summary, .chip>span, .condition, .field-note, mark.note, .library-kind, .library-row, .page-switch a, .companion-go,
+  .tour-go, .tour-versions a, .tour-scope-widen, .book-sequence a) {
+  transition: color var(--anna-fast), background-color var(--anna-fast), border-color var(--anna-fast), box-shadow var(--anna-fast), text-decoration-color var(--anna-fast);
+}
+/* A restyled page (theme, row density) takes its new look at once beneath motion.js's fade. */
+[data-restyling] *, [data-restyling] *::before, [data-restyling] *::after { transition: none !important; }
+/* Popups drop from their button and lift away as they close. */
+[data-motion] :is(.popup-menu, .menu-panel, #suggestions) {
+  transition: opacity var(--anna-enter) var(--anna-ease), translate var(--anna-enter) var(--anna-ease), display var(--anna-enter) allow-discrete;
+}
+[data-motion] :is(.popup-menu, .menu-panel, #suggestions)[hidden] {
+  opacity: 0; translate: 0 -4px; pointer-events: none; transition-duration: var(--anna-exit); transition-timing-function: var(--anna-ease-exit);
+}
+@starting-style { [data-motion] :is(.popup-menu, .menu-panel, #suggestions):not([hidden]) { opacity: 0; translate: 0 -4px; } }
+/* Layers: a modal rises over a backdrop that dims in; Anna's reader column comes in from the right edge it takes its
+   width from. Leaving goes back the same way, faster, and no longer takes the pointer. */
+[data-motion] :is(#detail, .library-dialog), [data-motion] :is(#detail, .library-dialog)::backdrop {
+  transition: opacity var(--anna-enter) var(--anna-ease), translate var(--anna-enter) var(--anna-ease),
+    overlay var(--anna-enter) allow-discrete, display var(--anna-enter) allow-discrete;
+}
+[data-motion] :is(#detail, .library-dialog):not([open]), [data-motion] :is(#detail, .library-dialog):not([open])::backdrop {
+  opacity: 0; pointer-events: none; transition-duration: var(--anna-exit); transition-timing-function: var(--anna-ease-exit);
+}
+@starting-style { [data-motion] :is(#detail, .library-dialog)[open], [data-motion] :is(#detail, .library-dialog)[open]::backdrop { opacity: 0; } }
+[data-motion] .library-dialog:not([open]) { translate: 0 8px; }
+@starting-style { [data-motion] .library-dialog[open] { translate: 0 8px; } }
+@media(min-width:1200px) {
+  /* Leaving, the reader keeps the width it had (detail.js) over the results, which take their width back at once. */
+  [data-motion] #detail:not([open]) { position: absolute; inset: 0 0 0 auto; width: var(--anna-leaving-width, 60%); height: auto; translate: 24px 0; }
+  @starting-style { [data-motion] #detail[open] { translate: 24px 0; } }
+}
+@media(max-width:1199px) {
+  [data-motion] #detail:not([open]) { translate: 0 12px; }
+  @starting-style { [data-motion] #detail[open] { translate: 0 12px; } }
+}
+/* Disclosures open in place: the panel grows to its height and what follows makes room. */
+[data-motion] #filter-panel {
+  transition: height var(--anna-move) var(--anna-ease), opacity var(--anna-move) var(--anna-ease), display var(--anna-move) allow-discrete;
+}
+[data-motion] #filter-panel[hidden] { height: 0; opacity: 0; transition-duration: var(--anna-exit); transition-timing-function: var(--anna-ease-exit); }
+@starting-style { [data-motion] #filter-panel:not([hidden]) { height: 0; opacity: 0; } }
+[data-motion] details::details-content {
+  height: 0; overflow: clip; transition: height var(--anna-move) var(--anna-ease), content-visibility var(--anna-move) allow-discrete;
+}
+[data-motion] details[open]::details-content { height: auto; }
+/* Notices fade in where they stand and out when what they report is over. */
+[data-motion] #error { transition: opacity var(--anna-enter) var(--anna-ease), display var(--anna-enter) allow-discrete; }
+[data-motion] #error[hidden] { opacity: 0; transition-duration: var(--anna-exit); }
+@starting-style { [data-motion] #error:not([hidden]) { opacity: 0; } }
+/* Another version's differences fade in over the text they mark. */
+[data-motion] :is(ins.diff-own, del.diff-other) { transition: background-color var(--anna-enter) var(--anna-ease), color var(--anna-enter) var(--anna-ease); }
+@starting-style { [data-motion] :is(ins.diff-own, del.diff-other) { background-color: transparent; color: inherit; } }
+/* Between pages the topbar stays, the two guides trade places when the reader turns from one to the other, and the
+   page beneath fades across. A theme or density change fades the same way (motion.js). */
+@view-transition { navigation: auto; }
+.topbar { view-transition-name: anna-topbar; }
+:is(.brand-logo, .companion-avatar)[data-guide=anna] { view-transition-name: anna-guide-anna; }
+:is(.brand-logo, .companion-avatar)[data-guide=stella] { view-transition-name: anna-guide-stella; }
+::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation-duration: var(--anna-move); animation-timing-function: var(--anna-ease); }
+
 @media(prefers-reduced-motion:reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
+  @view-transition { navigation: none; }
 }

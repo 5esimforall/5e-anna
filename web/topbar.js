@@ -8,13 +8,13 @@ const annaTopbar = (() => {
   const TOUR_PATH = /^[A-Za-z0-9_.:-]+(\/[A-Za-z0-9_.:-]+)*$/;
   // Each page belongs to one companion: Anna answers queries and keeps the tour, Stella reads the book with you.
   const pages = {
-    query:{home:'/', logo:'/anna-logo.png', companion:'query'},
+    query:{home:'/', logo:'/anna-logo.png', guide:'anna', companion:'query'},
     // The tour remembers the last level the reader opened; turning back to it from the query page returns there.
-    tour:{home:'/tour', logo:'/anna-logo.png', companion:'query', resume() {
+    tour:{home:'/tour', logo:'/anna-logo.png', guide:'anna', companion:'query', resume() {
       const at = annaKit.stored.get('anna.tour');
       return at && TOUR_PATH.test(at) ? '/tour?' + new URLSearchParams({at}) : null;
     }},
-    book:{home:'/read', logo:'/stella-logo.png', companion:'book'}
+    book:{home:'/read', logo:'/stella-logo.png', guide:'stella', companion:'book'}
   };
   // A companion with more than one page names them beside her brand, so the reader sees where else she can help.
   const switchLabels = {
@@ -42,10 +42,11 @@ const annaTopbar = (() => {
     return nav;
   }
   function render(header) {
-    const page = header.dataset.page, {home, logo} = pages[page];
+    const page = header.dataset.page, {home, logo, guide} = pages[page];
     const brand = document.createElement('a'); brand.className = 'brand'; brand.href = home;
     const image = document.createElement('img'); image.className = 'brand-logo'; image.src = logo;
     image.width = image.height = 36; image.alt = ''; // The name beside it already labels the link.
+    image.dataset.guide = guide; // Each guide keeps her avatar across pages: turning to the other, they trade places.
     brand.append(image, annaBrands[page]);
     const lead = document.createElement('div'); lead.className = 'topbar-lead';
     lead.append(brand, ...[pageSwitch(page)].filter(Boolean));

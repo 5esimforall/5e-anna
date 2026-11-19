@@ -148,10 +148,12 @@
   }
   function setSidebar(open, focus = false) {
     sidebarOpen = open;
-    const modal = sidebar.matches(':modal');
+    const modal = sidebar.matches(':modal'), main = $('#book-main'), before = main.getBoundingClientRect();
     if (sidebar.open && (!open || modal !== narrow.matches)) sidebar.close();
     if (open && !sidebar.open) narrow.matches ? sidebar.showModal() : sidebar.show();
     $('.book-workspace').classList.toggle('sidebar-closed', !open || narrow.matches);
+    // Beside the text, the contents push it aside and it moves with them instead of jumping (reader.css, Motion).
+    if (!narrow.matches) annaMotion.slide(main, before);
     $('#book-menu').setAttribute('aria-expanded', String(open));
     if (focus) {
       if (!open) $('#book-menu').focus();
@@ -161,13 +163,17 @@
     if (open) scheduleContentsSync();
     save();
   }
+  const PANES = ['contents','outline','search'];
   function selectPane(value, focus = false) {
-    pane = ['contents','outline','search'].includes(value) ? value : 'contents';
+    const previous = pane;
+    pane = PANES.includes(value) ? value : 'contents';
     document.querySelectorAll('[data-pane]').forEach(button => {
       const active = button.dataset.pane === pane;
       button.setAttribute('aria-selected', String(active)); button.tabIndex = active ? 0 : -1;
       $('#panel-'+button.dataset.pane).hidden = !active;
     });
+    // A tab to the right of the last one comes in from the right, one to the left from the left.
+    if (pane !== previous) annaMotion.arrive($('#panel-'+pane), PANES.indexOf(pane) > PANES.indexOf(previous) ? 'right' : 'left');
     if (focus) $('#tab-'+pane).focus();
     if (pane === 'contents') scheduleContentsSync();
     save();
@@ -393,6 +399,14 @@
       target?.focus({preventScroll:true});
     }
   }
+  // A branch opens and closes in place: its rows fade in or go, and the rows below slide to make or take the room.
+  function redrawTree(focusId = '') {
+    annaMotion.rearrange($('#book-tree'), '.toc-row', row => row.parentElement.dataset.node, () => renderTree(focusId));
+  }
+  function toggleBranch(id, open = !expanded.has(id)) {
+    open ? expanded.add(id) : expanded.delete(id);
+    redrawTree(id);
+  }
   function renderPage() {
     document.title = annaPageTitle('book', page.title);
     renderPath();
@@ -447,7 +461,9 @@
     $('#book-library').hidden = code !== 'outside_library';
     $('#book-main').setAttribute('aria-busy','false'); $('#book-status').textContent = '';
   }
-  async function load(target, saved, preserveScope = false) {
+  /* `from` is the side the text comes in from: the next page from below, the previous from above, any other place
+     in place. The scroll area moves as a whole, so positions measured inside it stay true while it settles. */
+  async function load(target, saved, preserveScope = false, from = null) {
     clearTimeout(historySaveTimer); historySaveTimer = 0;
     request?.abort(); request = new AbortController();
     const id = ++navigationId;
@@ -493,6 +509,7 @@
       if (!saved?.expanded && contentsFollowing) reveal(nodeId);
       renderTree(); renderPage();
       if (saved) { $('#book-tree-scroll').scrollTop = saved.treeScroll || 0; $('#panel-outline').scrollTop = saved.outlineScroll || 0; }
+      annaMotion.arrive($('#book-scroll'), from, {distance:16});
       loading = false;
       $('#book-loading').hidden = true; $('#book-error').hidden = true;
       $('#book-main').setAttribute('aria-busy','false');
@@ -504,13 +521,13 @@
       if (id === navigationId && error.name !== 'AbortError') showError(error.message);
     }
   }
-  async function navigate(target, push = true, preserveScope = false) {
+  async function navigate(target, push = true, preserveScope = false, from = null) {
     capturePosition(); loading = true;
     const url = routeURL(target);
     if (push && url !== location.pathname+location.search) history.pushState(null,'',url);
     else history.replaceState(history.state,'',url);
     if (narrow.matches) setSidebar(false);
-    await load(target,null,preserveScope);
+    await load(target,null,preserveScope,from);
   }
   function restore(saved) {
     expanded = new Set((saved?.expanded || []).filter(id => nodes.has(id)));
@@ -540,6 +557,7 @@
       // With more than one collection on the shelf, each result names whose page it is.
       const several = metadata.collections.length > 1;
       $('#book-search-results').innerHTML = data.results.map(result => `<li><a href="${esc(routeURL({page:result.path}))}">${esc(result.title)}</a><small>${esc([several ? collectionName(result.collection) : '', result.category].filter(Boolean).join(' · '))}</small><p>${esc(result.preview)}</p></li>`).join('');
+      annaMotion.arrive($('#book-search-results'));
       $('#book-search-page').textContent = text('searchPage',{page:number,pages:Math.max(1,data.totalPages)});
       $('#book-search-prev').disabled = number <= 1; $('#book-search-next').disabled = number >= data.totalPages;
       $('#book-search-paging').hidden = data.totalPages <= 1;
@@ -563,15 +581,14 @@
     const params = url.searchParams;
     const target = params.has('entry') ? {root:params.get('root') || '',entry:params.get('entry'),node:params.get('node') || ''} :
       {root:params.get('root') || '',page:params.get('page') || (params.has('root') ? '' : metadata?.default_page),anchor:params.get('anchor') || '',node:params.get('node') || ''};
-    if (metadata) navigate(target);
+    // The pager's arrows say which way the reader goes.
+    if (metadata) navigate(target, true, false, link.id === 'book-next' ? 'below' : link.id === 'book-previous' ? 'above' : null);
   });
   $('#book-tree').addEventListener('click', event => {
     const button = event.target.closest('[data-expand]');
     if (button) {
       pauseContentsFollow();
-      const id = button.dataset.expand;
-      expanded.has(id) ? expanded.delete(id) : expanded.add(id);
-      renderTree(id); save();
+      toggleBranch(button.dataset.expand); save();
     }
   });
   $('#book-tree').addEventListener('focusin', event => {
@@ -592,14 +609,14 @@
     else if (event.key === 'Home') next = rows[0];
     else if (event.key === 'End') next = rows.at(-1);
     else if (event.key === 'ArrowRight') {
-      if (row.getAttribute('aria-expanded') === 'false') { expanded.add(id); renderTree(id); }
+      if (row.getAttribute('aria-expanded') === 'false') toggleBranch(id, true);
       else if (children.get(id)?.length) next = rows[index+1];
     } else if (event.key === 'ArrowLeft') {
-      if (row.getAttribute('aria-expanded') === 'true' && !$('#book-filter').value.trim()) { expanded.delete(id); renderTree(id); }
+      if (row.getAttribute('aria-expanded') === 'true' && !$('#book-filter').value.trim()) toggleBranch(id, false);
       else next = rows.find(el => el.dataset.node === node.parent_id);
     } else if (['Enter',' '].includes(event.key)) {
       if (node.status === 'present' || children.has(node.id)) navigate(nodeRoute(node));
-      else { expanded.has(id) ? expanded.delete(id) : expanded.add(id); renderTree(id); }
+      else toggleBranch(id);
     } else return;
     event.preventDefault(); next?.focus(); save();
   });
@@ -607,7 +624,7 @@
   $('#book-filter-clear').onclick = () => { pauseContentsFollow(); $('#book-filter').value = ''; renderTree(); $('#book-filter').focus(); save(); };
   $('#book-filter-open').onclick = () => setFilterOpen(true, true);
   $('.book-filter').addEventListener('focusout', event => { if (!$('.book-filter').contains(event.relatedTarget)) setFilterOpen(false); });
-  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); renderTree(); save(); };
+  $('#book-collapse').onclick = () => { pauseContentsFollow(); expanded.clear(); redrawTree(); save(); };
   // Opens the reading scope's whole subtree and its path, then shows it from its first row.
   $('#book-expand').onclick = () => {
     if (!nodes.has(scope?.root)) return;
@@ -744,7 +761,7 @@
       if (kept?.search?.query) search(kept.search.query,kept.search.page,kept.search.titleOnly,kept.search.scroll);
       await load(readRoute(),kept || resumed || remembered);
     } catch (error) { showError(error.message); }
-    finally { restoring = false; }
+    finally { restoring = false; annaMotion.settle(); }
   }
   boot();
 })();

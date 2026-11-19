@@ -49,8 +49,9 @@ const annaTour = (() => {
   const VIM_KEYS = {h:'ArrowLeft', j:'ArrowDown', k:'ArrowUp', l:'ArrowRight'}, LINE_STEP = 40;
   // Levels that answer within this time open in one step; slower ones first show that they are loading.
   const LOADING_DELAY = 180;
-  // How long the columns take to reach their new widths, on the shared easing curve.
-  const MOVE_TIME = 200, ease = getComputedStyle(document.documentElement).getPropertyValue('--anna-ease').trim() || 'ease-out';
+  // How long the columns take to reach their new widths: the shared time and curve of a move.
+  const motionToken = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const MOVE_TIME = parseFloat(motionToken('--anna-move')) || 200, ease = motionToken('--anna-ease') || 'ease-out';
   const views = new Map(), layouts = new Map(), reading = new WeakMap(), motions = new WeakMap();
   /* `shown` is the generation whose levels are in place; `landing` is where the focus goes once the levels on their
      way are. `openOnRest` opens the row a held key rests on, when the key is released or `restTimer` runs out. */
@@ -208,7 +209,7 @@ const annaTour = (() => {
     const lead = section.querySelector('.tour-lead');
     lead ? lead.after(box) : section.querySelector('.tour-main').append(box);
     section.dataset.layout = 'ready';
-    if (section.isConnected && !reduced.matches) box.animate({opacity:[0, 1]}, {duration:MOVE_TIME, easing:ease});
+    if (section.isConnected) annaMotion.arrive(box);
   }
   function failed(section, error, depth) {
     section.dataset.state = 'failed'; section.removeAttribute('aria-busy');
@@ -227,6 +228,8 @@ const annaTour = (() => {
       const place = i === sections.length - 1 ? 'last' : i < sections.length - open ? 'folded' : 'open';
       const was = section.dataset.place;
       section.dataset.place = place;
+      // Folding shows the level's spine and unfolding its sheet; either fades in as the column's edge moves.
+      if (was && (was === 'folded') !== (place === 'folded')) annaMotion.arrive(section.querySelector(place === 'folded' ? '.tour-spine' : '.tour-sheet'));
       // A detail that narrows back to its lead keeps the row it opened in view.
       if (was === 'last' && place === 'open') keepCurrent(section);
       // One that widens again reads from the start of its own words.
@@ -370,6 +373,8 @@ const annaTour = (() => {
 
   async function show(segments) {
     const run = ++generation, wanted = ['', ...segments];
+    // Where one level shows at a time, a deeper level comes in from the right and a level above from the left.
+    const from = segments.length > path.length ? 'right' : segments.length < path.length ? 'left' : null;
     path = segments;
     say('');
     const existing = [...columns.children];
@@ -382,7 +387,10 @@ const annaTour = (() => {
     const leaving = existing.slice(keep);
     let fresh = wanted.slice(keep).map((segment, i) => column(segment, keep + i)), opening = null;
     const placed = motion => motion.then(() => { if (run === generation) reveal(); });
-    const open = () => opening ||= placed(move(() => { leaving.forEach(section => section.remove()); columns.append(...fresh); markCurrent(); arrange(); }));
+    const open = () => opening ||= placed(move(() => {
+      leaving.forEach(section => section.remove()); columns.append(...fresh); markCurrent(); arrange();
+      if (phone.matches) annaMotion.arrive(columns.lastElementChild, from, {distance:24});
+    }));
     markCurrent();
     const waited = new Promise(resolve => setTimeout(resolve, LOADING_DELAY));
     waited.then(() => { if (run === generation) open(); });
@@ -406,6 +414,9 @@ const annaTour = (() => {
       fresh = fresh.slice(0, failure + 1);
     }
     const draw = () => fresh.forEach((section, i) => i === failure ? failed(section, error, keep + i) : render(section, loaded[i].value, keep + i));
+    /* A level that takes the place of its own loading state, or of another level at its depth, fades in where it
+       stands; a level in a new column is uncovered by the column's moving edge instead. */
+    const shownLoading = !!opening, replaced = new Set(leaving.map(section => section.dataset.depth));
     let moved;
     if (opening) moved = placed(move(() => { draw(); markCurrent(); arrange(); }));
     else {
@@ -415,6 +426,7 @@ const annaTour = (() => {
       moved = open();
     }
     fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
+    for (const section of fresh) if (shownLoading || replaced.has(section.dataset.depth)) annaMotion.arrive(section.querySelector('.tour-sheet'));
     settle();
     shown = run;
     land();
@@ -620,6 +632,6 @@ const annaTour = (() => {
   });
   const start = segmentsOf(location.search);
   history.replaceState({tour:joinSegments(start)}, '', tourHref(start));
-  show(start);
+  show(start).finally(annaMotion.settle);
   return {show, go};
 })();

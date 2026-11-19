@@ -316,6 +316,8 @@ class AnnaReaderFlow {
       if (record.status !== 'loading') return;
       clearTimeout(record.timer); this.markDefinitions(record,data.definitions); this.resize(record,data.height); record.status = 'ready';
       record.frame.style.visibility = ''; record.statusElement.hidden = true; record.element.setAttribute('aria-busy','false');
+      // A page that continues the text fades in where it joins; the page a navigation goes to arrives with the view.
+      if (record.item.path !== this.locationTargetPath && typeof annaMotion !== 'undefined') annaMotion.arrive(record.frame);
       this.updateSlots(); record.resolve(record); this.scheduleMaintenance();
     } else if (data.type === 'size') { this.markDefinitions(record,data.definitions); this.resize(record,data.height); }
     else if (data.type === 'located' && data.requestId === record.location?.sequence && annaReaderModel.validPosition(data.position)) {

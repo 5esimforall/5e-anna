@@ -210,19 +210,23 @@ const annaLibrary = (() => {
       if (!dragging || !row || row.dataset.libraryRow === dragging) return;
       event.preventDefault();
       const s = read(), from = s.order.indexOf(dragging), to = s.order.indexOf(row.dataset.libraryRow);
-      reorder(dragging, to - from);
+      reorder(dragging, to - from, false);
     });
     dialog.addEventListener('dragend', () => { dragging = null; dialog.querySelector('.dragging')?.classList.remove('dragging'); });
   }
   function change(edit) {
     const s = read(); edit(s); write(s);
   }
-  function reorder(id, delta) {
+  // The arrows move a row and the rows it passes slide to their new places; a dragged row already follows the pointer,
+  // so dragging reorders in place.
+  function reorder(id, delta, slide = true) {
     const s = read(), from = s.order.indexOf(id), to = Math.max(0, Math.min(s.order.length - 1, from + delta));
     if (from < 0 || from === to) return;
     s.order.splice(to, 0, ...s.order.splice(from, 1));
     write(s);
-    renderLibraries();
+    if (slide && typeof annaMotion !== 'undefined')
+      annaMotion.rearrange(dialog.querySelector('.library-order'), '[data-library-row]', row => row.dataset.libraryRow, renderLibraries);
+    else renderLibraries();
     const control = dialog.querySelector(`[data-library-row="${CSS.escape(id)}"] [data-move="${delta < 0 ? -1 : 1}"]:not(:disabled)`)
       || dialog.querySelector(`[data-library-row="${CSS.escape(id)}"] input`);
     control?.focus();

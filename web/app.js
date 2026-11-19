@@ -263,6 +263,13 @@ function rangeGroup(){
   for(const key of ['cr_min','cr_max'])if(params.has(key)&&!values.includes(params.get(key)))values.push(params.get(key));
   return `<fieldset class="facet cr-range"><legend>挑战等级</legend><div class="range-controls">${['cr_min','cr_max'].map((key,i)=>`<label>${i?'最高':'最低'} <select id="${key}" aria-label="${i?'最高':'最低'} CR"><option value="">不限</option>${values.map(v=>`<option value="${v}" ${params.get(key)===v?'selected':''}>${v}</option>`).join('')}</select></label>`).join('<span>—</span>')}<span class="muted">含边界；未提取与冲突值不进入范围结果</span></div></fieldset>`;
 }
+// A chip is the same chip while it names the same field or search, whether it includes or excludes; a kept search
+// is known by its words, since removing one renumbers the rest. A ∧ belongs to the chip after it.
+function conditionKey(el){
+  if(el.matches('.and'))return el.nextElementSibling?conditionKey(el.nextElementSibling)+' ∧':null;
+  const key=baseKey(el.querySelector('[data-remove]').dataset.remove);
+  return /^(q|body)\d+$/.test(key)?key.replace(/\d+$/,'')+':'+el.querySelector('.condition-text').textContent:key;
+}
 function sync(){
   if(!schema)return;
   renderSortOptions();
@@ -296,7 +303,10 @@ function sync(){
   };
   const lead=active.filter(k=>baseKey(k)==='type').length;
   const chips=[...active.slice(0,lead),...termKeys,...active.slice(lead)].map(chip);
-  $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
+  // A chip that stays slides to its new place as others come and go; a new one appears where it lands.
+  annaMotion.rearrange($('#active-filters'),'.condition,.and',conditionKey,()=>{
+    $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
+  });
   markStripEdges($('#active-filters'));
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
@@ -472,6 +482,8 @@ async function appendBatch(){
     if(gen!==generation||appending!==controller)return false;
     currentData.rows.push(...data.rows);
     $('#results').insertAdjacentHTML('beforeend',data.rows.map(r=>rowHTML(r,schema.columns)).join(''));
+    // Appended rows in sight fade in below the ones already read; those still out of sight just wait there.
+    for(const tr of [...$('#results').children].slice(-data.rows.length))annaMotion.arrive(tr);
     updateReaderNavigation();queueUiSave();return true;
   }catch(e){
     if(e.name==='AbortError'||gen!==generation)return false;
@@ -484,6 +496,7 @@ new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&!append
   {root:$('.table-wrap'),rootMargin:`0px 0px ${NEAR_END}px 0px`}).observe($('#load-more-row'));
 $('#load-more').onclick=()=>loadMore();
 async function load(){
+  const typed=typedQuery;typedQuery=false;
   if(!ready)return;request?.abort();appending?.abort();appending=null;appendFailed=false;$('#load-error').hidden=true;
   request=new AbortController();const gen=++generation;
   awaitResults('正在查询…');updateReaderNavigation();
@@ -495,6 +508,8 @@ async function load(){
     // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.
     $('#result-count').title=$('#result-count').textContent;
     renderResults();
+    // The new rows settle in from the dimmed look the old ones waited in.
+    if(!typed)annaMotion.arrive($('#results'),null,{opacity:.45});
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
     $('#empty-library').hidden=!(data.total===0&&metadata.library?.narrowed);
     if(focusSections){focusSections=false;($('#results .entry-name')||$('.table-wrap')).focus();}
@@ -547,10 +562,12 @@ function writeTerms(){params.delete('q');[...new Set(committed)].forEach(t=>para
 function readTerms(){committed=searchTerms();draft=(params.get('typing')||'').trim();$('#q').value=draft;}
 function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;$('#q').value='';closeSuggestions();}
 let composingSearch=false;
+// Results that follow each keystroke replace the rows without fading, so the list does not flicker while typing.
+let typedQuery=false;
 function queueSearch(){
   clearTimeout(timer);if(composingSearch)return;
   draft=$('#q').value.trim();renderSuggestions();
-  timer=setTimeout(()=>{writeTerms();changed(true);refreshSuggestionCounts();},160);
+  timer=setTimeout(()=>{writeTerms();typedQuery=true;changed(true);refreshSuggestionCounts();},160);
 }
 // Choosing a suggested value drops the draft, so suggestions count with the draft left out.
 let suggestionGroups=null,suggestionGeneration=0;
@@ -677,7 +694,7 @@ $('#results').addEventListener('keydown',e=>{
 });
 $('#detail-content').addEventListener('click',e=>{
   const b=e.target.closest('[data-entry]');if(b)openEntry(b.dataset.entry,true,b.hasAttribute('data-keep-tab')?detailTab:'body');
-  const t=e.target.closest('[data-tab]');if(t){renderDetail(t.dataset.tab);params.delete('tab');historyUpdate(true);$('#tab-'+t.dataset.tab).focus();saveUiState();}
+  const t=e.target.closest('[data-tab]');if(t)switchTab(t.dataset.tab);
   if(e.target.closest('[data-retry]')&&currentReaderId)openEntry(currentReaderId,false);
   const note=e.target.closest('.field-note[data-note]');
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
@@ -691,7 +708,7 @@ $('#detail-content').addEventListener('keydown',e=>{
   const t=e.target.closest('[data-tab]');if(!t||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;
   e.preventDefault();const tabs=[...$('#detail-content').querySelectorAll('[data-tab]')],index=tabs.indexOf(t);
   const next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(index+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
-  const name=tabs[next].dataset.tab;renderDetail(name);params.delete('tab');historyUpdate(true);$('#tab-'+name).focus();saveUiState();
+  switchTab(tabs[next].dataset.tab);
 });
 $('#close-detail').onclick=()=>closeEntry();
 $('#detail').addEventListener('cancel',e=>{e.preventDefault();closeEntry();});
@@ -824,7 +841,7 @@ function applyDensity(compact){document.documentElement.dataset.density=compact?
 $('#compact-rows').onchange=()=>{
   const compact=$('#compact-rows').checked;
   stored.set(DENSITY_KEY,compact?'compact':null);
-  applyDensity(compact);
+  annaMotion.restyle(()=>applyDensity(compact));
 };
 stored.watch(DENSITY_KEY,()=>applyDensity(storedDensity()));
 applyDensity(storedDensity());
@@ -863,6 +880,6 @@ async function init(){
     const error=$('#error');error.hidden=false;error.textContent=e.message;
     $('#result-count').textContent='服务未就绪';
   }
-  finally{restoringUi=false;quietTopic=false;saveUiState();}
+  finally{restoringUi=false;quietTopic=false;saveUiState();annaMotion.settle();}
 }
 init();

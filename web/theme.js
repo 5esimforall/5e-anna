@@ -24,14 +24,16 @@
       control.title = label;
     }
   }
+  // A change of look after the first paint fades from the old look into the new one.
+  const restyle = change => typeof annaMotion === 'undefined' ? change() : annaMotion.restyle(change);
   function choose(value) {
     preference = normalize(value);
     annaKit.stored.set(key, preference === 'system' ? null : preference); // Refused storage still switches this page.
-    apply();
+    restyle(apply);
   }
   apply();
-  system.addEventListener('change', apply);
-  annaKit.stored.watch(key, () => { preference = read(); apply(); });
+  system.addEventListener('change', () => restyle(apply));
+  annaKit.stored.watch(key, () => { preference = read(); restyle(apply); });
   document.addEventListener('DOMContentLoaded', () => {
     control = document.querySelector('#theme');
     if (!control) return; // Source-text pages share the theme, without the query toolbar.

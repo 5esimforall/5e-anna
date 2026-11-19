@@ -8,22 +8,28 @@
 const annaTourLabels = {
   zh:{title:'导览', skip:'跳到导览', intro:'从想做的事出发，逐层走进原书的章节、步骤与条目。',
     groups:{shelf:'书架', outline:'本页', choices:'这一步要选择', contents:'目录', entries:'条目',
-      parts:'包含', class:'所属职业', subclasses:'子职', feats:'授予专长', spells:'法术'},
+      parts:'包含', class:'所属职业', subclasses:'子职', feats:'授予专长', spells:'法术',
+      books:'书目', packages:'资料包', relations:'关联条目'},
     facet:'按{field}', readBook:'在 Stella 中阅读', openEntry:'在 Anna 中查看', openQuery:'在 Anna 中查看 {count} 条',
     spellList:'可用法术', more:'另有 {count} 项', moreInAnna:'另有 {count} 项，在 Anna 中查看全部',
     previous:'上一项：{name}', next:'下一项：{name}', back:'‹ {name}', table:'表', versions:'其他版本',
     rest:'选择一项，它会在这里展开', unfold:'展开「{name}」',
+    scopeBanner:'当前范围：{label}（{count} 条）', widenTour:'放宽到全库（共 {count} 条）', widenQuery:'在 Anna 查看全库',
+    filterPlaceholder:'筛选此列表…', filterLabel:'筛选 {name}', filterCount:'{shown} / {total}', filterEmpty:'没有匹配项。',
     loading:'正在读取…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
     bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。',
     status:{missing:'未找到对应原文', ambiguous:'原文对应不唯一', placeholder:'分组'},
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']}},
   en:{title:'Tour', skip:'Skip to the tour', intro:'Start from what you want to do, then go down through the book\'s chapters, steps and entries.',
     groups:{shelf:'Bookshelf', outline:'On this page', choices:'Choose in this step', contents:'Contents', entries:'Entries',
-      parts:'Contains', class:'Class', subclasses:'Subclasses', feats:'Granted feats', spells:'Spells'},
+      parts:'Contains', class:'Class', subclasses:'Subclasses', feats:'Granted feats', spells:'Spells',
+      books:'Books', packages:'Packages', relations:'Related entries'},
     facet:'By {field}', readBook:'Read in Stella', openEntry:'Open in Anna', openQuery:'Open {count} in Anna',
     spellList:'Spell list', more:'{count} more', moreInAnna:'{count} more; open them all in Anna',
     previous:'Previous: {name}', next:'Next: {name}', back:'‹ {name}', table:'Table', versions:'Other versions',
     rest:'Choose an item to open it here', unfold:'Show {name}',
+    scopeBanner:'Scope: {label} ({count})', widenTour:'Widen to full library ({count})', widenQuery:'Open full library in Anna',
+    filterPlaceholder:'Filter this list…', filterLabel:'Filter {name}', filterCount:'{shown} / {total}', filterEmpty:'No matching items.',
     loading:'Loading…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
     bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.',
     status:{missing:'Source not found', ambiguous:'Source match not unique', placeholder:'Group'},
@@ -32,7 +38,12 @@ const annaTourLabels = {
 const annaTour = (() => {
   const lang = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
   const ui = annaTourLabels[lang], {esc, stored} = annaKit;
-  const MEMORY = 'anna.tour', SEGMENTS = /^[\w-]+(\.[\w-]+)*$/;
+  const DEFAULT_COLLECTION = '5echm';
+  const initialSearch = new URLSearchParams(location.search);
+  const collection = initialSearch.get('collection') || DEFAULT_COLLECTION;
+  const isExternal = collection !== DEFAULT_COLLECTION;
+  const MEMORY = isExternal ? 'anna.tour.' + collection : 'anna.tour';
+  const SEGMENTS = /^[\w-]+(\.[\w-]+)*$/, EXT_SEGMENT = /^[A-Za-z0-9._-]+$/, FILTER_THRESHOLD = 24;
   const columns = document.querySelector('#tour-columns'), notice = document.querySelector('#tour-notice');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   // How many levels stay open side by side; the rest fold. Phones read one level at a time.
@@ -50,36 +61,92 @@ const annaTour = (() => {
   /* `shown` is the generation whose levels are in place; `landing` is where the focus goes once the levels on their
      way are. `openOnRest` opens the row a held key rests on, when the key is released or `restTimer` runs out. */
   let snapshot = null, path = [], generation = 0, shown = 0, landing = null, mounted = false, topic = null;
+  let scopeSource = isExternal ? (initialSearch.get('scope_source') || '') : '';
+  let scopePackage = isExternal ? (initialSearch.get('scope_package') || '') : '';
   let restTimer = 0, openOnRest = null;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
   const fill = (template, values) => Object.entries(values).reduce((s, [k, v]) => s.replaceAll('{' + k + '}', v), template);
   const fmt = n => Number(n).toLocaleString(lang === 'en' ? 'en' : 'zh-CN');
-  const nameOf = item => item.label ? item.label[lang] || item.label.zh : item.title || '';
+  const labelText = value => value && typeof value === 'object' ? (value[lang] || value.zh || value.en || '') : (value || '');
+  const nameOf = item => item.label ? labelText(item.label) : item.title || '';
   const rulesetTag = r => r && ui.rulesets[r] ? `<span class="tour-ruleset${r === '待核' ? ' unverified' : ''}" title="${esc(ui.rulesets[r][1])}">${esc(ui.rulesets[r][0])}</span>` : '';
+  const joinSegments = segments => segments.join(isExternal ? '/' : '.');
+  const scopeKey = () => isExternal ? `${scopeSource}|${scopePackage}` : '';
+  const viewKey = segment => isExternal ? `${segment}|${scopeSource}|${scopePackage}` : segment;
   const segmentsOf = search => {
     const at = new URLSearchParams(search).get('at') || '';
+    if (!at) return [];
+    if (isExternal) {
+      const parts = at.split('/').filter(Boolean);
+      return parts.length && parts.every(s => EXT_SEGMENT.test(s)) ? parts : [];
+    }
     return SEGMENTS.test(at) ? at.split('.') : [];
   };
-  const tourHref = segments => '/tour' + (segments.length ? '?at=' + segments.join('.') : '');
-  const queryHref = query => '/?' + new URLSearchParams(Object.entries(query).flatMap(([key, values]) => values.map(v => [key, v])));
-  const readHref = read => '/read?' + new URLSearchParams(read);
-  const entryHref = anna => '/?' + new URLSearchParams(anna.type ? {type:anna.type, entry:anna.entry} : {entry:anna.entry});
+  const scopeOf = search => {
+    if (!isExternal) return {scopeSource:'', scopePackage:''};
+    const p = new URLSearchParams(search);
+    return {scopeSource:p.get('scope_source') || '', scopePackage:p.get('scope_package') || ''};
+  };
+  const tourHref = (segments, scope = {scopeSource, scopePackage}) => {
+    const params = new URLSearchParams();
+    if (isExternal) params.set('collection', collection);
+    if (segments.length) params.set('at', joinSegments(segments));
+    if (isExternal && scope.scopeSource) params.set('scope_source', scope.scopeSource);
+    if (isExternal && scope.scopePackage) params.set('scope_package', scope.scopePackage);
+    const qs = params.toString();
+    return '/tour' + (qs ? '?' + qs : '');
+  };
+  const queryHref = query => {
+    const entries = [];
+    if (isExternal && !('collection' in query)) entries.push(['collection', collection]);
+    for (const [key, values] of Object.entries(query)) {
+      const list = Array.isArray(values) ? values : [values];
+      for (const v of list) entries.push([key, v]);
+    }
+    return '/?' + new URLSearchParams(entries);
+  };
+  const readHref = read => {
+    const params = new URLSearchParams();
+    if (isExternal && !('collection' in read)) params.set('collection', collection);
+    for (const [k, v] of Object.entries(read)) if (v !== null && v !== undefined && v !== '') params.set(k, v);
+    return '/read?' + params;
+  };
+  const entryHref = anna => {
+    const params = new URLSearchParams();
+    if (isExternal) params.set('collection', collection);
+    if (anna.type) params.set('type', anna.type);
+    params.set('entry', anna.entry);
+    return '/?' + params;
+  };
   const icon = '<svg class="tour-item-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
 
   class LoadError extends Error {
     constructor(code, status) { super(code); this.code = code; this.status = status; }
   }
   async function load(api, cache, segment) {
-    if (cache.has(segment)) return cache.get(segment);
-    const params = new URLSearchParams({node:segment});
+    const key = api === '/api/tour' ? viewKey(segment) : segment;
+    if (cache.has(key)) return cache.get(key);
+    const params = new URLSearchParams();
+    if (isExternal) {
+      params.set('collection', collection);
+      if (api === '/api/tour') {
+        if (segment) params.set('at', segment);
+        if (scopeSource) params.set('scope_source', scopeSource);
+        if (scopePackage) params.set('scope_package', scopePackage);
+      } else {
+        params.set('id', segment);
+      }
+    } else {
+      params.set('node', segment);
+    }
     if (snapshot) params.set('snapshot', snapshot);
     let response, body = null;
     try { response = await fetch(api + '?' + params); } catch { throw new LoadError('network', 0); }
     try { body = await response.json(); } catch { body = null; }
     if (!response.ok || !body) throw new LoadError(body?.code || 'error', response.status);
     snapshot ||= body.snapshot;
-    cache.set(segment, body);
+    cache.set(key, body);
     return body;
   }
   const fetchView = segment => load('/api/tour', views, segment);
@@ -106,27 +173,45 @@ const annaTour = (() => {
   }
   function groupHeading(group, index, groups) {
     if (group.key === 'section') return nameOf(group);
-    if (group.key === 'facet') return fill(ui.facet, {field:group.label || ''});
-    if (group.key === 'contents') return group.label || (groups.findIndex(g => g.key === 'contents') === index ? ui.groups.contents : '');
-    return ui.groups[group.key] || '';
+    const label = labelText(group.label);
+    if (group.key === 'facet') return typeof group.label === 'object' && group.label ? label : fill(ui.facet, {field:label});
+    if (group.key === 'contents') return label || (groups.findIndex(g => g.key === 'contents') === index ? ui.groups.contents : '');
+    return label || ui.groups[group.key] || '';
   }
   // Steps number on across the groups a bare divider splits them into, so the path reads as one sequence.
   function groupHtml(group, index, view, depth, first = 0) {
     const heading = groupHeading(group, index, view.groups);
+    const filter = group.items.length > FILTER_THRESHOLD
+      ? `<div class="tour-filter"><input type="search" class="tour-filter-input" placeholder="${esc(ui.filterPlaceholder)}" aria-label="${esc(fill(ui.filterLabel, {name:heading || ui.title}))}"><span class="tour-filter-count" aria-live="polite">${esc(fmt(group.items.length))}</span></div>`
+      : '';
+    const empty = filter ? `<p class="tour-filter-empty" hidden>${esc(ui.filterEmpty)}</p>` : '';
     const more = group.more ? `<p class="tour-more">${view.anna?.query ?
       `<a href="${esc(queryHref(view.anna.query))}">${esc(fill(ui.moreInAnna, {count:fmt(group.more)}))}</a>` : esc(fill(ui.more, {count:fmt(group.more)}))}</p>` : '';
     const label = heading ? ` aria-label="${esc(heading)}"` : '';
-    return `<section class="tour-group${group.ordered ? ' ordered' : ''}" data-group="${esc(group.key)}"${label}>${heading ? `<h3>${esc(heading)}</h3>` : ''}` +
-      `<${group.ordered ? 'ol' : 'ul'} role="list"${group.ordered && first ? ` start="${first + 1}"` : ''}>${group.items.map((row, i) => item(row, group, first + i, depth, view)).join('')}</${group.ordered ? 'ol' : 'ul'}>${more}</section>`;
+    return `<section class="tour-group${group.ordered ? ' ordered' : ''}" data-group="${esc(group.key)}"${label}>${heading ? `<h3>${esc(heading)}</h3>` : ''}${filter}` +
+      `<${group.ordered ? 'ol' : 'ul'} role="list"${group.ordered && first ? ` start="${first + 1}"` : ''}>${group.items.map((row, i) => item(row, group, first + i, depth, view)).join('')}</${group.ordered ? 'ol' : 'ul'}>${empty}${more}</section>`;
   }
   function head(view, depth) {
     const title = view.kind === 'root' ? ui.title : nameOf(view);
-    const parent = depth > 0 ? views.get(['', ...path][depth - 1]) : null;
+    const parent = depth > 0 ? views.get(viewKey(['', ...path][depth - 1])) : null;
     const back = parent ? `<a class="tour-back" href="${esc(tourHref(path.slice(0, depth - 1)))}" data-at>${esc(fill(ui.back, {name:parent.kind === 'root' ? ui.title : nameOf(parent)}))}</a>` : '';
     const trail = view.trail?.length ? `<p class="tour-trail" title="${esc(view.trail.join(' › '))}">${esc(view.trail.join(' › '))}</p>` : '';
     const meta = [rulesetTag(view.ruleset), view.type_label && view.type !== 'section' ? esc(view.type_label) : '', esc((view.sources || []).join('；'))].filter(Boolean);
     return `<header>${back}${trail}<h2 id="tour-title-${depth}">${esc(title)}</h2>${meta.length ? `<p class="tour-meta">${meta.join('<span aria-hidden="true">·</span>')}</p>` : ''}` +
       (view.kind === 'root' ? `<p class="tour-intro">${esc(ui.intro)}</p>` : '') + '</header>';
+  }
+  function scopeBanner(view) {
+    const sc = view.scope_context;
+    if (!sc) return '';
+    const label = fill(ui.scopeBanner, {label:sc.label || sc.id || '', count:fmt(sc.scoped_count ?? 0)});
+    const actions = [];
+    if (sc.widen_tour_href) {
+      actions.push(`<a class="tour-scope-widen" href="${esc(sc.widen_tour_href)}" data-widen>${esc(fill(ui.widenTour, {count:fmt(sc.unscoped_count ?? 0)}))}</a>`);
+    }
+    if (sc.widen_query_href) {
+      actions.push(`<a class="tour-scope-query" href="${esc(sc.widen_query_href)}">${esc(ui.widenQuery)}</a>`);
+    }
+    return `<div class="tour-scope" role="region" aria-label="${esc(label)}"><span class="tour-scope-label">${esc(label)}</span>${actions.length ? `<span class="tour-scope-actions">${actions.join('')}</span>` : ''}</div>`;
   }
   function steps(view, depth) {
     let first = 0;
@@ -149,13 +234,14 @@ const annaTour = (() => {
     }).join('')}</nav>` : '';
     // The level's own words, then where it leads; a wide detail sets the second beside the first.
     const rail = (actions.length ? `<div class="tour-actions">${actions.join('')}</div>` : '') + steps(view, depth) + sequence;
-    return head(view, depth) + `<div class="tour-main">${status}${lead}</div>` + (rail ? `<div class="tour-rail">${rail}</div>` : '');
+    return head(view, depth) + scopeBanner(view) + `<div class="tour-main">${status}${lead}</div>` + (rail ? `<div class="tour-rail">${rail}</div>` : '');
   }
 
   // A folded level keeps a spine that names it; the spine brings it back into view.
   function column(segment, depth) {
     const section = document.createElement('section');
     section.className = 'tour-column'; section.dataset.depth = depth; section.dataset.segment = segment;
+    section.dataset.scopeKey = scopeKey();
     section.setAttribute('aria-labelledby', `tour-title-${depth}`);
     section.setAttribute('aria-busy', 'true');
     section.innerHTML = `<button type="button" class="tour-spine"><span>${esc(ui.loading)}</span>${icon}</button><div class="tour-sheet"><div class="tour-column-body"><h2 id="tour-title-${depth}">${esc(ui.loading)}</h2></div></div>`;
@@ -240,6 +326,7 @@ const annaTour = (() => {
     section.scrollLeft = 0;
   }
 
+  const visibleItems = section => [...section.querySelectorAll('.tour-item')].filter(link => !link.closest('li')?.hidden);
   // The row each level opened is marked in the level above; each level keeps one row in the Tab order.
   function markCurrent() {
     const wanted = ['', ...path];
@@ -251,9 +338,10 @@ const annaTour = (() => {
         if (here) { link.setAttribute('aria-current', 'true'); current = link; }
         else link.removeAttribute('aria-current');
       }
-      const items = [...section.querySelectorAll('.tour-item')];
-      const keep = items.find(link => link.tabIndex === 0) || current || items[0];
-      items.forEach(link => { link.tabIndex = link === (current || keep) ? 0 : -1; });
+      const items = visibleItems(section);
+      const visibleCurrent = current && !current.closest('li')?.hidden ? current : null;
+      const keep = items.find(link => link.tabIndex === 0) || visibleCurrent || items[0];
+      section.querySelectorAll('.tour-item').forEach(link => { link.tabIndex = link === (visibleCurrent || keep) ? 0 : -1; });
     }
   }
   function reveal() {
@@ -275,8 +363,9 @@ const annaTour = (() => {
   function focusRows(section, open = false) {
     if (!section) return;
     if (section.dataset.place === 'folded') { section.querySelector('.tour-spine').focus(); return; }
-    const target = section.querySelector('.tour-item[aria-current=true]') || section.querySelector('.tour-item[tabindex="0"]') ||
-      section.querySelector('.tour-item') || section.querySelector('h2');
+    const items = visibleItems(section);
+    const target = items.find(link => link.getAttribute('aria-current') === 'true') ||
+      items.find(link => link.tabIndex === 0) || items[0] || section.querySelector('h2');
     if (!target) return;
     if (target.matches('h2')) { target.tabIndex = -1; }
     else section.querySelectorAll('.tour-item').forEach(link => { link.tabIndex = link === target ? 0 : -1; });
@@ -318,13 +407,34 @@ const annaTour = (() => {
     if (section?.querySelector('.tour-item[aria-current=true]') && row.getAttribute('aria-current') !== 'true') focusRows(section);
   }
 
+  function applyGroupFilter(input) {
+    const group = input.closest('.tour-group');
+    if (!group) return;
+    const term = input.value.trim().toLocaleLowerCase();
+    const list = group.querySelector('ul,ol');
+    if (!list) return;
+    const rows = [...list.children];
+    let visible = 0;
+    for (const li of rows) {
+      const match = !term || li.textContent.toLocaleLowerCase().includes(term);
+      li.hidden = !match;
+      if (match) visible++;
+    }
+    const counter = group.querySelector('.tour-filter-count');
+    if (counter) counter.textContent = term ? fill(ui.filterCount, {shown:fmt(visible), total:fmt(rows.length)}) : fmt(rows.length);
+    const empty = group.querySelector('.tour-filter-empty');
+    if (empty) empty.hidden = visible > 0;
+    markCurrent();
+  }
+
   async function show(segments) {
-    const run = ++generation, wanted = ['', ...segments];
+    const run = ++generation, wanted = ['', ...segments], curScope = scopeKey();
     path = segments;
     say('');
     const existing = [...columns.children];
     let keep = 0;
-    while (keep < existing.length && keep < wanted.length && existing[keep].dataset.segment === wanted[keep] && existing[keep].dataset.state === 'ready') keep++;
+    while (keep < existing.length && keep < wanted.length && existing[keep].dataset.segment === wanted[keep] &&
+           existing[keep].dataset.scopeKey === curScope && existing[keep].dataset.state === 'ready') keep++;
     /* The levels being replaced stay until the new ones can take their place, and the row that opens them shows at
        once. New levels that load within LOADING_DELAY open in one step, the deepest with a detail's own words; past
        it they open showing that they are loading, and take their final form in a second step. */
@@ -345,7 +455,7 @@ const annaTour = (() => {
       // A level that no longer exists in this snapshot returns the reader to the level above it.
       if (error.status === 404 && depth > 0) {
         const kept = segments.slice(0, depth - 1);
-        history.replaceState({tour:kept.join('.')}, '', tourHref(kept));
+        history.replaceState({tour:joinSegments(kept), scopeSource, scopePackage}, '', tourHref(kept));
         await show(kept);
         if (run + 1 === generation) say(ui.nodeMissing);
         return;
@@ -369,32 +479,53 @@ const annaTour = (() => {
     land();
     return moved;
   }
+  function querySwitchHref(latest) {
+    if (!isExternal) return latest ? '/?' + latest.query : '/';
+    const params = new URLSearchParams(latest ? latest.query : '');
+    if (!params.has('collection')) params.set('collection', collection);
+    return '/?' + params;
+  }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
   function settle() {
-    const last = views.get(['', ...path].at(-1));
+    const last = views.get(viewKey(['', ...path].at(-1)));
     document.title = annaPageTitle('tour', last && last.kind !== 'root' ? nameOf(last) : ui.title);
-    stored.set(MEMORY, path.length ? path.join('.') : null);
+    stored.set(MEMORY, path.length ? joinSegments(path) : null);
     if (!snapshot) return;
-    if (!mounted && typeof annaCompanions !== 'undefined') { annaCompanions.mount({page:'tour', snapshot}); mounted = true; }
-    const latest = annaWorkspace.read(snapshot).query[0];
-    annaTopbar.pointSwitch('query', latest ? '/?' + latest.query : '/');
-    const shown = last?.kind === 'entry' && last.type !== 'section' ? last : null;
-    if (topic && topic !== shown?.id) annaWorkspace.update(snapshot, state => annaWorkspace.clearTopic(state, topic));
-    if (shown && topic !== shown.id) annaWorkspace.update(snapshot, state => annaWorkspace.setTopic(state, {entry:shown.id, name:shown.title, from:'query', at:Date.now()}));
-    topic = shown?.id || null;
+    if (!mounted && typeof annaCompanions !== 'undefined') { annaCompanions.mount({page:'tour', snapshot, collection}); mounted = true; }
+    const latest = annaWorkspace.read(snapshot, collection).query[0];
+    annaTopbar.pointSwitch('query', querySwitchHref(latest));
+    const shownEntry = last?.kind === 'entry' && last.type !== 'section' ? last : null;
+    if (topic && topic !== shownEntry?.id) annaWorkspace.update(snapshot, state => annaWorkspace.clearTopic(state, topic), collection);
+    if (shownEntry && topic !== shownEntry.id && (!isExternal || shownEntry.read)) {
+      const nextTopic = {entry:shownEntry.id, name:shownEntry.title, from:'query', at:Date.now()};
+      if (shownEntry.read && (shownEntry.read.page || shownEntry.read.path)) nextTopic.bookLocation = shownEntry.read;
+      annaWorkspace.update(snapshot, state => annaWorkspace.setTopic(state, nextTopic), collection);
+    }
+    topic = shownEntry?.id || null;
   }
   // Opening a level is a step in history; `replace` changes the current step instead. `focus` is where the focus
   // lands once the levels are in place: `depth` names the level, `enter` enters it rather than its rows, and `open`
   // opens the row it lands on.
   function go(segments, options = {}) {
-    if (segments.join('.') === path.join('.')) {
+    const nextSource = options.scope ? (options.scope.scopeSource || '') : scopeSource;
+    const nextPackage = options.scope ? (options.scope.scopePackage || '') : scopePackage;
+    const samePath = joinSegments(segments) === joinSegments(path);
+    const sameScope = nextSource === scopeSource && nextPackage === scopePackage;
+    if (samePath && sameScope) {
       if (options.focus) aim(options.focus);
       return;
     }
+    scopeSource = nextSource;
+    scopePackage = nextPackage;
     landing = options.focus ?? null;
-    history[options.replace ? 'replaceState' : 'pushState']({tour:segments.join('.')}, '', tourHref(segments));
+    history[options.replace ? 'replaceState' : 'pushState']({tour:joinSegments(segments), scopeSource, scopePackage}, '', tourHref(segments));
     return show(segments);
   }
+
+  columns.addEventListener('input', event => {
+    const input = event.target.closest('.tour-filter-input');
+    if (input) applyGroupFilter(input);
+  });
 
   columns.addEventListener('click', event => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -402,6 +533,17 @@ const annaTour = (() => {
     if (retry) { show(path); return; }
     const spine = event.target.closest('.tour-spine');
     if (spine) { unfold(spine.closest('.tour-column')); return; }
+    const widen = event.target.closest('a[data-widen]');
+    if (widen) {
+      event.preventDefault();
+      const targetUrl = new URL(widen.href, location.origin);
+      const nextSegs = segmentsOf(targetUrl.search);
+      const nextScope = scopeOf(targetUrl.search);
+      // If widening an inherently-scoped book/pack node whose href stays on the same node with no URL scope, jump to tour root.
+      const clearSame = !scopeSource && !scopePackage && joinSegments(nextSegs) === joinSegments(path);
+      go(clearSame ? [] : nextSegs, {scope:nextScope});
+      return;
+    }
     // A reference inside a detail's own words opens its definition as the next level.
     const ref = event.target.closest('button.ref[data-entry]');
     if (ref) {
@@ -413,7 +555,8 @@ const annaTour = (() => {
     if (!link) return;
     event.preventDefault();
     if (link.getAttribute('aria-disabled') === 'true') return;
-    go(segmentsOf(new URL(link.href).search));
+    const linkUrl = new URL(link.href);
+    go(segmentsOf(linkUrl.search), {scope:scopeOf(linkUrl.search)});
   });
   // Unfolding a level closes just enough levels below it to bring it back among the open ones.
   function unfold(section) {
@@ -471,6 +614,23 @@ const annaTour = (() => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.isComposing) return;
     const section = event.target.closest('.tour-column');
     if (!section) return;
+    const filterInput = event.target.closest('.tour-filter-input');
+    if (filterInput) {
+      if (event.key === 'Escape' && filterInput.value) {
+        event.preventDefault();
+        filterInput.value = '';
+        applyGroupFilter(filterInput);
+      } else if (event.key === 'ArrowDown') {
+        const first = visibleItems(filterInput.closest('.tour-group'))[0];
+        if (first) {
+          event.preventDefault();
+          section.querySelectorAll('.tour-item').forEach(each => { each.tabIndex = each === first ? 0 : -1; });
+          first.focus();
+          follow(first);
+        }
+      }
+      return;
+    }
     const depth = Number(section.dataset.depth), key = VIM_KEYS[event.key] || event.key;
     const spine = event.target.closest('.tour-spine');
     if (spine) {
@@ -487,7 +647,7 @@ const annaTour = (() => {
     if (event.target === section) {
       if (event.shiftKey) return;
       if (key === 'ArrowLeft') { event.preventDefault(); climb(section); }
-      else if (key === 'ArrowRight' && section.querySelector('.tour-item')) { event.preventDefault(); focusRows(section, true); }
+      else if (key === 'ArrowRight' && visibleItems(section).length) { event.preventDefault(); focusRows(section, true); }
       else if (key !== event.key && (key === 'ArrowDown' || key === 'ArrowUp')) {
         event.preventDefault();
         scrollText(section, (key === 'ArrowDown' ? 1 : -1) * LINE_STEP);
@@ -498,7 +658,8 @@ const annaTour = (() => {
     if (!link) return;
     if (readOn(event, section)) { event.preventDefault(); return; }
     if (event.shiftKey) return;
-    const items = [...section.querySelectorAll('.tour-item')], i = items.indexOf(link);
+    const items = visibleItems(section), i = items.indexOf(link);
+    if (i < 0) return;
     let target = null;
     if (key === 'ArrowDown') target = items[Math.min(i + 1, items.length - 1)];
     else if (key === 'ArrowUp') {
@@ -514,11 +675,14 @@ const annaTour = (() => {
       event.preventDefault();
       const focus = {depth:depth + 1, enter:true, open:true};
       if (link.getAttribute('aria-current') === 'true') aim(focus);
-      else go(segmentsOf(new URL(link.href).search), {focus});
+      else {
+        const linkUrl = new URL(link.href);
+        go(segmentsOf(linkUrl.search), {focus, scope:scopeOf(linkUrl.search)});
+      }
       return;
     } else return;
     event.preventDefault();
-    items.forEach(each => { each.tabIndex = each === target ? 0 : -1; });
+    section.querySelectorAll('.tour-item').forEach(each => { each.tabIndex = each === target ? 0 : -1; });
     target.focus();
     follow(target, event.repeat);
   });
@@ -526,13 +690,16 @@ const annaTour = (() => {
   columns.addEventListener('pointerdown', stopFollowing);
   window.addEventListener('popstate', () => {
     stopFollowing();
+    const nextScope = scopeOf(location.search);
+    scopeSource = nextScope.scopeSource;
+    scopePackage = nextScope.scopePackage;
     landing = columns.contains(document.activeElement) ? 'kept' : null;
     show(segmentsOf(location.search));
   });
   for (const query of [roomy, phone]) query.addEventListener('change', () => move(arrange).then(reveal));
 
   const start = segmentsOf(location.search);
-  history.replaceState({tour:start.join('.')}, '', tourHref(start));
+  history.replaceState({tour:joinSegments(start), scopeSource, scopePackage}, '', tourHref(start));
   show(start);
   return {show, go};
 })();

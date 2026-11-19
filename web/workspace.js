@@ -2,10 +2,37 @@
    know the topic: the entry the latest of them showed you. Every tab of this site reads and writes one record,
    bound to the build snapshot; per-tab details such as back and forward stay in each page's history state. */
 const annaWorkspace = (() => {
-  const key = 'anna.workspace', resumeKey = 'anna.resume', version = 1, limit = 5;
+  const key = 'anna.workspace', resumeKey = 'anna.resume', defaultCollection = '5echm', version = 1, limit = 5;
   const text = value => typeof value === 'string' ? value : '';
   const time = value => Number.isFinite(value) && value > 0 ? value : 0;
   const position = value => value && Number.isFinite(value.x) && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0;
+  function normalizeCollection(value) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof location !== 'undefined') {
+      const fromUrl = new URLSearchParams(location.search).get('collection');
+      if (fromUrl && fromUrl.trim()) return fromUrl.trim();
+    }
+    return defaultCollection;
+  }
+  const storageKey = collection => {
+    const col = normalizeCollection(collection);
+    return col === defaultCollection ? key : `${key}.${col}`;
+  };
+  const resumeStorageKey = collection => {
+    const col = normalizeCollection(collection);
+    return col === defaultCollection ? resumeKey : `${resumeKey}.${col}`;
+  };
+  function normalizeBookLocation(value) {
+    if (!value || typeof value !== 'object') return null;
+    const page = text(value.page || value.path);
+    if (!page) return null;
+    const root = text(value.root), node = text(value.node || value.node_id), fragment = text(value.fragment);
+    const out = {page};
+    if (root) out.root = root;
+    if (node) out.node = node;
+    if (fragment) out.fragment = fragment;
+    return out;
+  }
   /* A query memory is one set of conditions; opening entries and scrolling within them update it in place.
      A query becomes worth returning to once an entry was opened in it; until then refining it replaces it. */
   function queryMemory(value) {
@@ -21,7 +48,10 @@ const annaWorkspace = (() => {
   }
   function topic(value) {
     if (!value || typeof value.entry !== 'string' || !value.entry || !['query','book'].includes(value.from)) return null;
-    return {entry:value.entry, name:text(value.name), from:value.from, at:time(value.at)};
+    const out = {entry:value.entry, name:text(value.name), from:value.from, at:time(value.at)};
+    const loc = normalizeBookLocation(value.bookLocation);
+    if (loc) out.bookLocation = loc;
+    return out;
   }
   const list = (values, read) => (Array.isArray(values) ? values : []).map(read).filter(Boolean).slice(0, limit);
   /* Reads a stored record for this snapshot. Places in the book and the topic name build-specific identities,
@@ -55,7 +85,11 @@ const annaWorkspace = (() => {
   // Showing the topic again keeps who brought it up and when, so following it back is not a new topic.
   function setTopic(state, value) {
     const next = topic(value);
-    return next && next.entry === state.topic?.entry ? state : {...state, topic:next};
+    if (next && next.entry === state.topic?.entry) {
+      if (next.bookLocation && !state.topic.bookLocation) return {...state, topic:{...state.topic, bookLocation:next.bookLocation}};
+      return state;
+    }
+    return {...state, topic:next};
   }
   function clearTopic(state, entry) { return state.topic?.entry === entry ? {...state, topic:null} : state; }
   /* What turning to a companion offers first: the topic another companion showed you since your last visit
@@ -69,35 +103,64 @@ const annaWorkspace = (() => {
   // Storage access stays here so the rules above remain pure and testable without a browser.
   let storage = null;
   const stored = () => storage || (typeof annaKit !== 'undefined' ? annaKit.stored : null);
-  function read(snapshot) {
+  const lastSnapshots = new Map();
+  function read(snapshot, collection) {
+    const targetKey = storageKey(collection);
+    if (typeof snapshot === 'string' && snapshot) lastSnapshots.set(targetKey, snapshot);
     let raw = null;
-    try { raw = JSON.parse(stored()?.get(key) || 'null'); } catch { raw = null; }
+    try { raw = JSON.parse(stored()?.get(targetKey) || 'null'); } catch { raw = null; }
     return normalize(raw, snapshot);
   }
   // Listeners hear this tab's updates directly and other tabs' through the storage event.
-  const listeners = new Set();
-  let watching = false;
-  function update(snapshot, change) {
-    const next = change(read(snapshot));
-    stored()?.set(key, JSON.stringify(next));
-    listeners.forEach(listener => listener());
+  const listenersByKey = new Map();
+  const watchingKeys = new Set();
+  function notify(targetKey) {
+    const set = listenersByKey.get(targetKey);
+    if (set) set.forEach(listener => listener());
+  }
+  function update(snapshot, change, collection) {
+    const targetKey = storageKey(collection);
+    if (typeof snapshot === 'string' && snapshot) lastSnapshots.set(targetKey, snapshot);
+    const next = change(read(snapshot, collection));
+    stored()?.set(targetKey, JSON.stringify(next));
+    notify(targetKey);
     return next;
   }
-  function subscribe(listener) {
-    listeners.add(listener);
-    if (!watching && stored()?.watch) { stored().watch(key, () => listeners.forEach(each => each())); watching = true; }
+  function subscribe(listener, collection) {
+    const targetKey = storageKey(collection);
+    let set = listenersByKey.get(targetKey);
+    if (!set) { set = new Set(); listenersByKey.set(targetKey, set); }
+    set.add(listener);
+    if (!watchingKeys.has(targetKey) && stored()?.watch) {
+      stored().watch(targetKey, () => notify(targetKey));
+      watchingKeys.add(targetKey);
+    }
+  }
+  function noteTopic(snapshotOrOpts, maybeOpts) {
+    const opts = typeof snapshotOrOpts === 'object' && snapshotOrOpts !== null ? snapshotOrOpts : (maybeOpts || {});
+    const targetKey = storageKey(opts.collection);
+    const snap = typeof snapshotOrOpts === 'string' ? snapshotOrOpts : (opts.snapshot || lastSnapshots.get(targetKey) || '');
+    if (!snap || !opts.entry || !opts.from) return null;
+    return update(snap, state => setTopic(state, {
+      entry:opts.entry,
+      name:opts.name,
+      from:opts.from,
+      at:opts.at || Date.now(),
+      bookLocation:opts.bookLocation
+    }), opts.collection);
   }
   /* Choosing a remembered place asks the page it opens to restore that place. The request lives in this tab's
      session storage, so it survives the navigation and nothing else: shared links and new tabs start fresh. */
-  function requestResume(companion, id) {
-    try { sessionStorage.setItem(resumeKey, JSON.stringify({companion, id})); } catch { /* The page opens without restoring. */ }
+  function requestResume(companion, id, collection) {
+    try { sessionStorage.setItem(resumeStorageKey(collection), JSON.stringify({companion, id})); } catch { /* The page opens without restoring. */ }
   }
-  function takeResume(companion) {
+  function takeResume(companion, collection) {
     let request = null;
-    try { request = JSON.parse(sessionStorage.getItem(resumeKey) || 'null'); sessionStorage.removeItem(resumeKey); } catch { return null; }
+    const rkey = resumeStorageKey(collection);
+    try { request = JSON.parse(sessionStorage.getItem(rkey) || 'null'); sessionStorage.removeItem(rkey); } catch { return null; }
     return request?.companion === companion && typeof request.id === 'string' ? request.id : null;
   }
-  return {key, limit, normalize, rememberQuery, rememberBook, setTopic, clearTopic, offer, read, update, subscribe, requestResume, takeResume, memoryId,
+  return {key, storageKey, limit, normalize, rememberQuery, rememberBook, setTopic, clearTopic, noteTopic, offer, read, update, subscribe, requestResume, takeResume, memoryId,
     useStorage(value) { storage = value; }};
 })();
 if (typeof module !== 'undefined') module.exports = annaWorkspace;

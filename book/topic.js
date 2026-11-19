@@ -3,7 +3,14 @@
 (() => {
   'use strict';
   const context = JSON.parse(document.getElementById('anna-bindings').textContent).reader;
-  if (context?.presentation_resources.some(asset => asset.id === 'webhelpTopicStyles'))
+  const contentBase = location.pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
+    : (context?.content_base || '/book/');
+  const definitionBase = context?.definition_base || (contentBase + 'definition/');
+  const collection = context?.collection || (contentBase === '/our5etools-book/' ? '5etools' : '5echm');
+  const pagePrefixes = Array.isArray(context?.page_prefixes) && context.page_prefixes.length
+    ? context.page_prefixes
+    : ['topics/', 'books/', 'adventures/', 'brew-books/', 'brew-adventures/'];
+  if (context?.presentation_resources?.some(asset => asset.id === 'webhelpTopicStyles'))
     document.documentElement.classList.add('webhelp-topic-document');
   if (parent === window) return;
   const channel = 'anna-reader', version = 2;
@@ -14,7 +21,9 @@
   const sizing = document.createElement('style');
   sizing.textContent = 'html,html body{min-height:0!important;height:auto!important}html{overflow-y:hidden!important}';
   document.head.append(sizing);
-  const path = decodeURIComponent(location.pathname.slice('/book/'.length));
+  const path = decodeURIComponent(
+    location.pathname.startsWith(contentBase) ? location.pathname.slice(contentBase.length) : location.pathname.slice(1)
+  );
   const send = (type, detail = {}) => {
     parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, location.origin);
   };
@@ -33,13 +42,31 @@
     try { url = new URL(href, location.href); } catch { return null; }
     if (url.origin !== location.origin) return null;
     try {
-      if (url.pathname.startsWith('/book/definition/')) return {entry: decodeURIComponent(url.pathname.slice('/book/definition/'.length))};
-      if (!url.pathname.startsWith('/book/topics/')) return null;
-      return {page: decodeURIComponent(url.pathname.slice('/book/'.length)), anchor: decodeURIComponent(url.hash.slice(1))};
+      if (url.pathname.startsWith(definitionBase)) return {entry: decodeURIComponent(url.pathname.slice(definitionBase.length))};
+      if (url.pathname.startsWith(contentBase)) {
+        const rel = decodeURIComponent(url.pathname.slice(contentBase.length));
+        if (!pagePrefixes.some(prefix => rel.startsWith(prefix))) return null;
+        return {page: rel, anchor: decodeURIComponent(url.hash.slice(1))};
+      }
+      if (url.pathname === '/read') {
+        const targetCollection = url.searchParams.get('collection') || '5echm';
+        if (targetCollection !== collection) return null;
+        const entry = url.searchParams.get('entry');
+        const page = url.searchParams.get('page');
+        const root = url.searchParams.get('root') || '';
+        const anchor = url.searchParams.get('anchor') || decodeURIComponent(url.hash.slice(1));
+        if (entry) return {root, entry};
+        if (page && pagePrefixes.some(prefix => page.startsWith(prefix))) return {root, page, anchor};
+        if (root) return {root, anchor};
+      }
+      return null;
     } catch { return null; }
   }
   function readerURL(route) {
-    return location.origin + '/read?' + new URLSearchParams(route);
+    const params = new URLSearchParams();
+    if (collection && collection !== '5echm') params.set('collection', collection);
+    for (const [k, v] of Object.entries(route)) if (v) params.set(k, v);
+    return location.origin + '/read' + (params.size ? '?' + params : '');
   }
   function follow(event) {
     if (!initialized || event.defaultPrevented || (event.type === 'click' && event.button !== 0) || (event.type === 'auxclick' && event.button !== 1)) return;
@@ -102,14 +129,14 @@
   function markLinks(on) { window.annaSourceLinks?.markLinks(on === true); }
   async function preparePresentation(resources) {
     const styles = [];
-    for (const asset of resources) {
+    for (const asset of resources || []) {
       if (document.getElementById(asset.id)) continue;
       const element = document.createElement(asset.kind === 'style' ? 'link' : 'script');
       element.id = asset.id;
       if (asset.kind === 'style') {
-        element.rel = 'stylesheet'; element.href = '/book/' + asset.path;
+        element.rel = 'stylesheet'; element.href = contentBase + asset.path;
         styles.push(new Promise(resolve => { element.onload = resolve; element.onerror = resolve; }));
-      } else { element.src = '/book/' + asset.path; element.async = false; }
+      } else { element.src = contentBase + asset.path; element.async = false; }
       document.head.append(element);
     }
     await Promise.all(styles);

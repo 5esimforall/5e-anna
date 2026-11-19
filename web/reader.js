@@ -11,6 +11,12 @@
   }
   for (const element of document.querySelectorAll('[data-placeholder]')) element.placeholder = ui[element.dataset.placeholder];
   const sidebar = $('#book-sidebar'), narrow = matchMedia('(max-width:800px)');
+  const DEFAULT_COLLECTION = '5echm';
+  const activeCollection = (() => {
+    const raw = new URL(location.href).searchParams.get('collection');
+    return raw && raw.trim() ? raw.trim() : DEFAULT_COLLECTION;
+  })();
+  const isExternalCollection = activeCollection !== DEFAULT_COLLECTION;
   // Scrolling updates the position continuously; the history entry only needs the position where it stops.
   const HISTORY_SAVE_DELAY = 200;
   let metadata, model, scope, flow, page, route, nodeId = '', focusedNode = '', nodes = new Map(), children = new Map(), pageNodes = new Map();
@@ -20,9 +26,20 @@
   let restoring = true, contentsFollowing = true, contentsSyncTimer, historySaveTimer;
   history.scrollRestoration = 'manual';
 
+  function apiURL(endpoint, params = null) {
+    const qs = params instanceof URLSearchParams ? new URLSearchParams(params) : new URLSearchParams(params || {});
+    if (isExternalCollection) qs.set('collection', activeCollection);
+    return endpoint + (qs.size ? '?' + qs : '');
+  }
+  function queryURL(params = {}) {
+    const qs = new URLSearchParams();
+    if (isExternalCollection) qs.set('collection', activeCollection);
+    for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') qs.set(k, v);
+    return '/' + (qs.size ? '?' + qs : '');
+  }
   function readRoute() {
     const p = new URL(location.href).searchParams;
-    for (const key of ['root','entry','page','anchor','node']) if (p.getAll(key).length > 1) throw new Error('invalid_location');
+    for (const key of ['collection','root','entry','page','anchor','node']) if (p.getAll(key).length > 1) throw new Error('invalid_location');
     if (p.has('entry') && p.has('page') || p.has('entry') && !p.get('entry') || p.has('page') && !p.get('page')) throw new Error('invalid_location');
     if (p.has('root') && !p.get('root')) throw new Error('invalid_location');
     return p.has('entry') ? {root:p.get('root') || '',entry:p.get('entry'),node:p.get('node') || ''} :
@@ -30,9 +47,12 @@
   }
   function routeURL(target) {
     const params = new URLSearchParams();
+    if (isExternalCollection) params.set('collection', activeCollection);
     for (const key of ['root','entry','page','anchor','node']) if (target[key]) params.set(key, target[key]);
     return '/read' + (params.size ? '?' + params : '');
   }
+  if ($('#book-query-search')) $('#book-query-search').href = queryURL();
+  if ($('#book-error a')) $('#book-error a').href = routeURL({});
   function nodeRoute(node) { return node.status === 'present' ? {root:node.id,page:node.path,anchor:node.fragment,node:node.id} : {root:node.id}; }
   function pageRoute(item) { return {root:scope.root,page:item.path,anchor:item.fragment,node:item.node}; }
   function save(url = '') {
@@ -78,7 +98,14 @@
   function shareTopic(id) {
     topicId = id;
     const entry = page?.definitions.find(definition => definition.id === id);
-    if (entry) annaWorkspace.update(metadata.snapshot, state => annaWorkspace.setTopic(state, {entry:id, name:entry.name, from:'book', at:Date.now()}));
+    if (entry) {
+      const topic = {entry:id, name:entry.name, from:'book', at:Date.now()};
+      if (isExternalCollection) {
+        topic.collection = activeCollection;
+        topic.bookLocation = {root:scope?.root || '', page:page?.path || '', fragment:entry.fragment || ''};
+      }
+      annaWorkspace.update(metadata.snapshot, state => annaWorkspace.setTopic(state, topic));
+    }
   }
   function capturePosition() { flow?.capture(); save(); }
   function activeDocument(data, nextPosition, item) {
@@ -101,7 +128,8 @@
     }
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.code || (response.status === 404 && path === '/api/reader' ? 'unavailable' : 'network'));
+      const isReaderBootstrap = path === '/api/reader' || path.startsWith('/api/reader?');
+      throw new Error(error.code || (response.status === 404 && isReaderBootstrap ? 'unavailable' : 'network'));
     }
     return response.json();
   }
@@ -341,7 +369,7 @@
     $('#book-outline-title').textContent = page.title;
     const definitions = page.definitions.filter(entry => entry.locatable);
     $('#book-outline-empty').hidden = definitions.length > 0;
-    $('#book-outline').innerHTML = definitions.map(entry => `<li><a href="${esc(routeURL({root:scope.root,entry:entry.id,node:nodeId}))}"${route.entry===entry.id || route.anchor===entry.fragment?' aria-current="location"':''}>${esc(entry.name)}</a><a href="/?entry=${encodeURIComponent(entry.id)}" target="_blank" rel="noopener" aria-label="${esc(ui.entry+': '+entry.name)}" title="${esc(ui.entry)}">↗</a></li>`).join('');
+    $('#book-outline').innerHTML = definitions.map(entry => `<li><a href="${esc(routeURL({root:scope.root,entry:entry.id,node:nodeId}))}"${route.entry===entry.id || route.anchor===entry.fragment?' aria-current="location"':''}>${esc(entry.name)}</a><a href="${esc(queryURL({entry:entry.id}))}" target="_blank" rel="noopener" aria-label="${esc(ui.entry+': '+entry.name)}" title="${esc(ui.entry)}">↗</a></li>`).join('');
     const ordered = scope.pages;
     const index = ordered.findIndex(item => item.path === page.path);
     $('#book-paging').hidden = false;
@@ -382,7 +410,7 @@
       if (target.entry) query.set('entry',target.entry);
       else if (sourcePath) query.set('path',sourcePath);
       else throw new Error('invalid_location');
-      const data = await api('/api/reader-page?' + query, request.signal);
+      const data = await api(apiURL('/api/reader-page', query), request.signal);
       if (id !== navigationId) return;
       const choices = pageNodes.get(data.path) || [];
       if (target.node && !choices.some(n => n.id === target.node)) throw new Error('invalid_location');
@@ -438,13 +466,13 @@
     searchRequest?.abort(); searchRequest = new AbortController();
     const sequence = ++searchSequence;
     searchQuery = query.trim(); searchPage = number; searchTitleOnly = titleOnly;
-    $('#book-query-search').href = '/?' + new URLSearchParams({q:searchQuery});
+    $('#book-query-search').href = queryURL({q:searchQuery});
     $('#book-search-status').textContent = ui.searching;
     $('#book-search-results').inert = true; $('#book-search-paging').hidden = true;
     $('#book-search-fallback').hidden = true; save();
     try {
       const params = new URLSearchParams({keyword:searchQuery,page:number,pageSize:30,titleOnly,snapshot:metadata.snapshot});
-      const data = await api('/api/book-search?' + params, searchRequest.signal);
+      const data = await api(apiURL('/api/book-search', params), searchRequest.signal);
       if (sequence !== searchSequence) return;
       searchTotalPages = data.totalPages;
       $('#book-search-status').textContent = data.total ? text('found',{count:data.total.toLocaleString()}) : ui.searchEmpty;
@@ -468,7 +496,8 @@
     const link = event.target.closest('a[href]');
     if (!link || link.target === '_blank') return;
     const url = new URL(link.href);
-    if (url.origin !== location.origin || url.pathname !== '/read') return;
+    const targetCollection = url.searchParams.get('collection') || DEFAULT_COLLECTION;
+    if (url.origin !== location.origin || url.pathname !== '/read' || targetCollection !== activeCollection) return;
     event.preventDefault();
     const params = url.searchParams;
     const target = params.has('entry') ? {root:params.get('root') || '',entry:params.get('entry'),node:params.get('node') || ''} :
@@ -608,17 +637,18 @@
     const saved = history.state?.book;
     restoring = true; setSidebar(!narrow.matches);
     try {
-      metadata = await api('/api/reader');
+      metadata = await api(apiURL('/api/reader'));
       model = annaReaderModel.index(metadata.nodes);
       ({nodes,children,pageNodes} = model);
-      flow = new AnnaReaderFlow({scroll:$('#book-scroll'),container:$('#book-pages'),snapshot:metadata.snapshot,contentBase:metadata.content_base,
-        fetchPage:(path,signal) => api('/api/reader-page?'+new URLSearchParams({path,snapshot:metadata.snapshot}),signal),
+      flow = new AnnaReaderFlow({scroll:$('#book-scroll'),container:$('#book-pages'),snapshot:metadata.snapshot,
+        contentBase:metadata.page_base || metadata.content_base || '/book/',
+        fetchPage:(path,signal) => api(apiURL('/api/reader-page',{path,snapshot:metadata.snapshot}),signal),
         labels:ui,text,onActive:activeDocument,onNavigate:target => navigate(target,true,true),
         onTools:() => $('#book-menu').focus(),onSearch:() => { selectPane('search'); setSidebar(true,true); }});
       flow.markLinks(linkMarks);
       $('#book-version').hidden = !metadata.source_release;
       $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
-      annaCompanions.mount({page:'book', snapshot:metadata.snapshot});
+      annaCompanions.mount({page:'book', snapshot:metadata.snapshot, collection:activeCollection});
       const current = saved?.snapshot === metadata.snapshot ? saved : null;
       const params = new URL(location.href).searchParams;
       // A place chosen from Anna's switcher arrives with its location in the URL and its offset in the workspace.

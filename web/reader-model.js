@@ -39,9 +39,11 @@ const annaReaderModel = (() => {
   function validPosition(value) {
     return value && Number.isFinite(value.x) && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0;
   }
+  const VALID_PAGE_PREFIXES = ['topics/', 'books/', 'adventures/', 'brew-books/', 'brew-adventures/'];
   function remembered(value, snapshot, model) {
     if (value?.version !== 2 || value.snapshot !== snapshot || typeof value.page !== 'string' ||
-        !value.page.startsWith('topics/') || value.page.split('/').some(p => p === '..' || p === '.') ||
+        !VALID_PAGE_PREFIXES.some(prefix => value.page.startsWith(prefix)) ||
+        value.page.split('/').some(p => p === '..' || p === '.') ||
         typeof value.root !== 'string' || typeof value.node !== 'string' || !validPosition(value.position)) return null;
     try {
       const scope = model.scope(value.root,value.page);

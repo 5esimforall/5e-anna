@@ -19,7 +19,7 @@
    reaches the right edge; tables in the text take the rest of the main track. */
 @container (min-width: 880px) {
   .tour-column[data-place=last][data-shape=detail] .tour-column-body:has(> .tour-rail) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 30%, 380px); align-items: start; column-gap: 32px; }
-  .tour-column[data-place=last][data-shape=detail] .tour-column-body > header { grid-column: 1 / -1; }
+  .tour-column[data-place=last][data-shape=detail] .tour-column-body > :is(header, .tour-scope) { grid-column: 1 / -1; }
   .tour-column[data-place=last][data-shape=detail] .tour-rail { margin-top: 14px; padding-left: 24px; border-left: 1px solid var(--anna-line); }
   .tour-column[data-place=last][data-shape=detail] .tour-rail > :first-child { margin-top: 0; }
 }
@@ -105,6 +105,23 @@
 .tour-sequence a[rel=next] { margin-left: auto; text-align: right; }
 .tour-status { margin: 14px 0 0; padding: 8px 10px; border-radius: var(--anna-radius-sm); background: var(--anna-warning-bg); color: var(--anna-warning); }
 .tour-status button { margin-left: 8px; }
+
+/* Active book/package scope banner with explicit widen-to-all control. */
+.tour-scope { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding: 9px 12px; border: 1px solid var(--anna-line-strong); border-radius: var(--anna-radius-sm); background: var(--anna-surface); font-size: var(--anna-type-ui); }
+.tour-scope-label { color: var(--anna-ink); font-weight: 500; overflow-wrap: anywhere; }
+.tour-scope-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.tour-scope-widen { display: inline-flex; align-items: center; padding: 3px 10px; border: 1px solid var(--anna-brand); border-radius: 999px; color: var(--anna-brand); font-size: var(--anna-type-small); font-weight: 500; text-decoration: none; white-space: nowrap; }
+.tour-scope-widen:hover { background: var(--anna-selected); color: var(--anna-brand); }
+.tour-scope-query { color: var(--anna-secondary); font-size: var(--anna-type-small); text-decoration: none; white-space: nowrap; }
+.tour-scope-query:hover { color: var(--anna-ink); text-decoration: underline; }
+
+/* Inline quick-filter for long book/package shelves (> 24 items). */
+.tour-filter { display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; }
+.tour-filter-input { box-sizing: border-box; flex: 1 1 auto; width: 100%; min-width: 0; height: 32px; padding: 4px 10px; border: 1px solid var(--anna-line-strong); border-radius: var(--anna-radius-sm); background: var(--anna-paper); color: var(--anna-ink); font: inherit; font-size: var(--anna-type-ui); }
+.tour-filter-input::placeholder { color: var(--anna-muted); }
+.tour-filter-input:focus-visible { outline: 2px solid var(--anna-brand); outline-offset: 1px; }
+.tour-filter-count { flex-shrink: 0; color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tour-filter-empty { margin: 8px 10px 0; color: var(--anna-muted); font-size: var(--anna-type-ui); }
 
 /* Phones read one level at a time; the way back names the level above. */
 @media(max-width:760px) {

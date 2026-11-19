@@ -25,10 +25,17 @@
     if (verify && range(binding).toString() !== spec.text) return null;
     return binding;
   }
+  const contentBase = location.pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
+    : (data.reader?.content_base || '/book/');
+  const definitionBase = data.reader?.definition_base || (contentBase + 'definition/');
+  const collection = data.reader?.collection || (contentBase === '/our5etools-book/' ? '5etools' : '5echm');
+  const entryQueryPrefix = collection && collection !== '5echm'
+    ? '/?collection=' + encodeURIComponent(collection) + '&entry='
+    : '/?entry=';
   // Retain text nodes, not live Ranges: source enhancements can move table nodes.
-  const definitions = new Map(data.definitions.map(d => [d.id, {...d, body: bind(d.body, false), title: bind(d.title)}]));
-  const references = data.references.map(r => ({id:r.id, binding:bind(r.range), text:r.range.text}));
-  const failed = data.definitions.filter(d => d.title && !definitions.get(d.id).title).map(d => d.id);
+  const definitions = new Map((data.definitions || []).map(d => [d.id, {...d, body: bind(d.body, false), title: bind(d.title)}]));
+  const references = (data.references || []).map(r => ({id:r.id, binding:bind(r.range), text:r.range.text}));
+  const failed = (data.definitions || []).filter(d => d.title && !definitions.get(d.id).title).map(d => d.id);
   if (failed.length) console.warn('anna: definition DOM binding mismatch', failed);
   const failedReferences = references.filter(r => !r.binding);
   if (failedReferences.length) console.warn('anna: reference DOM binding mismatch', failedReferences.map(r => r.id));
@@ -132,8 +139,8 @@
     const style = document.createElement('style');
     style.textContent = 'a{position:fixed;display:block;pointer-events:auto;background:transparent;border:0;margin:0;padding:0;cursor:pointer}a:focus-visible{outline:2px solid #7050bf;outline-offset:2px}';
     root.append(style);
-    for (const r of references) if (r.binding) links.push({binding:r.binding, href:'/book/definition/'+encodeURIComponent(r.id), label:labels.reference+': '+r.text, kind:'reference', anchors:[]});
-    for (const d of definitions.values()) if (d.title) links.push({binding:d.title, href:'/?entry='+encodeURIComponent(d.id), label:labels.definition+': '+d.name, kind:'definition', anchors:[]});
+    for (const r of references) if (r.binding) links.push({binding:r.binding, href:definitionBase+encodeURIComponent(r.id), label:labels.reference+': '+r.text, kind:'reference', anchors:[]});
+    for (const d of definitions.values()) if (d.title) links.push({binding:d.title, href:entryQueryPrefix+encodeURIComponent(d.id), label:labels.definition+': '+d.name, kind:'definition', anchors:[]});
     // Keyboard traversal follows reading order; overlapping definitions still win hit testing.
     links.sort((a,b) => {
       const x=a.binding.order, y=b.binding.order;

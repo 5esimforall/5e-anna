@@ -19,11 +19,12 @@ const annaUiLabels = {
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
     stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',sortLabel:'排序',displayOptions:'显示',
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
-    stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立'},
+    stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立',reprint_group:'同名/重印版本 {count} 个，各自独立'},
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
     layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
+    provenance:'来源与出处',provOrigin:'来源性质',provPackage:'内容包',provOurs:'本站自有',provSource:'书籍来源',provAuthors:'作者',provTranslators:'译者',provTier:'社区分档',provRating:'评分',provCopiedFrom:'模板继承',provLicense:'许可与说明',provMedia:'媒体资源',provMediaLocal:'离线收录 {count} 项',provMediaRemote:'远端未随包 {count} 项',provMediaNone:'无外部媒体',provReadBook:'在书中阅读',provViewLink:'查看来源说明 ↗',
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
   en: {bundleChanged:'The data was rebuilt. Restart make up, then refresh this page.',reloading:'The data is being updated; the service switches snapshots after a complete build. Refresh when it finishes.',reloadFailed:'The rebuild did not validate, so the service kept its previous snapshot. Check the make upper terminal and build again.',skipSearch:'Skip to search',emptyTitle:'No matching entries',emptyHint:'Remove an active condition or clear them all.',
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
@@ -41,11 +42,12 @@ const annaUiLabels = {
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
     stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',sortLabel:'Sort',displayOptions:'Display',
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
-    stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate'},
+    stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate',reprint_group:'{count} versions/reprints, each kept separate'},
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
     layoutUnavailable:{missing:'The source page is missing; showing extracted text.',stale:'The source changed since this database snapshot; showing extracted text.',empty:'The source layout is empty; showing extracted text.',error:'Unable to load the source layout; showing extracted text.'},
     versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current',
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']},
+    provenance:'Provenance',provOrigin:'Origin',provPackage:'Package',provOurs:'Site curated',provSource:'Source',provAuthors:'Authors',provTranslators:'Translators',provTier:'Tier',provRating:'Rating',provCopiedFrom:'Copied from',provLicense:'License & notes',provMedia:'Media',provMediaLocal:'{count} bundled offline',provMediaRemote:'{count} remote unbundled',provMediaNone:'No external media',provReadBook:'Read in book',provViewLink:'View source note ↗',
     flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a row for its text and evidence'}
 };
 const locale = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
@@ -58,18 +60,20 @@ for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('a
 const fmt = n => Number(n).toLocaleString('zh-CN');
 const pretty = v => typeof v==='boolean'?ui.flags[v]:typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
-const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',type:'类型',source_id:'来源',ruleset:'规则版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',level:'等级',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR',ability:'属性',strength:'力量',dexterity:'敏捷',constitution:'体质',intelligence:'智力',wisdom:'感知',charisma:'魅力'};
-const relationNames = {uses_statblock:'使用数据卡',catalog_offer:'购置条目',lists_mount:'列为坐骑',part_of:'属于',section_of:'所属段落',grants:'授予',grants_feat:'授予专长',references:'引用',requires:'要求',belongs_to:'属于',casts:'施展'};
+const fieldNames = {name:'名称',name_en:'英文名',source:'文献顺序',sources:'来源',package:'资料包',package_kind:'资料包分类',tier:'推荐分级',copy_status:'继承状态',type:'类型',source_id:'来源',ruleset:'规则版本',legacy:'旧版标记',classification_status:'分类依据',casting_time:'施法时间',casting_time_detail:'施法时间原文',range:'射程',components:'成分',duration:'持续时间',prerequisite:'前置条件',ability_scores:'属性值',skills:'技能',tools:'工具',granted_feat:'授予专长',starting_equipment:'起始装备',creature_type:'生物类型',size:'体型',speed:'速度',languages:'语言',senses:'感官',resistances:'伤害抗性',immunities:'伤害免疫',condition_immunities:'状态免疫',ac:'AC',hp:'HP',source_code:'来源缩写',spell_classes:'职业',level:'等级',ritual:'仪式',attunement_requirements:'同调条件',role:'使用角色',item_subtypes:'子类别',legendary_actions:'传奇动作',lair_actions:'巢穴动作',has_local_audio:'离线读音',owner_class:'所属职业',feature_kind:'能力类别',book_kind:'书籍类别',price:'价格',carrying_capacity:'载重',statblock_name:'引用数据卡',armor_class:'护甲等级',table_group:'表内分组',facility_kind:'设施类别',quantity:'份量',container:'容器',properties:'词条',strength_requirement:'力量要求',stealth:'隐匿',crew:'船员',passengers:'乘客',cargo_tons:'货物（吨）',damage_threshold:'伤害阈值',weight:'重量',damage:'伤害',mastery:'精通',origin:'来源性质',status:'分类依据',conflict:'字段冲突',sections:'未分类段落',cr_min:'最低 CR',cr_max:'最高 CR',ability:'属性',strength:'力量',dexterity:'敏捷',constitution:'体质',intelligence:'智力',wisdom:'感知',charisma:'魅力'};
+const relationNames = {uses_statblock:'使用数据卡',catalog_offer:'购置条目',lists_mount:'列为坐骑',part_of:'属于',section_of:'所属段落',grants:'授予',grants_feat:'授予专长',references:'引用',requires:'要求',belongs_to:'属于',belongs_to_class:'所属职业',casts:'施展',reprinted_as:'重印版本',copied_from:'继承自',variant_of:'变体源自',has_legendary_group:'传奇/巢穴组'};
 const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','七环','八环','九环'];
 const NONE='__none__';
-const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions']);
-const COMMON=new Set(['ruleset','source','origin','status','legacy','conflict','sections']);
+const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions','lair_actions','has_local_audio']);
+const COMMON=new Set(['ruleset','source','origin','package','status','legacy','conflict','sections']);
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
 let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='', focusSections=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const sourceURL=(path,start=0,end=0)=>'/source?'+new URLSearchParams({path,start,end})+'#evidence';
-const sourceOf=id=>metadata.sources.find(s=>s.id===id);
+const sourceOf=id=>metadata?.sources?.find(s=>s.id===id);
 const sourceName=id=>sourceOf(id)?.name||id, sourceShort=id=>sourceOf(id)?.short_name||id;
+const packageOf=id=>metadata?.packages?.find(p=>p.id===id);
+const packageName=id=>packageOf(id)?.name||id;
 // The reader names a book in full and adds the short label the table uses, so the two can be matched.
 const sourceFull=id=>sourceShort(id)===sourceName(id)?sourceName(id):`${sourceName(id)}（${sourceShort(id)}）`;
 function displayValue(field,value){
@@ -144,12 +148,12 @@ function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.
 function rememberQuery(){
   if(!sharing())return;
   annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.rememberQuery(state,{query:queryKey(),entry:currentReaderId||'',
-    entryName:currentEntry?(currentEntry.name_zh||currentEntry.name):'',title:queryTitle(),ui:captureUiState(),at:Date.now()}));
+    entryName:currentEntry?(currentEntry.name_zh||currentEntry.name):'',title:queryTitle(),ui:captureUiState(),at:Date.now()}),metadata.collection);
 }
 // A remembered query chosen from Stella's switcher returns as this tab last showed it; another entry opens fresh.
 function resumedUi(id){
   if(id===null||!sharing())return null;
-  const memory=annaWorkspace.read(metadata.snapshot).query.find(m=>m.query===id);
+  const memory=annaWorkspace.read(metadata.snapshot,metadata.collection).query.find(m=>m.query===id);
   if(!memory?.ui||memory.query!==queryKey())return null;
   return memory.entry===(params.get('entry')||'')?memory.ui:{...memory.ui,readerId:null,readerTab:'body',readerTop:0,readerFull:false};
 }
@@ -157,9 +161,17 @@ function resumedUi(id){
 // history entry shows its entry again without bringing it up as a new topic.
 let quietTopic=false;
 function shareTopic(){
-  if(sharing()&&currentEntry&&!quietTopic)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.setTopic(state,{entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',at:Date.now()}));
+  if(!sharing()||!currentEntry||quietTopic)return;
+  const loc=currentEntry.reader_location||null;
+  const locPage=loc&&(loc.page||loc.path);
+  // External collections only share a topic with Stella when the entry has an actual book location.
+  if(metadata.source_text===false&&!locPage)return;
+  const bookLocation=locPage?{root:loc.root||'',page:locPage,node:loc.node_id||loc.node||'',fragment:loc.fragment||''}:null;
+  const payload={snapshot:metadata.snapshot,entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',collection:metadata.collection,bookLocation,at:Date.now()};
+  if(typeof annaWorkspace.noteTopic==='function')annaWorkspace.noteTopic(payload);
+  else annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.setTopic(state,payload),metadata.collection);
 }
-function endTopic(id){if(sharing()&&id)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.clearTopic(state,id));}
+function endTopic(id){if(sharing()&&id)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.clearTopic(state,id),metadata.collection);}
 function historyUpdate(replace=false){
   if(!replace)saveUiState();
   const search=params.toString();history[replace?'replaceState':'pushState'](history.state,'',location.pathname+(search?'?'+search:''));
@@ -272,7 +284,7 @@ function sync(){
   $('#filter-count').textContent=active.length+termKeys.length||'';
   const extraCount=groups.filter(g=>(params.has(g.key)||params.has(NOT+g.key))&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
-  $('#common-count').textContent=active.some(k=>['source','ruleset','origin'].includes(baseKey(k)))?'已筛选':'';
+  $('#common-count').textContent=active.some(k=>['source','ruleset','origin','package'].includes(baseKey(k)))?'已筛选':'';
   const chip=key=>{
     const text=key==='cr_min'||key==='cr_max'?`${fieldNames[key]}：${params.get(key)}`:conditionText(key),negated=key.startsWith(NOT);
     const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
@@ -315,7 +327,8 @@ function renderPanel(){
     (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key)||params.has(NOT+g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
   $('#domain-extra')?.addEventListener('toggle',queueUiSave);
   $('#common-filters').innerHTML=groups.filter(g=>['ruleset','origin'].includes(g.key)).map(multiGroup).join('');
-  $('#source-filters').innerHTML=multiGroup(groups.find(g=>g.key==='source'));filterSources();
+  const sourceGroups=['source','package'].map(k=>groups.find(g=>g.key===k)).filter(Boolean);
+  $('#source-filters').innerHTML=sourceGroups.map(multiGroup).join('');filterSources();
   if(focusAt?.group){
     const box=document.querySelector(`[data-group="${CSS.escape(focusAt.group)}"]`);
     (focusAt.action?box?.querySelector(`[data-action="${focusAt.action}"]`):box?.querySelector(`input[value="${CSS.escape(focusAt.value||'')}"]`))?.focus();
@@ -355,7 +368,7 @@ async function changeTable(){
     if(stale.length){stale.forEach(k=>params.delete(k));return changeTable();}
     applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
-    $('#source-details').open=['source','ruleset','origin'].some(k=>params.has(k));
+    $('#source-details').open=['source','ruleset','origin','package'].some(k=>params.has(k)||params.has(NOT+k));
     historyUpdate(true);sync();ready=true;await load();
   }catch(e){if(gen===panelGeneration){failResults(e.message,'读取失败');$('#columns').replaceChildren();$('#results').setAttribute('aria-busy','false');}}
 }
@@ -378,13 +391,15 @@ function marksHTML(row,key){
 }
 // A yes/no column is scanned for the yeses: ✓ carries the weight, a faint dot marks no, — stays “not extracted”.
 function flagHTML(row,key){
-  const token=row.quickref[key]?.length===1?row.quickref[key][0]:'__conflict__';
+  const list=row.quickref?.[key];
+  if(!list||!list.length)return null;
+  const token=list.length===1?list[0]:'__conflict__';
   if(token!=='true'&&token!=='false')return null;
   return `<span class="flag ${token==='true'?'yes':'no'}"><span aria-hidden="true">${token==='true'?'✓':'·'}</span><span class="sr-only">${esc(ui.flags[token])}</span></span>`;
 }
-const versionSource=v=>v.source_ids.map(sourceShort).join(' / ');
+const versionSource=v=>(v.source_ids||[]).map(sourceShort).join(' / ');
 const versionLabel=v=>`${versionSource(v)} ${rulesetShort(v.ruleset)}`;
-const versionTitle=v=>`${v.source_names.join('；')} · ${rulesetFull(v.ruleset)}`;
+const versionTitle=v=>`${(v.source_names||v.source_ids||[]).join('；')} · ${rulesetFull(v.ruleset)}`;
 // Other versions' values sit under the displayed one, so a rule change is visible in place.
 function versionDiffs(row,key){
   const ids=row.version_diffs?.[key];if(!ids)return '';
@@ -785,8 +800,9 @@ function conditionText(key){
   if(key==='typing')return `${ui.nameField}：${draft}`;
   const negated=key.startsWith(NOT);
   if(/^(not_)?(q|body)\d+$/.test(key)){const {list,index,terms}=termAt(key);return `${baseKey(list)==='q'?ui.nameField:ui.bodyField}${negated?ui.lacks:''}：${terms[index]}`;}
-  const g=groups.find(g=>g.key===baseKey(key)),labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||v);
-  return labels.length?`${g?.label||fieldNames[baseKey(key)]||key}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
+  const base=baseKey(key),g=groups.find(g=>g.key===base);
+  const labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||(base==='package'?packageName(v):base==='source'?sourceName(v):v));
+  return labels.length?`${g?.label||fieldNames[base]||key}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }
 $('#elsewhere').addEventListener('click',()=>{
   $('#filter-panel').hidden=false;$('#toggle-filters').setAttribute('aria-expanded','true');
@@ -817,14 +833,22 @@ async function init(){
     const meta=await api('/api/meta');
     if(!meta.collections&&params.has('collection'))throw new Error(ui.collectionRestart);
     metadata=meta;Object.assign(fieldNames,metadata.fields);showCollections();
-    if(sharing())annaCompanions.mount({page:'query',snapshot:metadata.snapshot});
+    const pageSwitch=document.querySelector('.topbar .page-switch');
+    if(pageSwitch){
+      if(metadata.tour_url===null){pageSwitch.hidden=true;}
+      else{
+        pageSwitch.hidden=false;
+        if(metadata.tour_url&&typeof annaTopbar?.pointSwitch==='function')annaTopbar.pointSwitch('tour',metadata.tour_url);
+      }
+    }
+    if(sharing())annaCompanions.mount({page:'query',snapshot:metadata.snapshot,collection:metadata.collection});
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');
     // Category views became type filters; an old view link opens on all entries with its other conditions.
     readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
-    const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
+    const resumed=resumedUi(annaWorkspace.takeResume('query',metadata.collection));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
   }catch(e){

@@ -13,7 +13,7 @@ import threading
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from anna.server.linked_book import BOOK, fingerprint
-from anna.paths import WEB
+from anna.paths import OUR5ETOOLS, OUR5ETOOLS_DATA, WEB
 from anna.presentation.reader import SCHEMA, ReaderError, page_data
 from anna.review.store import load_annotations
 import anna.server.query as serve
@@ -21,6 +21,18 @@ from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
 from anna.presentation.tour import TourCache, TourError
 import anna.source.search as search
+
+
+def _try_load_our5etools(data_dir, source_dir):
+    """Lazily load the our5etools collection when its published manifest exists."""
+    if not data_dir:
+        return None
+    data_path = Path(data_dir).resolve()
+    if not (data_path / 'manifest.json').is_file():
+        return None
+    from anna.presentation.our5etools import load_our5etools_collection
+    source_path = Path(source_dir).resolve() if source_dir else None
+    return load_our5etools_collection(data_dir=data_path, source_dir=source_path)
 
 
 def signature(path):
@@ -95,12 +107,17 @@ def load_bundle(source, db, book, quiet=True):
 class AnnaServer(ThreadingHTTPServer):
     """Owns the bundle requests serve; in watch mode one thread swaps it after a rebuild."""
 
-    def __init__(self, address, handler, bundle, watch=False, *, additional_collections=()):
+    def __init__(self, address, handler, bundle, watch=False, *, additional_collections=(),
+                 our5etools_data=None, our5etools_source=None):
         # A failed bind closes the socket through server_close(), so the reload state must exist
         # before the socket is created; otherwise the bind error is masked by an AttributeError.
         self.bundle = bundle
         self.source = bundle.source
         self.additional_collections = tuple(additional_collections)
+        self._base_additional_collections = tuple(c for c in self.additional_collections if c.key != '5etools')
+        self.our5etools_data = Path(our5etools_data).resolve() if our5etools_data else None
+        self.our5etools_source = Path(our5etools_source).resolve() if our5etools_source else None
+        self._our5etools_signature = self._our5etools_manifest_signature()
         # Reject invalid registrations before opening a listener.
         CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections)
         self.watch = watch
@@ -113,6 +130,29 @@ class AnnaServer(ThreadingHTTPServer):
         if watch:
             self.watch_thread = threading.Thread(target=self.watch_loop, daemon=True)
             self.watch_thread.start()
+
+    def _our5etools_manifest_signature(self):
+        if not self.our5etools_data:
+            return None
+        manifest = self.our5etools_data / 'manifest.json'
+        try:
+            return signature(manifest)
+        except OSError:
+            return None
+
+    def reload_our5etools(self):
+        if not self.our5etools_data:
+            return
+        try:
+            loaded = _try_load_our5etools(self.our5etools_data, self.our5etools_source)
+            self.additional_collections = (
+                (*self._base_additional_collections, loaded)
+                if loaded is not None
+                else self._base_additional_collections
+            )
+            self._our5etools_signature = self._our5etools_manifest_signature()
+        except Exception as exc:
+            print('[anna] our5etools reload failed: ' + (str(exc) or type(exc).__name__), file=sys.stderr, flush=True)
 
     def bundle_intact(self, bundle=None):
         """Whether the files on disk still match a loaded bundle, so a stale mix is never served."""
@@ -141,8 +181,19 @@ class AnnaServer(ThreadingHTTPServer):
         # book, so reload on it alone: waiting for both signatures would validate a half-built pair
         # and report an error during every normal build. Requests still check both files.
         seen = None
+        seen_o5e = self._our5etools_signature
+        attempted_o5e = self._our5etools_signature
         manifest = Path(self.bundle.book) / 'anna-manifest.json'
         while not self.watch_stop.wait(.5):
+            if self.our5etools_data is not None:
+                cur_o5e = self._our5etools_manifest_signature()
+                if cur_o5e == self._our5etools_signature:
+                    seen_o5e = cur_o5e
+                elif cur_o5e != seen_o5e:
+                    seen_o5e = cur_o5e
+                elif cur_o5e != attempted_o5e:
+                    attempted_o5e = cur_o5e
+                    self.reload_our5etools()
             try:
                 current = signature(manifest)
             except OSError:
@@ -207,6 +258,139 @@ class AnnaHandler(serve.Handler):
             return self.stale()
         return None
 
+    def _our5etools_reader(self):
+        for col in self.additional_collections:
+            if col.key == '5etools' and col.reader is not None:
+                return col.reader
+        for col in self.additional_collections:
+            if col.reader is not None:
+                return col.reader
+        return None
+
+    def _send_file(self, resolved, content_type, *, etag=None, cache_control='private, no-cache', support_range=False):
+        try:
+            stat = resolved.stat()
+        except OSError:
+            self.send_error(404)
+            return
+        size = stat.st_size
+        if etag is None:
+            etag = f'"{stat.st_size:x}-{stat.st_mtime_ns:x}"'
+        cached = self.headers.get('If-None-Match', '').split(',')
+        if not support_range or not self.headers.get('Range'):
+            if any(tag.strip() in {etag, 'W/' + etag, '*'} for tag in cached):
+                self.send_response(304)
+                self.send_header('ETag', etag)
+                self.resource_response = True
+                self.send_header('Cache-Control', cache_control)
+                self.end_headers()
+                return
+        range_header = self.headers.get('Range', '').strip() if support_range else ''
+        start, end = 0, size - 1
+        partial = False
+        if range_header.startswith('bytes='):
+            spec = range_header[len('bytes='):].split(',', 1)[0].strip()
+            if '-' in spec:
+                lo_s, hi_s = spec.split('-', 1)
+                try:
+                    if lo_s == '' and hi_s:
+                        length = int(hi_s)
+                        if length <= 0:
+                            raise ValueError
+                        start = max(0, size - length)
+                        end = size - 1
+                    else:
+                        start = int(lo_s)
+                        end = int(hi_s) if hi_s else size - 1
+                    if start < 0 or end < start or start >= size:
+                        self.send_response(416)
+                        self.send_header('Content-Range', f'bytes */{size}')
+                        self.send_header('Content-Length', '0')
+                        self.end_headers()
+                        return
+                    end = min(end, size - 1)
+                    partial = True
+                except ValueError:
+                    partial = False
+        try:
+            with resolved.open('rb') as file:
+                self.resource_response = True
+                if partial:
+                    length = end - start + 1
+                    self.send_response(206)
+                    self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+                    self.send_header('Accept-Ranges', 'bytes')
+                    self.send_header('ETag', etag)
+                    self.send_header('Cache-Control', cache_control)
+                    self.send_header('Content-Type', content_type)
+                    self.send_header('Content-Length', str(length))
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.end_headers()
+                    file.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = file.read(min(65536, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
+                else:
+                    self.send_response(200)
+                    if support_range:
+                        self.send_header('Accept-Ranges', 'bytes')
+                    self.send_header('ETag', etag)
+                    self.send_header('Cache-Control', cache_control)
+                    self.send_header('Content-Type', content_type)
+                    self.send_header('Content-Length', str(size))
+                    self.send_header('X-Content-Type-Options', 'nosniff')
+                    self.end_headers()
+                    shutil.copyfileobj(file, self.wfile)
+        except FileNotFoundError:
+            self.send_error(404)
+
+    def serve_our5etools_book(self, path):
+        reader = self._our5etools_reader()
+        if reader is None:
+            self.send_error(404)
+            return
+        decoded = unquote(path)
+        if decoded.startswith('/definition/'):
+            eid = decoded.rsplit('/', 1)[-1]
+            try:
+                target = reader.page_data(entry=eid)
+            except ReaderError as exc:
+                self.send_error(exc.status, exc.code)
+                return
+            frag = target.get('fragment') or ''
+            location = '/our5etools-book/' + quote(target['path'], safe='/') + ('#' + quote(frag) if frag else '')
+            self.redirect(location)
+            return
+        relative = decoded.lstrip('/')
+        found = reader.resolve_book_asset(relative)
+        if not found:
+            self.send_error(404)
+            return
+        resolved, content_type = found
+        self._send_file(Path(resolved), content_type or mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream')
+
+    def serve_our5etools_media(self, path):
+        reader = self._our5etools_reader()
+        if reader is None:
+            self.send_error(404)
+            return
+        relative = unquote(path).lstrip('/')
+        found = reader.resolve_media_asset(relative)
+        if not found:
+            self.send_error(404)
+            return
+        resolved, content_type = found
+        self._send_file(
+            Path(resolved),
+            content_type or mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream',
+            cache_control='private, max-age=3600',
+            support_range=True,
+        )
+
     def do_GET(self):
         self.current = self.server.bundle
         if self.headers.get('Host', '') not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}:
@@ -216,44 +400,101 @@ class AnnaHandler(serve.Handler):
         if url.path.startswith('/book/'):
             self.serve_book(url.path[len('/book'):])
             return
+        if url.path.startswith('/our5etools-book/'):
+            self.serve_our5etools_book(url.path[len('/our5etools-book'):])
+            return
+        if url.path.startswith('/our5etools-media/'):
+            self.serve_our5etools_media(url.path[len('/our5etools-media'):])
+            return
         if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour', '/api/tour-layout'}:
             super().do_GET()
             return
         params = parse_qs(url.query, keep_blank_values=True)
         try:
-            if 'collection' in params:
-                self.collection_registry().select(params.pop('collection'), book_only=True)
-            if issue := self.collection_conflict(DEFAULT):
+            collection = self.collection_registry().select(params.pop('collection', None), book_only=False)
+            if issue := self.collection_conflict(collection.key):
                 self.send(issue, status=409)
                 return
-            if 'snapshot' in params and params['snapshot'] != [self.current.snapshot]:
+            if collection.key == DEFAULT:
+                if 'snapshot' in params and params['snapshot'] != [self.current.snapshot]:
+                    raise ReaderError('snapshot_changed', 409)
+                if url.path == '/api/reader':
+                    reader = self.current.reader
+                    self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page', 'source_release')} | {'content_base': '/book/'})
+                elif url.path == '/api/tour':
+                    if any(len(v) != 1 for v in params.values()):
+                        raise TourError('invalid_node', 400)
+                    self.send(self.current.tour().view(catalog.first(params, 'node')) | {'snapshot': self.current.snapshot})
+                elif url.path == '/api/tour-layout':
+                    if any(len(v) != 1 for v in params.values()):
+                        raise TourError('invalid_node', 400)
+                    self.send(self.current.tour().layout(catalog.first(params, 'node'), self.current.source))
+                elif url.path == '/api/reader-page':
+                    if any(len(v) != 1 for v in params.values()):
+                        raise ReaderError('invalid_location', 400)
+                    self.send(page_data(self.current.reader, self.current.manifest, path=catalog.first(params, 'path'), entry=catalog.first(params, 'entry')))
+                else:
+                    if len(catalog.first(params, 'keyword')) > 2000:
+                        raise ReaderError('invalid_search', 400)
+                    self.send(search.search_entries(self.search_entries, params))
+                return
+
+            if 'snapshot' in params and collection.snapshot and params['snapshot'] != [collection.snapshot]:
                 raise ReaderError('snapshot_changed', 409)
-            if url.path == '/api/reader':
-                reader = self.current.reader
-                self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page', 'source_release')} | {'content_base': '/book/'})
-            elif url.path == '/api/tour':
+            if url.path == '/api/tour':
+                if collection.tour is None:
+                    raise CollectionError('collection_unsupported', 400)
                 if any(len(v) != 1 for v in params.values()):
                     raise TourError('invalid_node', 400)
-                self.send(self.current.tour().view(catalog.first(params, 'node')) | {'snapshot': self.current.snapshot})
+                at = catalog.first(params, 'at') or catalog.first(params, 'node') or None
+                scope_source = catalog.first(params, 'scope_source') or None
+                scope_package = catalog.first(params, 'scope_package') or None
+                self.send(collection.tour.view(at=at, scope_source=scope_source, scope_package=scope_package))
             elif url.path == '/api/tour-layout':
+                if collection.tour is None:
+                    raise CollectionError('collection_unsupported', 400)
                 if any(len(v) != 1 for v in params.values()):
                     raise TourError('invalid_node', 400)
-                self.send(self.current.tour().layout(catalog.first(params, 'node'), self.current.source))
+                target_id = catalog.first(params, 'id') or catalog.first(params, 'node') or catalog.first(params, 'at')
+                self.send(collection.tour.layout(target_id))
+            elif url.path == '/api/reader':
+                if collection.reader is None:
+                    raise CollectionError('collection_unsupported', 400)
+                nav = collection.reader.navigation()
+                base = nav.get('page_base') or nav.get('content_base') or '/our5etools-book/'
+                self.send({**nav, 'collection': collection.key, 'page_base': base, 'content_base': base})
             elif url.path == '/api/reader-page':
+                if collection.reader is None:
+                    raise CollectionError('collection_unsupported', 400)
                 if any(len(v) != 1 for v in params.values()):
                     raise ReaderError('invalid_location', 400)
-                self.send(page_data(self.current.reader, self.current.manifest, path=catalog.first(params, 'path'), entry=catalog.first(params, 'entry')))
+                self.send(collection.reader.page_data(
+                    path=catalog.first(params, 'path') or None,
+                    entry=catalog.first(params, 'entry') or None,
+                ))
             else:
-                if len(catalog.first(params, 'keyword')) > 2000:
+                if collection.reader is None:
+                    raise CollectionError('collection_unsupported', 400)
+                query = catalog.first(params, 'keyword') or catalog.first(params, 'q')
+                if len(query) > 2000:
                     raise ReaderError('invalid_search', 400)
-                self.send(search.search_entries(self.search_entries, params))
+                root = catalog.first(params, 'root') or None
+                try:
+                    self.send(collection.reader.book_search(query, root=root, params=params))
+                except TypeError:
+                    self.send(collection.reader.book_search(query, root=root))
         except (ReaderError, TourError, CollectionError) as exc:
             self.send({'code': exc.code}, status=exc.status)
+        except ValueError as exc:
+            self.send({'error': str(exc)}, status=400)
+        except LookupError as exc:
+            self.send({'error': str(exc)}, status=404)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
     def end_headers(self):
-        if urlsplit(self.path).path.startswith('/book/'):
+        req_path = urlsplit(self.path).path
+        if req_path.startswith('/book/') or req_path.startswith('/our5etools-book/'):
             self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
             self.send_header('Referrer-Policy', 'same-origin')
             if not getattr(self, 'resource_response', False):
@@ -325,11 +566,13 @@ class AnnaHandler(serve.Handler):
         self.send_error(405)
 
 
-def create_server(db, book, manifest, port, watch=False, bundle=None, *, additional_collections=()):
+def create_server(db, book, manifest, port, watch=False, bundle=None, *, additional_collections=(),
+                  our5etools_data=None, our5etools_source=None):
     """Build the one-port server; an already loaded bundle carries the search index."""
     bundle = bundle or Bundle(manifest['source_root'], db, book, manifest, [])
     return AnnaServer(('127.0.0.1', port), AnnaHandler, bundle, watch=watch,
-                      additional_collections=additional_collections)
+                      additional_collections=additional_collections,
+                      our5etools_data=our5etools_data, our5etools_source=our5etools_source)
 
 
 def main():
@@ -338,12 +581,22 @@ def main():
     parser.add_argument('--db', type=Path, default=catalog.DB)
     parser.add_argument('--book', type=Path, default=BOOK)
     parser.add_argument('--source', type=Path, default=WEB)
+    parser.add_argument('--our5etools-data', type=Path, default=OUR5ETOOLS_DATA)
+    parser.add_argument('--our5etools-source', type=Path, default=OUR5ETOOLS)
     parser.add_argument('--watch', action='store_true', help='swap in a rebuilt bundle without restarting')
     args = parser.parse_args()
     server, thread, stop = None, None, threading.Event()
     try:
         bundle = load_bundle(args.source, args.db, args.book)
-        server = create_server(args.db, args.book, bundle.manifest, args.port, watch=args.watch, bundle=bundle)
+        additional = ()
+        our5etools_col = _try_load_our5etools(args.our5etools_data, args.our5etools_source)
+        if our5etools_col is not None:
+            additional = (our5etools_col,)
+        server = create_server(
+            args.db, args.book, bundle.manifest, args.port, watch=args.watch, bundle=bundle,
+            additional_collections=additional,
+            our5etools_data=args.our5etools_data, our5etools_source=args.our5etools_source,
+        )
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())
         thread = threading.Thread(target=server.serve_forever, daemon=True)

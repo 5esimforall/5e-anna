@@ -36,8 +36,14 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header('Content-Type',kind); self.send_header('Content-Length',str(len(body)))
         self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff')
-        frames="'self'" if urlsplit(self.path).path=='/read' and self.reader_url else "'none'"
-        self.send_header('Content-Security-Policy',f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src {frames}")
+        has_reader = bool(self.reader_url) or any(
+            getattr(collection, 'reader', None) is not None for collection in self.additional_collections
+        )
+        frames = "'self'" if urlsplit(self.path).path == '/read' and has_reader else "'none'"
+        self.send_header(
+            'Content-Security-Policy',
+            f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src {frames}",
+        )
         if download: self.send_header('Content-Disposition','attachment; filename="'+(download if isinstance(download,str) else '5e-anna.csv')+'"')
         self.end_headers(); self.wfile.write(body)
     def do_GET(self):
@@ -72,9 +78,16 @@ class Handler(BaseHTTPRequestHandler):
             provider = collection.provider
             if url.path=='/api/meta':
                 native = collection.key == DEFAULT
-                self.send({**provider.meta(), 'collection':collection.key, 'default_collection':DEFAULT,
-                           'collections':registry.describe(), 'source_text':native,
-                           'reader_url':self.reader_url if native else None, 'snapshot':self.snapshot if native else None})
+                self.send({
+                    **provider.meta(),
+                    'collection': collection.key,
+                    'default_collection': DEFAULT,
+                    'collections': registry.describe(),
+                    'source_text': native,
+                    'reader_url': self.reader_url if native else collection.reader_url,
+                    'snapshot': self.snapshot if native else collection.snapshot,
+                    'tour_url': '/tour' if native else (f'/tour?collection={collection.key}' if collection.tour is not None else None),
+                })
             elif url.path=='/api/facets': self.send(provider.facets(p))
             elif url.path=='/api/entries': self.send(provider.entries(p))
             elif url.path=='/api/entry': self.send(provider.detail(catalog.first(p,'id')))

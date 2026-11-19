@@ -67,6 +67,10 @@ class Collection:
     zh: str
     en: str
     provider: CatalogProvider | None = None
+    reader_url: str | None = None
+    snapshot: str | None = None
+    tour: object | None = None
+    reader: object | None = None
 
     def describe(self):
         return {'id': self.key, 'label': {'zh': self.zh, 'en': self.en},

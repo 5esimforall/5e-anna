@@ -838,7 +838,8 @@ async function init(){
       if(metadata.tour_url===null){pageSwitch.hidden=true;}
       else{
         pageSwitch.hidden=false;
-        if(metadata.tour_url&&typeof annaTopbar?.pointSwitch==='function')annaTopbar.pointSwitch('tour',metadata.tour_url);
+        const tourHref=annaTopbar?.pages?.tour?.resume?.()||metadata.tour_url;
+        if(tourHref&&typeof annaTopbar?.pointSwitch==='function')annaTopbar.pointSwitch('tour',tourHref);
       }
     }
     if(sharing())annaCompanions.mount({page:'query',snapshot:metadata.snapshot,collection:metadata.collection});

@@ -220,17 +220,39 @@ html, body {
 }
 
 .o5e-media-remote {
-  background: var(--o5e-warn-bg);
-  border-color: var(--o5e-warn-border);
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin: 0.45em 0;
+  background: transparent;
+  border: 1px dashed var(--o5e-border);
+  border-radius: 5px;
   text-align: left;
+  color: var(--o5e-muted);
+  font-size: 12px;
 }
 
 .o5e-media-badge {
   display: inline-block;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--o5e-warn-border);
-  margin-bottom: 4px;
+  font-weight: 500;
+  color: var(--o5e-muted);
+}
+
+.o5e-figure.o5e-img-failed img {
+  display: none;
+}
+
+.o5e-media-fallback-note[hidden] {
+  display: none;
+}
+
+.o5e-figure.o5e-img-failed .o5e-media-fallback-note {
+  display: inline-block;
+  font-size: 12px;
+  color: var(--o5e-muted);
 }
 
 .o5e-maps-grid {
@@ -517,6 +539,88 @@ def _validate_staged_output(stage: Path, expected_entries: int) -> None:
     for required in ('schema', 'snapshot', 'source_root', 'counts', 'reader', 'checks'):
         if required not in manifest:
             raise ValueError(f'manifest.json missing required key: {required}')
+    if not (stage / 'media').is_dir():
+        raise ValueError(f'Missing staged media directory: {stage / "media"}')
+    remotes_path = stage / 'media-remotes.json'
+    if not remotes_path.is_file():
+        raise ValueError(f'Missing staged media remotes registry: {remotes_path}')
+
+
+def _copy_media_file(src: Path, dst: Path, *, allow_hardlink: bool = False) -> None:
+    if src.is_symlink() or not src.is_file():
+        return
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        dst.unlink()
+    if allow_hardlink:
+        try:
+            os.link(src, dst)
+            return
+        except OSError:
+            pass
+    shutil.copy2(src, dst)
+
+
+def _stage_media_bundle(
+    *,
+    stage_media: Path,
+    inv: inventory.Inventory,
+    prev_output: Path,
+    img_dir: Path | None,
+) -> tuple[set[str], int, int]:
+    """Bundle local media + preserved lazy cache + optional img_dir into ``stage/media``."""
+    stage_media.mkdir(parents=True, exist_ok=True)
+    staged_relpaths: set[str] = set()
+    preserved_cached = 0
+    bundled_img_dir = 0
+
+    # 1. Preserve any lazy-cached remote assets (`img/`, `ext/`) from the existing built snapshot.
+    prev_media = prev_output / 'media'
+    if prev_media.is_dir():
+        for subroot in ('img', 'ext'):
+            src_sub = prev_media / subroot
+            if not src_sub.is_dir() or src_sub.is_symlink():
+                continue
+            for src_file in src_sub.rglob('*'):
+                if src_file.is_symlink() or not src_file.is_file():
+                    continue
+                if src_file.name.startswith('.'):
+                    continue
+                rel = src_file.relative_to(prev_media).as_posix()
+                _copy_media_file(src_file, stage_media / rel, allow_hardlink=True)
+                staged_relpaths.add(rel)
+                preserved_cached += 1
+
+    # 2. Bundle optional external 5etools-img directory (override/seed before repo files).
+    if img_dir is not None:
+        img_root = Path(img_dir).expanduser().resolve()
+        if img_root.is_dir():
+            for src_file in img_root.rglob('*'):
+                if src_file.is_symlink() or not src_file.is_file():
+                    continue
+                parts = src_file.relative_to(img_root).parts
+                if not parts or any(p.startswith('.') for p in parts):
+                    continue
+                rel = '/'.join(parts) if parts[0] == 'img' else 'img/' + '/'.join(parts)
+                san = render.sanitize_media_path(rel)
+                if not san:
+                    continue
+                _copy_media_file(src_file, stage_media / san, allow_hardlink=False)
+                staged_relpaths.add(san)
+                bundled_img_dir += 1
+
+    # 3. Bundle all local media files from the source repository (authoritative for bundled assets).
+    for rel in sorted(inv.media_files):
+        san = render.sanitize_media_path(rel)
+        if not san:
+            continue
+        src_file = (inv.source_root / san).resolve()
+        if not src_file.is_relative_to(inv.source_root) or not src_file.is_file() or src_file.is_symlink():
+            raise ValueError(f'Source local media file missing or unsafe: {san}')
+        _copy_media_file(src_file, stage_media / san, allow_hardlink=False)
+        staged_relpaths.add(san)
+
+    return staged_relpaths, preserved_cached, bundled_img_dir
 
 
 def _write_json(path: Path, payload: Any, *, compact: bool = False) -> str:
@@ -702,6 +806,7 @@ def build(
     source: Path = OUR5ETOOLS,
     output: Path = OUR5ETOOLS_DATA,
     *,
+    img_dir: Path | None = None,
     quiet: bool = False,
 ) -> dict[str, Any]:
     """Run the full offline our5etools build with atomic staging and rollback safety."""
@@ -791,10 +896,9 @@ def build(
         entry_index=entry_index,
         source_ids=resolver_source_ids,
     )
-    media_checker = inv.has_media
     entry_index_by_book_chapter = _build_entry_index_by_book_chapter(book_index, corpus)
 
-    # 3. Create sibling staging directory
+    # 3. Create sibling staging directory and populate self-contained media bundle
     output.parent.mkdir(parents=True, exist_ok=True)
     stage = output.with_name(f'{output.name}.tmp.{os.getpid()}')
     if stage.exists():
@@ -802,6 +906,21 @@ def build(
     stage.mkdir(parents=True, exist_ok=True)
 
     try:
+        _log('[our5etools.build] Bundling self-contained media archive...')
+        stage_media = stage / 'media'
+        staged_media_set, preserved_cached_media, bundled_img_dir_files = _stage_media_bundle(
+            stage_media=stage_media,
+            inv=inv,
+            prev_output=output,
+            img_dir=img_dir,
+        )
+
+        def media_checker(relpath: str) -> bool:
+            cleaned = render.sanitize_media_path(relpath)
+            if not cleaned:
+                return False
+            return cleaned in staged_media_set or f'audio/{cleaned}' in staged_media_set
+
         # 4. Build Stella reader HTML chapters & assets in stage/reader
         _log('[our5etools.build] Rendering Stella reader chapters...')
         reader_dir = stage / 'reader'
@@ -813,6 +932,11 @@ def build(
             entry_index_by_book_chapter=entry_index_by_book_chapter,
             snapshot=snapshot,
         )
+        remote_media_map: dict[str, list[str]] = {
+            str(k): list(v)
+            for k, v in (books_result.get('remote_media_map') or {}).items()
+            if k and v
+        }
         assets_dir = reader_dir / 'anna-assets'
         assets_dir.mkdir(parents=True, exist_ok=True)
         (assets_dir / 'our5etools-book.css').write_text(_OUR5ETOOLS_BOOK_CSS, encoding='utf-8')
@@ -1034,6 +1158,11 @@ def build(
             referenced_local_media.update(media_summary.get('local_media') or ())
             referenced_remote_media.update(media_summary.get('remote_media') or ())
             referenced_missing_local_media.update(media_summary.get('missing_local_media') or ())
+            for r_rel, r_urls in (rendered.get('remote_media_map') or {}).items():
+                bucket = remote_media_map.setdefault(r_rel, [])
+                for u in r_urls:
+                    if u and u not in bucket:
+                        bucket.append(u)
 
             fields = entry.get('fields') or {}
             quickref = entry.get('quickref') or {}
@@ -1325,6 +1454,10 @@ def build(
             'entry_locations': len(entry_locations),
             'files': len(inv.file_records),
             'local_media_files': len(inv.media_files),
+            'bundled_media_files': len(staged_media_set),
+            'preserved_cached_media': preserved_cached_media,
+            'bundled_img_dir_files': bundled_img_dir_files,
+            'remote_media_keys': len(remote_media_map),
         }
 
         delta = _compute_delta(prev_summary, counts_summary, dict(by_type))
@@ -1530,6 +1663,13 @@ def build(
             'copy_status': dict(sorted(copy_status_counts.items())),
             'delta': delta,
         }
+        remotes_payload = {
+            'schema': MANIFEST_SCHEMA,
+            'snapshot': snapshot,
+            'entries': {k: list(v) for k, v in sorted(remote_media_map.items())},
+        }
+        remotes_sha = _write_json(stage / 'media-remotes.json', remotes_payload, compact=True)
+
         summary_sha = _write_json(stage / 'summary.json', summary_payload)
 
         db_sha = hashlib.sha256(db_path.read_bytes()).hexdigest()
@@ -1579,6 +1719,7 @@ def build(
             'files': {
                 'catalog.sqlite': db_sha,
                 'reader/anna-reader.json': reader_json_sha,
+                'media-remotes.json': remotes_sha,
                 'summary.json': summary_sha,
                 'inventory.json': inv_sha,
                 'reconciliation.json': recon_sha,
@@ -1640,6 +1781,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f'Output data directory (default: {OUR5ETOOLS_DATA}).',
     )
     parser.add_argument(
+        '--img-dir',
+        type=Path,
+        default=Path(os.environ['OUR5ETOOLS_IMG_DIR']) if os.environ.get('OUR5ETOOLS_IMG_DIR') else None,
+        help='Optional local 5etools-img directory to bundle offline into data/our5etools/media/img/.',
+    )
+    parser.add_argument(
         '--quiet',
         action='store_true',
         help='Suppress progress logs on stderr.',
@@ -1649,7 +1796,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    manifest = build(source=args.source, output=args.output, quiet=args.quiet)
+    manifest = build(source=args.source, output=args.output, img_dir=args.img_dir, quiet=args.quiet)
     if not args.quiet:
         print(json.dumps({
             'snapshot': manifest['snapshot'],

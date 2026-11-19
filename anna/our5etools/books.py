@@ -1127,9 +1127,47 @@ def _safe_url(url: str) -> str | None:
     u = str(url or '').strip()
     if not u:
         return None
+    if u.startswith('/__remote/'):
+        rest = u[len('/__remote/'):].lstrip('/')
+        if not rest or rest.startswith('/'):
+            return None
+        u = f'https://{rest}'
     if SAFE_URL_RE.match(u):
         return u
     return None
+
+
+def _media_route(relpath: str) -> str:
+    return '/our5etools-media/' + '/'.join(quote(seg, safe='-._~') for seg in relpath.split('/'))
+
+
+def _remote_media_helpers(render_mod: Any, href_type: str, raw_value: str) -> tuple[str | None, list[str]]:
+    """Resolve deterministic cache key and upstream mirror URLs via ``render`` when available."""
+    if href_type == 'internal':
+        if render_mod is not None and hasattr(render_mod, 'normalize_internal_media_path'):
+            san = render_mod.normalize_internal_media_path(raw_value, 'img/')
+            urls = render_mod.internal_image_remote_urls(san) if san else []
+            return san, urls
+        cleaned = '/'.join(p for p in raw_value.strip().replace('\\', '/').lstrip('/').split('/') if p and p != '.')
+        if not cleaned or '..' in cleaned.split('/'):
+            return None, []
+        san = cleaned if cleaned.startswith('img/') else f'img/{cleaned}'
+        sub = san.removeprefix('img/')
+        quoted = '/'.join(quote(seg, safe="()'!,;-_~") for seg in sub.split('/'))
+        return san, [
+            f'https://5e.kiwee.top/img/{quoted}',
+            f'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/{quoted}',
+        ]
+    safe = _safe_url(raw_value)
+    if not safe or not safe.lower().startswith(('http://', 'https://')):
+        return None, []
+    if render_mod is not None and hasattr(render_mod, 'remote_media_cache_path'):
+        cache_rel = render_mod.remote_media_cache_path(safe)
+        return cache_rel, ([safe] if cache_rel else [])
+    ext = PurePosixPath(urlparse(safe).path).suffix.lower()
+    if ext not in {'.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.avif', '.opus', '.ogg', '.mp3', '.wav', '.m4a'}:
+        ext = ''
+    return f'ext/{sha256(safe.encode("utf-8")).hexdigest()[:24]}{ext}', [safe]
 
 
 def _rewrite_reader_hrefs(fragment_html: str) -> str:
@@ -1305,6 +1343,8 @@ def _render_image_figure(
     render_mod: Any,
     *,
     extra_class: str = '',
+    render_ctx: Any = None,
+    remote_media_map: dict[str, list[str]] | None = None,
 ) -> str:
     """Render local offline vs remote image cleanly without ever faking offline assets."""
     href = img.get('href') if isinstance(img.get('href'), dict) else {}
@@ -1321,32 +1361,57 @@ def _render_image_figure(
     cls = 'o5e-figure' + (f' {extra_class}' if extra_class else '')
     if href_type == 'internal':
         rel = str(href.get('path') or '').lstrip('/')
-        local_rel = rel if rel.startswith('img/') else f'img/{rel}'
+        san, remote_urls = _remote_media_helpers(render_mod, 'internal', rel)
+        local_rel = san or (rel if rel.startswith('img/') else f'img/{rel}')
         is_local = False
         if callable(media_checker):
             is_local = bool(media_checker(local_rel) or media_checker(rel))
+        alt = html.escape(title or (Path(rel).stem if rel else '配图'), quote=True)
         if is_local:
             served = local_rel if callable(media_checker) and media_checker(local_rel) else rel
-            src = '/our5etools-media/' + '/'.join(quote(seg, safe='') for seg in served.split('/'))
-            alt = html.escape(title or Path(rel).stem, quote=True)
-            return f'<figure class="{cls}"><img src="{src}" alt="{alt}" loading="lazy">{caption_html}</figure>'
-        # Internal path not present locally -> explicit remote/unbundled card.
-        path_note = f'<div class="o5e-media-path">{html.escape(rel, quote=True)}</div>' if rel else ''
+            src = _media_route(served)
+            return (
+                f'<figure class="{cls}">'
+                f'<img src="{html.escape(src, quote=True)}" alt="{alt}" loading="lazy" decoding="async" data-o5e-fallback="1">'
+                f'<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>'
+                f'{caption_html}</figure>'
+            )
+        if san and remote_urls:
+            if render_ctx is not None and hasattr(render_ctx, 'record_remote_urls'):
+                render_ctx.record_remote_urls(san, remote_urls)
+            if remote_media_map is not None:
+                bucket = remote_media_map.setdefault(san, [])
+                for u in remote_urls:
+                    if u not in bucket:
+                        bucket.append(u)
+        lazy_attr = f' data-lazy-media="{html.escape(_media_route(san), quote=True)}"' if san else ''
+        title_attr = f' title="{html.escape(san or rel, quote=True)}"' if (san or rel) else ''
         return (
-            f'<figure class="{cls} o5e-media-remote">'
-            f'<div class="o5e-media-badge">远端配图（未离线收录）</div>'
-            f'{caption_html}{path_note}</figure>'
+            f'<figure class="{cls} o5e-media-remote"{lazy_attr} data-media-alt="{alt}"{title_attr}>'
+            f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
+            f'{caption_html}</figure>'
         )
 
     url = _safe_url(str(href.get('url') or ''))
+    cache_rel, remote_urls = _remote_media_helpers(render_mod, 'external', url or '')
+    if cache_rel and remote_urls:
+        if render_ctx is not None and hasattr(render_ctx, 'record_remote_urls'):
+            render_ctx.record_remote_urls(cache_rel, remote_urls)
+        if remote_media_map is not None:
+            bucket = remote_media_map.setdefault(cache_rel, [])
+            for u in remote_urls:
+                if u not in bucket:
+                    bucket.append(u)
+    alt = html.escape(title or '配图', quote=True)
+    lazy_attr = f' data-lazy-media="{html.escape(_media_route(cache_rel), quote=True)}"' if cache_rel else ''
     link_html = (
         f'<a class="o5e-media-link" href="{html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
         if url
         else ''
     )
     return (
-        f'<figure class="{cls} o5e-media-remote">'
-        f'<div class="o5e-media-badge">远端配图（未离线收录）</div>'
+        f'<figure class="{cls} o5e-media-remote"{lazy_attr} data-media-alt="{alt}">'
+        f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
         f'{caption_html}{link_html}</figure>'
     )
 
@@ -1567,11 +1632,11 @@ def _render_chapter_node(
         return f'<section class="o5e-table-group"{id_attr}>{heading_html}{tables_html}</section>'
 
     if btype == 'image':
-        return _render_image_figure(node, media_checker, resolver, render_mod)
+        return _render_image_figure(node, media_checker, resolver, render_mod, render_ctx=render_ctx)
 
     if btype == 'gallery':
         imgs = ''.join(
-            _render_image_figure(im, media_checker, resolver, render_mod)
+            _render_image_figure(im, media_checker, resolver, render_mod, render_ctx=render_ctx)
             for im in (node.get('images') or ())
             if isinstance(im, dict)
         )
@@ -1976,6 +2041,7 @@ def build_reader_pages(
     pages_meta: dict[str, dict[str, Any]] = {}
     outputs: dict[str, str] = {}
     search_rows: list[tuple[str, str, str, str, str]] = []
+    shared_remote_media: dict[str, list[str]] = {}
 
     bound_definitions = 0
     bound_references = 0
@@ -2094,14 +2160,16 @@ def build_reader_pages(
                 if book.published:
                     meta_pills.append(f'<span class="o5e-pill">{html.escape(book.published, quote=True)}</span>')
 
+                render_ctx = _make_render_context(render_mod, resolver, media_checker, default_source=book.source_code)
+
                 cover_html = ''
                 if ch_idx == 0 and isinstance(book.cover, dict):
                     cover_img = {'href': book.cover, 'title': book.title}
                     cover_html = _render_image_figure(
-                        cover_img, media_checker, resolver, render_mod, extra_class='o5e-cover'
+                        cover_img, media_checker, resolver, render_mod, extra_class='o5e-cover',
+                        render_ctx=render_ctx, remote_media_map=shared_remote_media,
                     )
 
-                render_ctx = _make_render_context(render_mod, resolver, media_checker, default_source=book.source_code)
                 body_html = _render_chapter_node(
                     chapter_data, (), 0, anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx
                 )
@@ -2111,7 +2179,10 @@ def build_reader_pages(
                 if ch_maps:
                     maps_rendered += len(ch_maps)
                     map_figs = ''.join(
-                        _render_image_figure(m, media_checker, resolver, render_mod, extra_class='o5e-map')
+                        _render_image_figure(
+                            m, media_checker, resolver, render_mod, extra_class='o5e-map',
+                            render_ctx=render_ctx, remote_media_map=shared_remote_media,
+                        )
                         for m in ch_maps
                     )
                     maps_html = (
@@ -2120,6 +2191,13 @@ def build_reader_pages(
                         f'<div class="o5e-maps-grid">{map_figs}</div>'
                         '</section>'
                     )
+
+                if render_ctx is not None and isinstance(getattr(render_ctx, 'remote_media_map', None), dict):
+                    for k_rel, u_list in render_ctx.remote_media_map.items():
+                        bucket = shared_remote_media.setdefault(k_rel, [])
+                        for u in u_list:
+                            if u not in bucket:
+                                bucket.append(u)
 
                 subtitle_html = (
                     f'<p class="o5e-chapter-subtitle">{html.escape(ch_en, quote=True)}</p>'
@@ -2270,5 +2348,6 @@ def build_reader_pages(
         'pages_meta': pages_meta,
         'outputs': outputs,
         'search_rows': search_rows,
+        'remote_media_map': {k: list(v) for k, v in sorted(shared_remote_media.items())},
         'report': report,
     }

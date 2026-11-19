@@ -5,16 +5,23 @@ from collections import Counter, defaultdict
 from contextlib import closing
 import csv
 import dataclasses
+import html as _html
 import io
+import ipaddress
 import json
 import math
 import mimetypes
+import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
+import socket
 import sqlite3
 import threading
+import time
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, unquote, urlencode, urlsplit
+import urllib.request
 
 import anna.our5etools.types as otypes
 import anna.paths as paths
@@ -29,6 +36,28 @@ READER_BASE = '/our5etools-book/'
 MEDIA_BASE = '/our5etools-media/'
 TOUR_URL = '/tour?collection=5etools'
 READER_URL = '/read?collection=5etools'
+MAX_REMOTE_MEDIA_BYTES = 25 * 1024 * 1024
+NEGATIVE_MEDIA_TTL_SECONDS = 60.0
+REMOTE_IMG_BASES: tuple[str, ...] = (
+    'https://5e.kiwee.top/img/',
+    'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/',
+)
+SAFE_ROOT_MEDIA_EXTS: frozenset[str] = frozenset({
+    '.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
+})
+LAZY_MEDIA_FIGURE_RE = re.compile(
+    r'<figure\b([^>]*\bdata-lazy-media="(/our5etools-media/([^"]+))"[^>]*)>(.*?)</figure>',
+    re.DOTALL,
+)
+LAZY_MEDIA_AUDIO_RE = re.compile(
+    r'<div\b([^>]*\bdata-lazy-media="(/our5etools-media/([^"]+))"[^>]*)>(.*?)</div>',
+    re.DOTALL,
+)
+FIGCAPTION_RE = re.compile(r'<figcaption>.*?</figcaption>', re.DOTALL)
+MEDIA_LINK_RE = re.compile(r'<a\b[^>]*class="o5e-media-link"[^>]*>.*?</a>', re.DOTALL)
+CLASS_ATTR_RE = re.compile(r'\bclass="([^"]*)"')
+ALT_ATTR_RE = re.compile(r'\bdata-media-alt="([^"]*)"')
+TITLE_ATTR_RE = re.compile(r'\btitle="([^"]*)"')
 
 BATCH = 150
 RESTORE_LIMIT = 1500
@@ -63,6 +92,7 @@ MIME_OVERRIDES: dict[str, str] = {
     '.wav': 'audio/wav',
     '.webp': 'image/webp',
     '.png': 'image/png',
+    '.avif': 'image/avif',
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
     '.gif': 'image/gif',
@@ -77,9 +107,10 @@ MIME_OVERRIDES: dict[str, str] = {
     '.html': 'text/html; charset=utf-8',
     '.htm': 'text/html; charset=utf-8',
     '.json': 'application/json; charset=utf-8',
+    '.m4a': 'audio/mp4',
 }
 
-ALLOWED_MEDIA_ROOTS = frozenset({'audio', 'img', 'fonts'})
+ALLOWED_MEDIA_ROOTS = frozenset({'audio', 'img', 'fonts', 'ext'})
 FALLBACK_BOOK_ASSETS = frozenset({'links.js', 'topic.js', 'link-labels.js'})
 
 COMMON_LABELS: dict[str, str] = {
@@ -191,12 +222,142 @@ def _safe_relpath(relpath: str) -> PurePosixPath | None:
     return posix
 
 
+def _sniff_media_mime(path: Path) -> str | None:
+    try:
+        with path.open('rb') as f:
+            head = f.read(64)
+    except OSError:
+        return None
+    if head.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if head.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if head.startswith((b'GIF87a', b'GIF89a')):
+        return 'image/gif'
+    if len(head) >= 12 and head[:4] == b'RIFF' and head[8:12] == b'WEBP':
+        return 'image/webp'
+    if head.startswith(b'OggS'):
+        return 'audio/ogg; codecs=opus' if b'OpusHead' in head else 'audio/ogg'
+    if head.startswith(b'ID3') or (len(head) >= 2 and head[0] == 0xFF and (head[1] & 0xE0) == 0xE0):
+        return 'audio/mpeg'
+    if len(head) >= 12 and head[:4] == b'RIFF' and head[8:12] == b'WAVE':
+        return 'audio/wav'
+    low = head.lstrip().lower()
+    if low.startswith((b'<svg', b'<?xml')) and b'<svg' in low:
+        return 'image/svg+xml'
+    return None
+
+
 def _mime_for(path: Path) -> str:
     ext = path.suffix.lower()
     if ext in MIME_OVERRIDES:
         return MIME_OVERRIDES[ext]
     guessed, _ = mimetypes.guess_type(str(path))
-    return guessed or 'application/octet-stream'
+    if guessed:
+        return guessed
+    return _sniff_media_mime(path) or 'application/octet-stream'
+
+
+def _is_safe_cached_file(media_dir: Path, relpath: str) -> bool:
+    posix = _safe_relpath(relpath)
+    if posix is None:
+        return False
+    base = media_dir.resolve()
+    cand = (base / posix.as_posix()).resolve()
+    return cand.is_relative_to(base) and not cand.is_symlink() and cand.is_file()
+
+
+def promote_media_html(html_text: str, media_dir: Path, *, lazy_media: bool = False) -> str:
+    """Promote ``data-lazy-media`` figures/audio to ``<img>``/``<audio>`` when lazy mode is on or cached locally."""
+    if not html_text or 'data-lazy-media=' not in html_text:
+        return html_text
+
+    def _replace_figure(m: re.Match[str]) -> str:
+        attrs, src, encoded_rel, inner = m.group(1), m.group(2), m.group(3), m.group(4)
+        rel = unquote(encoded_rel)
+        if not lazy_media and not _is_safe_cached_file(media_dir, rel):
+            return m.group(0)
+        cls_m = CLASS_ATTR_RE.search(attrs)
+        classes = [c for c in (cls_m.group(1).split() if cls_m else ['o5e-figure']) if c != 'o5e-media-remote']
+        if 'o5e-figure' not in classes:
+            classes.insert(0, 'o5e-figure')
+        alt_m = ALT_ATTR_RE.search(attrs)
+        alt_attr = alt_m.group(1) if alt_m else '配图'
+        title_m = TITLE_ATTR_RE.search(attrs)
+        title_attr = f' title="{title_m.group(1)}"' if title_m else ''
+        fig_m = FIGCAPTION_RE.search(inner)
+        link_m = MEDIA_LINK_RE.search(inner)
+        tail = (fig_m.group(0) if fig_m else '') + (link_m.group(0) if link_m else '')
+        return (
+            f'<figure class="{" ".join(classes)}"{title_attr}>'
+            f'<img src="{src}" alt="{alt_attr}" loading="lazy" decoding="async" data-o5e-fallback="1">'
+            f'<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>'
+            f'{tail}</figure>'
+        )
+
+    def _replace_audio(m: re.Match[str]) -> str:
+        src, encoded_rel = m.group(2), m.group(3)
+        rel = unquote(encoded_rel)
+        if not lazy_media and not _is_safe_cached_file(media_dir, rel):
+            return m.group(0)
+        return (
+            f'<div class="o5e-audio">'
+            f'<span class="o5e-audio-label">读音</span>'
+            f'<audio controls preload="none" src="{src}"></audio>'
+            f'</div>'
+        )
+
+    out = LAZY_MEDIA_FIGURE_RE.sub(_replace_figure, html_text)
+    out = LAZY_MEDIA_AUDIO_RE.sub(_replace_audio, out)
+    return out
+
+
+def _validate_remote_url(url: str) -> str:
+    parsed = urlsplit(url)
+    if parsed.scheme.lower() not in {'http', 'https'} or not parsed.hostname:
+        raise ValueError(f'Unsafe remote media URL scheme/host: {url!r}')
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError(f'Credentials not allowed in remote media URL: {url!r}')
+    port = parsed.port or (443 if parsed.scheme.lower() == 'https' else 80)
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise ValueError(f'DNS resolution failed for {parsed.hostname}: {exc}') from exc
+    if not infos:
+        raise ValueError(f'No DNS results for {parsed.hostname}')
+    for _, _, _, _, sockaddr in infos:
+        host_ip = sockaddr[0].split('%', 1)[0]
+        addr = ipaddress.ip_address(host_ip)
+        if not addr.is_global or addr.is_multicast:
+            raise ValueError(f'Blocked non-global target IP {host_ip} for {url!r}')
+    return url
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    max_repeats = 3
+    max_redirections = 3
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _validate_remote_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _sniff_bytes_valid_media(chunk: bytes, content_type: str) -> bool:
+    ct = content_type.split(';', 1)[0].strip().lower()
+    if ct in {'text/html', 'application/xhtml+xml', 'application/json', 'text/plain', 'application/xml'}:
+        return False
+    if ct.startswith(('image/', 'audio/')):
+        return True
+    if chunk.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff', b'GIF87a', b'GIF89a', b'OggS', b'ID3')):
+        return True
+    if len(chunk) >= 12 and chunk[:4] == b'RIFF' and chunk[8:12] in {b'WEBP', b'WAVE'}:
+        return True
+    if len(chunk) >= 2 and chunk[0] == 0xFF and (chunk[1] & 0xE0) == 0xE0:
+        return True
+    low = chunk.lstrip().lower()
+    if low.startswith((b'<svg', b'<?xml')) and b'<svg' in low:
+        return True
+    return False
 
 
 def _query_href(query: dict[str, list[str]]) -> str:
@@ -260,8 +421,10 @@ def _make_preview(text: str, text_lower: str, terms: list[str]) -> str:
 class Our5etoolsCatalog:
     """Read-only CatalogProvider over our5etools catalog.sqlite."""
 
-    def __init__(self, data_dir: Path | str):
+    def __init__(self, data_dir: Path | str, *, lazy_media: bool = False):
         self.data_dir = Path(data_dir).resolve()
+        self.media_dir = self.data_dir / 'media'
+        self.lazy_media = bool(lazy_media)
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
         self.summary_path = self.data_dir / 'summary.json'
@@ -617,6 +780,7 @@ class Our5etoolsCatalog:
                 'type_conditions': {t: otypes.type_conditions(t) for t in otypes.TYPES},
                 'tour_url': TOUR_URL,
                 'collection': COLLECTION_KEY,
+                'lazy_media': self.lazy_media,
             }
 
     def entries(self, params: dict[str, list[str]], *, _export: bool = False) -> dict[str, Any]:
@@ -1263,7 +1427,8 @@ class Our5etoolsCatalog:
             prov = _json_loads(row['provenance_json'], {})
             if not html_body:
                 return {'status': 'empty', 'media': prov.get('media_summary')}
-            return {'status': 'ok', 'html': html_body, 'media': prov.get('media_summary')}
+            promoted = promote_media_html(html_body, self.media_dir, lazy_media=self.lazy_media)
+            return {'status': 'ok', 'html': promoted, 'media': prov.get('media_summary')}
 
     def export(self, params: dict[str, list[str]]) -> bytes:
         result = self.entries(params, _export=True)
@@ -1311,12 +1476,13 @@ class Our5etoolsCatalog:
 class Our5etoolsTour:
     """Guided tour combining tour/our5etools.json with live books, packages, and scoped navigation."""
 
-    def __init__(self, data_dir: Path | str, tour_path: Path | str | None = None):
+    def __init__(self, data_dir: Path | str, tour_path: Path | str | None = None, *, lazy_media: bool = False):
         self.data_dir = Path(data_dir).resolve()
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
         self.tour_path = Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / 'our5etools.json')
-        self.catalog = Our5etoolsCatalog(self.data_dir)
+        self.lazy_media = bool(lazy_media)
+        self.catalog = Our5etoolsCatalog(self.data_dir, lazy_media=self.lazy_media)
         self._lock = threading.Lock()
         self._loaded_sig: tuple[Any, ...] | None = None
         self._snapshot: str = ''
@@ -1753,6 +1919,7 @@ class Our5etoolsTour:
         v['collection'] = COLLECTION_KEY
         v['snapshot'] = self._snapshot
         v['reader_url'] = READER_URL
+        v['lazy_media'] = self.lazy_media
         return self._shaped(v)
 
     def _root_view(self, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
@@ -2055,17 +2222,25 @@ class Our5etoolsTour:
 # ---------------------------------------------------------------------------
 
 class Our5etoolsReader:
-    """Stella reader provider for our5etools chapters, book search, and local media assets."""
+    """Stella reader provider for our5etools chapters, book search, and self-contained/lazy media."""
 
-    def __init__(self, data_dir: Path | str, source_dir: Path | str | None = None):
+    def __init__(self, data_dir: Path | str, source_dir: Path | str | None = None, *, lazy_media: bool = False):
         self.data_dir = Path(data_dir).resolve()
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_dir = self.data_dir / 'reader'
         self.reader_path = self.reader_dir / 'anna-reader.json'
-        self.source_dir = Path(source_dir).resolve() if source_dir else None
+        self.media_dir = self.data_dir / 'media'
+        self.remotes_path = self.data_dir / 'media-remotes.json'
+        self.lazy_media = bool(lazy_media)
+        self._unused_source_dir = Path(source_dir).resolve() if source_dir else None
         self._lock = threading.Lock()
         self._reader_sig: tuple[int, int, int] | None = None
         self._reader_data: dict[str, Any] = {}
+        self._remotes_sig: tuple[int, int, int] | None = None
+        self._remotes_entries: dict[str, list[str]] = {}
+        self._fetch_locks: dict[str, threading.Lock] = {}
+        self._fetch_guard = threading.Lock()
+        self._negative_cache: dict[str, float] = {}
 
     def _load_reader(self) -> dict[str, Any]:
         sig = _file_sig(self.reader_path)
@@ -2080,6 +2255,42 @@ class Our5etoolsReader:
             self._reader_data = data
             self._reader_sig = sig
             return data
+
+    def _load_remotes(self) -> dict[str, list[str]]:
+        sig = _file_sig(self.remotes_path)
+        if sig is None:
+            return {}
+        with self._lock:
+            if sig == self._remotes_sig:
+                return self._remotes_entries
+            try:
+                raw = json.loads(self.remotes_path.read_text('utf-8'))
+            except (OSError, ValueError):
+                return {}
+            entries = raw.get('entries') if isinstance(raw, dict) else {}
+            if not isinstance(entries, dict):
+                entries = {}
+            self._remotes_entries = {
+                str(k): [str(u) for u in v if u]
+                for k, v in entries.items()
+                if isinstance(k, str) and isinstance(v, list)
+            }
+            self._remotes_sig = sig
+            return self._remotes_entries
+
+    def _list_cached_lazy_media(self) -> list[str]:
+        media_root = self.media_dir.resolve()
+        out: list[str] = []
+        for subroot in ('img', 'ext'):
+            sub = media_root / subroot
+            if not sub.is_dir() or sub.is_symlink():
+                continue
+            for p in sub.rglob('*'):
+                if p.is_symlink() or not p.is_file() or p.name.startswith('.'):
+                    continue
+                out.append(p.relative_to(media_root).as_posix())
+        out.sort()
+        return out
 
     @property
     def snapshot(self) -> str:
@@ -2098,6 +2309,8 @@ class Our5etoolsReader:
             'presentation_resources': data.get('presentation_resources', []),
             'source_release': data.get('source_release'),
             'collection': COLLECTION_KEY,
+            'lazy_media': self.lazy_media,
+            'cached_media': self._list_cached_lazy_media(),
         }
 
     def page_data(self, path: str | None = None, entry: str | None = None) -> dict[str, Any]:
@@ -2282,21 +2495,125 @@ class Our5etoolsReader:
 
         return None
 
-    def resolve_media_asset(self, relpath: str) -> tuple[Path, str] | None:
-        if self.source_dir is None:
-            return None
-        posix = _safe_relpath(relpath)
-        if posix is None:
-            return None
+    @staticmethod
+    def _is_allowed_media_posix(posix: PurePosixPath) -> bool:
         top = posix.parts[0]
-        if top not in ALLOWED_MEDIA_ROOTS and not (len(posix.parts) >= 2 and top == '__brewrepo' and posix.parts[1] == '_font'):
+        if top in ALLOWED_MEDIA_ROOTS:
+            return True
+        if len(posix.parts) >= 3 and top == '__ours' and posix.parts[1] == 'fonts':
+            return True
+        if len(posix.parts) >= 3 and top == '__brewrepo' and posix.parts[1] == '_font':
+            return True
+        if len(posix.parts) == 1 and Path(posix.parts[0]).suffix.lower() in SAFE_ROOT_MEDIA_EXTS:
+            return True
+        return False
+
+    def _remote_urls_for(self, rel_posix: str) -> list[str]:
+        entries = self._load_remotes()
+        urls = list(entries.get(rel_posix) or ())
+        if rel_posix.startswith('img/'):
+            sub = rel_posix.removeprefix('img/').lstrip('/')
+            if sub:
+                quoted = '/'.join(quote(seg, safe="()'!,;-_~") for seg in sub.split('/'))
+                for base in REMOTE_IMG_BASES:
+                    cand_url = f'{base}{quoted}'
+                    if cand_url not in urls:
+                        urls.append(cand_url)
+        return urls
+
+    def _fetch_remote_media_safely(self, rel_posix: str, dest_path: Path) -> bool:
+        urls = self._remote_urls_for(rel_posix)
+        if not urls:
+            return False
+        now = time.monotonic()
+        with self._fetch_guard:
+            neg_until = self._negative_cache.get(rel_posix, 0.0)
+            if neg_until > now:
+                return False
+            key_lock = self._fetch_locks.setdefault(rel_posix, threading.Lock())
+
+        with key_lock:
+            if dest_path.is_file() and not dest_path.is_symlink():
+                return True
+            if self._negative_cache.get(rel_posix, 0.0) > time.monotonic():
+                return False
+
+            opener = urllib.request.build_opener(_SafeRedirectHandler())
+            for url in urls:
+                try:
+                    _validate_remote_url(url)
+                    req = urllib.request.Request(url, headers={'User-Agent': '5e-anna/1.0'})
+                    with opener.open(req, timeout=10) as resp:
+                        status = getattr(resp, 'status', None) or resp.getcode()
+                        if status != 200:
+                            continue
+                        _validate_remote_url(resp.geturl())
+                        ct = str(resp.headers.get('Content-Type') or '')
+                        cl_raw = resp.headers.get('Content-Length')
+                        if cl_raw:
+                            try:
+                                if int(cl_raw) > MAX_REMOTE_MEDIA_BYTES:
+                                    continue
+                            except ValueError:
+                                pass
+                        first = resp.read(512)
+                        if not first or not _sniff_bytes_valid_media(first, ct):
+                            continue
+                        dest_path.parent.mkdir(parents=True, exist_ok=True)
+                        tmp_path = dest_path.parent / f'.{dest_path.name}.tmp.{threading.get_ident()}'
+                        total = len(first)
+                        try:
+                            with tmp_path.open('wb') as out_f:
+                                out_f.write(first)
+                                while True:
+                                    chunk = resp.read(65536)
+                                    if not chunk:
+                                        break
+                                    total += len(chunk)
+                                    if total > MAX_REMOTE_MEDIA_BYTES:
+                                        raise ValueError('Remote media exceeds size limit')
+                                    out_f.write(chunk)
+                            os.replace(tmp_path, dest_path)
+                            return True
+                        except BaseException:
+                            if tmp_path.exists():
+                                try:
+                                    tmp_path.unlink()
+                                except OSError:
+                                    pass
+                            raise
+                except Exception:
+                    continue
+
+            with self._fetch_guard:
+                self._negative_cache[rel_posix] = time.monotonic() + NEGATIVE_MEDIA_TTL_SECONDS
+            return False
+
+    def resolve_media_asset(self, relpath: str) -> tuple[Path, str] | None:
+        posix = _safe_relpath(relpath)
+        if posix is None or not self._is_allowed_media_posix(posix):
             return None
 
-        src_root = self.source_dir.resolve()
-        candidate = (src_root / posix.as_posix()).resolve()
-        if not candidate.is_relative_to(src_root) or not candidate.is_file():
+        media_root = self.media_dir.resolve()
+        rel_posix = posix.as_posix()
+        raw_target = media_root / rel_posix
+        if not raw_target.is_symlink():
+            candidate = raw_target.resolve()
+            if candidate.is_relative_to(media_root) and candidate.is_file():
+                return candidate, _mime_for(candidate)
+
+        if not self.lazy_media:
             return None
-        return candidate, _mime_for(candidate)
+
+        # Only fetch remote images/audio into img/ or ext/
+        if posix.parts[0] not in {'img', 'ext'}:
+            return None
+        resolved_dest = (media_root / rel_posix).resolve()
+        if not resolved_dest.is_relative_to(media_root):
+            return None
+        if self._fetch_remote_media_safely(rel_posix, resolved_dest) and resolved_dest.is_file():
+            return resolved_dest, _mime_for(resolved_dest)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -2305,8 +2622,10 @@ class Our5etoolsReader:
 
 def load_our5etools_collection(
     data_dir: Path | str = paths.OUR5ETOOLS_DATA,
-    source_dir: Path | str | None = paths.OUR5ETOOLS,
+    source_dir: Path | str | None = None,
     tour_path: Path | str | None = None,
+    *,
+    lazy_media: bool = False,
 ) -> Collection | None:
     """Load the read-only our5etools Collection when built artifacts are complete; else return None."""
     root = Path(data_dir).resolve()
@@ -2324,12 +2643,11 @@ def load_our5etools_collection(
         return None
 
     snapshot = str(reader_json.get('snapshot') or manifest.get('snapshot') or '')
-    src = Path(source_dir).resolve() if source_dir and Path(source_dir).exists() else None
     tpath = Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / 'our5etools.json')
 
-    provider = Our5etoolsCatalog(root)
-    tour = Our5etoolsTour(root, tpath) if tpath.is_file() else None
-    reader = Our5etoolsReader(root, src)
+    provider = Our5etoolsCatalog(root, lazy_media=lazy_media)
+    tour = Our5etoolsTour(root, tpath, lazy_media=lazy_media) if tpath.is_file() else None
+    reader = Our5etoolsReader(root, source_dir, lazy_media=lazy_media)
 
     # Support both current Collection(key, zh, en, provider) and extended Collection(..., reader_url, snapshot, tour, reader)
     field_names = {f.name for f in dataclasses.fields(Collection)}

@@ -264,6 +264,15 @@ const annaTour = (() => {
     try { layout = await load('/api/tour-layout', layouts, section.dataset.segment); } catch { layout = null; }
     if (layout?.status !== 'ok') { section.dataset.layout = 'none'; return; }
     const box = document.createElement('div'); box.className = 'tour-body layout-text'; box.lang = 'zh-CN'; box.innerHTML = layout.html;
+    box.addEventListener('error', event => {
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement) || !img.hasAttribute('data-o5e-fallback')) return;
+      const fig = img.closest('figure.o5e-figure');
+      if (!fig) return;
+      fig.classList.add('o5e-img-failed', 'o5e-media-remote');
+      const note = fig.querySelector('.o5e-media-fallback-note');
+      if (note) note.hidden = false;
+    }, true);
     const lead = section.querySelector('.tour-lead');
     lead ? lead.after(box) : section.querySelector('.tour-main').append(box);
     section.dataset.layout = 'ready';

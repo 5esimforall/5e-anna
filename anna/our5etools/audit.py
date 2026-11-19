@@ -26,6 +26,7 @@ REQUIRED_ARTIFACTS: tuple[str, ...] = (
     'inventory.json',
     'reconciliation.json',
     'attribution.json',
+    'media-remotes.json',
     'reader/anna-reader.json',
 )
 
@@ -617,6 +618,58 @@ def _check_sqlite(
         conn.close()
 
 
+def _check_media_bundle(
+    root: Path,
+    inv_data: dict[str, Any] | None,
+    remotes_data: dict[str, Any] | None,
+    invariants: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Verify self-contained `media/` bundles all local repo assets and valid `media-remotes.json`."""
+    media_root = root / 'media'
+    missing: list[str] = []
+    expected_local = 0
+    if not media_root.is_dir():
+        missing.append('缺失 media/ 目录')
+    elif isinstance(inv_data, dict):
+        for rec in inv_data.get('files') or ():
+            if not isinstance(rec, dict) or rec.get('disposition') != 'local_media':
+                continue
+            rel = rec.get('path')
+            if not isinstance(rel, str) or not _is_safe_relpath(rel):
+                continue
+            expected_local += 1
+            if not (media_root / rel).is_file():
+                if len(missing) < 25:
+                    missing.append(f'media/{rel}')
+    bundled_count = 0
+    bundled_bytes = 0
+    cached_remote_count = 0
+    if media_root.is_dir():
+        for p in media_root.rglob('*'):
+            if p.is_symlink() or not p.is_file() or p.name.startswith('.'):
+                continue
+            bundled_count += 1
+            bundled_bytes += p.stat().st_size
+            rel = p.relative_to(media_root).as_posix()
+            if rel.startswith(('img/', 'ext/')):
+                cached_remote_count += 1
+    _add_invariant(
+        invariants,
+        key='media_bundle_self_contained',
+        title='快照媒体目录完整自包含',
+        ok=len(missing) == 0 and media_root.is_dir(),
+        detail=f'核对 {expected_local} 项本地媒体，缺失 {len(missing)} 项；media/ 共 {bundled_count} 个文件（含已缓存远端媒体 {cached_remote_count} 个）',
+        failures=missing,
+    )
+    remote_keys = len(remotes_data.get('entries') or {}) if isinstance(remotes_data, dict) else 0
+    return {
+        'bundled_count': bundled_count,
+        'bundled_bytes': bundled_bytes,
+        'cached_remote_count': cached_remote_count,
+        'remote_keys': remote_keys,
+    }
+
+
 def _check_reader(
     data_dir: Path,
     reader_data: dict[str, Any] | None,
@@ -766,19 +819,21 @@ def audit_data(data_dir: Path) -> dict[str, Any]:
     inventory_data, inventory_err = _load_json(root / 'inventory.json')
     reconciliation_data, recon_err = _load_json(root / 'reconciliation.json')
     attribution_data, attr_err = _load_json(root / 'attribution.json')
+    remotes_data, remotes_err = _load_json(root / 'media-remotes.json')
     reader_data, reader_err = _load_json(root / 'reader/anna-reader.json')
 
-    json_errs = [e for e in (manifest_err, summary_err, inventory_err, recon_err, attr_err, reader_err) if e]
+    json_errs = [e for e in (manifest_err, summary_err, inventory_err, recon_err, attr_err, remotes_err, reader_err) if e]
     _add_invariant(
         invariants,
         key='artifacts_json_valid',
         title='构建产物 JSON 均可正常解析',
         ok=len(json_errs) == 0,
-        detail=f'6 份 JSON 产物中解析失败 {len(json_errs)} 份',
+        detail=f'7 份 JSON 产物中解析失败 {len(json_errs)} 份',
         failures=json_errs,
     )
 
     inv_section = _check_inventory(inventory_data, invariants)
+    media_section = _check_media_bundle(root, inventory_data, remotes_data, invariants)
     db_section, book_page_paths = _check_sqlite(root / 'catalog.sqlite', invariants)
     reader_section = _check_reader(root, reader_data, book_page_paths, manifest_data, invariants)
 
@@ -809,6 +864,7 @@ def audit_data(data_dir: Path) -> dict[str, Any]:
         'invariants': invariants,
         'failed_count': len(failed_invariants),
         'inventory': inv_section,
+        'media_bundle': media_section,
         'catalog': db_section,
         'reconciliation': reconciliation_data if isinstance(reconciliation_data, dict) else {},
         'reader': reader_section,
@@ -1103,6 +1159,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     )
 
     media = recon.get('media') or {}
+    media_bundle = report.get('media_bundle') or {}
     if media:
         loc_m = media.get('local')
         rem_m = media.get('remote')
@@ -1113,6 +1170,12 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append(
             f'- **媒体资源分离**：本地已打包引用 `{loc_cnt}`，未打包远程引用 `{rem_cnt}`，'
             f'声明缺失本地媒体 `{miss_cnt}`；索引媒体分类 `{media.get("indexed_media_counts", {})}`。'
+        )
+    if media_bundle:
+        lines.append(
+            f'- **自包含媒体包 (`media/`)**：共 **{media_bundle.get("bundled_count", 0):,}** 个文件'
+            f'（{_fmt_bytes(int(media_bundle.get("bundled_bytes", 0)))}，含已缓存远端资源 '
+            f'{media_bundle.get("cached_remote_count", 0):,} 个），懒加载白名单键 `{media_bundle.get("remote_keys", 0):,}`。'
         )
     lines.append('')
 

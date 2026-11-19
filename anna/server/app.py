@@ -4,6 +4,7 @@ import argparse
 import errno
 from http.server import ThreadingHTTPServer
 import mimetypes
+import os
 import shutil
 import json
 from pathlib import Path
@@ -13,7 +14,7 @@ import threading
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from anna.server.linked_book import BOOK, fingerprint
-from anna.paths import OUR5ETOOLS, OUR5ETOOLS_DATA, WEB
+from anna.paths import OUR5ETOOLS_DATA, WEB
 from anna.presentation.reader import SCHEMA, ReaderError, page_data
 from anna.review.store import load_annotations
 import anna.server.query as serve
@@ -23,7 +24,7 @@ from anna.presentation.tour import TourCache, TourError
 import anna.source.search as search
 
 
-def _try_load_our5etools(data_dir, source_dir):
+def _try_load_our5etools(data_dir, source_dir=None, *, lazy_media=False):
     """Lazily load the our5etools collection when its published manifest exists."""
     if not data_dir:
         return None
@@ -31,8 +32,7 @@ def _try_load_our5etools(data_dir, source_dir):
     if not (data_path / 'manifest.json').is_file():
         return None
     from anna.presentation.our5etools import load_our5etools_collection
-    source_path = Path(source_dir).resolve() if source_dir else None
-    return load_our5etools_collection(data_dir=data_path, source_dir=source_path)
+    return load_our5etools_collection(data_dir=data_path, lazy_media=bool(lazy_media))
 
 
 def signature(path):
@@ -108,7 +108,7 @@ class AnnaServer(ThreadingHTTPServer):
     """Owns the bundle requests serve; in watch mode one thread swaps it after a rebuild."""
 
     def __init__(self, address, handler, bundle, watch=False, *, additional_collections=(),
-                 our5etools_data=None, our5etools_source=None):
+                 our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False):
         # A failed bind closes the socket through server_close(), so the reload state must exist
         # before the socket is created; otherwise the bind error is masked by an AttributeError.
         self.bundle = bundle
@@ -117,6 +117,7 @@ class AnnaServer(ThreadingHTTPServer):
         self._base_additional_collections = tuple(c for c in self.additional_collections if c.key != '5etools')
         self.our5etools_data = Path(our5etools_data).resolve() if our5etools_data else None
         self.our5etools_source = Path(our5etools_source).resolve() if our5etools_source else None
+        self.our5etools_lazy_media = bool(our5etools_lazy_media)
         self._our5etools_signature = self._our5etools_manifest_signature()
         # Reject invalid registrations before opening a listener.
         CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections)
@@ -144,7 +145,7 @@ class AnnaServer(ThreadingHTTPServer):
         if not self.our5etools_data:
             return
         try:
-            loaded = _try_load_our5etools(self.our5etools_data, self.our5etools_source)
+            loaded = _try_load_our5etools(self.our5etools_data, lazy_media=self.our5etools_lazy_media)
             self.additional_collections = (
                 (*self._base_additional_collections, loaded)
                 if loaded is not None
@@ -567,42 +568,50 @@ class AnnaHandler(serve.Handler):
 
 
 def create_server(db, book, manifest, port, watch=False, bundle=None, *, additional_collections=(),
-                  our5etools_data=None, our5etools_source=None):
+                  our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False):
     """Build the one-port server; an already loaded bundle carries the search index."""
     bundle = bundle or Bundle(manifest['source_root'], db, book, manifest, [])
     return AnnaServer(('127.0.0.1', port), AnnaHandler, bundle, watch=watch,
                       additional_collections=additional_collections,
-                      our5etools_data=our5etools_data, our5etools_source=our5etools_source)
+                      our5etools_data=our5etools_data, our5etools_source=our5etools_source,
+                      our5etools_lazy_media=our5etools_lazy_media)
 
 
 def main():
+    lazy_default = os.environ.get('ANNA_LAZY_MEDIA', '').strip().lower() in {'1', 'true', 'yes', 'on'}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--db', type=Path, default=catalog.DB)
     parser.add_argument('--book', type=Path, default=BOOK)
     parser.add_argument('--source', type=Path, default=WEB)
     parser.add_argument('--our5etools-data', type=Path, default=OUR5ETOOLS_DATA)
-    parser.add_argument('--our5etools-source', type=Path, default=OUR5ETOOLS)
+    parser.add_argument('--our5etools-source', type=Path, default=None,
+                        help=argparse.SUPPRESS)
+    parser.add_argument('--lazy-media', action='store_true', default=lazy_default,
+                        help='lazily fetch and locally cache unbundled remote our5etools images on demand')
     parser.add_argument('--watch', action='store_true', help='swap in a rebuilt bundle without restarting')
     args = parser.parse_args()
     server, thread, stop = None, None, threading.Event()
     try:
         bundle = load_bundle(args.source, args.db, args.book)
         additional = ()
-        our5etools_col = _try_load_our5etools(args.our5etools_data, args.our5etools_source)
+        our5etools_col = _try_load_our5etools(args.our5etools_data, lazy_media=args.lazy_media)
         if our5etools_col is not None:
             additional = (our5etools_col,)
         server = create_server(
             args.db, args.book, bundle.manifest, args.port, watch=args.watch, bundle=bundle,
             additional_collections=additional,
             our5etools_data=args.our5etools_data, our5etools_source=args.our5etools_source,
+            our5etools_lazy_media=args.lazy_media,
         )
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
+        lazy_note = '\nLazy media caching: ON (uncached images save into data/our5etools/media/)' if args.lazy_media else ''
         print(f'Anna: http://127.0.0.1:{server.server_port}/\n'
-              f'Stella: http://127.0.0.1:{server.server_port}/read\n'
+              f'Stella: http://127.0.0.1:{server.server_port}/read'
+              + lazy_note + '\n'
               + ('Rebuilt data reloads automatically; Ctrl-C to stop.' if args.watch else 'Ctrl-C to stop.'), flush=True)
         while not stop.wait(.5):
             if not thread.is_alive():

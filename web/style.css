@@ -610,8 +610,13 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 .o5e-figure { margin: .8em 0; padding: 10px 12px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-surface); }
 .o5e-figure img { display: block; max-width: 100%; height: auto; border-radius: var(--anna-radius-sm); }
 .o5e-figure figcaption { margin-top: 6px; color: var(--anna-secondary); font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.45; }
-.o5e-media-remote { display: flex; flex-direction: column; gap: 5px; border-style: dashed; background: var(--anna-surface); }
-.o5e-media-badge, .o5e-remote-media { display: inline-block; width: fit-content; padding: 2px 7px; border-radius: 5px; background: var(--anna-warning-bg); color: var(--anna-warning); font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.45; }
+.o5e-media-remote { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 10px; margin: .4em 0; border-style: dashed; border-color: var(--anna-line); border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-muted); font-size: var(--anna-type-small); }
+.o5e-media-remote figcaption { margin-top: 0; }
+.o5e-media-badge { display: inline-block; color: var(--anna-muted); font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.45; }
+.o5e-remote-media { display: inline-block; width: fit-content; padding: 2px 7px; border-radius: 5px; background: var(--anna-hover); color: var(--anna-secondary); font-family: var(--anna-sans); font-size: var(--anna-type-small); line-height: 1.45; }
+.o5e-figure.o5e-img-failed img { display: none; }
+.o5e-media-fallback-note[hidden] { display: none; }
+.o5e-figure.o5e-img-failed .o5e-media-fallback-note { display: inline; color: var(--anna-muted); font-family: var(--anna-sans); font-size: var(--anna-type-small); }
 .o5e-media-path { color: var(--anna-muted); font-family: ui-monospace, monospace; font-size: var(--anna-type-small); overflow-wrap: anywhere; }
 .o5e-media-remote-inline { padding: 1px 5px; border: 1px dashed var(--anna-line-strong); border-radius: 4px; color: var(--anna-secondary); font-family: var(--anna-sans); font-size: var(--anna-type-small); }
 .o5e-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: .8em 0; }

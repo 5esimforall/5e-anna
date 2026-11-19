@@ -642,6 +642,8 @@
       ({nodes,children,pageNodes} = model);
       flow = new AnnaReaderFlow({scroll:$('#book-scroll'),container:$('#book-pages'),snapshot:metadata.snapshot,
         contentBase:metadata.page_base || metadata.content_base || '/book/',
+        lazyMedia:!!metadata.lazy_media,
+        cachedMedia:Array.isArray(metadata.cached_media)?metadata.cached_media:[],
         fetchPage:(path,signal) => api(apiURL('/api/reader-page',{path,snapshot:metadata.snapshot}),signal),
         labels:ui,text,onActive:activeDocument,onNavigate:target => navigate(target,true,true),
         onTools:() => $('#book-menu').focus(),onSearch:() => { selectPane('search'); setSidebar(true,true); }});

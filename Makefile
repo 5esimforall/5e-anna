@@ -10,9 +10,12 @@ BRANCH ?= pages
 5ETOOLS_BRANCH ?= main
 # our5etools is an independent collection (5etools), kept separate from 5ETOOLS_DIR (5etools-cn).
 OUR5ETOOLS_DIR ?=
+OUR5ETOOLS_IMG_DIR ?=
 OUR5ETOOLS_DATA ?= data/our5etools
 OUR5ETOOLS_PATH := $(shell python3 -c 'import os, sys; from anna.paths import OUR5ETOOLS; print(os.path.abspath(sys.argv[1]) if sys.argv[1] else OUR5ETOOLS)' "$(OUR5ETOOLS_DIR)")
 OUR5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(OUR5ETOOLS_DATA)")
+LAZY_MEDIA ?= 0
+LAZY_MEDIA_FLAG := $(if $(filter 1 true yes on,$(LAZY_MEDIA)),--lazy-media,)
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
@@ -93,7 +96,7 @@ build: clone icons
 	fi
 
 our5etools-build:
-	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)"
+	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
 
 our5etools-audit:
 	@"$(PYTHON)" -m anna.our5etools.audit --data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"
@@ -118,10 +121,10 @@ linked:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --our5etools-source "$(OUR5ETOOLS_PATH)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 upper:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --our5etools-source "$(OUR5ETOOLS_PATH)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 # Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:

@@ -336,3 +336,12 @@ function closeEntry({update=true,restoreFocus=true}={}) {
   if(update&&params.has('entry')){params.delete('entry');params.delete('tab');historyUpdate(true);}
   saveUiState();
 }
+document.addEventListener('error',e=>{
+  const img=e.target;
+  if(!(img instanceof HTMLImageElement)||!img.hasAttribute('data-o5e-fallback'))return;
+  const fig=img.closest('figure.o5e-figure');
+  if(!fig)return;
+  fig.classList.add('o5e-img-failed','o5e-media-remote');
+  const note=fig.querySelector('.o5e-media-fallback-note');
+  if(note)note.hidden=false;
+},true);

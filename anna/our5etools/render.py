@@ -9,16 +9,26 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+import hashlib
 import html
 from html.parser import HTMLParser
 import math
+from pathlib import PurePosixPath
 import re
 from typing import Any, Protocol
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 
 COLLECTION_ID = '5etools'
 MEDIA_PREFIX = '/our5etools-media/'
 REMOTE_PATH_PREFIX = '/__remote/'
+REMOTE_IMG_URLS: tuple[str, ...] = (
+    'https://5e.kiwee.top/img/',
+    'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/',
+)
+SAFE_REMOTE_MEDIA_EXTS: frozenset[str] = frozenset({
+    '.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.avif',
+    '.opus', '.ogg', '.mp3', '.wav', '.m4a',
+})
 
 # All entity tags resolved against the our5etools lookup index.
 KNOWN_ENTITY_TAGS: frozenset[str] = frozenset({
@@ -582,6 +592,36 @@ def _media_url(relpath: str) -> str:
     return f'{MEDIA_PREFIX}{encoded}'
 
 
+def normalize_internal_media_path(raw_path: str, prefix: str = 'img/') -> str | None:
+    """Normalize an internal 5etools asset path under ``img/`` or ``audio/`` without double prefixing."""
+    cleaned = sanitize_media_path(raw_path)
+    if not cleaned:
+        return None
+    if prefix and not cleaned.startswith(prefix):
+        return sanitize_media_path(f'{prefix}{cleaned}')
+    return cleaned
+
+
+def internal_image_remote_urls(relpath: str) -> list[str]:
+    """Return upstream mirror URLs matching 5etools web.js for a normalized ``img/...`` path."""
+    sub = relpath.removeprefix('img/').lstrip('/')
+    if not sub:
+        return []
+    quoted = '/'.join(quote(seg, safe="()'!,;-_~") for seg in sub.split('/'))
+    return [f'{base}{quoted}' for base in REMOTE_IMG_URLS]
+
+
+def remote_media_cache_path(url: str, default_ext: str = '') -> str | None:
+    """Return a deterministic ``ext/<sha256[:24]><ext>`` cache key for an allowlisted external URL."""
+    safe = sanitize_url(url, allow_relative=False)
+    if not safe:
+        return None
+    suffix = PurePosixPath(urlsplit(safe).path).suffix.lower()
+    ext = suffix if suffix in SAFE_REMOTE_MEDIA_EXTS else default_ext
+    digest = hashlib.sha256(safe.encode('utf-8')).hexdigest()[:24]
+    return f'ext/{digest}{ext}'
+
+
 def _sanitize_color(color: str) -> str | None:
     cleaned = color.strip()
     if not cleaned:
@@ -1099,6 +1139,7 @@ class RenderContext:
     local_media: list[str] = field(default_factory=list)
     remote_media: list[str] = field(default_factory=list)
     missing_local_media: list[str] = field(default_factory=list)
+    remote_media_map: dict[str, list[str]] = field(default_factory=dict)
     _seen_unknown_tags: set[str] = field(default_factory=set, repr=False)
     _seen_unsupported: set[str] = field(default_factory=set, repr=False)
     _seen_local_media: set[str] = field(default_factory=set, repr=False)
@@ -1129,6 +1170,14 @@ class RenderContext:
         if relpath and relpath not in self._seen_missing_media:
             self._seen_missing_media.add(relpath)
             self.missing_local_media.append(relpath)
+
+    def record_remote_urls(self, cache_rel: str, urls: Sequence[str]) -> None:
+        if not cache_rel or not urls:
+            return
+        bucket = self.remote_media_map.setdefault(cache_rel, [])
+        for url in urls:
+            if url and url not in bucket:
+                bucket.append(url)
 
     def record_link_event(
         self,
@@ -1684,14 +1733,15 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         parts = [p.strip() for p in split_tag_by_pipe(payload)]
         display = parts[0] if len(parts) > 0 else ''
         path = parts[1] if len(parts) > 1 else ''
-        local = ctx.check_local_media(f'img/{path}', path) if path else None
+        san = normalize_internal_media_path(path, 'img/') if path else None
+        local = ctx.check_local_media(*(c for c in (san, path) if c)) if path else None
         if local:
             ctx.record_local_media(local)
             return f'<a class="o5e-media-link" href="{escape_html(_media_url(local))}" target="_blank" rel="noopener noreferrer">{escape_html(display or local)}</a>'
-        san = sanitize_media_path(f'img/{path}') if path else None
         if san:
             ctx.record_missing_local_media(san)
             ctx.record_remote_media(san)
+            ctx.record_remote_urls(san, internal_image_remote_urls(san))
         return f'<span class="o5e-media-remote-inline" title="远端配图（未离线收录）">{escape_html(display or path)}</span>'
     if tag == '5etoolsAudio':
         parts = [p.strip() for p in split_tag_by_pipe(payload)]
@@ -1756,18 +1806,20 @@ def _render_image_block(block: Mapping[str, Any], ctx: RenderContext) -> str:
     href_type = href.get('type') if isinstance(href, Mapping) else ''
     if href_type == 'internal':
         raw_path = str(href.get('path') or '').strip()
-        local = ctx.check_local_media(f'img/{raw_path}', raw_path) if raw_path else None
+        san = normalize_internal_media_path(raw_path, 'img/') if raw_path else None
+        local = ctx.check_local_media(*(c for c in (san, raw_path) if c)) if raw_path else None
         if local:
             ctx.record_local_media(local)
             return (
                 f'<figure class="o5e-figure">'
-                f'<img src="{escape_html(_media_url(local))}" alt="{escape_html(alt_text)}" loading="lazy">'
+                f'<img src="{escape_html(_media_url(local))}" alt="{escape_html(alt_text)}" loading="lazy" decoding="async" data-o5e-fallback="1">'
+                f'<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>'
                 f'{figcaption}</figure>'
             )
-        san = sanitize_media_path(f'img/{raw_path}') if raw_path else None
         ref_label = san or raw_path
         if san:
             ctx.record_missing_local_media(san)
+            ctx.record_remote_urls(san, internal_image_remote_urls(san))
         if ref_label:
             ctx.record_remote_media(ref_label)
         remote_base = ctx.remote_img_base or getattr(ctx.resolver, 'remote_img_base', '')
@@ -1775,28 +1827,32 @@ def _render_image_block(block: Mapping[str, Any], ctx: RenderContext) -> str:
         if remote_base and san:
             full_remote = sanitize_url(f'{remote_base.rstrip("/")}/{san}', allow_relative=False)
             if full_remote:
-                link_html = f'<a href="{escape_html(full_remote)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
-        if not link_html and ref_label:
-            link_html = f'<span class="o5e-media-path">{escape_html(ref_label)}</span>'
+                link_html = f'<a class="o5e-media-link" href="{escape_html(full_remote)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
+        lazy_attr = f' data-lazy-media="{escape_html(_media_url(san))}"' if san else ''
+        title_attr = f' title="{escape_html(ref_label)}"' if ref_label else ''
         return (
-            f'<figure class="o5e-figure o5e-media-remote">'
-            f'<div class="o5e-media-badge">远端配图（未离线收录）</div>'
+            f'<figure class="o5e-figure o5e-media-remote"{lazy_attr} data-media-alt="{escape_html(alt_text)}"{title_attr}>'
+            f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
             f'{figcaption}{link_html}</figure>'
         )
 
     # External (or unspecified href): never pretend offline.
     raw_url = str(href.get('url') or '') if isinstance(href, Mapping) else (str(href) if isinstance(href, str) else '')
     safe_url = sanitize_url(raw_url, allow_relative=False)
+    cache_rel = remote_media_cache_path(safe_url) if safe_url else None
     if safe_url:
         ctx.record_remote_media(safe_url)
-        link_html = f'<a href="{escape_html(safe_url)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
+        if cache_rel:
+            ctx.record_remote_urls(cache_rel, (safe_url,))
+        link_html = f'<a class="o5e-media-link" href="{escape_html(safe_url)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
     else:
         if raw_url:
             ctx.record_remote_media(raw_url)
-        link_html = '<span class="o5e-media-path">无效图片地址</span>'
+        link_html = ''
+    lazy_attr = f' data-lazy-media="{escape_html(_media_url(cache_rel))}"' if cache_rel else ''
     return (
-        f'<figure class="o5e-figure o5e-media-remote">'
-        f'<div class="o5e-media-badge">远端配图（未离线收录）</div>'
+        f'<figure class="o5e-figure o5e-media-remote"{lazy_attr} data-media-alt="{escape_html(alt_text)}">'
+        f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
         f'{figcaption}{link_html}</figure>'
     )
 
@@ -2923,10 +2979,14 @@ def _render_audio_clip(
         url = sanitize_url(str(sound_clip.get('url') or ''), allow_relative=False)
         if url:
             ctx.record_remote_media(url)
+            cache_rel = remote_media_cache_path(url)
+            if cache_rel:
+                ctx.record_remote_urls(cache_rel, (url,))
+            lazy_attr = f' data-lazy-media="{escape_html(_media_url(cache_rel))}" data-media-kind="audio"' if cache_rel else ''
             return (
-                f'<div class="o5e-audio o5e-media-remote">'
+                f'<div class="o5e-audio o5e-media-remote"{lazy_attr}>'
                 f'<span class="o5e-media-badge">远端音频（未离线收录）</span> '
-                f'<a href="{escape_html(url)}" target="_blank" rel="noopener noreferrer">收听原音频 ↗</a>'
+                f'<a class="o5e-media-link" href="{escape_html(url)}" target="_blank" rel="noopener noreferrer">收听原音频 ↗</a>'
                 f'</div>'
             )
     return ''
@@ -3616,6 +3676,7 @@ def render_entry_detail(
         'html': full_html,
         'body_text': strip_html_to_text(full_html),
         'media_summary': ctx.media_summary(),
+        'remote_media_map': {k: list(v) for k, v in ctx.remote_media_map.items()},
         'link_events': ctx.link_events,
         'unknown_tags': ctx.unknown_tags,
         'unsupported_structures': ctx.unsupported_structures,

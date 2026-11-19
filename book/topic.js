@@ -109,12 +109,53 @@
     }
     send('located',{requestId:data.requestId,found,position,height:height()});
   }
+  function hydrateLazyMedia(lazyMedia, cachedMedia) {
+    const cached = new Set(Array.isArray(cachedMedia) ? cachedMedia : []);
+    if (!lazyMedia && !cached.size) return;
+    for (const el of document.querySelectorAll('[data-lazy-media]')) {
+      const src = el.getAttribute('data-lazy-media') || '';
+      if (!src.startsWith('/our5etools-media/')) continue;
+      let rel = '';
+      try { rel = decodeURIComponent(src.slice('/our5etools-media/'.length)); } catch { continue; }
+      if (!lazyMedia && !cached.has(rel)) continue;
+      el.removeAttribute('data-lazy-media');
+      if (el.getAttribute('data-media-kind') === 'audio') {
+        const audio = document.createElement('audio');
+        audio.controls = true; audio.preload = 'none'; audio.src = src;
+        const lbl = document.createElement('span'); lbl.className = 'o5e-audio-label'; lbl.textContent = '读音';
+        el.classList.remove('o5e-media-remote');
+        el.replaceChildren(lbl, audio);
+        measure();
+        continue;
+      }
+      const badge = el.querySelector('.o5e-media-badge');
+      const img = document.createElement('img');
+      img.src = src;
+      img.alt = el.getAttribute('data-media-alt') || '配图';
+      img.loading = 'lazy'; img.decoding = 'async';
+      img.setAttribute('data-o5e-fallback', '1');
+      const fallback = document.createElement('span');
+      fallback.className = 'o5e-media-fallback-note';
+      fallback.textContent = '远端配图（未离线收录）';
+      fallback.hidden = true;
+      img.addEventListener('load', measure, {once:true});
+      img.addEventListener('error', () => {
+        el.classList.add('o5e-img-failed', 'o5e-media-remote');
+        fallback.hidden = false;
+        measure();
+      }, {once:true});
+      el.classList.remove('o5e-media-remote');
+      if (badge) badge.replaceWith(img, fallback);
+      else el.prepend(img, fallback);
+    }
+  }
   window.addEventListener('message', event => {
     const data = event.data;
     if (event.source !== parent || event.origin !== location.origin || !data || data.channel !== channel ||
         data.version !== version || data.snapshot !== snapshot || data.documentId !== documentId) return;
     if (data.type === 'initialize' && !initialized && Number.isInteger(data.navigationId)) {
       navigationId = data.navigationId; initialized = true; applyTheme(data.theme); markLinks(data.linkMarks);
+      hydrateLazyMedia(!!data.lazyMedia, data.cachedMedia);
       send('initialized',{height:height(),definitions:definitions()});
     }
     if (!initialized || data.navigationId !== navigationId) return;

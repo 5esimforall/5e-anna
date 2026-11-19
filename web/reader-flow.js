@@ -1,8 +1,10 @@
 /* One scroll surface, bounded live documents, and measured placeholders for released pages. */
 const PAGE_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 8.6 15.4 11.3 22.5 12 15.4 12.7 12.7 15.4 12 22.5 11.3 15.4 8.6 12.7 1.5 12 8.6 11.3 11.3 8.6 12 1.5Z"/></svg>';
 class AnnaReaderFlow {
-  constructor({scroll, container, snapshot, contentBase, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch}) {
+  constructor({scroll, container, snapshot, contentBase, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch, lazyMedia = false, cachedMedia = []}) {
     Object.assign(this,{scroll,container,snapshot,contentBase,fetchPage,labels,text,onActive,onNavigate,onTools,onSearch});
+    this.lazyMedia = !!lazyMedia;
+    this.cachedMedia = Array.isArray(cachedMedia) ? cachedMedia : [];
     this.records = new Map(); this.documentSequence = 0; this.locationSequence = 0; this.scope = null; this.active = null;
     this.windowRadius = 2; this.maxDocuments = 5; this.linkMarks = false;
     new ResizeObserver(() => this.scheduleMaintenance()).observe(this.scroll);
@@ -302,7 +304,7 @@ class AnnaReaderFlow {
     if (data.type === 'ready' && record.status === 'loading' && typeof data.documentId === 'string' && data.documentId.length < 100) {
       record.documentId = data.documentId;
       this.resize(record,data.height);
-      this.send(record,'initialize',{theme:document.documentElement.dataset.theme,linkMarks:this.linkMarks}); return;
+      this.send(record,'initialize',{theme:document.documentElement.dataset.theme,linkMarks:this.linkMarks,lazyMedia:this.lazyMedia,cachedMedia:this.cachedMedia}); return;
     }
     if (data.documentId !== record.documentId || data.navigationId !== record.navigationId) return;
     if (data.type === 'initialized') {

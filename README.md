@@ -10,7 +10,7 @@ make our5etools-build  # 单独构建 our5etools 独立资料库与阅读产物
 make up                # 在 8000 启动查询、导览与阅读服务，Ctrl-C 停止
 ```
 
-打开条目查询 [anna](http://127.0.0.1:8000/) 或阅读器 [stella](http://127.0.0.1:8000/read)；不知从何查起时，Anna 的[导览](http://127.0.0.1:8000/tour)按目的列出入口，沿原书的章节、步骤与条目逐层深入，例如从“创建角色”的五个步骤到职业、子职与 1 级特性。阅读器提供目录、本页条目、本机全文搜索，以及目录子树内的连续阅读、自动接续、远页回收和分页跳转，正文保留原版排版；定义标题打开 anna 条目，条目可返回原文，已解析的引用在阅读器内跳到定义。两页顶栏可互相转向，接住正在看的条目，或回到各自记得的位置。构建好 `data/our5etools/` 后，顶栏「资料库」可切换至独立的 `our5etools`（`collection=5etools`），其查询、导览（`/tour?collection=5etools`）与整书阅读（`/read?collection=5etools`）与不全书严格隔离，不合并条目也不互相跳转。应用与正文资源共用 8000 端口，不全书正文位于 `/book/`，our5etools 章节与本地媒体位于 `/our5etools-book/` 和 `/our5etools-media/`。
+打开条目查询 [anna](http://127.0.0.1:8000/) 或阅读器 [stella](http://127.0.0.1:8000/read)；不知从何查起时，Anna 的[导览](http://127.0.0.1:8000/tour)按目的列出入口，沿原书的章节、步骤与条目逐层深入，例如从“创建角色”的五个步骤到职业、子职与 1 级特性。阅读器提供目录、本页条目、本机全文搜索，以及目录子树内的连续阅读、自动接续、远页回收和分页跳转，正文保留原版排版；定义标题打开 anna 条目，条目可返回原文，已解析的引用在阅读器内跳到定义。两页顶栏可互相转向，接住正在看的条目，或回到各自记得的位置。构建好 `data/our5etools/` 后，顶栏「资料库」可切换至独立的 `our5etools`（`collection=our5etools`），其查询、导览（`/tour?collection=our5etools`）与整书阅读（`/read?collection=our5etools`）与不全书严格隔离，不合并条目也不互相跳转；另为独立中文版 `5etools` 预留 `collection=5etools`（`data/5etools/`）接口，未单独构建时保持未接入状态。应用与正文资源共用 8000 端口，不全书正文位于 `/book/`，our5etools 章节与本地媒体位于 `/our5etools-book/` 和 `/our5etools-media/`（`5etools` 预留为 `/5etools-book/` 与 `/5etools-media/`）。
 
 新环境的依赖安装、端口与路径配置、our5etools 构建审计、引用维护和测试命令见[使用说明](USAGE.md)；链接生成范围与待核项见[阅读服务与正文生成](USAGE.md#阅读服务与正文生成)。
 
@@ -18,7 +18,7 @@ make up                # 在 8000 启动查询、导览与阅读服务，Ctrl-C 
 
 - 原文镜像位于同级的 `5echm-web/`，是独立的 Git 仓库，也供其他冒险项目引用；anna 只读取，不修改其内容。
 - 镜像缺失时自动下载。已有镜像不会在启动或构建时更新：先运行 `make update` 拉取原文，再运行 `make build` 重建数据。
-- 对照镜像位于同级的 `5etools-cn/`，取自 [5etools-cn](https://github.com/tjliqy/5etools-cn)，只检出 `data/`。构建时用它核对不全书条目的身份、字段与重印关系，结论只作旁证，见[来源对照](USAGE.md#来源对照5etools-cn)；它与原文一同由 `make clone` 下载、`make update` 更新，不参与 `5etools` 资料库查询。
+- 对照镜像位于同级的 `5etools-cn/`，取自 [5etools-cn](https://github.com/tjliqy/5etools-cn)，只检出 `data/`。构建时用它核对不全书条目的身份、字段与重印关系，结论只作旁证，见[来源对照](USAGE.md#来源对照5etools-cn)；它与原文一同由 `make clone` 下载、`make update` 更新，既不混入 `our5etools`，也不直接作为独立的 `5etools` 资料库对外服务。
 - our5etools 本地镜像由 `OUR5ETOOLS_DIR` 指定（默认同级 `our5etools/` 或本机仓库镜像），仅在构建阶段读取；`make our5etools-build` 将查询库、Stella 章节与全部本地媒体统一打包进完全自包含的 `data/our5etools/`（含 `data/our5etools/media/`），运行时不再访问源镜像，并可用 `LAZY_MEDIA=1`（`--lazy-media`）按需开启远端配图懒加载与本地落盘缓存。各库构建与切换方式见[our5etools 资料库](USAGE.md#our5etools-资料库)。
 - `Makefile` 是工作流程的唯一实现。上层 DnD 目录的 `Makefile` 只转调本项目，上层提供常用命令入口，完整命令在本项目中执行。
 

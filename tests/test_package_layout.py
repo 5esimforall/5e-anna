@@ -32,6 +32,7 @@ class PackageLayoutTests(unittest.TestCase):
     def test_module_commands_expose_help(self):
         commands=('catalog.build','catalog.audit','catalog.query','source.search',
                   'review.repository',
+                  'our5etools.build','our5etools.audit',
                   'server.linked_book','server.app')
         for command in commands:
             with self.subTest(command=command):

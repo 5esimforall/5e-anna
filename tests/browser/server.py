@@ -17,6 +17,7 @@ from anna.source.html import Document
 from anna.server.linked_book import BOOK,inject,text_slice
 from anna.paths import WEB
 from anna.presentation.collections import BookCatalog, Collection
+from anna.presentation.our5etools import load_our5etools_collection
 import anna.server.app as up
 import anna.source.search as search
 
@@ -82,7 +83,14 @@ def main(scratch):
     manifest=up.validate_bundle(WEB,DB,BOOK)
     data=json.dumps(cases(manifest),ensure_ascii=False).encode()
     raw,linked=fixture()
-    server=up.create_server(DB,BOOK,manifest,PORT,additional_collections=(demo_collection(scratch),))
+    additional=[
+        demo_collection(scratch),
+        Collection('reserved-demo', '预留测试库', 'Reserved fixture'),
+    ]
+    our5etools=load_our5etools_collection()
+    if our5etools is not None:
+        additional.append(our5etools)
+    server=up.create_server(DB,BOOK,manifest,PORT,additional_collections=tuple(additional))
     app_handler=server.RequestHandlerClass
     class BrowserTestHandler(app_handler, SimpleHTTPRequestHandler):
         def __init__(self,*args,**kwargs):super().__init__(*args,directory=str(WEB),**kwargs)

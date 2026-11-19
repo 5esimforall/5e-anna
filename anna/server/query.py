@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlsplit
 import anna.paths as paths
 from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.library import Library, describe_works, parse_scope
 
 WEB = paths.PROJECT / 'web'
 
@@ -55,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
             static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
             static['/favicon.ico']=('favicon.ico','image/x-icon')
             static['/anna-logo.png']=('anna-logo.png','image/png')
-            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace','companions')})
+            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','menu','topbar','workspace','companions','library')})
             static['/read']=('reader.html','text/html; charset=utf-8')
             static['/tour']=('tour.html','text/html; charset=utf-8')
             static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
@@ -66,37 +67,48 @@ class Handler(BaseHTTPRequestHandler):
             static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
             if url.path in static:
                 file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
-            if url.path not in {'/api/meta','/api/facets','/api/entries','/api/entry','/api/entry-layout','/api/export','/source'}:
+            if url.path not in {'/api/meta','/api/facets','/api/entries','/api/entry','/api/entry-layout','/api/export','/api/library','/source'}:
                 raise LookupError('页面不存在')
             registry = self.collection_registry()
-            requested = parse_qs(url.query, keep_blank_values=True).get('collection')
-            collection = registry.select(requested, book_only=url.path=='/source')
-            if issue := self.collection_conflict(collection.key):
-                self.send(issue, status=409); return
-            p = parse_qs(url.query)
-            p.pop('collection', None)
-            provider = collection.provider
+            p = parse_qs(url.query, keep_blank_values=True)
+            # Blank values set nothing, except where the scope itself must reject them (an empty `collection`).
+            filled = lambda q:{k:[x for x in v if x] for k,v in q.items() if any(v)}
+            if url.path=='/source':
+                registry.select(p.get('collection'), book_only=True)
+                if issue := self.collection_conflict(DEFAULT):
+                    self.send(issue, status=409); return
+                self.serve_source(registry.book, filled({k:v for k,v in p.items() if k!='collection'})); return
+            if url.path=='/api/library':
+                self.send(self.describe_library(registry, works=catalog.first(p,'works')=='1')); return
+            scope = parse_scope(p, registry)
+            for key in scope.libraries:
+                if issue := self.collection_conflict(key):
+                    self.send(issue, status=409); return
+            p = filled(p)
+            library = Library(registry, scope)
+            primary = library.primary
             if url.path=='/api/meta':
-                native = collection.key == DEFAULT
+                native = primary.key == DEFAULT
                 self.send({
-                    **provider.meta(),
-                    'collection': collection.key,
+                    **library.meta(),
+                    'collection': primary.key,
                     'default_collection': DEFAULT,
-                    'collections': registry.describe(),
-                    'source_text': native,
-                    'reader_url': self.reader_url if native else collection.reader_url,
-                    'snapshot': self.snapshot if native else collection.snapshot,
-                    'tour_url': '/tour' if native else (f'/tour?collection={collection.key}' if collection.tour is not None else None),
+                    'collections': registry.describe(book_reader=bool(self.reader_url), book_snapshot=self.snapshot),
+                    'library': scope.describe(),
+                    # The default book's extracted page text (/source) serves its entries whenever the book is read.
+                    'source_text': DEFAULT in scope.libraries,
+                    'reader_url': self.reader_url if native else primary.reader_url,
+                    'snapshot': self.snapshot if native else primary.snapshot,
+                    'tour_url': '/tour' if native else (f'/tour?collection={primary.key}' if primary.tour is not None else None),
                 })
-            elif url.path=='/api/facets': self.send(provider.facets(p))
-            elif url.path=='/api/entries': self.send(provider.entries(p))
-            elif url.path=='/api/entry': self.send(provider.detail(catalog.first(p,'id')))
-            elif url.path=='/api/entry-layout': self.send(provider.layout(catalog.first(p,'id')))
-            elif url.path=='/api/export':
-                filename = '5e-anna.csv' if collection.key==DEFAULT else f'5e-anna-{collection.key}.csv'
-                self.send(provider.export(p),'text/csv; charset=utf-8',download=filename)
+            elif url.path=='/api/facets': self.send(library.facets(p))
+            elif url.path=='/api/entries': self.send(library.entries(p))
+            elif url.path=='/api/entry': self.send(library.detail(catalog.first(p,'id')))
+            elif url.path=='/api/entry-layout': self.send(library.layout(catalog.first(p,'id')))
             else:
-                self.serve_source(registry.book, p)
+                body, key = library.export(p)
+                filename = '5e-anna.csv' if key==DEFAULT else f'5e-anna-{key}.csv'
+                self.send(body,'text/csv; charset=utf-8',download=filename)
         except CollectionError as exc: self.send({'code':exc.code},status=exc.status)
         except ValueError as exc: self.send({'error':str(exc)},status=400)
         except LookupError as exc: self.send({'error':str(exc)},status=404)
@@ -104,6 +116,14 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self.send({'error':'读取失败；请检查数据库并重启服务。'},status=500)
             raise
+
+    def describe_library(self, registry, works=False):
+        """Every collection the server knows and what it offers; with `works=1`, each ready one's works too."""
+        collections = registry.describe(book_reader=bool(self.reader_url), book_snapshot=self.snapshot)
+        works = {w['id']: w for w in describe_works(registry, registry.ready())} if works else {}
+        return {'default_collection': DEFAULT,
+                'collections': [c | ({'works': works[c['id']]['works'], 'total': works[c['id']]['total']} if c['id'] in works else {})
+                                for c in collections]}
 
     def serve_source(self, book, p):
         path = catalog.first(p,'path')

@@ -237,7 +237,9 @@ test('every type and preset shares the workbench without losing its columns or f
     await visit(page,'/?'+choice.search);
     const facets=await (await page.request.get(anna+'/api/facets?'+new URLSearchParams((choice.types||[]).map(t=>['type',t])))).json();
     await expect(page.locator('#columns th')).toHaveCount(facets.schema.columns.length);
-    for(const group of facets.groups)await expect(page.locator(`[data-group="${group.key}"]`)).toHaveCount(1);
+    // Rules versions, origins and works are the reader's library; the panel keeps the table's own fields.
+    const libraryGroups=['ruleset','origin','source','package'];
+    for(const group of facets.groups)await expect(page.locator(`#filter-panel [data-group="${group.key}"]`)).toHaveCount(libraryGroups.includes(group.key)?0:1);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
     const id=await entry(page);await page.locator('#results .entry-name').first().click();await read(page,id);
     await page.locator('#close-detail').click();
@@ -400,24 +402,26 @@ test('same-name versions stack into one row with pills, in-place differences and
   await page.locator('.reader-versions').getByRole('button',{name:/PHB24/}).click();await read(page,shown.id);
   await expect(page.getByRole('tab',{name:/^版本对照/})).toHaveAttribute('aria-selected','true');
   await shot(page,testInfo,'stacked-versions-reader.png');
-  // The edition preference changes the shown version without closing the reader; the menu marks a
-  // presentation other than the default, and stays open while its choices change.
+  // The edition preference belongs to the reader's library: the shown version changes and the reader stays open.
   await expect(page.locator('#display-toggle')).not.toHaveClass(/changed/);
-  await page.locator('#display-toggle').click();await page.locator('#prefer').selectOption('5e');await ready(page);
-  await expect(page.locator('#display-toggle')).toHaveClass(/changed/);await expect(page.locator('#display-panel')).toBeVisible();
+  const library=page.getByRole('dialog',{name:'资料库'});
+  await page.locator('.topbar .library-button').click();await library.locator('[data-prefer="5e"]').click();
+  await page.keyboard.press('Escape');await expect(library).toBeHidden();await ready(page);
   await expect(row.locator('.version-pill.shown')).toHaveAttribute('data-entry',other.id);
   await expect(school.locator('.cell-value')).toHaveText('变化');await expect(page.locator('#detail')).toBeVisible();
-  expect(new URL(page.url()).searchParams.get('prefer')).toBe('5e');
-  // One row per version stays available, kept in the URL and in history.
-  await page.locator('#stack-versions').uncheck();await ready(page);
-  expect(new URL(page.url()).searchParams.get('versions')).toBe('each');
-  await expect(page.locator('#results tr')).toHaveCount(2);await expect(page.locator('#prefer')).toBeDisabled();
+  expect(new URL(page.url()).searchParams.has('prefer')).toBeFalsy();
+  // One row per version is the library's other choice; the display menu notes it.
+  await page.locator('.topbar .library-button').click();await library.getByLabel('去重：同名条目合为一行').uncheck();
+  await expect(library.locator('[data-prefer="5e"]')).toBeDisabled();
+  await page.keyboard.press('Escape');await ready(page);
+  await expect(page.locator('#display-toggle')).toHaveClass(/changed/);
+  await expect(page.locator('#results tr')).toHaveCount(2);
   await expect(page.locator('#results .version-pill')).toHaveCount(0);await expect(page.locator('#result-count')).toContainText('2 条');
-  // Esc closes the menu before the reader.
+  // Esc closes the menu before the reader; the menu leads to the library.
+  await page.locator('#display-toggle').click();await expect(page.locator('#library-state')).toContainText('不去重');
   await page.keyboard.press('Escape');await expect(page.locator('#display-panel')).toBeHidden();
   await expect(page.locator('#display-toggle')).toBeFocused();await expect(page.locator('#detail')).toBeVisible();
-  await page.goBack();await ready(page);
-  await expect(page.locator('#stack-versions')).toBeChecked();await expect(page.locator('#results tr')).toHaveCount(1);
+  await page.evaluate(()=>localStorage.removeItem('anna.library'));
 });
 
 test('a field reads the same in the table, the reader attributes, the notes and the version comparison',async({page})=>{

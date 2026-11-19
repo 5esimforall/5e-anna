@@ -119,12 +119,18 @@ async function stepEntry(delta){
   if(delta>0&&index===currentData.rows.length-1&&!(await loadMore()))return;
   const next=currentData?.rows[index+delta];if(next){openEntry(next.id,true,'body',true);revealResultRow(next.id);}
 }
-function readerLocationHref(loc){
+// An entry's book is its own collection's: the default book reads anna's extraction, the others their chapters.
+const nativeEntry=e=>(e?.collection||metadata.collection||'5echm')===(metadata.default_collection||'5echm');
+function bookReaderURL(){
+  const book=metadata.collections?.find(c=>c.id===(metadata.default_collection||'5echm'));
+  return book?(book.reader?'/read':null):metadata.reader_url;
+}
+function readerLocationHref(loc,collection=metadata?.collection){
   if(!loc)return '';
   const page=loc.page||loc.path||'';
   if(!page)return '';
   const q=new URLSearchParams();
-  if(metadata?.collection&&metadata.collection!==(metadata.default_collection||'5echm'))q.set('collection',metadata.collection);
+  if(collection&&collection!==(metadata.default_collection||'5echm'))q.set('collection',collection);
   if(loc.root)q.set('root',loc.root);
   q.set('page',page);
   const frag=loc.fragment?'#'+encodeURIComponent(loc.fragment):'';
@@ -187,7 +193,7 @@ function renderProvenance(e){
     if(pills.length)rows.push([ui.provMedia,`<span class="o5e-prov-media">${pills.join(' ')}</span>`]);
   }
   const loc=e.reader_location||p.reader_location;
-  const locHref=readerLocationHref(loc);
+  const locHref=readerLocationHref(loc,e.collection);
   if(locHref){
     rows.push([ui.provReadBook,`<a class="o5e-prov-link" target="_blank" rel="noopener" href="${esc(locHref)}">${esc(loc.title||ui.provReadBook)} ↗</a>`]);
   }
@@ -213,13 +219,14 @@ function renderDetail(tab='body') {
   // pinned while the text scrolls, and the toolbar takes over the name once the head has scrolled away.
   const badges=`${e.legacy&&e.legacy!=='unmarked'&&legacy[e.legacy]?badge(legacy[e.legacy]):''}${conflicts.length?badge(`${conflicts.length} 个字段冲突`,'amber'):''}`;
   const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}</button>`).join('')}</div>`:'';
-  const extBookHref=metadata.source_text===false?readerLocationHref(e.reader_location||e.provenance?.reader_location):'';
-  const bookLink=metadata.source_text!==false&&metadata.reader_url
-    ?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(metadata.reader_url+'?entry='+encodeURIComponent(e.id))}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(linkLabels.bookDefinition)} ↗</a>`
+  const native=nativeEntry(e),reader=bookReaderURL();
+  const extBookHref=!native?readerLocationHref(e.reader_location||e.provenance?.reader_location,e.collection):'';
+  const bookLink=native&&reader
+    ?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(reader+'?entry='+encodeURIComponent(e.id))}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(linkLabels.bookDefinition)} ↗</a>`
     :extBookHref
       ?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(extBookHref)}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(ui.provReadBook)} ↗</a>`
       :'';
-  const rangeLink=metadata.source_text!==false?`<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a>`:'';
+  const rangeLink=native&&metadata.source_text!==false?`<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a>`:'';
   const links=bookLink||rangeLink?`<div class="detail-links">${bookLink}${rangeLink}</div>`:'';
   const name=e.name_zh||e.name;
   $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(sourceIds.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(tabButton).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section><p class="reader-hint">${esc(readerHint())}</p>`;
@@ -317,7 +324,7 @@ function renderVersions(e){
   const head=`<thead><tr><th scope="col">${esc(ui.fields)}</th>${members.map(m=>`<th scope="col"><button type="button" class="link-button" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''}>${esc(versionLabel(m))}</button>${m.id===e.id?` <span class="muted">${esc(ui.currentVersion)}</span>`:''}</th>`).join('')}</tr></thead>`;
   const rows=list=>list.map(f=>`<tr class="${f.differs?'differs':''}"><th scope="row">${esc(fieldNames[f.field]||f.field)}</th>${members.map(m=>`<td>${esc(fieldText(m,f.field))}</td>`).join('')}</tr>`).join('');
   const differing=fields.filter(f=>f.differs),same=fields.filter(f=>!f.differs);
-  return `<p class="muted versions-intro">${esc(ui.versionsIntro)}</p>
+  return `<p class="muted versions-intro">${esc(e.versions.status==='library_candidate'?ui.versionsIntroLibrary:ui.versionsIntro)}</p>
     <h3 class="versions-heading">${esc(ui.differingFields)} ${differing.length}</h3>
     ${differing.length?`<div class="version-table-wrap"><table class="version-table">${head}<tbody>${rows(differing)}</tbody></table></div>`:''}
     ${same.length?`<details class="versions-same"><summary>${esc(ui.sameFields.replace('{count}',same.length))}</summary><div class="version-table-wrap"><table class="version-table">${head}<tbody>${rows(same)}</tbody></table></div></details>`:''}`;
@@ -330,7 +337,7 @@ function closeEntry({update=true,restoreFocus=true}={}) {
     document.body.classList.remove('detail-open','detail-modal');
     if(readerFull)setReaderFull(false,{save:false});
   });
-  endTopic(currentReaderId);
+  endTopic(currentReaderId,currentEntry?.collection);
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();

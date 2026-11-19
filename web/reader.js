@@ -12,9 +12,11 @@
   for (const element of document.querySelectorAll('[data-placeholder]')) element.placeholder = ui[element.dataset.placeholder];
   const sidebar = $('#book-sidebar'), narrow = matchMedia('(max-width:800px)');
   const DEFAULT_COLLECTION = '5echm';
+  // The address names the collection; without it Stella opens the first collection in the reader's library with a book.
   const activeCollection = (() => {
     const raw = new URL(location.href).searchParams.get('collection');
-    return raw && raw.trim() ? raw.trim() : DEFAULT_COLLECTION;
+    if (raw && raw.trim()) return raw.trim();
+    return typeof annaLibrary === 'undefined' ? DEFAULT_COLLECTION : annaLibrary.pageCollection('book');
   })();
   const isExternalCollection = activeCollection !== DEFAULT_COLLECTION;
   // Scrolling updates the position continuously; the history entry only needs the position where it stops.

@@ -40,7 +40,8 @@ const annaTour = (() => {
   const ui = annaTourLabels[lang], {esc, stored} = annaKit;
   const DEFAULT_COLLECTION = '5echm';
   const initialSearch = new URLSearchParams(location.search);
-  const collection = initialSearch.get('collection') || DEFAULT_COLLECTION;
+  // The address names the collection; without it the tour opens the first collection in the reader's library that has one.
+  const collection = initialSearch.get('collection') || (typeof annaLibrary === 'undefined' ? DEFAULT_COLLECTION : annaLibrary.pageCollection('tour'));
   const isExternal = collection !== DEFAULT_COLLECTION;
   const MEMORY = isExternal ? 'anna.tour.' + collection : 'anna.tour';
   const SEGMENTS = /^[\w-]+(\.[\w-]+)*$/, EXT_SEGMENT = /^[A-Za-z0-9._-]+$/, FILTER_THRESHOLD = 24;

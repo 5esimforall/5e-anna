@@ -10,7 +10,7 @@ make our5etools-build  # 单独构建 our5etools 独立资料库与阅读产物
 make up                # 在 8000 启动查询、导览与阅读服务，Ctrl-C 停止
 ```
 
-打开条目查询 [anna](http://127.0.0.1:8000/) 或阅读器 [stella](http://127.0.0.1:8000/read)；不知从何查起时，Anna 的[导览](http://127.0.0.1:8000/tour)按目的列出入口，沿原书的章节、步骤与条目逐层深入，例如从“创建角色”的五个步骤到职业、子职与 1 级特性。阅读器提供目录、本页条目、本机全文搜索，以及目录子树内的连续阅读、自动接续、远页回收和分页跳转，正文保留原版排版；定义标题打开 anna 条目，条目可返回原文，已解析的引用在阅读器内跳到定义。两页顶栏可互相转向，接住正在看的条目，或回到各自记得的位置。构建好 `data/our5etools/` 后，顶栏「资料库」可切换至独立的 `our5etools`（`collection=our5etools`），其查询、导览（`/tour?collection=our5etools`）与整书阅读（`/read?collection=our5etools`）与不全书严格隔离，不合并条目也不互相跳转；另为独立中文版 `5etools` 预留 `collection=5etools`（`data/5etools/`）接口，未单独构建时保持未接入状态。应用与正文资源共用 8000 端口，不全书正文位于 `/book/`，our5etools 章节与本地媒体位于 `/our5etools-book/` 和 `/our5etools-media/`（`5etools` 预留为 `/5etools-book/` 与 `/5etools-media/`）。
+打开条目查询 [anna](http://127.0.0.1:8000/) 或阅读器 [stella](http://127.0.0.1:8000/read)；不知从何查起时，Anna 的[导览](http://127.0.0.1:8000/tour)按目的列出入口，沿原书的章节、步骤与条目逐层深入，例如从“创建角色”的五个步骤到职业、子职与 1 级特性。阅读器提供目录、本页条目、本机全文搜索，以及目录子树内的连续阅读、自动接续、远页回收和分页跳转，正文保留原版排版；定义标题打开 anna 条目，条目可返回原文，已解析的引用在阅读器内跳到定义。两页顶栏可互相转向，接住正在看的条目，或回到各自记得的位置。每个页面顶栏的「资料库」选择要读的资料、它们的优先级、是否把同名条目合为一行，以及显示哪些规则版本与作品，设置保存在本浏览器、各页共用。构建好 `data/our5etools/` 后可在其中勾选独立的 `our5etools`：Anna 把它与不全书合成一张表，各库仍保存自己的条目与证据；导览与 Stella 打开排在最前的资料库，带 `collection=our5etools` 的链接（`/tour?collection=our5etools`、`/read?collection=our5etools`）只看这一库。另为独立中文版 `5etools` 预留 `collection=5etools`（`data/5etools/`）接口，未单独构建时保持未接入状态。应用与正文资源共用 8000 端口，不全书正文位于 `/book/`，our5etools 章节与本地媒体位于 `/our5etools-book/` 和 `/our5etools-media/`（`5etools` 预留为 `/5etools-book/` 与 `/5etools-media/`）。
 
 新环境的依赖安装、端口与路径配置、our5etools 构建审计、引用维护和测试命令见[使用说明](USAGE.md)；链接生成范围与待核项见[阅读服务与正文生成](USAGE.md#阅读服务与正文生成)。
 
@@ -33,7 +33,7 @@ Python 实现集中在 `anna/`，用包导入表达依赖；`scripts/` 只保存
 | `anna/review/` | 引用裁定事件日志、可迁移锚点与候选检索 |
 | `anna/compare/` | 5etools 对照索引与字段核对 |
 | `anna/our5etools/` | our5etools 镜像盘点、类型与语义解析、块与标签渲染、整书章节构建、只读库发布及审计 |
-| `anna/presentation/` | 只读查询、原文排版、阅读模型、导览与显式响应投影（含 `our5etools.py`）；[消费契约](anna/presentation/README.md)独立于提取实现 |
+| `anna/presentation/` | 只读查询、读者资料库的合表（`library.py`）、原文排版、阅读模型、导览与显式响应投影（含 `our5etools.py`）；[消费契约](anna/presentation/README.md)独立于提取实现 |
 | `anna/server/` | 统一 HTTP 传输、多资料库路由、快照发布校验与链接版生成 |
 | `anna/paths.py`、`anna/serialization.py` | 项目路径、确定性序列化与导出格式 |
 | `tour/` | 导览的精选入口（不全书 `tour.json` 与 our5etools `our5etools.json`）：第一列的主题，以及各步骤通向的选项集合 |

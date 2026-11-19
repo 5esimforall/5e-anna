@@ -20,7 +20,7 @@ const test=base.extend({
   },
 });
 
-const picker=page=>page.getByRole('combobox',{name:'资料库'});
+const pin=page=>page.locator('#library-pin');
 const resultsReady=page=>expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
 const tourLevel=(page,depth)=>page.locator(`.tour-column[data-depth="${depth}"]`);
 const tourNamed=name=>new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\s|$)');
@@ -43,28 +43,45 @@ function o5eFrame(page){
   return page.frames().find(f=>f.url().startsWith(o5eBook+'/'));
 }
 
-test('1. switching 5echm <-> our5etools, browser back, and reload preserve collection state',async({page})=>{
+test('1. a link pinned to our5etools stays pinned through reload, and back returns to the library',async({page})=>{
   await page.goto(anna+'/?type=feat');
   await resultsReady(page);
-  await expect(picker(page)).toHaveValue('5echm');
+  await expect(pin(page)).toBeHidden();
 
-  await picker(page).selectOption('our5etools');
-  await expect(page).toHaveURL(anna+'/?collection=our5etools');
+  await page.goto(anna+'/?collection=our5etools');
   await resultsReady(page);
-  await expect(picker(page)).toHaveValue('our5etools');
+  await expect(pin(page)).toContainText('仅 our5etools');
   await expect(page.locator('#results tr').first()).toBeVisible();
 
   // Reload stays in our5etools
   await page.reload();
   await resultsReady(page);
-  await expect(picker(page)).toHaveValue('our5etools');
+  await expect(pin(page)).toContainText('仅 our5etools');
   await expect(page).toHaveURL(anna+'/?collection=our5etools');
 
-  // Browser back returns cleanly to 5echm
+  // Browser back returns cleanly to the reader's library
   await page.goBack();
   await resultsReady(page);
-  await expect(picker(page)).toHaveValue('5echm');
+  await expect(pin(page)).toBeHidden();
   await expect(page).toHaveURL(anna+'/?type=feat');
+});
+
+test('1b. with our5etools in the library, published same-name versions share a row across collections',async({page})=>{
+  await page.goto(anna+'/tour');
+  await page.evaluate(()=>localStorage.setItem('anna.library',JSON.stringify({order:['5echm','our5etools'],enabled:['5echm','our5etools']})));
+  await page.goto(anna+'/?type=spell&q='+encodeURIComponent('火球术'));
+  await resultsReady(page);
+  const row=page.locator('#results tr').filter({has:page.locator('.entry-name',{hasText:/^火球术$/})}).first();
+  await expect(row.locator('.version-pill.shown')).toHaveText('PHB24 2024');
+  await expect(row.locator('.version-pill').filter({hasText:/^our5etools · /})).toHaveCount(2);
+  // Homebrew of the same name keeps its own rows.
+  const brew=await (await page.request.get(anna+'/api/entries?libraries=5echm,our5etools&q='+encodeURIComponent('下毒术')+'&type=spell')).json();
+  expect(brew.rows.filter(r=>r.name_zh==='下毒术').length).toBeGreaterThanOrEqual(2);
+  // A version from our5etools opens from its own collection, with links that stay there.
+  await row.locator('.version-pill').filter({hasText:/^our5etools · /}).first().click();
+  await expect(page.locator('#entry-title')).toHaveText('火球术');
+  await expect(page.locator('#detail .o5e-provenance')).toContainText('our5etools');
+  await page.evaluate(()=>localStorage.removeItem('anna.library'));
 });
 
 test('2. Chinese & English search, 5e/5r stacking vs each, community homonym isolation, and Chinese-only entry',async({page})=>{
@@ -74,10 +91,13 @@ test('2. Chinese & English search, 5e/5r stacking vs each, community homonym iso
   const stackedCount=await page.locator('#results tr').count();
   expect(stackedCount).toBeGreaterThanOrEqual(1);
 
-  await page.goto(anna+'/?collection=our5etools&type=spell&q='+encodeURIComponent('火球术')+'&versions=each');
+  // One row per version is a library choice, not part of the link.
+  await page.evaluate(()=>localStorage.setItem('anna.library',JSON.stringify({versions:'each'})));
+  await page.reload();
   await resultsReady(page);
   const eachCount=await page.locator('#results tr').count();
   expect(eachCount).toBeGreaterThan(stackedCount);
+  await page.evaluate(()=>localStorage.removeItem('anna.library'));
 
   // English search: Fireball
   await page.goto(anna+'/?collection=our5etools&type=spell&q=Fireball');
@@ -157,7 +177,7 @@ test('4. class 1-20 progression table, {@filter} link, and button.ref stay stric
   expect(href).toContain('collection=our5etools');
   await page.goto(anna+href);
   await resultsReady(page);
-  await expect(picker(page)).toHaveValue('our5etools');
+  await expect(pin(page)).toContainText('our5etools');
   expect(await page.locator('#results tr').count()).toBeGreaterThan(0);
 });
 
@@ -344,7 +364,7 @@ test('8. CSV export (5e-anna-our5etools.csv) and 5echm unscoped links non-regres
   // 5echm default links stay clean and unscoped (no collection=5echm)
   await page.goto(anna);
   await resultsReady(page);
-  await expect(picker(page)).toHaveValue('5echm');
+  await expect(pin(page)).toBeHidden();
   expect(new URL(page.url()).searchParams.get('collection')).toBeNull();
   const tourSwitch=page.locator('.page-switch a').filter({hasText:'导览'});
   await expect(tourSwitch).toHaveAttribute('href',/^\/tour($|\?at=)/);

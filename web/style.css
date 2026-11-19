@@ -131,6 +131,96 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .companion-more svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .companion-more:hover:not(:disabled), .companion-more[aria-expanded=true] { border-color: var(--anna-line); background: var(--anna-hover); color: var(--anna-ink); }
 .companion-menu { top: calc(100% + 6px); right: 0; width: max-content; max-width: min(22em, calc(100vw - 32px)); }
+/* The reader's library: a topbar pill on every page, beside the other companion, opening one settings dialog.
+   Its summary names the collections read; a wine dot says the library leaves something out. */
+.library-button { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 34px; min-height: 0; max-width: 24em; padding: 0 12px 0 9px;
+  border: 1px solid var(--anna-line); border-radius: 17px; background: transparent; color: var(--anna-secondary); font-size: var(--anna-type-ui); }
+.library-button:hover { background: var(--anna-hover); color: var(--anna-ink); }
+.library-icon { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.library-word { color: var(--anna-ink); font-weight: 600; }
+.library-summary { min-width: 0; overflow: hidden; color: var(--anna-muted); text-overflow: ellipsis; white-space: nowrap; }
+.library-summary:not(:empty)::before { content: '·'; margin-right: 6px; }
+.library-button.changed::after { content: ''; position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--anna-brand); box-shadow: 0 0 0 2px var(--anna-canvas); }
+.library-pin-chip { align-self: center; margin-inline-start: auto; }
+.library-dialog { width: min(680px, calc(100vw - 32px)); max-height: min(88vh, 920px); padding: 0; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-lg);
+  background: var(--anna-paper); color: var(--anna-ink); box-shadow: var(--anna-shadow); font-size: var(--anna-type-ui); }
+.library-dialog[open] { display: flex; flex-direction: column; }
+.library-dialog::backdrop { background: var(--anna-backdrop); }
+.library-dialog input[type=checkbox] { accent-color: var(--anna-brand); width: 15px; height: 15px; margin: 0; flex-shrink: 0; }
+.library-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 10px 22px; border-bottom: 1px solid var(--anna-line); }
+.library-head h2 { margin: 0; font-size: 17px; }
+.library-head .icon-button { font-size: 20px; }
+.library-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 4px 22px 8px; }
+.library-body:focus { outline: 0; }
+.library-foot { display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 16px; border-top: 1px solid var(--anna-line); background: var(--anna-surface); border-radius: 0 0 var(--anna-radius-lg) var(--anna-radius-lg); }
+.library-foot .quiet-button { border-color: transparent; background: transparent; color: var(--anna-secondary); }
+.library-total { flex: 1; min-width: 0; overflow: hidden; color: var(--anna-muted); text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.library-done { border-color: var(--anna-brand); background: var(--anna-brand); color: var(--anna-on-brand); font-weight: 600; }
+.library-done:hover { border-color: var(--anna-brand-hover); background: var(--anna-brand-hover); }
+.library-intro { margin: 12px 0 2px; color: var(--anna-secondary); line-height: 1.6; }
+.library-pin { margin: 8px 0 0; padding: 6px 10px; border-radius: var(--anna-radius-sm); background: var(--anna-warning-bg); color: var(--anna-warning); }
+.library-section { padding: 16px 0; border-bottom: 1px solid var(--anna-line); }
+.library-section:last-child { border-bottom: 0; }
+.library-section h3 { margin: 0 0 3px; font-size: 14px; }
+.library-hint { margin: 0 0 10px; color: var(--anna-muted); line-height: 1.6; }
+.library-section>.library-hint:last-child { margin: 8px 0 0; }
+.library-message { margin: 10px 0; color: var(--anna-muted); }
+/* Collections in priority order: the number is the priority, the handle and arrows reorder. */
+.library-order { counter-reset: library; display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.library-row { counter-increment: library; display: flex; align-items: center; gap: 8px; min-height: 48px; padding: 6px 6px 6px 4px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); }
+.library-row:has(input:checked) { border-color: var(--anna-selected-line); }
+.library-row.reserved { background: var(--anna-surface); color: var(--anna-muted); }
+.library-row.dragging { border-color: var(--anna-brand); background: var(--anna-selected); }
+.library-handle { display: inline-grid; place-items: center; width: 22px; color: var(--anna-muted); cursor: grab; }
+.library-row.reserved .library-handle { visibility: hidden; }
+.library-handle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; }
+.library-name { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
+.library-name::before { content: counter(library); display: inline-grid; place-items: center; flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--anna-canvas); color: var(--anna-secondary); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; }
+.library-row:has(input:checked) .library-name::before { background: var(--anna-brand); color: var(--anna-on-brand); }
+.library-name>span { display: grid; min-width: 0; }
+.library-name strong { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.library-name small { color: var(--anna-muted); font-size: var(--anna-type-small); }
+.library-current { padding: 1px 7px; border-radius: 10px; background: var(--anna-selected); color: var(--anna-brand); font-size: var(--anna-type-small); white-space: nowrap; }
+.library-here { color: var(--anna-brand); white-space: nowrap; }
+.library-moves { display: flex; gap: 2px; }
+.library-moves .icon-button { width: 30px; height: 30px; }
+.library-moves .icon-button:disabled { opacity: .3; }
+.library-moves svg { width: 16px; height: 16px; }
+.library-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.library-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.library-prefer { display: inline-flex; align-items: center; gap: 8px; color: var(--anna-secondary); }
+.library-prefer .segmented button:disabled { opacity: .5; }
+.library-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.library-chips .chip input:disabled+span { cursor: not-allowed; }
+/* Kinds of content as cards: ticked when every work of the kind is read, mixed when some are. */
+.library-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.library-kind { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); cursor: pointer; }
+.library-kind input { margin-top: 2px !important; }
+.library-kind:hover { border-color: var(--anna-line-strong); }
+.library-kind:has(input:checked) { border-color: var(--anna-selected-line); background: var(--anna-selected); }
+.library-kind-text { display: grid; gap: 2px; min-width: 0; }
+.library-kind-text small { color: var(--anna-muted); font-size: var(--anna-type-small); line-height: 1.5; }
+.library-kind-count { font-variant-numeric: tabular-nums; }
+.library-works { margin-top: 12px; }
+.library-works>summary { padding: 6px 0; color: var(--anna-secondary); cursor: pointer; }
+.library-works>summary:hover { color: var(--anna-ink); }
+.library-hidden-count { margin-inline-start: 6px; color: var(--anna-brand); font-size: var(--anna-type-small); }
+.library-works-body { max-height: 360px; overflow: auto; overscroll-behavior: contain; padding: 0 12px 10px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); }
+.library-filter { position: sticky; z-index: 1; top: 0; box-sizing: border-box; width: calc(100% + 24px); margin: 0 -12px 4px; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--anna-line); border-radius: 0; background: var(--anna-paper); }
+.library-works-group h4 { margin: 10px 0 2px; color: var(--anna-secondary); font-size: var(--anna-type-small); font-weight: 600; letter-spacing: .02em; }
+.library-class { margin: 0 0 6px; padding: 0; border: 0; }
+.library-class legend { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; }
+.library-class legend small { color: var(--anna-muted); font-size: var(--anna-type-small); }
+.library-class ul { display: grid; margin: 0; padding: 0 0 0 23px; list-style: none; }
+.library-class li label { display: grid; grid-template-columns: auto minmax(3em, auto) minmax(0, 1fr) auto auto; align-items: center; gap: 8px; padding: 3px 6px; border-radius: var(--anna-radius-sm); cursor: pointer; }
+.library-class li label:hover { background: var(--anna-hover); }
+.library-work-label { color: var(--anna-secondary); font-size: var(--anna-type-small); font-weight: 600; }
+.library-work-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.library-work-rules, .library-work-count { color: var(--anna-muted); font-size: var(--anna-type-small); font-variant-numeric: tabular-nums; text-align: right; }
+.menu-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 34px; margin-top: 4px; padding: 3px 8px; border: 0; border-top: 1px solid var(--anna-line); border-radius: 0 0 var(--anna-radius-sm) var(--anna-radius-sm); background: transparent; color: var(--anna-ink); text-align: left; }
+.menu-link:hover { background: var(--anna-hover); }
+.menu-hint { color: var(--anna-brand); font-size: var(--anna-type-small); }
+#empty-library { margin: 10px 0 0; color: var(--anna-muted); }
 /* A menu button's popup, shared by Stella's location path and the companion switcher. */
 .popup-menu { position: absolute; z-index: 20; min-width: 12em; max-height: min(60vh, 420px); overflow: auto; overscroll-behavior: contain;
   box-sizing: border-box; padding: 4px; border: 1px solid var(--anna-line); border-radius: 8px; background: var(--anna-paper); box-shadow: var(--anna-shadow); font-size: 13px; white-space: normal; }
@@ -510,7 +600,18 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 }
 /* Phones read results as a list: name first, then each value with its column label. This follows the
    screen, not the results' width, so opening the reader never turns the table into a list. */
+@media(max-width:1000px) {
+  .library-summary { display: none; }
+}
 @media(max-width:640px) {
+  .library-word { display: none; }
+  .library-button { padding: 0 8px; }
+  .library-dialog { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+  .library-head { padding-left: 16px; }
+  .library-body { padding: 4px 16px 8px; }
+  .library-class ul { padding-left: 0; }
+  .library-class li label { grid-template-columns: auto minmax(3em, auto) minmax(0, 1fr) auto; }
+  .library-work-rules { display: none; }
   /* The other companion keeps her avatar; where turning to her leads stays in its accessible name and tooltip. */
   .companion-label { display: none; }
   .companion-go { padding-right: 3px; }

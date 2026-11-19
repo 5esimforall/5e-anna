@@ -573,9 +573,8 @@ class Tour:
     # Collections answered by Anna's own query, so counts and order read the same as in the table
 
     def count(self, db, params):
-        conditions = catalog.conditions(params)
-        sql = 'SELECT count(*) FROM entries e WHERE ' + catalog.base_clause(params) + ''.join(f' AND ({s})' for _, s, _ in conditions)
-        return db.execute(sql, [v for _, _, values in conditions for v in values]).fetchone()[0]
+        where, values = catalog.filters(db, params)
+        return db.execute('SELECT count(*) FROM entries e' + where, values).fetchone()[0]
 
     def facet_group(self, db, params, facet):
         key = facet if facet == 'type' else 'f_' + facet

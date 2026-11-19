@@ -107,29 +107,44 @@ def included(params):
     return out
 
 
-def base_clause(params):
-    """Untyped sections join the results only on request; this scopes every query and count."""
-    return "e.type!='section'" if first(params,'sections')!='1' else '1'
+def restriction_clause(restrict):
+    """The reader's library scope: the rules generations and works this catalog may answer from.
+    It bounds the universe every query and count reads; it is not a condition a count can set aside."""
+    clauses, values = [], []
+    if restrict is not None and restrict.rulesets is not None:
+        clauses.append('e.ruleset IN ('+','.join('?' for _ in restrict.rulesets)+')'); values.extend(sorted(restrict.rulesets))
+    if restrict is not None and restrict.sources is not None:
+        clauses.append('EXISTS(SELECT 1 FROM entry_sources es WHERE es.entry_id=e.id AND es.source_id IN ('+','.join('?' for _ in restrict.sources)+'))' if restrict.sources else '0')
+        values.extend(sorted(restrict.sources))
+    return clauses, values
 
 
-def unclassified_matches(db, params):
+def base_clause(params, restrict=None):
+    """Untyped sections join the results only on request; with the library scope this bounds every query and count."""
+    clauses, values = restriction_clause(restrict)
+    return ' AND '.join(["e.type!='section'" if first(params,'sections')!='1' else '1', *clauses]), values
+
+
+def unclassified_matches(db, params, restrict=None):
     """Untyped sections that match every current condition, for an empty name search's follow-up.
 
     The same conditions apply, including any type filter: a section cannot stand in for a chosen
     type, so the offer appears only when adding sections would actually return rows.
     """
     conds = conditions(params)
-    clause = "e.type='section'"+(' AND '+' AND '.join(sql for _,sql,_ in conds) if conds else '')
-    return db.execute('SELECT count(*) FROM entries e WHERE '+clause,[v for _,_,vals in conds for v in vals]).fetchone()[0]
+    scope, scoped = restriction_clause(restrict)
+    clause = ' AND '.join(["e.type='section'", *scope, *(sql for _,sql,_ in conds)])
+    return db.execute('SELECT count(*) FROM entries e WHERE '+clause,scoped+[v for _,_,vals in conds for v in vals]).fetchone()[0]
 
 
-def filters(db, params):
+def filters(db, params, restrict=None):
     conds = conditions(params)
-    clauses = [base_clause(params)]+[sql for _,sql,_ in conds]
-    return ' WHERE '+' AND '.join(clauses), [v for _,_,vals in conds for v in vals]
+    base, scoped = base_clause(params, restrict)
+    clauses = [base]+[sql for _,sql,_ in conds]
+    return ' WHERE '+' AND '.join(clauses), scoped+[v for _,_,vals in conds for v in vals]
 
 
-def facets(db, params):
+def facets(db, params, restrict=None):
     """Each field's options with counts under every other condition: what picking the option would match.
     `without` counts the results if one condition were removed; `scope_total` counts the chosen types."""
     types = entry_types(params)
@@ -147,9 +162,10 @@ def facets(db, params):
     unknown_cover = Counter()
     total = scope_total = 0
     without = Counter()
+    base, scoped = base_clause(params, restrict)
     rows = db.execute('SELECT e.type, e.fields, e.ruleset, e.legacy, e.classification_status, '
         "(SELECT group_concat(es.source_id, char(31)) FROM entry_sources es WHERE es.entry_id=e.id) AS sources"+columns+
-        ' FROM entries e WHERE '+base_clause(params), [v for _,_,vals in conds for v in vals])
+        ' FROM entries e WHERE '+base, [v for _,_,vals in conds for v in vals]+scoped)
     for row in rows:
         failed = [i for i in range(len(conds)) if not row[f'c{i}']]
         in_scope = all(fields_of[i]!='type' for i in failed)
@@ -227,12 +243,12 @@ def result_window(params):
     return offset,limit
 
 
-def query(db, params, export=False):
-    where, values = filters(db,params)
+def query(db, params, export=False, restrict=None):
+    where, values = filters(db,params,restrict)
     names = bool(browse.search_terms(params) or browse.typing_term(params))
     def section_hint(total):
         if export or first(params,'sections')=='1' or total or not names:return 0
-        return unclassified_matches(db,params)
+        return unclassified_matches(db,params,restrict)
     latest = browse.latest_term(params)
     db.create_function('browse_query',0,lambda:latest)
     config = browse.schema_for(entry_types(params))
@@ -280,6 +296,42 @@ def query(db, params, export=False):
         rows.append(row)
     return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':rows,'schema':config,
             'section_matches':section_hint(total)}
+
+
+def works(db):
+    """Every work (book or other source) of this catalog with its origin, rules generation and entry count:
+    what the reader's library can include or leave out."""
+    out = []
+    for r in db.execute("SELECT s.id, s.name, s.origin, s.ruleset_hint, s.data, count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id "
+                        "LEFT JOIN entries e ON e.id=es.entry_id AND e.type!='section' GROUP BY s.id ORDER BY s.name"):
+        data = json.loads(r['data'])
+        out.append({'id':r['id'],'name':r['name'],'label':data.get('label') or r['name'],'origin':r['origin'] or '待核',
+                    'ruleset':r['ruleset_hint'] if r['ruleset_hint'] in {'5e','5r'} else '待核','group':data.get('group') or '','count':r['n']})
+    return out
+
+
+# One cheap row per matching version, in this catalog's own order: what a library spanning several
+# catalogs needs to sort, stack and page the versions before reading the shown rows in full.
+def ranked(db, params, restrict=None, sort_field=None):
+    where, values = filters(db, params, restrict)
+    latest = browse.latest_term(params)
+    db.create_function('browse_query',0,lambda:latest)
+    value = f"browse_rank(e.fields,'{sort_field}')" if sort_field else 'NULL'
+    sql = ('WITH '+stack_members()+f', ranked AS (SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.stack, {value} AS value, '
+           "e.page_path AS path, e.start AS start, (SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin "
+           'FROM entries e LEFT JOIN m ON m.entry_id=e.id'+where+') SELECT * FROM ranked')
+    return [{'id':r['id'],'type':r['type'],'name':r['name'],'name_zh':r['name_zh'],'name_en':r['name_en'],'ruleset':r['ruleset'],
+             'stack':r['stack'],'value':r['value'],'source_key':(r['path'] or '',r['start'] or 0),'origin':r['origin'] or '待核'} for r in db.execute(sql, values)]
+
+
+def rows(db, ids):
+    """Full table rows for the given version IDs, keyed by ID."""
+    out = {}
+    ids = list(dict.fromkeys(ids))
+    for start in range(0,len(ids),400):
+        batch = ids[start:start+400]
+        out.update((r[0],browse.enrich(contracts.entry(json.loads(r[1])))) for r in db.execute('SELECT id, data FROM entries WHERE id IN ('+','.join('?' for _ in batch)+')',batch))
+    return out
 
 
 def meta(db):

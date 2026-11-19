@@ -76,6 +76,8 @@ RULESETS = ('5e', '5r', '待核')
 LEGACIES = ('entry_marked', 'source_archived', 'unmarked')
 COPY_STATUSES = ('ok', 'missing_base', 'ambiguous_base', 'cycle', 'mod_warning')
 NEGATABLE = frozenset({'type', 'q', 'body', 'ruleset', 'legacy', 'origin', 'source', 'package', 'copy_status'})
+# The library scope bounds the universe; counts never set it aside and `without` never offers removing it.
+SCOPE_KEY = '__scope'
 
 VERSION_FIELDS = (
     'id', 'name', 'name_zh', 'name_en', 'ruleset', 'source_ids', 'source_names',
@@ -616,7 +618,22 @@ class Our5etoolsCatalog:
 
         return out
 
-    def _conditions(self, params: dict[str, list[str]]) -> list[tuple[str, str, list[Any]]]:
+    @staticmethod
+    def _restriction(restrict: Any) -> list[tuple[str, str, list[Any]]]:
+        """The reader's library scope as one always-held condition (`__scope`), never set aside by a count."""
+        if restrict is None:
+            return []
+        clauses: list[str] = []
+        values: list[Any] = []
+        if restrict.rulesets is not None:
+            clauses.append('e.ruleset IN (' + ','.join('?' for _ in restrict.rulesets) + ')')
+            values.extend(sorted(restrict.rulesets))
+        if restrict.sources is not None:
+            clauses.append('e.source_id IN (' + ','.join('?' for _ in restrict.sources) + ')' if restrict.sources else '0')
+            values.extend(sorted(restrict.sources))
+        return [(SCOPE_KEY, ' AND '.join(clauses), values)] if clauses else []
+
+    def _conditions(self, params: dict[str, list[str]], restrict: Any = None) -> list[tuple[str, str, list[Any]]]:
         excluded: dict[str, list[str]] = {}
         for k, v in params.items():
             if not k.startswith(NOT):
@@ -628,7 +645,7 @@ class Our5etoolsCatalog:
         inc = self._included_conditions(params)
         exc_raw = self._included_conditions(excluded) if excluded else []
         exc = [(NOT + key, f'NOT COALESCE(({sql}), 0)', vals) for key, sql, vals in exc_raw]
-        return inc + exc
+        return self._restriction(restrict) + inc + exc
 
     @staticmethod
     def _where_from(conds: list[tuple[str, str, list[Any]]]) -> tuple[str, list[Any]]:
@@ -798,10 +815,10 @@ class Our5etoolsCatalog:
                 'lazy_media': self.lazy_media,
             }
 
-    def entries(self, params: dict[str, list[str]], *, _export: bool = False) -> dict[str, Any]:
+    def entries(self, params: dict[str, list[str]], restrict: Any = None, *, _export: bool = False) -> dict[str, Any]:
         with closing(self._connect()) as db:
             self._ensure_static_cache(db)
-            conds = self._conditions(params)
+            conds = self._conditions(params, restrict)
             where, values = self._where_from(conds)
             has_search = bool(_search_terms(params, 'q') or _typing_term(params))
             latest = _latest_term(params)
@@ -916,21 +933,21 @@ class Our5etoolsCatalog:
         db: sqlite3.Connection,
         chosen_types: list[str],
         domain: list[str],
+        scope: list[tuple[str, str, list[Any]]] = (),
     ) -> tuple[int, dict[str, set[str]], dict[str, int]]:
         """Cached (scope_total, facet_key -> set[values], facet_key -> non-unknown count) for a type tuple."""
-        cache_key = tuple(sorted(chosen_types))
+        cache_key = (tuple(sorted(chosen_types)), tuple((sql, tuple(vals)) for _, sql, vals in scope))
         with self._lock:
             cached = self._scope_universe_cache.get(cache_key)
         if cached is not None:
             return cached
 
+        bounds = [f'({sql})' for _, sql, _ in scope]
+        vals_t: list[Any] = [v for _, _, vals in scope for v in vals]
         if chosen_types:
-            ph = ','.join('?' for _ in chosen_types)
-            where_t = f' WHERE e.type IN ({ph})'
-            vals_t: list[Any] = list(chosen_types)
-        else:
-            where_t = ''
-            vals_t = []
+            bounds.append('e.type IN (' + ','.join('?' for _ in chosen_types) + ')')
+            vals_t.extend(chosen_types)
+        where_t = ' WHERE ' + ' AND '.join(bounds) if bounds else ''
 
         scope_total = int(db.execute('SELECT count(*) FROM entries e' + where_t, vals_t).fetchone()[0])
         uni: dict[str, set[str]] = {f: set() for f in domain}
@@ -965,12 +982,13 @@ class Our5etoolsCatalog:
             self._scope_universe_cache[cache_key] = res
         return res
 
-    def facets(self, params: dict[str, list[str]]) -> dict[str, Any]:
+    def facets(self, params: dict[str, list[str]], restrict: Any = None) -> dict[str, Any]:
         with closing(self._connect()) as db:
             self._ensure_static_cache(db)
             chosen_types = _entry_types(params)
             config = otypes.schema_for(chosen_types)
-            conds = self._conditions(params)
+            conds = self._conditions(params, restrict)
+            scope = self._restriction(restrict)
             if not conds:
                 with self._lock:
                     if self._unfiltered_facets_cache is not None:
@@ -1055,7 +1073,7 @@ class Our5etoolsCatalog:
             domain = [*config['facets'], *config['flags']]
 
             # 1. Cached scope total & domain universe for chosen types
-            scope_total, uni_map, unknown_cover = self._scope_universe(db, chosen_types, domain)
+            scope_total, uni_map, unknown_cover = self._scope_universe(db, chosen_types, domain, scope)
 
             # 2. Fetch matched entries ONCE for total + all unfiltered facet groups
             where_all, vals_all = self._where_from(conds)
@@ -1135,6 +1153,8 @@ class Our5etoolsCatalog:
             without: dict[str, int] = {}
             field_counts_once = Counter(fields_of)
             for i, (ckey, _, _) in enumerate(conds):
+                if ckey == SCOPE_KEY:
+                    continue
                 f_i = fields_of[i]
                 if f_i == 'type' and field_counts_once['type'] == 1 and not type_bound_indices:
                     diff = sum(type_counts.values()) - total
@@ -1324,6 +1344,81 @@ class Our5etoolsCatalog:
                 'elsewhere': elsewhere,
             }
 
+    # --- Library federation: works, cheap ranking rows and full rows by ID ---
+
+    def works(self) -> list[dict[str, Any]]:
+        """Every work with its origin, rules generation and entry count: what the reader's library can include."""
+        with closing(self._connect()) as db:
+            self._ensure_static_cache(db)
+            counts = dict(db.execute('SELECT source_id, count(*) FROM entries GROUP BY source_id'))
+            out = []
+            for sid, srec in sorted(self._sources_map.items(), key=lambda kv: (kv[1]['name'], kv[0])):
+                package = self._packages_map.get(srec['package_id'])
+                out.append({
+                    'id': sid, 'name': srec['name'], 'label': srec['short_name'], 'origin': srec['origin'],
+                    'ruleset': srec['ruleset'] if srec['ruleset'] in {'5e', '5r'} else '待核',
+                    'group': package['name'] if package else srec['package_id'],
+                    'count': int(counts.get(sid, 0)),
+                })
+            return out
+
+    def ranked(self, params: dict[str, list[str]], restrict: Any = None, sort_field: str | None = None) -> list[dict[str, Any]]:
+        """One cheap row per matching entry: what a library spanning several catalogs sorts, stacks and pages."""
+        with closing(self._connect()) as db:
+            self._ensure_static_cache(db)
+            where, values = self._where_from(self._conditions(params, restrict))
+            latest = _latest_term(params)
+            db.create_function('browse_query', 0, lambda: latest)
+            if sort_field and sort_field not in otypes.COLUMN_LABELS and sort_field not in otypes.LABELS:
+                sort_field = None
+            value = 'e.cr_num' if sort_field == 'cr' else (f"browse_rank(e.fields_json, '{sort_field}')" if sort_field else 'NULL')
+            sql = (f'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, e.source_id, e.source_code, im.group_id, {value} AS value '
+                   f'FROM entries e LEFT JOIN identity_members im ON im.entry_id = e.id{where}')
+            out = []
+            for r in db.execute(sql, values):
+                source = self._sources_map.get(r['source_id'])
+                out.append({'id': r['id'], 'type': r['type'], 'name': r['name'], 'name_zh': r['name_zh'], 'name_en': r['name_en'],
+                            'ruleset': r['ruleset'] or '待核', 'stack': r['group_id'], 'value': r['value'],
+                            'source_key': ((r['source_code'] or '').lower(),), 'origin': source['origin'] if source else '社区'})
+            return out
+
+    def rows(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        cols = (
+            'e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
+            'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, '
+            'e.owner_level, e.copy_status, e.fields_json, e.quickref_json, e.conflicts_json, '
+            'e.provenance_json'
+        )
+        out: dict[str, dict[str, Any]] = {}
+        ids = list(dict.fromkeys(ids))
+        with closing(self._connect()) as db:
+            self._ensure_static_cache(db)
+            for start in range(0, len(ids), 400):
+                batch = ids[start:start + 400]
+                ph = ','.join('?' for _ in batch)
+                for r in db.execute(f'SELECT {cols} FROM entries e WHERE e.id IN ({ph})', batch):
+                    out[r['id']] = self._row_to_entry(r)
+        return out
+
+    def schema(self, types: list[str]) -> dict[str, Any]:
+        return otypes.schema_for([t for t in types if t in otypes.TYPES])
+
+    def capabilities(self) -> Any:
+        from anna.presentation.collections import Capabilities
+        meta = self.meta()
+        return Capabilities(
+            conditions=frozenset({'type', 'q', 'typing', 'body', 'ruleset', 'legacy', 'copy_status', 'origin', 'source',
+                                  'package', 'conflict', 'cr_min', 'cr_max'}),
+            facets=frozenset(otypes.LABELS), types=frozenset(meta['type_order']),
+            sources=frozenset(s['id'] for s in meta['sources']), packages=frozenset(p['id'] for p in meta['packages']),
+            values={'ruleset': frozenset(RULESETS), 'legacy': frozenset(LEGACIES), 'copy_status': frozenset(COPY_STATUSES),
+                    'origin': frozenset(ORIGINS)},
+            stackable=frozenset(otypes.STACKABLE_TYPES),
+        )
+
+    def signature(self) -> tuple:
+        return (str(self.db_path), *(_file_sig(self.db_path) or ()))
+
     def detail(self, entry_id: str) -> dict[str, Any]:
         if not entry_id:
             raise LookupError('条目不存在')
@@ -1445,8 +1540,8 @@ class Our5etoolsCatalog:
             promoted = promote_media_html(html_body, self.media_dir, lazy_media=self.lazy_media)
             return {'status': 'ok', 'html': promoted, 'media': prov.get('media_summary')}
 
-    def export(self, params: dict[str, list[str]]) -> bytes:
-        result = self.entries(params, _export=True)
+    def export(self, params: dict[str, list[str]], restrict: Any = None) -> bytes:
+        result = self.entries(params, restrict, _export=True)
         rows = result['rows']
         config = result['schema']
         cols_cfg = config.get('export_columns') or config.get('columns') or []

@@ -161,8 +161,9 @@ class CatalogContractTests(unittest.TestCase):
             self.assertEqual(status, 200)
             meta = json.loads(body)
             self.assertEqual(meta['collection'], FIVETOOLS.key)
-            self.assertIn({'id':'5etools','label':{'zh':'5etools','en':'5etools'},'status':'ready'},meta['collections'])
-            self.assertIn({'id':'our5etools','label':{'zh':'our5etools','en':'our5etools'},'status':'reserved'},meta['collections'])
+            # Each collection says what it offers beyond the table, so the library can send the tour and Stella there.
+            self.assertIn({'id':'5etools','label':{'zh':'5etools','en':'5etools'},'status':'ready','tour':False,'reader':False,'snapshot':None},meta['collections'])
+            self.assertIn({'id':'our5etools','label':{'zh':'our5etools','en':'our5etools'},'status':'reserved','tour':False,'reader':False,'snapshot':None},meta['collections'])
             self.assertIsNone(meta['reader_url'])
             self.assertIsNone(meta['snapshot'])
             self.assertFalse(meta['source_text'])

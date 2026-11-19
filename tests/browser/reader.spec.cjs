@@ -52,8 +52,9 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
     await expect(brand).toBeFocused();
     await page.locator('.companion-go').focus();await page.keyboard.press('Tab');
     await expect(page.locator('#theme')).toBeFocused();
-    // With nothing more remembered, the companion is one link and the theme is the only visible button.
-    await expect(page.locator('.book-topbar button:visible')).toHaveCount(1);
+    // With nothing more remembered, the companion is one link; the library and the theme are the visible buttons.
+    await expect(page.locator('.book-topbar button:visible')).toHaveCount(2);
+    await expect(page.locator('.book-topbar .library-button')).toBeVisible();
     await expect(page.locator('#book-bar #book-menu')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
     const [bar,menu,scope,pager,marks]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging','#book-link-marks'].map(s=>page.locator(s).boundingBox()));
     expect(menu.x).toBeLessThan(scope.x);expect(scope.x).toBeLessThan(pager.x);

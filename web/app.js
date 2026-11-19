@@ -11,7 +11,10 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     body:'正文',fields:'属性',relations:'关系',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    collectionLabel:'资料库',collectionReserved:'{name}（未接入）',collectionHome:'回到默认资料库',collectionRestart:'服务还不支持资料库切换。若刚更新 Anna，请重启 make up。',
+    collectionHome:'回到默认资料库',collectionRestart:'服务还不支持资料库切换。若刚更新 Anna，请重启 make up。',
+    librarySettings:'资料库设置…',libraryPinned:'仅 {name}',libraryUnpin:'改为查阅整个资料库',libraryPinnedTitle:'本页只查阅 {name}（来自链接）；点击改为查阅资料库设置中的全部资料库',
+    emptyLibrary:'资料库设置收窄了规则版本或作品范围，部分条目未列出。',filterLibraryHint:'资料库、规则版本与作品范围在顶栏「资料库」中设置。',
+    libraryState:{narrowed:'已收窄',each:'不去重'},
     collectionErrors:{invalid_collection:'资料库地址无效。',unknown_collection:'未找到这个资料库。',collection_unavailable:'这个资料库尚未接入。'},
     moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
@@ -19,10 +22,10 @@ const annaUiLabels = {
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
     stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',sortLabel:'排序',displayOptions:'显示',
     stackedCount:'找到 {rows} 行 · {versions} 个版本',shownVersion:'当前行显示此版本',
-    stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立',reprint_group:'同名/重印版本 {count} 个，各自独立'},
+    stackStatus:{same_name_candidate:'同名候选 {count} 个版本，各自独立',exact_text_candidate:'同文候选 {count} 个版本，各自独立',reprint_group:'同名/重印版本 {count} 个，各自独立',library_candidate:'跨资料库同名候选 {count} 个版本，各自独立'},
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
     layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
-    versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
+    versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',versionsIntroLibrary:'同名候选来自资料库中的各个资料库；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     provenance:'来源与出处',provCollection:'资料库',provOrigin:'来源性质',provPackage:'内容包',provOurs:'本站自有',provSource:'书籍来源',provAuthors:'作者',provTranslators:'译者',provTier:'社区分档',provRating:'评分',provCopiedFrom:'模板继承',provLicense:'许可与说明',provMedia:'媒体资源',provMediaLocal:'离线收录 {count} 项',provMediaRemote:'远端未随包 {count} 项',provMediaNone:'无外部媒体',provReadBook:'在书中阅读',provViewLink:'查看来源说明 ↗',
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
@@ -34,7 +37,10 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     body:'Text',fields:'Attributes',relations:'Relations',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    collectionLabel:'Collection',collectionReserved:'{name} (not connected)',collectionHome:'Return to the default collection',collectionRestart:'The running server does not support collections. If you just updated Anna, restart make up.',
+    collectionHome:'Return to the default collection',collectionRestart:'The running server does not support collections. If you just updated Anna, restart make up.',
+    librarySettings:'Library settings…',libraryPinned:'Only {name}',libraryUnpin:'Read the whole library instead',libraryPinnedTitle:'This page reads only {name} (from the link); select to read every collection in your library',
+    emptyLibrary:'Your library settings leave out some rules versions or works, so some entries are not listed.',filterLibraryHint:'Collections, rules versions and works are set under Library in the top bar.',
+    libraryState:{narrowed:'narrowed',each:'not deduplicated'},
     collectionErrors:{invalid_collection:'Invalid collection address.',unknown_collection:'Collection not found.',collection_unavailable:'This collection is not connected yet.'},
     moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
@@ -42,10 +48,10 @@ const annaUiLabels = {
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
     stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',sortLabel:'Sort',displayOptions:'Display',
     stackedCount:'{rows} rows · {versions} versions',shownVersion:'This version is shown in the row',
-    stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate',reprint_group:'{count} versions/reprints, each kept separate'},
+    stackStatus:{same_name_candidate:'{count} same-name candidates, each kept separate',exact_text_candidate:'{count} same-text candidates, each kept separate',reprint_group:'{count} versions/reprints, each kept separate',library_candidate:'{count} same-name candidates across collections, each kept separate'},
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
     layoutUnavailable:{missing:'The source page is missing; showing extracted text.',stale:'The source changed since this database snapshot; showing extracted text.',empty:'The source layout is empty; showing extracted text.',error:'Unable to load the source layout; showing extracted text.'},
-    versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current',
+    versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',versionsIntroLibrary:'Same-name candidates from the collections in your library; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current',
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']},
     provenance:'Provenance',provCollection:'Collection',provOrigin:'Origin',provPackage:'Package',provOurs:'Site curated',provSource:'Source',provAuthors:'Authors',provTranslators:'Translators',provTier:'Tier',provRating:'Rating',provCopiedFrom:'Copied from',provLicense:'License & notes',provMedia:'Media',provMediaLocal:'{count} bundled offline',provMediaRemote:'{count} remote unbundled',provMediaNone:'No external media',provReadBook:'Read in book',provViewLink:'View source note ↗',
     flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a row for its text and evidence'}
@@ -54,7 +60,6 @@ const locale = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
 const ui = annaUiLabels[locale];
 // A ruleset is a rules generation, not a publication year: short labels name it, the full label says so.
 const rulesetShort=r=>ui.rulesets[r]?.[0]||r, rulesetFull=r=>ui.rulesets[r]?.[1]||r;
-document.querySelector('#prefer').innerHTML=['5r','5e'].map(value=>`<option value="${value}" title="${esc(rulesetFull(value))}">${esc(rulesetShort(value))}</option>`).join('');
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
 for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('aria-label',ui[el.dataset.uiLabel]);el.title=ui[el.dataset.uiLabel];}
 const fmt = n => Number(n).toLocaleString('zh-CN');
@@ -110,31 +115,47 @@ function collectionURL(path){
   for(const key of params.getAll('collection'))url.searchParams.append('collection',key);
   return url.pathname+url.search;
 }
-async function api(path,signal){const r=await fetch(collectionURL(path),{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败');return d;}
-function showCollections(){
-  if(!metadata.collections)return;
-  const select=$('#collection');
-  select.replaceChildren(...metadata.collections.map(({id,label,status})=>{
-    const option=new Option(status==='ready'?label[locale]:ui.collectionReserved.replace('{name}',label[locale]),id);
-    option.disabled=status!=='ready';
-    return option;
-  }));
-  select.value=metadata.collection;
-  $('#collection-picker').hidden=metadata.collections.length<2;
-  $('.heading-note').hidden=metadata.collection!==metadata.default_collection;
-  // A new collection has its own filters, IDs and result layout. Back restores this document's query.
-  select.onchange=()=>{if(select.value!==metadata.collection){
-    const query=new URLSearchParams({collection:select.value});
-    location.assign(select.value===metadata.default_collection?'/':'/?'+query);
-  }};
+// Every request carries the reader's library (annaLibrary); a link's own `collection` pins it to one collection.
+async function api(path,signal){const r=await fetch(annaLibrary.withScope(collectionURL(path)),{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败');return d;}
+// A link may pin the page to one collection (from that collection's tour or book). The heading names the pin;
+// removing it reads the reader's whole library with the same conditions.
+const collectionName=id=>metadata?.collections?.find(c=>c.id===id)?.label?.[locale]||annaLibrary.nameOf(id);
+function showLibrary(){
+  const pin=$('#library-pin'),pinned=!!metadata.library?.pinned&&params.has('collection');
+  pin.hidden=!pinned;
+  if(pinned){
+    const name=collectionName(metadata.collection);
+    pin.innerHTML=`<button type="button" class="condition-text" title="${esc(ui.libraryPinnedTitle.replace('{name}',name))}">${esc(ui.libraryPinned.replace('{name}',name))}</button><button type="button" class="condition-remove" aria-label="${esc(ui.libraryUnpin)}" title="${esc(ui.libraryUnpin)}">×</button>`;
+  }
+  // The note qualifies anna's own extraction from the book; it shows while the book is among the collections read.
+  $('.heading-note').hidden=!(metadata.library?.libraries||[metadata.collection]).includes(metadata.default_collection);
+  const library=metadata.library||{},state=[library.narrowed?ui.libraryState.narrowed:'',library.versions==='each'?ui.libraryState.each:''].filter(Boolean).join(' · ');
+  $('#library-state').textContent=state;
+  $('#display-toggle').classList.toggle('changed',!!state);
 }
+$('#library-pin').addEventListener('click',()=>{params.delete('collection');historyUpdate();reloadLibrary();});
+// A changed library changes the table's universe: its types, works and counts. The query keeps its conditions
+// (those another collection cannot answer hold for none of its entries) and the reader keeps its entry.
+let libraryTimer;
+async function reloadLibrary(){
+  clearTimeout(libraryTimer);
+  // The rows on screen belong to the previous library; they dim at once, as for any new table.
+  request?.abort();generation++;ready=false;awaitResults('正在读取筛选…');
+  try{
+    const meta=await api('/api/meta');
+    metadata=meta;Object.assign(fieldNames,metadata.fields);showLibrary();panelShape='';
+    // The open entry stays open: it still exists, whichever versions now lead the rows.
+    historyUpdate(true);await changeTable();
+  }catch(e){failResults(e.message,'读取失败');}
+}
+annaLibrary.subscribe(()=>{if(!metadata)return;clearTimeout(libraryTimer);libraryTimer=setTimeout(reloadLibrary,250);});
+for(const b of document.querySelectorAll('#open-library,[data-open-library]'))b.addEventListener('click',()=>{setDisplayMenu(false);annaLibrary.open();});
 let restoringUi=false, uiSaveTimer, lastResultEntry=null;
 history.scrollRestoration='manual';
 function captureUiState(){
   return {tableTop:$('.table-wrap').scrollTop,tableLeft:$('.table-wrap').scrollLeft,
     mainTop:$('#query-main').scrollTop,windowTop:window.scrollY,filterTop:$('#filter-panel').scrollTop,
-    filtersOpen:!$('#filter-panel').hidden,sourceOpen:$('#source-details').open,extraOpen:$('#domain-extra')?.open,
-    sourceSearch:$('#source-search').value,readerId:currentReaderId,readerTab:detailTab,readerFull,
+    filtersOpen:!$('#filter-panel').hidden,extraOpen:$('#domain-extra')?.open,readerId:currentReaderId,readerTab:detailTab,readerFull,
     readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
 function saveUiState(){if(restoringUi)return;clearTimeout(uiSaveTimer);uiSaveTimer=0;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
@@ -160,34 +181,36 @@ function resumedUi(id){
 // The open entry is the topic Stella can turn to; closing it ends the topic. Restoring a remembered place or a
 // history entry shows its entry again without bringing it up as a new topic.
 let quietTopic=false;
+// An entry belongs to its own collection; its topic goes to that collection's Stella, bound to that collection's build.
+const entryCollection=e=>e?.collection||metadata.collection;
+const collectionSnapshot=id=>metadata.collections?.find(c=>c.id===id)?.snapshot||(id===metadata.collection?metadata.snapshot:null);
 function shareTopic(){
   if(!sharing()||!currentEntry||quietTopic)return;
+  const collection=entryCollection(currentEntry),snapshot=collectionSnapshot(collection);
+  if(!snapshot)return;
   const loc=currentEntry.reader_location||null;
   const locPage=loc&&(loc.page||loc.path);
   // External collections only share a topic with Stella when the entry has an actual book location.
-  if(metadata.source_text===false&&!locPage)return;
+  if(collection!==metadata.default_collection&&!locPage)return;
   const bookLocation=locPage?{root:loc.root||'',page:locPage,node:loc.node_id||loc.node||'',fragment:loc.fragment||''}:null;
-  const payload={snapshot:metadata.snapshot,entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',collection:metadata.collection,bookLocation,at:Date.now()};
+  const payload={snapshot,entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',collection,bookLocation,at:Date.now()};
   if(typeof annaWorkspace.noteTopic==='function')annaWorkspace.noteTopic(payload);
-  else annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.setTopic(state,payload),metadata.collection);
+  else annaWorkspace.update(snapshot,state=>annaWorkspace.setTopic(state,payload),collection);
 }
-function endTopic(id){if(sharing()&&id)annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.clearTopic(state,id),metadata.collection);}
+function endTopic(id,collection=metadata?.collection){
+  const snapshot=sharing()&&collectionSnapshot(collection);
+  if(snapshot&&id)annaWorkspace.update(snapshot,state=>annaWorkspace.clearTopic(state,id),collection);
+}
 function historyUpdate(replace=false){
   if(!replace)saveUiState();
   const search=params.toString();history[replace?'replaceState':'pushState'](history.state,'',location.pathname+(search?'?'+search:''));
-}
-function filterSources(){
-  const q=$('#source-search').value.trim().toLowerCase();
-  for(const label of $('#source-filters').querySelectorAll('[data-option-search]'))label.hidden=!label.dataset.optionSearch.includes(q);
 }
 function restoreUiState(state){
   if(!state)return;
   // The panel starts collapsed; only an explicit opening in this tab's history reopens it.
   $('#filter-panel').hidden=!state.filtersOpen;
   $('#toggle-filters').setAttribute('aria-expanded',!!state.filtersOpen);
-  $('#source-details').open=!!state.sourceOpen;
   if($('#domain-extra')&&typeof state.extraOpen==='boolean')$('#domain-extra').open=state.extraOpen;
-  $('#source-search').value=state.sourceSearch||'';filterSources();
   // Full-width reading changes the text's line breaks, so it returns before the reader's scroll position.
   if(currentReaderId&&state.readerId===currentReaderId)setReaderFull(!!state.readerFull,{save:false});
   $('#filter-panel').scrollTop=state.filterTop||0;
@@ -199,7 +222,6 @@ function restoreUiState(state){
 const UI_SAVE_DELAY=200;
 function queueUiSave(){clearTimeout(uiSaveTimer);uiSaveTimer=setTimeout(saveUiState,UI_SAVE_DELAY);}
 for(const el of [window,$('.table-wrap'),$('#query-main'),$('#filter-panel'),$('#detail-content')])el.addEventListener('scroll',queueUiSave,{passive:true});
-for(const el of [$('#source-details')])el.addEventListener('toggle',queueUiSave);
 window.addEventListener('pagehide',saveUiState);
 function setParam(key,value){value!==''&&value!==null?params.set(key,value):params.delete(key);}
 // The URL records only a sort the reader chose. Without one, a search ranks by match quality and an
@@ -258,10 +280,6 @@ function rangeGroup(){
 function sync(){
   if(!schema)return;
   renderSortOptions();
-  const stacked=params.get('versions')!=='each';$('#stack-versions').checked=stacked;
-  $('#prefer').value=params.get('prefer')||'5r';$('#prefer').disabled=!stacked;$('.prefer-control').classList.toggle('inactive',!stacked);
-  // A shared link may carry a presentation other than the default; the menu marks it so the rows explain themselves.
-  $('#display-toggle').classList.toggle('changed',!stacked||params.has('prefer'));
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
   $('#title').textContent=typeTitle();updatePageChrome();
@@ -284,7 +302,6 @@ function sync(){
   $('#filter-count').textContent=active.length+termKeys.length||'';
   const extraCount=groups.filter(g=>(params.has(g.key)||params.has(NOT+g.key))&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
-  $('#common-count').textContent=active.some(k=>['source','ruleset','origin','package'].includes(baseKey(k)))?'已筛选':'';
   const chip=key=>{
     const text=key==='cr_min'||key==='cr_max'?`${fieldNames[key]}：${params.get(key)}`:conditionText(key),negated=key.startsWith(NOT);
     const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
@@ -326,9 +343,6 @@ function renderPanel(){
   $('#domain-filters').innerHTML=(schema.range?rangeGroup():'')+multi.slice(0,2).map(multiGroup).join('')+
     (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key)||params.has(NOT+g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
   $('#domain-extra')?.addEventListener('toggle',queueUiSave);
-  $('#common-filters').innerHTML=groups.filter(g=>['ruleset','origin'].includes(g.key)).map(multiGroup).join('');
-  const sourceGroups=['source','package'].map(k=>groups.find(g=>g.key===k)).filter(Boolean);
-  $('#source-filters').innerHTML=sourceGroups.map(multiGroup).join('');filterSources();
   if(focusAt?.group){
     const box=document.querySelector(`[data-group="${CSS.escape(focusAt.group)}"]`);
     (focusAt.action?box?.querySelector(`[data-action="${focusAt.action}"]`):box?.querySelector(`input[value="${CSS.escape(focusAt.value||'')}"]`))?.focus();
@@ -350,7 +364,7 @@ function applyFacets(data){
   $('#type-total').textContent=`${fmt(data.scope_total)} 个版本候选`;
   renderElsewhere();sync();
 }
-const facetsURL=()=>'/api/facets?'+new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','versions','prefer'].includes(k)));
+const facetsURL=()=>'/api/facets?'+new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir'].includes(k)));
 // Counts follow every condition, so they refresh beside each query; a late response never replaces a newer one.
 async function refreshFacets(){
   const gen=++facetGeneration;
@@ -368,7 +382,6 @@ async function changeTable(){
     if(stale.length){stale.forEach(k=>params.delete(k));return changeTable();}
     applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
-    $('#source-details').open=['source','ruleset','origin','package'].some(k=>params.has(k)||params.has(NOT+k));
     historyUpdate(true);sync();ready=true;await load();
   }catch(e){if(gen===panelGeneration){failResults(e.message,'读取失败');$('#columns').replaceChildren();$('#results').setAttribute('aria-busy','false');}}
 }
@@ -398,8 +411,11 @@ function flagHTML(row,key){
   return `<span class="flag ${token==='true'?'yes':'no'}"><span aria-hidden="true">${token==='true'?'✓':'·'}</span><span class="sr-only">${esc(ui.flags[token])}</span></span>`;
 }
 const versionSource=v=>(v.source_ids||[]).map(sourceShort).join(' / ');
-const versionLabel=v=>`${versionSource(v)} ${rulesetShort(v.ruleset)}`;
-const versionTitle=v=>`${(v.source_names||v.source_ids||[]).join('；')} · ${rulesetFull(v.ruleset)}`;
+// A version from another collection than the page's first names its collection, so 不全书's PHB24 and
+// our5etools' XPHB read as two collections' versions of one name.
+const foreignVersion=v=>v.collection&&v.collection!==metadata.collection;
+const versionLabel=v=>`${foreignVersion(v)?collectionName(v.collection)+' · ':''}${versionSource(v)} ${rulesetShort(v.ruleset)}`;
+const versionTitle=v=>`${v.collection?collectionName(v.collection)+' · ':''}${(v.source_names||v.source_ids||[]).join('；')} · ${rulesetFull(v.ruleset)}`;
 // Other versions' values sit under the displayed one, so a rule change is visible in place.
 function versionDiffs(row,key){
   const ids=row.version_diffs?.[key];if(!ids)return '';
@@ -491,14 +507,11 @@ async function load(){
     $('#result-count').title=$('#result-count').textContent;
     renderResults();
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
+    $('#empty-library').hidden=!(data.total===0&&metadata.library?.narrowed);
     if(focusSections){focusSections=false;($('#results .entry-name')||$('.table-wrap')).focus();}
   }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
   finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');renderLoadState();updateReaderNavigation();saveUiState();}}
 }
-// Stacking and edition preference change presentation only; the open entry stays matched, so the reader stays.
-function presented(){clearTimeout(timer);historyUpdate();sync();$('.table-wrap').scrollTop=0;load();}
-$('#stack-versions').onchange=()=>{setParam('versions',$('#stack-versions').checked?'':'each');presented();};
-$('#prefer').onchange=()=>{setParam('prefer',$('#prefer').value==='5r'?'':$('#prefer').value);presented();};
 function sortBy(key){if(effectiveSort()===key)setParam('dir',params.get('dir')==='desc'?'asc':'desc');else{params.set('sort',key);params.delete('dir');}changed();}
 $('#filter-panel').addEventListener('change',e=>{
   const el=e.target;
@@ -521,7 +534,6 @@ $('#filter-panel').addEventListener('click',e=>{
   if(g.key==='type'&&!excluding(g)){chooseTypes(next);return;}
   setSelection(g,next);changed();
 });
-$('#source-search').addEventListener('input',()=>{filterSources();saveUiState();});
 // Name searches are conditions like any other. Kept searches are `q`; the text being typed is `typing`, a live
 // search that Enter keeps as a chip, so a reload returns it to the field rather than making it a chip.
 // Both are page state, read from the URL only on load and history navigation: the URL trails the field by the
@@ -554,7 +566,7 @@ function queueSearch(){
 // Choosing a suggested value drops the draft, so suggestions count with the draft left out.
 let suggestionGroups=null,suggestionGeneration=0;
 async function refreshSuggestionCounts(){
-  const gen=++suggestionGeneration,query=new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','versions','prefer','typing'].includes(k)));
+  const gen=++suggestionGeneration,query=new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','typing'].includes(k)));
   try{const data=await api('/api/facets?'+query);if(gen!==suggestionGeneration)return;suggestionGroups=readGroups(data);
     if(!$('#suggestions').hidden){const keep=activeSuggestion;renderSuggestions();if(keep<suggestions.length){activeSuggestion=0;moveSuggestion(keep);}}}catch{/* Suggestions keep their last counts. */}
 }
@@ -567,10 +579,12 @@ $('#search-form').addEventListener('submit',e=>e.preventDefault());
 // Typing offers the name search first, then any field value whose label matches: “法术” finds the type,
 // “塑能” the school, “PHB” the sources, “坐骑” the preset. Choosing a value adds it to its field.
 let suggestions=[],activeSuggestion=0;
+// Rules versions and kinds of content belong to the reader's library, not to one query.
+const LIBRARY_GROUPS=new Set(['ruleset','origin']);
 const fold=t=>String(t||'').normalize('NFKC').toLowerCase();
 function suggestionList(text){
   const q=fold(text);if(!q)return [];
-  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi').flatMap(g=>{const chosen=new Set(params.getAll(g.key));
+  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&!LIBRARY_GROUPS.has(g.key)).flatMap(g=>{const chosen=new Set(params.getAll(g.key));
     return g.options.filter(o=>!chosen.has(o.value)&&(fold(o.label).includes(q)||fold(o.search).includes(q)))
       .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2}));});
   const presets=(metadata?.presets||[]).filter(p=>fold(p.name).includes(q)).map(p=>({kind:'preset',preset:p,field:ui.presetField,label:`${p.name}（${typeName(p.type)}）`,count:null,rank:fold(p.name)===q?0:1}));
@@ -627,7 +641,7 @@ $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#fi
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
 $('#reset').onclick=()=>{
   clearDraft();committed=[];
-  for(const key of [...params.keys()])if(!['collection','sort','dir','versions','prefer'].includes(key))params.delete(key);
+  for(const key of [...params.keys()])if(!['collection','sort','dir'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 };
 function dropCondition(key){
@@ -645,7 +659,7 @@ $('#active-filters').addEventListener('click',e=>{
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
-$('#export').onclick=()=>{location.href='/api/export?'+params;};
+$('#export').onclick=()=>{location.href=annaLibrary.withScope('/api/export?'+params);};
 // The whole row is the target: anywhere on it reads the row's entry, a version pill reads that version.
 // Selecting text in a row reads nothing, so values stay copyable.
 let resultClick=false;
@@ -830,9 +844,11 @@ async function init(){
   try{
     // Static files can be updated while the old Python process is still serving them.
     // Leave its original unscoped queries usable, but never read it as a requested library.
+    // Same-name rows and the preferred rules belong to the reader's library now; old links drop them.
+    params.delete('versions');params.delete('prefer');
     const meta=await api('/api/meta');
     if(!meta.collections&&params.has('collection'))throw new Error(ui.collectionRestart);
-    metadata=meta;Object.assign(fieldNames,metadata.fields);showCollections();
+    metadata=meta;Object.assign(fieldNames,metadata.fields);showLibrary();
     const pageSwitch=document.querySelector('.topbar .page-switch');
     if(pageSwitch){
       if(metadata.tour_url===null){pageSwitch.hidden=true;}

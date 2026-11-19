@@ -20,6 +20,7 @@ from anna.presentation.our5etools import (
     Our5etoolsCatalog,
     Our5etoolsReader,
     Our5etoolsTour,
+    load_fivetools_collection,
     load_our5etools_collection,
 )
 from anna.server.app import create_server
@@ -321,7 +322,7 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
         )
         self.assertIn('data-entry="o5e_1111111111111111"', html_ok)
         self.assertIn('data-entry="o5e_2222222222222222"', html_ok)
-        self.assertIn('collection=5etools', html_ok)
+        self.assertIn('collection=our5etools', html_ok)
         self.assertIn('f_spell_level=3', html_ok)
         self.assertIn('f_school=', html_ok)
         # Strict 5etools isolation: non-o5e_ target is NEVER emitted as clickable data-entry
@@ -586,6 +587,101 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
             with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('unlisted ext blocked')):
                 self.assertIsNone(rdr_sec.resolve_media_asset('ext/deadbeefdeadbeefdeadbeef.webp'))
 
+    def test_reserved_5etools_collection_interface_and_isolation(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = _make_mini_repo(root)
+            out_our = root / 'built_our5etools'
+            out_5e = root / 'built_5etools'
+            empty_5e = root / 'empty_5etools'
+
+            self.assertIsNone(load_fivetools_collection(empty_5e))
+
+            m_our = build.build(source=src, output=out_our, quiet=True)
+            m_5e = build.build(source=src, output=out_5e, collection_key='5etools', quiet=True)
+            self.assertEqual(m_our['collection'], 'our5etools')
+            self.assertEqual(m_5e['collection'], '5etools')
+            self.assertEqual(audit.main(['--data', str(out_our)]), 0)
+            self.assertEqual(audit.main(['--data', str(out_5e)]), 0)
+
+            # Collection loaders strictly enforce matching manifest/reader collection key.
+            self.assertIsNone(load_our5etools_collection(out_5e))
+            self.assertIsNone(load_fivetools_collection(out_our))
+
+            col_our = load_our5etools_collection(out_our)
+            col_5e = load_fivetools_collection(out_5e)
+            assert col_our is not None and col_5e is not None
+            self.assertEqual(col_our.key, 'our5etools')
+            self.assertEqual(col_our.book_base, '/our5etools-book/')
+            self.assertEqual(col_our.media_base, '/our5etools-media/')
+            self.assertEqual(col_5e.key, '5etools')
+            self.assertEqual(col_5e.book_base, '/5etools-book/')
+            self.assertEqual(col_5e.media_base, '/5etools-media/')
+
+            # Mount both collections alongside native 5echm and verify isolated routing/exports.
+            srv_root = root / 'srv'
+            srv_root.mkdir()
+            b_src, b_db = linked_fixtures.LinkedBuildTests().fixture(srv_root)
+            b_book = srv_root / 'book'
+            b_manifest, _ = build_book(b_src, b_db, b_book)
+            server = create_server(b_db, b_book, b_manifest, 0, additional_collections=(col_our, col_5e))
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                def req(path: str):
+                    with closing(HTTPConnection('127.0.0.1', server.server_port)) as conn:
+                        conn.request('GET', path)
+                        resp = conn.getresponse()
+                        return resp.status, dict(resp.getheaders()), resp.read()
+
+                st, _, body = req('/api/meta?collection=our5etools')
+                self.assertEqual(st, 200)
+                meta_our = json.loads(body)
+                self.assertEqual(meta_our['collection'], 'our5etools')
+                self.assertEqual(meta_our['tour_url'], '/tour?collection=our5etools')
+                self.assertEqual(meta_our['reader_url'], '/read?collection=our5etools')
+
+                st, _, body = req('/api/meta?collection=5etools')
+                self.assertEqual(st, 200)
+                meta_5e = json.loads(body)
+                self.assertEqual(meta_5e['collection'], '5etools')
+                self.assertIsNone(meta_5e['tour_url'])
+                self.assertEqual(meta_5e['reader_url'], '/read?collection=5etools')
+
+                st, _, body = req('/api/tour?collection=5etools')
+                self.assertEqual((st, json.loads(body)), (400, {'code': 'collection_unsupported'}))
+
+                st, hdrs, _ = req('/api/export?collection=5etools&type=spell')
+                self.assertEqual(st, 200)
+                self.assertEqual(hdrs['Content-Disposition'], 'attachment; filename="5e-anna-5etools.csv"')
+
+                st, _, nav_5e_raw = req('/api/reader?collection=5etools')
+                self.assertEqual(st, 200)
+                nav_5e = json.loads(nav_5e_raw)
+                self.assertEqual(nav_5e['collection'], '5etools')
+                self.assertEqual(nav_5e['page_base'], '/5etools-book/')
+
+                st, _, ch_5e = req('/5etools-book/books/phb/0.html')
+                self.assertEqual(st, 200)
+                self.assertIn(b'/5etools-book/anna-assets/links.js', ch_5e)
+
+                st, _, aud_5e = req('/5etools-media/audio/bestiary/vampire.opus')
+                self.assertEqual(st, 200)
+                self.assertGreater(len(aud_5e), 16)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            tour_5e_path = root / 'tour-5etools.json'
+            tour_5e_path.write_text(
+                json.dumps({'schema': 1, 'collection': '5etools', 'sections': []}),
+                encoding='utf-8',
+            )
+            col_5e_with_tour = load_fivetools_collection(out_5e, tour_path=tour_5e_path)
+            assert col_5e_with_tour is not None and col_5e_with_tour.tour is not None
+            self.assertEqual(col_5e_with_tour.tour.view()['collection'], '5etools')
+
 
 @unittest.skipUnless(REAL_CORPUS_READY, 'Requires local our5etools repo and built data/our5etools')
 class Our5etoolsRealCorpusInventoryAndSemanticsTests(unittest.TestCase):
@@ -736,7 +832,18 @@ class Our5etoolsRealCorpusInventoryAndSemanticsTests(unittest.TestCase):
         self.assertFalse(self.recon['unsupported_blocks'])
 
     def test_real_links_strict_5etools_isolation(self):
+        self.assertEqual(self.manifest['collection'], 'our5etools')
         with closing(self._connect_ro()) as db:
+            meta_col = db.execute("SELECT value FROM metadata WHERE key = 'collection'").fetchone()
+            self.assertEqual(meta_col[0] if meta_col else None, 'our5etools')
+            bad_prov = db.execute(
+                "SELECT count(*) FROM entries WHERE coalesce(json_extract(provenance_json, '$.collection'), '') != 'our5etools'"
+            ).fetchone()[0]
+            self.assertEqual(bad_prov, 0)
+            bad_html = db.execute(
+                'SELECT count(*) FROM entries WHERE layout_html LIKE \'%collection=5etools%\' OR layout_html LIKE \'%title="5etools 中%\''
+            ).fetchone()[0]
+            self.assertEqual(bad_html, 0)
             rows = db.execute(
                 "SELECT id, layout_html FROM entries "
                 "WHERE layout_html LIKE '%data-entry=%' OR layout_html LIKE '%ref-filter%' LIMIT 200"
@@ -745,9 +852,9 @@ class Our5etoolsRealCorpusInventoryAndSemanticsTests(unittest.TestCase):
             for r in rows:
                 html_txt = r['layout_html']
                 for target in re.findall(r'data-entry="([^"]+)"', html_txt):
-                    self.assertTrue(target.startswith('o5e_'), f'{r["id"]} jumped to non-5etools target {target}')
+                    self.assertTrue(target.startswith('o5e_'), f'{r["id"]} jumped to non-our5etools target {target}')
                 for href in re.findall(r'class="ref-filter"[^>]*href="([^"]+)"', html_txt):
-                    self.assertIn('collection=5etools', href)
+                    self.assertIn('collection=our5etools', href)
 
     def test_real_bundle_media_self_contained(self):
         self.assertEqual(self.manifest['counts']['bundled_media_files'], 816)
@@ -776,8 +883,8 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
 
     def test_catalog_meta_entries_facets_and_csv_export(self):
         meta = self.cat.meta()
-        self.assertEqual(meta['collection'], '5etools')
-        self.assertEqual(meta['tour_url'], '/tour?collection=5etools')
+        self.assertEqual(meta['collection'], 'our5etools')
+        self.assertEqual(meta['tour_url'], '/tour?collection=our5etools')
         self.assertEqual(len(meta['sources']), 541)
         self.assertEqual(len(meta['packages']), 323)
         self.assertEqual(set(meta['types']), set(otypes.TYPES))
@@ -807,6 +914,8 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
         self.assertTrue(raw_csv.startswith(b'\xef\xbb\xbf'))
         parsed_rows = list(csv.reader(io.StringIO(raw_csv.decode('utf-8-sig'))))
         self.assertEqual(len(parsed_rows) - 1, expected_n)
+        col_idx = parsed_rows[0].index('资料库')
+        self.assertEqual(parsed_rows[1][col_idx], 'our5etools')
 
         # Missing entry ID raises LookupError
         with self.assertRaises(LookupError):
@@ -834,8 +943,8 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
         self.assertEqual(sc_child['kind'], 'source')
         self.assertEqual(sc_child['id'], 'src:PHB')
         self.assertLess(sc_child['scoped_count'], sc_child['unscoped_count'])
-        self.assertEqual(sc_child['widen_tour_href'], '/tour?collection=5etools&at=spells-by-level')
-        self.assertIn('collection=5etools', sc_child['widen_query_href'])
+        self.assertEqual(sc_child['widen_tour_href'], '/tour?collection=our5etools&at=spells-by-level')
+        self.assertIn('collection=our5etools', sc_child['widen_query_href'])
         for item in scoped_spells['groups'][0]['items']:
             self.assertEqual(item['query'].get('source'), ['src:PHB'])
 
@@ -868,24 +977,25 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
                         body = resp.read()
                         return resp.status, dict(resp.getheaders()), body
 
-                # /api/reader?collection=5etools
-                st, _, body = req('/api/reader?collection=5etools')
+                # /api/reader?collection=our5etools
+                st, _, body = req('/api/reader?collection=our5etools')
                 self.assertEqual(st, 200)
                 nav = json.loads(body)
                 self.assertEqual(nav['schema'], 6)
+                self.assertEqual(nav['collection'], 'our5etools')
                 self.assertEqual(nav['page_base'], '/our5etools-book/')
                 self.assertEqual(len(nav['nodes']), 18013)
 
                 # /api/reader-page valid & stale snapshot 409
-                st, _, body = req('/api/reader-page?collection=5etools&path=books/phb/0.html')
+                st, _, body = req('/api/reader-page?collection=our5etools&path=books/phb/0.html')
                 self.assertEqual(st, 200)
                 self.assertEqual(json.loads(body)['path'], 'books/phb/0.html')
-                st, _, body = req('/api/reader-page?collection=5etools&path=books/phb/0.html&snapshot=stale-snap')
+                st, _, body = req('/api/reader-page?collection=our5etools&path=books/phb/0.html&snapshot=stale-snap')
                 self.assertEqual(st, 409)
                 self.assertEqual(json.loads(body)['code'], 'snapshot_changed')
 
                 # /api/book-search
-                st, _, body = req('/api/book-search?collection=5etools&keyword=%E7%81%AB%E7%90%83%E6%9C%AF')
+                st, _, body = req('/api/book-search?collection=our5etools&keyword=%E7%81%AB%E7%90%83%E6%9C%AF')
                 self.assertEqual(st, 200)
                 self.assertGreater(json.loads(body)['total'], 0)
 

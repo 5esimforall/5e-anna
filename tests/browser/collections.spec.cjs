@@ -1,21 +1,27 @@
-/* The test server registers demo, reserved-demo, and live 5etools (when built). */
+/* The test server registers demo, reserved-demo, live our5etools (when built), and reserved 5etools. */
 const {test,expect}=require('@playwright/test');
 const anna=`http://127.0.0.1:${Number(process.env.ANNA_E2E_PORT||18380)}`;
 const picker=page=>page.getByRole('combobox',{name:'资料库'});
 const resultsReady=page=>expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
 
-test('the reserved library is visible but unusable, while live 5etools is enabled, and an unavailable link has a way back',async({page})=>{
+test('reserved libraries (5etools & reserved-demo) are visible but unusable, while live our5etools is enabled, and an unavailable link has a way back',async({page})=>{
   await page.setViewportSize({width:375,height:812});
   await page.goto(anna);
   await resultsReady(page);
   await expect(picker(page)).toHaveValue('5echm');
+  const our5etools=picker(page).locator('option[value="our5etools"]');
+  await expect(our5etools).toHaveText('our5etools');
+  await expect(our5etools).not.toHaveAttribute('disabled','');
   const fiveEtools=picker(page).locator('option[value="5etools"]');
-  await expect(fiveEtools).toHaveText('5etools');
-  await expect(fiveEtools).not.toHaveAttribute('disabled','');
+  await expect(fiveEtools).toHaveText('5etools（未接入）');
+  await expect(fiveEtools).toHaveAttribute('disabled','');
   const reserved=picker(page).locator('option[value="reserved-demo"]');
   await expect(reserved).toHaveText('预留测试库（未接入）');
   await expect(reserved).toHaveAttribute('disabled','');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.goto(anna+'/?collection=5etools');
+  await expect(page.getByRole('alert').filter({hasText:'这个资料库尚未接入。'})).toBeVisible();
+  await expect(page.locator('#results tr')).toHaveCount(0);
   await page.goto(anna+'/?collection=reserved-demo');
   await expect(page.getByRole('alert').filter({hasText:'这个资料库尚未接入。'})).toBeVisible();
   await expect(page.locator('#results tr')).toHaveCount(0);

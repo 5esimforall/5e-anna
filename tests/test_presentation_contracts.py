@@ -15,7 +15,15 @@ from unittest.mock import Mock
 from urllib.parse import urlencode
 
 from anna.presentation import catalog, contracts, reader
-from anna.presentation.collections import BookCatalog, CatalogProvider, Collection, CollectionRegistry, DEFAULT, FIVETOOLS
+from anna.presentation.collections import (
+    BookCatalog,
+    CatalogProvider,
+    Collection,
+    CollectionRegistry,
+    DEFAULT,
+    FIVETOOLS,
+    OUR5ETOOLS,
+)
 from anna.presentation.layout import entry_layout
 from anna.server.linked_book import inject, text_slice
 from anna.server.query import Handler
@@ -123,11 +131,13 @@ class CatalogContractTests(unittest.TestCase):
             self.assertEqual(meta['default_collection'], DEFAULT)
             self.assertTrue(meta['source_text'])
             self.assertEqual({c['id']: c['status'] for c in meta['collections']},
-                             {DEFAULT: 'ready', FIVETOOLS.key: 'reserved'})
+                             {DEFAULT: 'ready', OUR5ETOOLS.key: 'reserved', FIVETOOLS.key: 'reserved'})
             for suffix, status, code in (
+                ('our5etools', 409, 'collection_unavailable'),
                 ('5etools', 409, 'collection_unavailable'),
                 ('not-registered', 404, 'unknown_collection'),
                 ('', 400, 'invalid_collection'),
+                ('5echm&collection=our5etools', 400, 'invalid_collection'),
                 ('5echm&collection=5etools', 400, 'invalid_collection'),
             ):
                 actual, _, body = request('/api/entries?collection='+suffix)
@@ -152,6 +162,7 @@ class CatalogContractTests(unittest.TestCase):
             meta = json.loads(body)
             self.assertEqual(meta['collection'], FIVETOOLS.key)
             self.assertIn({'id':'5etools','label':{'zh':'5etools','en':'5etools'},'status':'ready'},meta['collections'])
+            self.assertIn({'id':'our5etools','label':{'zh':'our5etools','en':'our5etools'},'status':'reserved'},meta['collections'])
             self.assertIsNone(meta['reader_url'])
             self.assertIsNone(meta['snapshot'])
             self.assertFalse(meta['source_text'])

@@ -8,11 +8,16 @@ BRANCH ?= pages
 5ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DIR)")
 5ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
 5ETOOLS_BRANCH ?= main
+# our5etools is an independent collection (5etools), kept separate from 5ETOOLS_DIR (5etools-cn).
+OUR5ETOOLS_DIR ?=
+OUR5ETOOLS_DATA ?= data/our5etools
+OUR5ETOOLS_PATH := $(shell python3 -c 'import os, sys; from anna.paths import OUR5ETOOLS; print(os.path.abspath(sys.argv[1]) if sys.argv[1] else OUR5ETOOLS)' "$(OUR5ETOOLS_DIR)")
+OUR5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(OUR5ETOOLS_DATA)")
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status clean build test audit audit-links check up upper linked test-unit test-browser browser-setup icons
+.PHONY: usage clone update status clean build test audit audit-links check up upper linked our5etools-build our5etools-audit test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -59,6 +64,18 @@ status:
 	else \
 		echo "catalog: not built yet (run make build)"; \
 	fi
+	@if [ -d "$(OUR5ETOOLS_PATH)/.git" ] || [ -f "$(OUR5ETOOLS_PATH)/.git" ]; then \
+		git -C "$(OUR5ETOOLS_PATH)" log -1 --format='our5etools: %h  %ad  %s' --date=iso; \
+	elif [ -d "$(OUR5ETOOLS_PATH)/data" ]; then \
+		echo "our5etools (no Git version): $(OUR5ETOOLS_PATH)"; \
+	else \
+		echo "our5etools: not present (set OUR5ETOOLS_DIR=...)"; \
+	fi
+	@if [ -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" ]; then \
+		printf 'our5etools data: %s\n' "$$(du -sh "$(OUR5ETOOLS_DATA_PATH)" | cut -f1 | tr -d ' ')"; \
+	else \
+		echo "our5etools data: not built yet (run make our5etools-build)"; \
+	fi
 
 clean:
 	@python3 scripts/clean.py
@@ -69,6 +86,17 @@ icons:
 build: clone icons
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build --5etools "$(5ETOOLS_PATH)"
 	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
+	@if [ -d "$(OUR5ETOOLS_PATH)/data" ] && [ -f "$(OUR5ETOOLS_PATH)/__api/books.json" ]; then \
+		$(MAKE) --no-print-directory our5etools-build OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" OUR5ETOOLS_DATA="$(OUR5ETOOLS_DATA_PATH)"; \
+	else \
+		echo "our5etools: skipped (set OUR5ETOOLS_DIR to build 5etools collection)"; \
+	fi
+
+our5etools-build:
+	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)"
+
+our5etools-audit:
+	@"$(PYTHON)" -m anna.our5etools.audit --data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"
 
 test: test-unit test-browser
 
@@ -77,6 +105,9 @@ test-unit:
 
 audit:
 	@"$(PYTHON)" -m anna.catalog.audit
+	@if [ -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" ]; then \
+		$(MAKE) --no-print-directory our5etools-audit OUR5ETOOLS_DATA="$(OUR5ETOOLS_DATA_PATH)"; \
+	fi
 
 audit-links:
 	@"$(PYTHON)" -m anna.catalog.reference_coverage
@@ -87,10 +118,10 @@ linked:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)"
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --our5etools-source "$(OUR5ETOOLS_PATH)"
 
 upper:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --our5etools-source "$(OUR5ETOOLS_PATH)"
 
 # Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:

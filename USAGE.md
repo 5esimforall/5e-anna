@@ -7,19 +7,21 @@
 | 命令 | 用途 |
 | --- | --- |
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
-| `make build` | 从同一原文快照重建数据库（含全文搜索表 `book_search`）与链接版不全书 |
-| `make up` | 启动单端口查询、阅读与正文资源服务 |
-| `make upper` | 开发用：同上，重建完成后自动校验并换包 |
+| `make build` | 从同一原文快照重建不全书数据库（含 `book_search`）与链接版；存在 our5etools 镜像时同步执行 `our5etools-build` |
+| `make our5etools-build` | 从 `OUR5ETOOLS_DIR` 独立构建 `data/our5etools/` 只读查询库、Stella 整书章节与对账清单 |
+| `make our5etools-audit` | 核查 `data/our5etools/` 的不变量并生成 `data/our5etools/audit.md` |
+| `make up` | 启动单端口查询、导览、阅读与正文资源服务（存在 `data/our5etools/manifest.json` 时自动挂载 `5etools` 资料库） |
+| `make upper` | 开发用：同上，不全书或 our5etools 重建完成后自动校验并热重载 |
 | `make icons` | 从原始人物图生成界面图标 |
-| `make linked` | 由现有数据库生成链接版，并校验原文快照 |
+| `make linked` | 由现有不全书数据库生成链接版，并校验原文快照 |
 | `make test` | 运行单元测试和浏览器回归（需先构建数据） |
 | `make test-unit` / `make test-browser` | 分别运行单元测试 / 浏览器回归 |
 | `make browser-setup` | 安装锁定的 Node 依赖与 Chromium，首次运行浏览器测试前执行 |
-| `make audit` | 审计数据库与生成统计 |
+| `make audit` | 审计不全书数据库与生成统计；存在 `data/our5etools/manifest.json` 时同步执行 `our5etools-audit` |
 | `make audit-links` | 从原文逐处复核字段、表列及骰值伤害的引用落点 |
 | `make check` | 运行测试与审计 |
 | `make update` | 显式拉取原文与 5etools-cn 更新；之后运行 `make build` 更新数据 |
-| `make status` | 查看原文、5etools-cn 版本与构建库状态 |
+| `make status` | 查看原文、5etools-cn、our5etools 镜像及构建产物状态 |
 | `make clean` | 删除本地生成数据、报告、图标和依赖环境；保留源码、独立输入与共享镜像 |
 
 命令清单集中在本页；不带目标运行 `make` 只输出本页位置。下文的 `python -m anna.…` 模块命令在 anna 仓库根目录运行；应用代码不再通过 `scripts/` 路径启动。
@@ -27,6 +29,8 @@
 默认原文位于 anna 同级的 `5echm-web/`。`WEB_DIR=/绝对路径/镜像` 可指定其他位置，也支持相对路径（相对于执行 make 的目录）。两层 Makefile 之间传递绝对路径，避免切换工作目录后指向另一处。直接运行脚本也可通过环境变量 `WEB_DIR` 配置原文；`python -m anna.catalog.build --source` 可进一步覆盖该默认值。
 
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `python -m anna.catalog.build` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
+
+[our5etools 资料库](#our5etools-资料库)是独立的 `5etools` 资料库，与 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。通过 `OUR5ETOOLS_DIR=/路径` 指定本地镜像（未指定时由 `anna.paths.OUR5ETOOLS` 依次探测同级 `our5etools/` 与本机镜像），通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。`make build` 仅在目标目录存在 `data/` 和 `__api/books.json` 时自动触发 `make our5etools-build`，镜像缺席时安静跳过，不影响不全书构建。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
@@ -300,6 +304,58 @@ make build
 
 5etools-cn 的中文数据采用 CC BY-NC-SA 4.0。对照结果用于本机核对；若对外发布包含其中文内容的派生数据，需署名、非商用并以相同许可共享。
 
+## our5etools 资料库
+
+`our5etools` 作为独立资料库（`collection=5etools`）接入 Anna、导览与 Stella，与默认不全书（`collection=5echm`）严格隔离：两者不合并条目、不按名称互相回退，也不会改写或替代 `5ETOOLS_DIR` 指向的 `5etools-cn` 对照镜像。
+
+### 构建、增量更新与回滚
+
+```sh
+# 使用 Makefile（可用 OUR5ETOOLS_DIR / OUR5ETOOLS_DATA 覆盖默认路径）
+make our5etools-build
+make our5etools-audit
+
+# 直接调用模块命令行
+.venv/bin/python -m anna.our5etools.build --source /绝对路径/our5etools --output data/our5etools [--quiet]
+.venv/bin/python -m anna.our5etools.audit --data data/our5etools --output data/our5etools/audit.md [--json]
+
+# 启动服务并显式指定 our5etools 产物与镜像目录（make up / make upper 默认自动传入）
+.venv/bin/python -m anna.server.app --port 8000 --our5etools-data data/our5etools --our5etools-source /绝对路径/our5etools [--watch]
+```
+
+构建过程先校验源镜像（`data/`、`__api/books.json`、`homebrew/_recipes/all.json`），再写入同级临时目录 `<output>.tmp.<pid>`；全部表、阅读章节与清单校验通过后，经 `.prev` 原子替换目标目录并在成功后清理备份。任意阶段失败时删除临时目录，保留既有 `data/our5etools/` 快照不受破坏。相同源镜像重复构建保持幂等（相同 `snapshot`，`delta` 零增删）。`make upper`（`--watch`）在 `data/our5etools/manifest.json` 更新并稳定后自动热重载 `5etools` 资料库。
+
+当前实测全量构建（321 个配方自制包 + 1 个站点科普漫画 + 官方数据，盘点全部 2,048 个镜像文件）耗时约 42 秒，产物 `data/our5etools/` 总计约 659 MiB（`catalog.sqlite` 约 533 MiB，`reader/` 约 126 MiB），包含 61,480 条条目（29 类）、541 个来源、323 个资料包、50,009 条关系、2,589 个同包重印叠放组、378 册书目与冒险（2,436 章、18,013 个目录节点）；常规 SQLite 筛选计数与分页查询耗时在 50 ms 以内。
+
+### 只读产物与诊断对账
+
+构建产物集中输出于 `data/our5etools/`，只读服务与审计命令共同消费，不触碰源镜像：
+
+| 文件／目录 | 用途 |
+| --- | --- |
+| `catalog.sqlite` | 只读查询库，包含 `entries`、`entry_sources`、`entry_facets`、`sources`、`packages`、`identity_groups`、`identity_members`、`relations`、`book_pages`、`book_search` 与 `metadata` |
+| `reader/` | 2,436 页 Stella 章节 HTML（`books/`、`adventures/`、`brew-books/`、`brew-adventures/`）、`anna-assets/` 样式与脚本及 `anna-reader.json`（`schema: 6`） |
+| `manifest.json`、`summary.json` | 本次快照摘要、分类／来源／包统计与相对上一快照的 `delta` |
+| `inventory.json` | 源镜像全部 2,048 个文件的分类处置（导入位置或排除原因）与分片完整性校验 |
+| `reconciliation.json` | 与 `__api/stats.json` 和 `__api/books.json` 的输入输出对账、`_copy`／变体／子种族／孤立背景文本诊断、`{@...}` 链接解析与未解析样例、未知标签／结构块及本地与远端媒体统计 |
+| `attribution.json` | 全部资料包与来源署名，以及不可随包二次分发资源清单 |
+| `audit.md` | `make our5etools-audit` 输出的中文审计报告，校验 17 项数据与阅读器不变量（全部通过退出 0，任一失败退出 1） |
+
+### 导览与 Stella 整书阅读
+
+- **查询与筛选**：在顶栏「资料库」切换至 `our5etools`（`/?collection=5etools`），支持中文与英文名称、正文检索、`source`／`package`／`origin`／`ruleset` 与领域分面筛选（含排除条件 `not_*`）、同包 5e／5r 重印叠放与展开、以及带 UTF-8 BOM 的 `5e-anna-5etools.csv` 导出。详情页展示来源卡片（来源性质、内容包、作者、译者、分档评分、`_copy` 继承来源、本地音频播放与远端配图提示），所有 `{@...}` 与 `{@filter ...}` 链接保持在 `collection=5etools` 内。
+- **范围导览**：`/tour?collection=5etools` 由 `tour/our5etools.json` 与库内书架、资料包动态组合，覆盖建角入门、施法与灵能、城主资料与遭遇、装备魔法物品与奇珍、规则参考、书架（官方规则书 65 册、官方冒险 100 册、社区扩展书籍 137 册、社区扩展冒险 75 册、站点科普漫画 1 册）与资料包（站点自有精选包与社区扩展包）。进入具体书目或资料包后，子项与查询出口默认继承该范围，页面顶部显示当前范围横幅与显式「放宽到全库」按钮；超过 24 项的书架与资料包分组内置即时筛选框。
+- **整书阅读**：`/read?collection=5etools` 从 `/our5etools-book/` 加载章节 HTML 与 DOM 链接层，支持目录导航、章节分页、库内全文搜索、定义与引用定位以及刷新后位置恢复；源镜像自带的本地音频、字体与图标通过 `/our5etools-media/` 只读提供（支持 `Range` 分段音频播放与路径穿越防护），未离线收录的远端配图明确标注为远端外链而不伪装为离线资源。
+
+### 署名与分发边界
+
+`data/our5etools/attribution.json` 记录全部 323 个资料包、541 个来源及不可随项目二次分发的资源：
+
+- **官方与合作出版物（16,190 条）**：Wizards of the Coast 及合作出版内容受版权保护，仅在本机个人查阅使用。
+- **社区与站点自制包（322 个）**：保留原作者、译者、来源链接与 `_meta` 许可注记。
+- **未随包远端媒体（10,914 处）**：外部配图与音频未离线打包在镜像仓库中，页面保留外链与提示。
+- **本地字体（68 个，位于 `fonts/` 等目录）**：仅由本机镜像只读提供，二次分发前需核对 `__ours/fonts/OFL.txt` 等字体许可。
+
 ## 自动化验证
 
 `make test` 同时运行单元测试和 Playwright 浏览器回归；`make check` 再加数据审计。首次需要 Node.js 20+ 与 npm，并执行 `make browser-setup` 安装 `package-lock.json` 锁定的开发依赖及 Chromium；运行 anna 本身仍只需 Python 依赖。单独运行某层检查：
@@ -324,7 +380,7 @@ make check
 make up
 ```
 
-查询页标题旁的「资料库」标明当前查询范围，默认是不全书。筛选面板的「来源」仍用来选这套库中的书籍。5etools 显示为「未接入」，不会参与查询；设置构建用的 `5ETOOLS_DIR` 也不会导入它。已接入的资料库可以在这里切换，切换后从新库的全部条目开始，后退可返回上一个查询；在同一库中「清空」只清筛选，不切库。导览、原文范围和 Stella 仍使用不全书。
+查询页标题旁的「资料库」标明当前查询范围，默认是不全书（`5echm`）。筛选面板的「来源」仍用来选当前库中的书籍（在 `our5etools` 中另提供「资料包」筛选）。构建好 `data/our5etools/` 后，可在「资料库」切换至 `our5etools`（`collection=5etools`），其查询、导览（`/tour?collection=5etools`）与 Stella 阅读（`/read?collection=5etools`）独立于不全书；未构建 `data/our5etools/` 时，`5etools` 显示为「未接入」，设置对照用的 `5ETOOLS_DIR` 不会启用它。切换资料库后从新库的全部条目开始，后退可返回上一个查询；在同一库中「清空」只清筛选，不切库。
 
 打开 [查询页](http://127.0.0.1:8000/)。在条件栏输入名称即可查询；按 Enter 把搜索留作标签后可继续输入下一个。每个条件和搜索都是独立的标签，标签之间以“∧”连接，表示都要满足；点击标签文字切换为“不是／不含”，即排除这些取值或词，筛选区的“排除”按钮切换整个字段。下拉的第二项“正文包含”改在条目原文中查找。输入“法术”“塑能”“PHB”“坐骑”等文字时，下拉建议对应的类型、字段取值、来源或预设，选择即加入条件。“筛选”中的第一个字段是条目类型，与其他字段同样操作；所选类型决定表格的列与筛选字段。法术按环阶、学派、职业、施法时间及特性筛选；生物按 CR 范围、体型、类型及传奇动作筛选；物品按稀有度、类别及同调筛选；技能按所用属性筛选，并按力量到魅力的顺序排列，2014 与 2024 的同名属性和技能叠放为版本。环境危害按类型“环境危害”查询，包括名称旁标注【危害】的术语、2024 城主指南标有危害度的危害物，以及“危害物”“环境灾害”“环境影响”等类别下在正文中应用了具体规则（DC、骰子、优势劣势、状态等）的条目；类别导言与查表页保持未分类段落。字段未选即不限制，点击取值即加入；同组多选取并集、组间取交集，支持清除与反选。每个取值旁的数字是选中后的结果数。表头可切换升降序；环阶、CR、稀有度按实际顺序排序，缺失或冲突数值置后。来源可多选；查询、排序与版本显示方式保存在地址栏。结果随滚动每批加载 150 行，底部也可点击“继续加载”；刷新或前进后退恢复已加载的行数和位置。结果底栏的“导出 CSV”导出全部匹配行及所选类型的属性。`Ctrl-C` 停止；用 `ANNA_PORT` 配置查询与阅读共用的端口。
 

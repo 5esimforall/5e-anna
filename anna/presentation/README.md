@@ -7,7 +7,8 @@
 | 模块 | 回答的问题 |
 | --- | --- |
 | `catalog.py` | 当前条件命中哪些条目，如何排序、叠放版本、计数和导出？ |
-| `collections.py` | 当前查阅哪个资料库，由哪个只读提供者回答？ |
+| `collections.py` | 当前查阅哪个资料库，由哪个只读提供者（含可选的导览与阅读器）回答？ |
+| `our5etools.py` | 如何只读消费已构建的 `data/our5etools/` 产物，提供独立的查询、范围导览与 Stella 章节阅读？ |
 | `references.py` | 当前发布快照中有哪些有效引用、裁定结果与缺失定义？ |
 | `layout.py`、`reader.py` | 如何从条目或页面中的一段范围回到原文排版、目录页面与定义锚点？ |
 | `tour.py` | 读者从哪里开始，每一层通向哪里？精选入口之下按目录、页面条目与条目关系展开导览的各层 |
@@ -27,11 +28,11 @@ HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；�
 
 ## 接入资料库
 
-资料库标识内容来自哪套整理数据库；`source` 仍是该库中的书籍等文献，`ruleset` 仍是规则代际。不带 `collection` 的 URL 继续查询不全书（`5echm`）。带 `collection` 的查询、计数、详情、排版和导出均由同一提供者负责。条目链接用资料库和库内条目 ID 定位；不同库的同名条目或相同 ID 不合并、不互相回退。
+资料库标识内容来自哪套整理数据库；`source` 仍是该库中的书籍等文献，`ruleset` 仍是规则代际，`package` 标识所属内容包。不带 `collection` 的 URL 继续查询不全书（`5echm`）。带 `collection` 的查询、计数、详情、排版、导出以及（若提供者实现了对应能力）导览与阅读均由同一资料库负责。条目链接用资料库和库内条目 ID 定位；不同库的同名条目或相同 ID 不合并、不互相回退。
 
-接入新的库时，实现 `CatalogProvider`，返回既有的查询／筛选／详情消费结构。提供者负责只读访问自己的数据和生成经安全处理的排版；没有可用排版时返回 `{"status":"empty"}`，正文仍来自详情的 `body`。使用 `create_server(..., additional_collections=(Collection(key, zh, en, provider),))` 注册；查询页从 `/api/meta` 读取资料库列表，不需为每个库增加分支。现有不全书提供者复用 SQLite 和原文排版；`5etools` 已预留键，注册它的提供者后才成为可读取的库。构建用的 `5ETOOLS_DIR` 仍只供应对照，不会启用它。
+接入新的库时，实现 `CatalogProvider`，返回既有的查询／筛选／详情消费结构；若同时提供导览或整书阅读，可在 `Collection` 上挂载可选的 `reader_url`、`snapshot`、`tour` 与 `reader` 字段。提供者负责只读访问自己的数据和生成经安全处理的排版，不得在导入或请求阶段加载任何构建、审计或提取模块；没有可用排版时返回 `{"status":"empty"}`，正文仍来自详情的 `body`。使用 `create_server(..., additional_collections=(Collection(key, zh, en, provider, ...),))` 注册；`anna.server.app` 在存在 `--our5etools-data` 的 `manifest.json` 时按需懒加载 `load_our5etools_collection()` 注册 `5etools` 资料库，而未传入额外资料库时 `5etools` 仍保持 `reserved` 占位。构建用的 `5ETOOLS_DIR` 仍只供应不全书对照，不会启用 `5etools` 资料库。
 
-`/api/meta` 返回当前库、默认库及各库状态（`ready`／`reserved`），未知、未启用和重复／空库参数分别返回明确错误。如果资料库不是不全书，查询与阅读栏不提供 Stella 定位或提取范围；不全书的导览、Stella 和原文证据继续使用原有快照与锚点。
+`/api/meta` 返回当前库、默认库、各库状态（`ready`／`reserved`）及该库自身的 `reader_url`、`tour_url` 和 `snapshot`；未知、未启用、重复／空库参数以及不支持导览或阅读的资料库分别返回明确错误（404／409／400）。非不全书资料库不开放 `/source` 原文范围；`our5etools` 的导览（`/tour?collection=5etools`，含书目／资料包范围继承与显式「放宽到全库」）与 Stella 阅读（`/read?collection=5etools`，正文路由 `/our5etools-book/`、本地媒体路由 `/our5etools-media/`）均绑定各自构建快照，不全书的导览、Stella 和原文证据继续沿用原有快照与锚点。
 
 ## 验证与后续修改
 

@@ -25,7 +25,8 @@
     if (verify && range(binding).toString() !== spec.text) return null;
     return binding;
   }
-  const contentBase = location.pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
+  const pathname = typeof location !== 'undefined' && typeof location.pathname === 'string' ? location.pathname : '';
+  const contentBase = pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
     : (data.reader?.content_base || '/book/');
   const definitionBase = data.reader?.definition_base || (contentBase + 'definition/');
   const collection = data.reader?.collection || (contentBase === '/our5etools-book/' ? '5etools' : '5echm');

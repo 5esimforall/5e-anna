@@ -3,7 +3,8 @@
 (() => {
   'use strict';
   const context = JSON.parse(document.getElementById('anna-bindings').textContent).reader;
-  const contentBase = location.pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
+  const pathname = typeof location !== 'undefined' && typeof location.pathname === 'string' ? location.pathname : '';
+  const contentBase = pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
     : (context?.content_base || '/book/');
   const definitionBase = context?.definition_base || (contentBase + 'definition/');
   const collection = context?.collection || (contentBase === '/our5etools-book/' ? '5etools' : '5echm');

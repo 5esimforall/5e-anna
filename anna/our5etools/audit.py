@@ -1154,7 +1154,7 @@ def render_markdown(report: dict[str, Any]) -> str:
         for item in non_red[:30]:
             if isinstance(item, dict):
                 lines.append(
-                    f'  - `{item.get("path") or item.get("category") or item.get("name", "")}`：'
+                    f'  - `{item.get("path") or item.get("kind") or item.get("category") or item.get("name", "")}`：'
                     f'{item.get("reason") or item.get("note") or item.get("license", "")}'
                 )
             else:

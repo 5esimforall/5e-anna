@@ -23,7 +23,7 @@ from anna.our5etools import books, inventory, render, semantics, types
 
 MANIFEST_SCHEMA = 1
 READER_SCHEMA = 6
-COLLECTION_KEY = '5etools'
+COLLECTION_KEY = 'our5etools'
 PAGE_BASE = '/our5etools-book/'
 
 _CR_FRACTIONS: dict[str, float] = {
@@ -500,7 +500,7 @@ def _validate_toc_order(nodes: list[dict[str, Any]]) -> None:
         seen.add(nid)
 
 
-def _validate_staged_output(stage: Path, expected_entries: int) -> None:
+def _validate_staged_output(stage: Path, expected_entries: int, *, expected_collection: str = COLLECTION_KEY) -> None:
     """Validate SQLite integrity, reader JSON & files, and manifest.json before atomic swap."""
     db_path = stage / 'catalog.sqlite'
     if not db_path.is_file():
@@ -518,6 +518,9 @@ def _validate_staged_output(stage: Path, expected_entries: int) -> None:
             raise ValueError('packages table is empty')
         if db.execute('SELECT count(*) FROM entry_facets').fetchone()[0] <= 0:
             raise ValueError('entry_facets table is empty')
+        col_row = db.execute("SELECT value FROM metadata WHERE key = 'collection'").fetchone()
+        if not col_row or col_row[0] != expected_collection:
+            raise ValueError(f'Unexpected SQLite collection metadata: {col_row[0] if col_row else None!r} != {expected_collection!r}')
 
     reader_dir = stage / 'reader'
     reader_json_path = reader_dir / 'anna-reader.json'
@@ -526,6 +529,8 @@ def _validate_staged_output(stage: Path, expected_entries: int) -> None:
     reader_data = json.loads(reader_json_path.read_bytes())
     if reader_data.get('schema') != READER_SCHEMA:
         raise ValueError(f'Unexpected reader schema: {reader_data.get("schema")}')
+    if reader_data.get('collection') != expected_collection:
+        raise ValueError(f'Unexpected reader collection: {reader_data.get("collection")!r} != {expected_collection!r}')
     _validate_toc_order(reader_data.get('nodes') or [])
     pages = reader_data.get('pages') or {}
     for page_path in pages:
@@ -536,9 +541,11 @@ def _validate_staged_output(stage: Path, expected_entries: int) -> None:
     if not manifest_path.is_file():
         raise ValueError(f'Missing staged manifest: {manifest_path}')
     manifest = json.loads(manifest_path.read_bytes())
-    for required in ('schema', 'snapshot', 'source_root', 'counts', 'reader', 'checks'):
+    for required in ('schema', 'snapshot', 'collection', 'source_root', 'counts', 'reader', 'checks'):
         if required not in manifest:
             raise ValueError(f'manifest.json missing required key: {required}')
+    if manifest.get('collection') != expected_collection:
+        raise ValueError(f'Unexpected manifest collection: {manifest.get("collection")!r} != {expected_collection!r}')
     if not (stage / 'media').is_dir():
         raise ValueError(f'Missing staged media directory: {stage / "media"}')
     remotes_path = stage / 'media-remotes.json'
@@ -807,12 +814,18 @@ def build(
     output: Path = OUR5ETOOLS_DATA,
     *,
     img_dir: Path | None = None,
+    collection_key: str = COLLECTION_KEY,
     quiet: bool = False,
 ) -> dict[str, Any]:
     """Run the full offline our5etools build with atomic staging and rollback safety."""
     t_start = time.perf_counter()
     source = Path(source).expanduser().resolve()
     output = Path(output).expanduser().resolve()
+    col_key = (collection_key or COLLECTION_KEY).strip()
+    if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', col_key):
+        raise ValueError(f'Invalid collection key: {col_key!r}')
+    page_base = f'/{col_key}-book/'
+    media_base = f'/{col_key}-media/'
     if output == source or source in output.parents or output in source.parents:
         raise ValueError(f'Output directory must be separate from source directory: {output} vs {source}')
 
@@ -839,7 +852,7 @@ def build(
 
     # 2. Resolve corpus & collect book index
     _log('[our5etools.build] Resolving corpus semantics...')
-    corpus = semantics.resolve_corpus(inv)
+    corpus = semantics.resolve_corpus(inv, collection=col_key)
     book_index = books.collect_book_index(inv)
     _log(
         f'[our5etools.build] Resolved {len(corpus.entries)} entries, '
@@ -851,6 +864,7 @@ def build(
     snapshot = hashlib.sha256(
         json.dumps(
             {
+                'collection': col_key,
                 'input_sha256': inv.snapshot_info['input_sha256'],
                 'git_commit': inv.snapshot_info['git_commit'],
                 'manifest_schema': MANIFEST_SCHEMA,
@@ -891,7 +905,7 @@ def build(
     resolver = render.LinkResolver(
         corpus.lookup_index,
         book_index.anchor_lookup,
-        collection=COLLECTION_KEY,
+        collection=col_key,
         tag_redirects=inv.generated_lookups.get('data/generated/gendata-tag-redirects.json'),
         entry_index=entry_index,
         source_ids=resolver_source_ids,
@@ -931,6 +945,9 @@ def build(
             media_checker=media_checker,
             entry_index_by_book_chapter=entry_index_by_book_chapter,
             snapshot=snapshot,
+            collection=col_key,
+            content_base=page_base,
+            media_base=media_base,
         )
         remote_media_map: dict[str, list[str]] = {
             str(k): list(v)
@@ -1064,8 +1081,9 @@ def build(
         reader_json = {
             'schema': READER_SCHEMA,
             'snapshot': snapshot,
-            'collection': COLLECTION_KEY,
-            'page_base': PAGE_BASE,
+            'collection': col_key,
+            'page_base': page_base,
+            'media_base': media_base,
             'default_page': default_page,
             'presentation_resources': [dict(res) for res in books.PRESENTATION_RESOURCES],
             'roots': roots_payload,
@@ -1127,6 +1145,7 @@ def build(
                 resolver,
                 media_checker,
                 relations_by_entry.get(eid, ()),
+                media_prefix=media_base,
             )
             layout_html: str = rendered.get('html') or ''
             body_text: str = rendered.get('body_text') or ''
@@ -1181,6 +1200,7 @@ def build(
 
             rating = _lookup_entry_rating(entry, rating_index)
             provenance = {
+                'collection': col_key,
                 'package_id': pkg_id,
                 'package_name': pkg_meta.get('name') or pkg_id,
                 'origin': entry.get('origin') or src_meta.get('origin') or pkg_meta.get('origin') or '',
@@ -1426,7 +1446,7 @@ def build(
                 ('snapshot', snapshot),
                 ('built_at', built_at),
                 ('source_root', str(source)),
-                ('collection', COLLECTION_KEY),
+                ('collection', col_key),
             ],
         )
 
@@ -1463,6 +1483,7 @@ def build(
         delta = _compute_delta(prev_summary, counts_summary, dict(by_type))
 
         inventory_payload = {
+            'collection': col_key,
             'snapshot_info': inv.snapshot_info,
             'checks': inv.checks,
             'total_files': len(inv.file_records),
@@ -1496,6 +1517,7 @@ def build(
 
         total_resolved_links = resolved_entity_links + resolved_book_links
         reconciliation_payload = {
+            'collection': col_key,
             'api_stats': api_stats,
             'api_books': api_books_summary,
             'observed': observed_stats,
@@ -1641,6 +1663,7 @@ def build(
             for sid, s in sorted(corpus.sources.items())
         ]
         attribution_payload = {
+            'collection': col_key,
             'snapshot': snapshot,
             'source_root': str(source),
             'packages': attribution_packages,
@@ -1651,6 +1674,7 @@ def build(
 
         summary_payload = {
             'schema': MANIFEST_SCHEMA,
+            'collection': col_key,
             'snapshot': snapshot,
             'built_at': built_at,
             'counts': counts_summary,
@@ -1678,7 +1702,7 @@ def build(
         manifest_payload = {
             'schema': MANIFEST_SCHEMA,
             'snapshot': snapshot,
-            'collection': COLLECTION_KEY,
+            'collection': col_key,
             'source_root': str(source),
             'git_commit': inv.snapshot_info['git_commit'],
             'input_sha256': inv.snapshot_info['input_sha256'],
@@ -1689,7 +1713,9 @@ def build(
             'reader': {
                 'schema': READER_SCHEMA,
                 'snapshot': snapshot,
-                'page_base': PAGE_BASE,
+                'collection': col_key,
+                'page_base': page_base,
+                'media_base': media_base,
                 'default_page': default_page,
                 'books_total': len(book_index.books),
                 'chapters_written': books_report['chapters_written'],
@@ -1730,7 +1756,7 @@ def build(
 
         # 7. Validate staged output BEFORE touching final <output>
         _log('[our5etools.build] Validating staged artifacts...')
-        _validate_staged_output(stage, len(corpus.entries))
+        _validate_staged_output(stage, len(corpus.entries), expected_collection=col_key)
 
         # 8. Atomic swap <stage> -> <output> with .prev rollback safety
         prev_backup = output.with_name(f'{output.name}.prev.{os.getpid()}')
@@ -1787,6 +1813,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help='Optional local 5etools-img directory to bundle offline into data/our5etools/media/img/.',
     )
     parser.add_argument(
+        '--collection',
+        default=COLLECTION_KEY,
+        help=f'Collection key written into snapshot metadata and links (default: {COLLECTION_KEY}).',
+    )
+    parser.add_argument(
         '--quiet',
         action='store_true',
         help='Suppress progress logs on stderr.',
@@ -1796,7 +1827,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    manifest = build(source=args.source, output=args.output, img_dir=args.img_dir, quiet=args.quiet)
+    manifest = build(
+        source=args.source,
+        output=args.output,
+        img_dir=args.img_dir,
+        collection_key=args.collection,
+        quiet=args.quiet,
+    )
     if not args.quiet:
         print(json.dumps({
             'snapshot': manifest['snapshot'],

@@ -26,10 +26,10 @@
     return binding;
   }
   const pathname = typeof location !== 'undefined' && typeof location.pathname === 'string' ? location.pathname : '';
-  const contentBase = pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
-    : (data.reader?.content_base || '/book/');
+  const extMatch = pathname.match(/^\/([a-z0-9-]+)-book\//);
+  const contentBase = extMatch ? '/' + extMatch[1] + '-book/' : (data.reader?.content_base || '/book/');
   const definitionBase = data.reader?.definition_base || (contentBase + 'definition/');
-  const collection = data.reader?.collection || (contentBase === '/our5etools-book/' ? '5etools' : '5echm');
+  const collection = data.reader?.collection || (extMatch ? extMatch[1] : '5echm');
   const entryQueryPrefix = collection && collection !== '5echm'
     ? '/?collection=' + encodeURIComponent(collection) + '&entry='
     : '/?entry=';

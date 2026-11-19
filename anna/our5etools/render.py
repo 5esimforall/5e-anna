@@ -18,7 +18,7 @@ import re
 from typing import Any, Protocol
 from urllib.parse import quote, urlencode, urlsplit
 
-COLLECTION_ID = '5etools'
+COLLECTION_ID = 'our5etools'
 MEDIA_PREFIX = '/our5etools-media/'
 REMOTE_PATH_PREFIX = '/__remote/'
 REMOTE_IMG_URLS: tuple[str, ...] = (
@@ -587,9 +587,10 @@ def sanitize_media_path(path: str) -> str | None:
     return '/'.join(parts)
 
 
-def _media_url(relpath: str) -> str:
+def _media_url(relpath: str, prefix: str = MEDIA_PREFIX) -> str:
+    base = prefix if prefix.endswith('/') else (prefix + '/')
     encoded = '/'.join(quote(segment, safe='-._~') for segment in relpath.split('/'))
-    return f'{MEDIA_PREFIX}{encoded}'
+    return f'{base}{encoded}'
 
 
 def normalize_internal_media_path(raw_path: str, prefix: str = 'img/') -> str | None:
@@ -1132,6 +1133,7 @@ class RenderContext:
     default_source: str = ''
     heading_depth: int = 3
     remote_img_base: str = ''
+    media_prefix: str = ''
     template_vars: Mapping[str, Any] = field(default_factory=dict)
     link_events: list[dict[str, Any]] = field(default_factory=list)
     unknown_tags: list[str] = field(default_factory=list)
@@ -1145,6 +1147,17 @@ class RenderContext:
     _seen_local_media: set[str] = field(default_factory=set, repr=False)
     _seen_remote_media: set[str] = field(default_factory=set, repr=False)
     _seen_missing_media: set[str] = field(default_factory=set, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.media_prefix:
+            pref = self.media_prefix if self.media_prefix.endswith('/') else (self.media_prefix + '/')
+        else:
+            col = str(getattr(self.resolver, 'collection', '') or '').strip()
+            pref = f'/{col}-media/' if col else MEDIA_PREFIX
+        self.media_prefix = pref
+
+    def media_url(self, relpath: str) -> str:
+        return _media_url(relpath, self.media_prefix)
 
     def record_unknown_tag(self, tag: str) -> None:
         if tag and tag not in self._seen_unknown_tags:
@@ -1398,10 +1411,11 @@ def _render_entity_ref(
         status=status,
         candidates=res.candidates,
     )
+    col_label = str(getattr(ctx.resolver, 'collection', '') or COLLECTION_ID)
     if status == 'ambiguous':
-        title = f'5etools 中存在 {len(res.candidates)} 个同名候选（{name}）'
+        title = f'{col_label} 中存在 {len(res.candidates)} 个同名候选（{name}）'
     else:
-        title = f'5etools 中未找到对应条目：{name}' + (f'（{source}）' if source else '')
+        title = f'{col_label} 中未找到对应条目：{name}' + (f'（{source}）' if source else '')
     return (
         f'<span class="ref-unresolved" data-ref-status="{status}" '
         f'title="{escape_html(title)}">{display_html}</span>'
@@ -1553,7 +1567,7 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         if local_font:
             ctx.record_local_media(local_font)
             return (
-                f'<span class="o5e-font o5e-font-local" data-font="{escape_html(_media_url(local_font))}">'
+                f'<span class="o5e-font o5e-font-local" data-font="{escape_html(ctx.media_url(local_font))}">'
                 f'{render_inline(display, ctx)}</span>'
             )
         if font_path:
@@ -1737,7 +1751,7 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         local = ctx.check_local_media(*(c for c in (san, path) if c)) if path else None
         if local:
             ctx.record_local_media(local)
-            return f'<a class="o5e-media-link" href="{escape_html(_media_url(local))}" target="_blank" rel="noopener noreferrer">{escape_html(display or local)}</a>'
+            return f'<a class="o5e-media-link" href="{escape_html(ctx.media_url(local))}" target="_blank" rel="noopener noreferrer">{escape_html(display or local)}</a>'
         if san:
             ctx.record_missing_local_media(san)
             ctx.record_remote_media(san)
@@ -1753,7 +1767,7 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
             ctx.record_local_media(local)
             return (
                 f'<span class="o5e-audio-inline">{escape_html(display)} '
-                f'<audio controls preload="none" src="{escape_html(_media_url(local))}"></audio></span>'
+                f'<audio controls preload="none" src="{escape_html(ctx.media_url(local))}"></audio></span>'
             )
         san = sanitize_media_path(f'audio/{path}') if path else None
         if san:
@@ -1812,7 +1826,7 @@ def _render_image_block(block: Mapping[str, Any], ctx: RenderContext) -> str:
             ctx.record_local_media(local)
             return (
                 f'<figure class="o5e-figure">'
-                f'<img src="{escape_html(_media_url(local))}" alt="{escape_html(alt_text)}" loading="lazy" decoding="async" data-o5e-fallback="1">'
+                f'<img src="{escape_html(ctx.media_url(local))}" alt="{escape_html(alt_text)}" loading="lazy" decoding="async" data-o5e-fallback="1">'
                 f'<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>'
                 f'{figcaption}</figure>'
             )
@@ -1828,7 +1842,7 @@ def _render_image_block(block: Mapping[str, Any], ctx: RenderContext) -> str:
             full_remote = sanitize_url(f'{remote_base.rstrip("/")}/{san}', allow_relative=False)
             if full_remote:
                 link_html = f'<a class="o5e-media-link" href="{escape_html(full_remote)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
-        lazy_attr = f' data-lazy-media="{escape_html(_media_url(san))}"' if san else ''
+        lazy_attr = f' data-lazy-media="{escape_html(ctx.media_url(san))}"' if san else ''
         title_attr = f' title="{escape_html(ref_label)}"' if ref_label else ''
         return (
             f'<figure class="o5e-figure o5e-media-remote"{lazy_attr} data-media-alt="{escape_html(alt_text)}"{title_attr}>'
@@ -1849,7 +1863,7 @@ def _render_image_block(block: Mapping[str, Any], ctx: RenderContext) -> str:
         if raw_url:
             ctx.record_remote_media(raw_url)
         link_html = ''
-    lazy_attr = f' data-lazy-media="{escape_html(_media_url(cache_rel))}"' if cache_rel else ''
+    lazy_attr = f' data-lazy-media="{escape_html(ctx.media_url(cache_rel))}"' if cache_rel else ''
     return (
         f'<figure class="o5e-figure o5e-media-remote"{lazy_attr} data-media-alt="{escape_html(alt_text)}">'
         f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
@@ -2953,7 +2967,7 @@ def _render_audio_clip(
             return (
                 f'<div class="o5e-audio">'
                 f'<span class="o5e-audio-label">读音</span>'
-                f'<audio controls preload="none" src="{escape_html(_media_url(local))}"></audio>'
+                f'<audio controls preload="none" src="{escape_html(ctx.media_url(local))}"></audio>'
                 f'</div>'
             )
     if not isinstance(sound_clip, Mapping):
@@ -2967,7 +2981,7 @@ def _render_audio_clip(
             return (
                 f'<div class="o5e-audio">'
                 f'<span class="o5e-audio-label">读音</span>'
-                f'<audio controls preload="none" src="{escape_html(_media_url(local))}"></audio>'
+                f'<audio controls preload="none" src="{escape_html(ctx.media_url(local))}"></audio>'
                 f'</div>'
             )
         san = sanitize_media_path(f'audio/{raw_path}') if raw_path else None
@@ -2982,7 +2996,7 @@ def _render_audio_clip(
             cache_rel = remote_media_cache_path(url)
             if cache_rel:
                 ctx.record_remote_urls(cache_rel, (url,))
-            lazy_attr = f' data-lazy-media="{escape_html(_media_url(cache_rel))}" data-media-kind="audio"' if cache_rel else ''
+            lazy_attr = f' data-lazy-media="{escape_html(ctx.media_url(cache_rel))}" data-media-kind="audio"' if cache_rel else ''
             return (
                 f'<div class="o5e-audio o5e-media-remote"{lazy_attr}>'
                 f'<span class="o5e-media-badge">远端音频（未离线收录）</span> '
@@ -3657,15 +3671,20 @@ def render_entry_detail(
     resolver: LinkResolverProtocol | None = None,
     media_checker: Callable[[str], bool] | None = None,
     relations: Sequence[Mapping[str, Any]] = (),
+    *,
+    media_prefix: str | None = None,
 ) -> dict[str, Any]:
     """Render one our5etools entry into HTML, plain body text, and media/link diagnostics."""
     raw = _entry_payload(entry)
     default_source = str(entry.get('source_code') or raw.get('source') or '')
+    col_key = str(entry.get('collection') or '')
+    resolved_resolver = resolver or LinkResolver(collection=col_key or COLLECTION_ID, default_source=default_source)
     ctx = RenderContext(
-        resolver=resolver or LinkResolver(default_source=default_source),
+        resolver=resolved_resolver,
         media_checker=media_checker or (lambda _rel: False),
         default_source=default_source,
         heading_depth=3,
+        media_prefix=media_prefix or '',
         template_vars=raw,
     )
 

@@ -14,7 +14,7 @@ import threading
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from anna.server.linked_book import BOOK, fingerprint
-from anna.paths import OUR5ETOOLS_DATA, WEB
+from anna.paths import FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
 from anna.presentation.reader import SCHEMA, ReaderError, page_data
 from anna.review.store import load_annotations
 import anna.server.query as serve
@@ -33,6 +33,17 @@ def _try_load_our5etools(data_dir, source_dir=None, *, lazy_media=False):
         return None
     from anna.presentation.our5etools import load_our5etools_collection
     return load_our5etools_collection(data_dir=data_path, lazy_media=bool(lazy_media))
+
+
+def _try_load_fivetools(data_dir, *, lazy_media=False):
+    """Lazily load the reserved standalone 5etools collection when built separately."""
+    if not data_dir:
+        return None
+    data_path = Path(data_dir).resolve()
+    if not (data_path / 'manifest.json').is_file():
+        return None
+    from anna.presentation.our5etools import load_fivetools_collection
+    return load_fivetools_collection(data_dir=data_path, lazy_media=bool(lazy_media))
 
 
 def signature(path):
@@ -108,17 +119,30 @@ class AnnaServer(ThreadingHTTPServer):
     """Owns the bundle requests serve; in watch mode one thread swaps it after a rebuild."""
 
     def __init__(self, address, handler, bundle, watch=False, *, additional_collections=(),
-                 our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False):
+                 our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False,
+                 fivetools_data=None, fivetools_lazy_media=None):
         # A failed bind closes the socket through server_close(), so the reload state must exist
         # before the socket is created; otherwise the bind error is masked by an AttributeError.
         self.bundle = bundle
         self.source = bundle.source
         self.additional_collections = tuple(additional_collections)
-        self._base_additional_collections = tuple(c for c in self.additional_collections if c.key != '5etools')
         self.our5etools_data = Path(our5etools_data).resolve() if our5etools_data else None
         self.our5etools_source = Path(our5etools_source).resolve() if our5etools_source else None
         self.our5etools_lazy_media = bool(our5etools_lazy_media)
-        self._our5etools_signature = self._our5etools_manifest_signature()
+        self.fivetools_data = Path(fivetools_data).resolve() if fivetools_data else None
+        self.fivetools_lazy_media = bool(our5etools_lazy_media if fivetools_lazy_media is None else fivetools_lazy_media)
+        managed_keys = set()
+        if self.our5etools_data is not None:
+            managed_keys.add('our5etools')
+        if self.fivetools_data is not None:
+            managed_keys.add('5etools')
+        self._base_additional_collections = tuple(
+            c for c in self.additional_collections if c.key not in managed_keys
+        )
+        self._loaded_our5etools = next((c for c in self.additional_collections if c.key == 'our5etools'), None)
+        self._loaded_fivetools = next((c for c in self.additional_collections if c.key == '5etools'), None)
+        self._our5etools_signature = self._manifest_signature(self.our5etools_data)
+        self._fivetools_signature = self._manifest_signature(self.fivetools_data)
         # Reject invalid registrations before opening a listener.
         CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections)
         self.watch = watch
@@ -132,28 +156,43 @@ class AnnaServer(ThreadingHTTPServer):
             self.watch_thread = threading.Thread(target=self.watch_loop, daemon=True)
             self.watch_thread.start()
 
-    def _our5etools_manifest_signature(self):
-        if not self.our5etools_data:
+    @staticmethod
+    def _manifest_signature(data_dir):
+        if not data_dir:
             return None
-        manifest = self.our5etools_data / 'manifest.json'
+        manifest = data_dir / 'manifest.json'
         try:
             return signature(manifest)
         except OSError:
             return None
 
+    def _rebuild_additional_collections(self):
+        extra = [c for c in (self._loaded_our5etools, self._loaded_fivetools) if c is not None]
+        self.additional_collections = (*self._base_additional_collections, *extra)
+
     def reload_our5etools(self):
         if not self.our5etools_data:
             return
         try:
-            loaded = _try_load_our5etools(self.our5etools_data, lazy_media=self.our5etools_lazy_media)
-            self.additional_collections = (
-                (*self._base_additional_collections, loaded)
-                if loaded is not None
-                else self._base_additional_collections
+            self._loaded_our5etools = _try_load_our5etools(
+                self.our5etools_data, lazy_media=self.our5etools_lazy_media,
             )
-            self._our5etools_signature = self._our5etools_manifest_signature()
+            self._rebuild_additional_collections()
+            self._our5etools_signature = self._manifest_signature(self.our5etools_data)
         except Exception as exc:
             print('[anna] our5etools reload failed: ' + (str(exc) or type(exc).__name__), file=sys.stderr, flush=True)
+
+    def reload_fivetools(self):
+        if not self.fivetools_data:
+            return
+        try:
+            self._loaded_fivetools = _try_load_fivetools(
+                self.fivetools_data, lazy_media=self.fivetools_lazy_media,
+            )
+            self._rebuild_additional_collections()
+            self._fivetools_signature = self._manifest_signature(self.fivetools_data)
+        except Exception as exc:
+            print('[anna] 5etools reload failed: ' + (str(exc) or type(exc).__name__), file=sys.stderr, flush=True)
 
     def bundle_intact(self, bundle=None):
         """Whether the files on disk still match a loaded bundle, so a stale mix is never served."""
@@ -184,10 +223,12 @@ class AnnaServer(ThreadingHTTPServer):
         seen = None
         seen_o5e = self._our5etools_signature
         attempted_o5e = self._our5etools_signature
+        seen_5e = self._fivetools_signature
+        attempted_5e = self._fivetools_signature
         manifest = Path(self.bundle.book) / 'anna-manifest.json'
         while not self.watch_stop.wait(.5):
             if self.our5etools_data is not None:
-                cur_o5e = self._our5etools_manifest_signature()
+                cur_o5e = self._manifest_signature(self.our5etools_data)
                 if cur_o5e == self._our5etools_signature:
                     seen_o5e = cur_o5e
                 elif cur_o5e != seen_o5e:
@@ -195,6 +236,15 @@ class AnnaServer(ThreadingHTTPServer):
                 elif cur_o5e != attempted_o5e:
                     attempted_o5e = cur_o5e
                     self.reload_our5etools()
+            if self.fivetools_data is not None:
+                cur_5e = self._manifest_signature(self.fivetools_data)
+                if cur_5e == self._fivetools_signature:
+                    seen_5e = cur_5e
+                elif cur_5e != seen_5e:
+                    seen_5e = cur_5e
+                elif cur_5e != attempted_5e:
+                    attempted_5e = cur_5e
+                    self.reload_fivetools()
             try:
                 current = signature(manifest)
             except OSError:
@@ -259,9 +309,49 @@ class AnnaHandler(serve.Handler):
             return self.stale()
         return None
 
+    @staticmethod
+    def _collection_book_base(col):
+        raw = getattr(col, 'book_base', None) or f'/{col.key}-book/'
+        return raw if raw.endswith('/') else (raw + '/')
+
+    @staticmethod
+    def _collection_media_base(col):
+        raw = getattr(col, 'media_base', None) or f'/{col.key}-media/'
+        return raw if raw.endswith('/') else (raw + '/')
+
+    def _match_collection_book_route(self, req_path):
+        for col in self.additional_collections:
+            if col.reader is not None:
+                base = self._collection_book_base(col)
+                if req_path.startswith(base):
+                    return col.reader, base, '/' + req_path[len(base):]
+        for reserved_base in ('/our5etools-book/', '/5etools-book/'):
+            if req_path.startswith(reserved_base):
+                return None, reserved_base, '/' + req_path[len(reserved_base):]
+        return None
+
+    def _match_collection_media_route(self, req_path):
+        for col in self.additional_collections:
+            if col.reader is not None:
+                base = self._collection_media_base(col)
+                if req_path.startswith(base):
+                    return col.reader, '/' + req_path[len(base):]
+        for reserved_base in ('/our5etools-media/', '/5etools-media/'):
+            if req_path.startswith(reserved_base):
+                return None, '/' + req_path[len(reserved_base):]
+        return None
+
+    def _is_external_book_path(self, req_path):
+        if req_path.startswith(('/our5etools-book/', '/5etools-book/')):
+            return True
+        return any(
+            col.reader is not None and req_path.startswith(self._collection_book_base(col))
+            for col in self.additional_collections
+        )
+
     def _our5etools_reader(self):
         for col in self.additional_collections:
-            if col.key == '5etools' and col.reader is not None:
+            if col.key == 'our5etools' and col.reader is not None:
                 return col.reader
         for col in self.additional_collections:
             if col.reader is not None:
@@ -349,11 +439,12 @@ class AnnaHandler(serve.Handler):
         except FileNotFoundError:
             self.send_error(404)
 
-    def serve_our5etools_book(self, path):
-        reader = self._our5etools_reader()
+    def serve_our5etools_book(self, path, reader=None, book_base='/our5etools-book/'):
+        reader = self._our5etools_reader() if reader is None else reader
         if reader is None:
             self.send_error(404)
             return
+        base = book_base if book_base.endswith('/') else (book_base + '/')
         decoded = unquote(path)
         if decoded.startswith('/definition/'):
             eid = decoded.rsplit('/', 1)[-1]
@@ -363,7 +454,7 @@ class AnnaHandler(serve.Handler):
                 self.send_error(exc.status, exc.code)
                 return
             frag = target.get('fragment') or ''
-            location = '/our5etools-book/' + quote(target['path'], safe='/') + ('#' + quote(frag) if frag else '')
+            location = base + quote(target['path'], safe='/') + ('#' + quote(frag) if frag else '')
             self.redirect(location)
             return
         relative = decoded.lstrip('/')
@@ -374,8 +465,8 @@ class AnnaHandler(serve.Handler):
         resolved, content_type = found
         self._send_file(Path(resolved), content_type or mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream')
 
-    def serve_our5etools_media(self, path):
-        reader = self._our5etools_reader()
+    def serve_our5etools_media(self, path, reader=None):
+        reader = self._our5etools_reader() if reader is None else reader
         if reader is None:
             self.send_error(404)
             return
@@ -401,11 +492,19 @@ class AnnaHandler(serve.Handler):
         if url.path.startswith('/book/'):
             self.serve_book(url.path[len('/book'):])
             return
-        if url.path.startswith('/our5etools-book/'):
-            self.serve_our5etools_book(url.path[len('/our5etools-book'):])
+        if matched_book := self._match_collection_book_route(url.path):
+            reader, book_base, rel = matched_book
+            if reader is None:
+                self.send_error(404)
+            else:
+                self.serve_our5etools_book(rel, reader=reader, book_base=book_base)
             return
-        if url.path.startswith('/our5etools-media/'):
-            self.serve_our5etools_media(url.path[len('/our5etools-media'):])
+        if matched_media := self._match_collection_media_route(url.path):
+            reader, rel = matched_media
+            if reader is None:
+                self.send_error(404)
+            else:
+                self.serve_our5etools_media(rel, reader=reader)
             return
         if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour', '/api/tour-layout'}:
             super().do_GET()
@@ -462,7 +561,7 @@ class AnnaHandler(serve.Handler):
                 if collection.reader is None:
                     raise CollectionError('collection_unsupported', 400)
                 nav = collection.reader.navigation()
-                base = nav.get('page_base') or nav.get('content_base') or '/our5etools-book/'
+                base = nav.get('page_base') or nav.get('content_base') or self._collection_book_base(collection)
                 self.send({**nav, 'collection': collection.key, 'page_base': base, 'content_base': base})
             elif url.path == '/api/reader-page':
                 if collection.reader is None:
@@ -495,7 +594,7 @@ class AnnaHandler(serve.Handler):
 
     def end_headers(self):
         req_path = urlsplit(self.path).path
-        if req_path.startswith('/book/') or req_path.startswith('/our5etools-book/'):
+        if req_path.startswith('/book/') or self._is_external_book_path(req_path):
             self.send_header('Content-Security-Policy', "frame-ancestors 'self'")
             self.send_header('Referrer-Policy', 'same-origin')
             if not getattr(self, 'resource_response', False):
@@ -568,13 +667,15 @@ class AnnaHandler(serve.Handler):
 
 
 def create_server(db, book, manifest, port, watch=False, bundle=None, *, additional_collections=(),
-                  our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False):
+                  our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False,
+                  fivetools_data=None, fivetools_lazy_media=None):
     """Build the one-port server; an already loaded bundle carries the search index."""
     bundle = bundle or Bundle(manifest['source_root'], db, book, manifest, [])
     return AnnaServer(('127.0.0.1', port), AnnaHandler, bundle, watch=watch,
                       additional_collections=additional_collections,
                       our5etools_data=our5etools_data, our5etools_source=our5etools_source,
-                      our5etools_lazy_media=our5etools_lazy_media)
+                      our5etools_lazy_media=our5etools_lazy_media,
+                      fivetools_data=fivetools_data, fivetools_lazy_media=fivetools_lazy_media)
 
 
 def main():
@@ -585,24 +686,31 @@ def main():
     parser.add_argument('--book', type=Path, default=BOOK)
     parser.add_argument('--source', type=Path, default=WEB)
     parser.add_argument('--our5etools-data', type=Path, default=OUR5ETOOLS_DATA)
+    parser.add_argument('--5etools-data', dest='fivetools_data', type=Path, default=FIVETOOLS_DATA,
+                        help='reserved standalone 5etools snapshot directory (default: data/5etools)')
     parser.add_argument('--our5etools-source', type=Path, default=None,
                         help=argparse.SUPPRESS)
     parser.add_argument('--lazy-media', action='store_true', default=lazy_default,
-                        help='lazily fetch and locally cache unbundled remote our5etools images on demand')
+                        help='lazily fetch and locally cache unbundled remote images on demand')
     parser.add_argument('--watch', action='store_true', help='swap in a rebuilt bundle without restarting')
     args = parser.parse_args()
     server, thread, stop = None, None, threading.Event()
     try:
         bundle = load_bundle(args.source, args.db, args.book)
-        additional = ()
+        cols = []
         our5etools_col = _try_load_our5etools(args.our5etools_data, lazy_media=args.lazy_media)
         if our5etools_col is not None:
-            additional = (our5etools_col,)
+            cols.append(our5etools_col)
+        fivetools_col = _try_load_fivetools(args.fivetools_data, lazy_media=args.lazy_media)
+        if fivetools_col is not None:
+            cols.append(fivetools_col)
+        additional = tuple(cols)
         server = create_server(
             args.db, args.book, bundle.manifest, args.port, watch=args.watch, bundle=bundle,
             additional_collections=additional,
             our5etools_data=args.our5etools_data, our5etools_source=args.our5etools_source,
             our5etools_lazy_media=args.lazy_media,
+            fivetools_data=args.fivetools_data, fivetools_lazy_media=args.lazy_media,
         )
         for sig in (signal.SIGINT, signal.SIGTERM):
             signal.signal(sig, lambda *_: stop.set())

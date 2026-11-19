@@ -670,6 +670,68 @@ def _check_media_bundle(
     }
 
 
+def _check_collection_identity(
+    root: Path,
+    manifest_data: dict[str, Any] | None,
+    summary_data: dict[str, Any] | None,
+    reader_data: dict[str, Any] | None,
+    invariants: list[dict[str, Any]],
+) -> str:
+    """Verify consistent non-empty collection key across manifest, reader, SQLite, and rendered HTML."""
+    m_col = str((manifest_data or {}).get('collection') or '').strip() if isinstance(manifest_data, dict) else ''
+    s_col = str((summary_data or {}).get('collection') or '').strip() if isinstance(summary_data, dict) else ''
+    r_col = str((reader_data or {}).get('collection') or '').strip() if isinstance(reader_data, dict) else ''
+
+    failures: list[str] = []
+    if not m_col:
+        failures.append('manifest.json 缺少 collection 标识')
+    if m_col and s_col and s_col != m_col:
+        failures.append(f'summary.json collection={s_col!r} 与 manifest={m_col!r} 不一致')
+    if m_col and r_col != m_col:
+        failures.append(f'reader/anna-reader.json collection={r_col!r} 与 manifest={m_col!r} 不一致')
+
+    db_path = root / 'catalog.sqlite'
+    if db_path.is_file():
+        conn = _connect_ro(db_path)
+        try:
+            tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            meta_col = ''
+            if 'metadata' in tables:
+                row = conn.execute("SELECT value FROM metadata WHERE key = 'collection'").fetchone()
+                meta_col = str(row[0] or '').strip() if row else ''
+            if m_col and meta_col != m_col:
+                failures.append(f'SQLite metadata.collection={meta_col!r} 与 manifest={m_col!r} 不一致')
+            if 'entries' in tables and m_col:
+                bad_prov = int(
+                    conn.execute(
+                        "SELECT count(*) FROM entries WHERE coalesce(json_extract(provenance_json, '$.collection'), '') != ?",
+                        (m_col,),
+                    ).fetchone()[0]
+                )
+                if bad_prov:
+                    failures.append(f'entries.provenance_json 中有 {bad_prov} 条 collection != {m_col!r}')
+                if m_col == 'our5etools':
+                    stale_hrefs = int(
+                        conn.execute(
+                            'SELECT count(*) FROM entries WHERE layout_html LIKE \'%collection=5etools%\' OR layout_html LIKE \'%title="5etools 中%\''
+                        ).fetchone()[0]
+                    )
+                    if stale_hrefs:
+                        failures.append(f'layout_html 中仍有 {stale_hrefs} 条残留 5etools 标识')
+        finally:
+            conn.close()
+
+    _add_invariant(
+        invariants,
+        key='collection_identity',
+        title='资料库来源标识一致',
+        ok=len(failures) == 0,
+        detail=f'collection={m_col or "缺失"}，跨产物一致性偏差 {len(failures)} 处',
+        failures=failures,
+    )
+    return m_col
+
+
 def _check_reader(
     data_dir: Path,
     reader_data: dict[str, Any] | None,
@@ -836,6 +898,7 @@ def audit_data(data_dir: Path) -> dict[str, Any]:
     media_section = _check_media_bundle(root, inventory_data, remotes_data, invariants)
     db_section, book_page_paths = _check_sqlite(root / 'catalog.sqlite', invariants)
     reader_section = _check_reader(root, reader_data, book_page_paths, manifest_data, invariants)
+    _check_collection_identity(root, manifest_data, summary_data, reader_data, invariants)
 
     # Cross-check summary.json counts vs SQLite counts if summary.json is present
     if isinstance(summary_data, dict) and db_section.get('counts'):
@@ -902,6 +965,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append('# our5etools 数据集构建审计报告')
     lines.append('')
     lines.append(f'- **审计结论**：{status_badge}')
+    lines.append(f'- **资料库标识**：`{manifest.get("collection", "")}`')
     lines.append(f'- **数据目录**：`{report.get("data_dir", "")}`')
     lines.append(f'- **快照标识**：`{manifest.get("snapshot") or snap.get("input_sha256", "")}`')
     lines.append(f'- **源仓库提交**：`{manifest.get("git_commit") or snap.get("git_commit", "")}`')

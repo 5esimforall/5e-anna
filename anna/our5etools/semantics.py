@@ -15,7 +15,7 @@ from anna.serialization import canonical
 if TYPE_CHECKING:
     from anna.our5etools.inventory import Inventory
 
-COLLECTION = '5etools'
+COLLECTION = 'our5etools'
 
 COPY_ENTRY_PROPS: tuple[str, ...] = (
     'action', 'bonus', 'reaction', 'trait', 'legendary', 'mythic', 'variant', 'spellcasting',
@@ -1752,9 +1752,10 @@ def _build_spell_class_index(
 # Main resolution pipeline
 # ---------------------------------------------------------------------------
 
-def resolve_corpus(inventory: Inventory) -> ResolvedCorpus:
+def resolve_corpus(inventory: Inventory, *, collection: str = COLLECTION) -> ResolvedCorpus:
     """Resolve the full our5etools corpus from an Inventory into normalized entries, provenance, relations, and lookup index."""
     from anna.our5etools.types import STACKABLE_TYPES, classify_record, extract_fields
+    collection_key = (collection or COLLECTION).strip() or COLLECTION
 
     sources, packages, pkg_code_to_source_id, prov_diag = _build_sources_and_packages(inventory)
     official_casefold: dict[str, str] = dict(getattr(inventory, 'official_source_casefold', {}) or {})
@@ -2672,7 +2673,7 @@ def resolve_corpus(inventory: Inventory) -> ResolvedCorpus:
         entry: dict[str, Any] = {
             'id': entry_id,
             'entity_id': None,  # populated in Stage 8
-            'collection': COLLECTION,
+            'collection': collection_key,
             'package_id': package_id,
             'source_id': source_id,
             'source_code': source_code,

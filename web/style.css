@@ -559,7 +559,7 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   /* Version pills are the one target inside a row; on touch they keep a fingertip's height. */
   .version-pill { min-height: 30px; padding: 4px 9px; line-height: 20px; }
 }
-/* our5etools (5etools collection): provenance card, statblocks, 1-20 progression tables, media & inline mechanics. */
+/* our5etools collection: provenance card, statblocks, 1-20 progression tables, media & inline mechanics. */
 .o5e-provenance { max-width: var(--anna-measure); margin: 18px 0 4px; padding: 12px 14px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-surface); font-family: var(--anna-sans); font-size: var(--anna-type-ui); }
 .o5e-prov-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin-bottom: 8px; }
 .o5e-prov-head strong { font-size: var(--anna-type-ui); font-weight: 600; color: var(--anna-ink); }

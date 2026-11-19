@@ -157,6 +157,7 @@ function renderProvenance(e){
     p.tier?badge(`${ui.provTier} ${p.tier}`,'amber'):''
   ].filter(Boolean).join('');
   const rows=[];
+  if(p.collection)rows.push([ui.provCollection,esc(p.collection)]);
   if(p.package_name)rows.push([ui.provPackage,esc(p.package_name)+(p.ours?` <span class="badge green">${esc(ui.provOurs)}</span>`:'')]);
   if(p.source_name||p.source_code){
     const srcText=p.source_name&&p.source_code&&p.source_name!==p.source_code?`${p.source_name}（${p.source_code}）`:(p.source_name||p.source_code);

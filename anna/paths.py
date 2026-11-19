@@ -24,3 +24,4 @@ def _default_our5etools():
 
 OUR5ETOOLS = _default_our5etools()
 OUR5ETOOLS_DATA = PROJECT / 'data' / 'our5etools'
+FIVETOOLS_DATA = PROJECT / 'data' / '5etools'

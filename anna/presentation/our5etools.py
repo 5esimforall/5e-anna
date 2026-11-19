@@ -29,13 +29,17 @@ from anna.presentation.collections import Collection
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
 from anna.presentation.tour import DIVIDER, TourError, clip, divider, first_sentence
 
-COLLECTION_KEY = '5etools'
-COLLECTION_ZH = '5etools'
-COLLECTION_EN = '5etools'
+COLLECTION_KEY = 'our5etools'
+COLLECTION_ZH = 'our5etools'
+COLLECTION_EN = 'our5etools'
 READER_BASE = '/our5etools-book/'
 MEDIA_BASE = '/our5etools-media/'
-TOUR_URL = '/tour?collection=5etools'
-READER_URL = '/read?collection=5etools'
+TOUR_URL = '/tour?collection=our5etools'
+READER_URL = '/read?collection=our5etools'
+
+FIVETOOLS_COLLECTION_KEY = '5etools'
+FIVETOOLS_READER_BASE = '/5etools-book/'
+FIVETOOLS_MEDIA_BASE = '/5etools-media/'
 MAX_REMOTE_MEDIA_BYTES = 25 * 1024 * 1024
 NEGATIVE_MEDIA_TTL_SECONDS = 60.0
 REMOTE_IMG_BASES: tuple[str, ...] = (
@@ -46,11 +50,11 @@ SAFE_ROOT_MEDIA_EXTS: frozenset[str] = frozenset({
     '.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
 })
 LAZY_MEDIA_FIGURE_RE = re.compile(
-    r'<figure\b([^>]*\bdata-lazy-media="(/our5etools-media/([^"]+))"[^>]*)>(.*?)</figure>',
+    r'<figure\b([^>]*\bdata-lazy-media="(/(?:[a-z0-9-]+)-media/([^"]+))"[^>]*)>(.*?)</figure>',
     re.DOTALL,
 )
 LAZY_MEDIA_AUDIO_RE = re.compile(
-    r'<div\b([^>]*\bdata-lazy-media="(/our5etools-media/([^"]+))"[^>]*)>(.*?)</div>',
+    r'<div\b([^>]*\bdata-lazy-media="(/(?:[a-z0-9-]+)-media/([^"]+))"[^>]*)>(.*?)</div>',
     re.DOTALL,
 )
 FIGCAPTION_RE = re.compile(r'<figcaption>.*?</figcaption>', re.DOTALL)
@@ -360,8 +364,8 @@ def _sniff_bytes_valid_media(chunk: bytes, content_type: str) -> bool:
     return False
 
 
-def _query_href(query: dict[str, list[str]]) -> str:
-    pairs: list[tuple[str, str]] = [('collection', COLLECTION_KEY)]
+def _query_href(query: dict[str, list[str]], collection: str = COLLECTION_KEY) -> str:
+    pairs: list[tuple[str, str]] = [('collection', collection)]
     for k, vals in query.items():
         if k == 'collection':
             continue
@@ -370,8 +374,14 @@ def _query_href(query: dict[str, list[str]]) -> str:
     return '/?' + urlencode(pairs)
 
 
-def _tour_href(at: str = '', *, scope_source: str | None = None, scope_package: str | None = None) -> str:
-    pairs: list[tuple[str, str]] = [('collection', COLLECTION_KEY)]
+def _tour_href(
+    at: str = '',
+    *,
+    scope_source: str | None = None,
+    scope_package: str | None = None,
+    collection: str = COLLECTION_KEY,
+) -> str:
+    pairs: list[tuple[str, str]] = [('collection', collection)]
     if at:
         pairs.append(('at', at))
     if scope_source:
@@ -421,8 +431,10 @@ def _make_preview(text: str, text_lower: str, terms: list[str]) -> str:
 class Our5etoolsCatalog:
     """Read-only CatalogProvider over our5etools catalog.sqlite."""
 
-    def __init__(self, data_dir: Path | str, *, lazy_media: bool = False):
+    def __init__(self, data_dir: Path | str, *, lazy_media: bool = False, collection_key: str = COLLECTION_KEY):
         self.data_dir = Path(data_dir).resolve()
+        self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
+        self.tour_url = f'/tour?collection={self.collection_key}'
         self.media_dir = self.data_dir / 'media'
         self.lazy_media = bool(lazy_media)
         self.db_path = self.data_dir / 'catalog.sqlite'
@@ -668,9 +680,12 @@ class Our5etoolsCatalog:
         sname = (srec['name'] if srec else None) or provenance.get('source_name') or row['source_code'] or sid
         slabel = (srec['short_name'] if srec else None) or row['source_code'] or sid
         origin = (srec['origin'] if srec else None) or provenance.get('origin') or '社区'
+        col_key = str(provenance.get('collection') or self.collection_key)
+        provenance.setdefault('collection', col_key)
 
         entry: dict[str, Any] = {
             'id': row['id'],
+            'collection': col_key,
             'type': row['type'],
             'type_label': otypes.TYPES.get(row['type'], row['type']),
             'raw_kind': row['raw_kind'],
@@ -778,8 +793,8 @@ class Our5etoolsCatalog:
                 'packages': packages_list,
                 'presets': list(otypes.PRESETS),
                 'type_conditions': {t: otypes.type_conditions(t) for t in otypes.TYPES},
-                'tour_url': TOUR_URL,
-                'collection': COLLECTION_KEY,
+                'tour_url': self.tour_url,
+                'collection': self.collection_key,
                 'lazy_media': self.lazy_media,
             }
 
@@ -1440,7 +1455,7 @@ class Our5etoolsCatalog:
         buf = io.StringIO(newline='')
         writer = csv.writer(buf)
         writer.writerow(
-            ['条目ID', '中文名', '英文名', '类型', '规则版本', '来源', '资料包', '来源性质', '继承状态', '字段冲突']
+            ['条目ID', '中文名', '英文名', '类型', '规则版本', '资料库', '来源', '资料包', '来源性质', '继承状态', '字段冲突']
             + [otypes.COLUMN_LABELS.get(f, f) for f in extras]
         )
         for r in rows:
@@ -1450,6 +1465,7 @@ class Our5etoolsCatalog:
                 r['name_en'],
                 otypes.TYPES.get(r['type'], r['type']),
                 r['ruleset'],
+                r.get('collection') or self.collection_key,
                 '；'.join(r.get('source_names') or []),
                 r.get('package_id', ''),
                 r.get('origin', ''),
@@ -1476,13 +1492,28 @@ class Our5etoolsCatalog:
 class Our5etoolsTour:
     """Guided tour combining tour/our5etools.json with live books, packages, and scoped navigation."""
 
-    def __init__(self, data_dir: Path | str, tour_path: Path | str | None = None, *, lazy_media: bool = False):
+    def __init__(
+        self,
+        data_dir: Path | str,
+        tour_path: Path | str | None = None,
+        *,
+        lazy_media: bool = False,
+        collection_key: str = COLLECTION_KEY,
+    ):
         self.data_dir = Path(data_dir).resolve()
+        self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
+        self.reader_url = f'/read?collection={self.collection_key}'
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
-        self.tour_path = Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / 'our5etools.json')
+        self.tour_path = (
+            Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / f'{self.collection_key}.json')
+        )
         self.lazy_media = bool(lazy_media)
-        self.catalog = Our5etoolsCatalog(self.data_dir, lazy_media=self.lazy_media)
+        self.catalog = Our5etoolsCatalog(
+            self.data_dir,
+            lazy_media=self.lazy_media,
+            collection_key=self.collection_key,
+        )
         self._lock = threading.Lock()
         self._loaded_sig: tuple[Any, ...] | None = None
         self._snapshot: str = ''
@@ -1519,9 +1550,12 @@ class Our5etoolsTour:
         try:
             curation = json.loads(self.tour_path.read_text('utf-8'))
         except (OSError, ValueError) as exc:
-            raise TourError('curation_invalid', 500, f'5etools 导览配置无法读取：{exc}') from exc
+            raise TourError('curation_invalid', 500, f'{self.collection_key} 导览配置无法读取：{exc}') from exc
         if curation.get('schema') != 1:
-            raise TourError('curation_invalid', 500, '5etools 导览配置 schema 无效')
+            raise TourError('curation_invalid', 500, f'{self.collection_key} 导览配置 schema 无效')
+        curation_col = str(curation.get('collection') or '').strip()
+        if curation_col and curation_col != self.collection_key:
+            raise TourError('curation_invalid', 500, f'{self.collection_key} 导览配置 collection 不匹配：{curation_col}')
 
         topics_map: dict[str, dict[str, Any]] = {}
         sections: list[dict[str, Any]] = []
@@ -1739,8 +1773,8 @@ class Our5etoolsTour:
             'label': label,
             'scoped_count': scoped_count,
             'unscoped_count': unscoped_count,
-            'widen_tour_href': _tour_href(at),
-            'widen_query_href': _query_href(unscoped_q),
+            'widen_tour_href': _tour_href(at, collection=self.collection_key),
+            'widen_query_href': _query_href(unscoped_q, collection=self.collection_key),
         }
 
     def _query_count(self, query: dict[str, list[str]]) -> int:
@@ -1915,10 +1949,10 @@ class Our5etoolsTour:
             raise TourError('node_missing', 404)
 
         v.setdefault('scope_context', self._build_scope_context(segment, scope_source, scope_package))
-        v['tour'] = 'our5etools'
-        v['collection'] = COLLECTION_KEY
+        v['tour'] = self.collection_key
+        v['collection'] = self.collection_key
         v['snapshot'] = self._snapshot
-        v['reader_url'] = READER_URL
+        v['reader_url'] = self.reader_url
         v['lazy_media'] = self.lazy_media
         return self._shaped(v)
 
@@ -2224,8 +2258,22 @@ class Our5etoolsTour:
 class Our5etoolsReader:
     """Stella reader provider for our5etools chapters, book search, and self-contained/lazy media."""
 
-    def __init__(self, data_dir: Path | str, source_dir: Path | str | None = None, *, lazy_media: bool = False):
+    def __init__(
+        self,
+        data_dir: Path | str,
+        source_dir: Path | str | None = None,
+        *,
+        lazy_media: bool = False,
+        collection_key: str = COLLECTION_KEY,
+        book_base: str | None = None,
+        media_base: str | None = None,
+    ):
         self.data_dir = Path(data_dir).resolve()
+        self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
+        raw_book = book_base or f'/{self.collection_key}-book/'
+        self.book_base = raw_book if raw_book.endswith('/') else (raw_book + '/')
+        raw_media = media_base or f'/{self.collection_key}-media/'
+        self.media_base = raw_media if raw_media.endswith('/') else (raw_media + '/')
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_dir = self.data_dir / 'reader'
         self.reader_path = self.reader_dir / 'anna-reader.json'
@@ -2304,11 +2352,12 @@ class Our5etoolsReader:
             'roots': data.get('roots', []),
             'nodes': data.get('nodes', []),
             'default_page': data.get('default_page', ''),
-            'page_base': data.get('page_base') or READER_BASE,
-            'content_base': data.get('page_base') or READER_BASE,
+            'page_base': data.get('page_base') or self.book_base,
+            'content_base': data.get('page_base') or self.book_base,
+            'media_base': data.get('media_base') or self.media_base,
             'presentation_resources': data.get('presentation_resources', []),
             'source_release': data.get('source_release'),
-            'collection': COLLECTION_KEY,
+            'collection': data.get('collection') or self.collection_key,
             'lazy_media': self.lazy_media,
             'cached_media': self._list_cached_lazy_media(),
         }
@@ -2620,14 +2669,18 @@ class Our5etoolsReader:
 # 4. Collection Loader
 # ---------------------------------------------------------------------------
 
-def load_our5etools_collection(
-    data_dir: Path | str = paths.OUR5ETOOLS_DATA,
+def _load_5etools_family_collection(
+    data_dir: Path | str,
     source_dir: Path | str | None = None,
     tour_path: Path | str | None = None,
     *,
+    collection_key: str,
+    zh: str,
+    en: str,
+    default_tour_name: str,
     lazy_media: bool = False,
 ) -> Collection | None:
-    """Load the read-only our5etools Collection when built artifacts are complete; else return None."""
+    """Load one 5etools-family collection when its published artifacts match ``collection_key``."""
     root = Path(data_dir).resolve()
     manifest_path = root / 'manifest.json'
     db_path = root / 'catalog.sqlite'
@@ -2641,23 +2694,83 @@ def load_our5etools_collection(
         return None
     if reader_json.get('schema') != READER_SCHEMA:
         return None
+    if manifest.get('collection') != collection_key or reader_json.get('collection') != collection_key:
+        return None
 
     snapshot = str(reader_json.get('snapshot') or manifest.get('snapshot') or '')
-    tpath = Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / 'our5etools.json')
+    tpath = Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / default_tour_name)
+    raw_book = str(reader_json.get('page_base') or f'/{collection_key}-book/')
+    book_base = raw_book if raw_book.endswith('/') else (raw_book + '/')
+    raw_media = str(reader_json.get('media_base') or f'/{collection_key}-media/')
+    media_base = raw_media if raw_media.endswith('/') else (raw_media + '/')
 
-    provider = Our5etoolsCatalog(root, lazy_media=lazy_media)
-    tour = Our5etoolsTour(root, tpath, lazy_media=lazy_media) if tpath.is_file() else None
-    reader = Our5etoolsReader(root, source_dir, lazy_media=lazy_media)
+    provider = Our5etoolsCatalog(root, lazy_media=lazy_media, collection_key=collection_key)
+    tour = (
+        Our5etoolsTour(root, tpath, lazy_media=lazy_media, collection_key=collection_key)
+        if tpath.is_file()
+        else None
+    )
+    reader = Our5etoolsReader(
+        root,
+        source_dir,
+        lazy_media=lazy_media,
+        collection_key=collection_key,
+        book_base=book_base,
+        media_base=media_base,
+    )
 
-    # Support both current Collection(key, zh, en, provider) and extended Collection(..., reader_url, snapshot, tour, reader)
     field_names = {f.name for f in dataclasses.fields(Collection)}
     extra: dict[str, Any] = {}
     if 'reader_url' in field_names:
-        extra['reader_url'] = READER_URL
+        extra['reader_url'] = f'/read?collection={collection_key}'
     if 'snapshot' in field_names:
         extra['snapshot'] = snapshot
     if 'tour' in field_names:
         extra['tour'] = tour
     if 'reader' in field_names:
         extra['reader'] = reader
-    return Collection(COLLECTION_KEY, COLLECTION_ZH, COLLECTION_EN, provider=provider, **extra)
+    if 'book_base' in field_names:
+        extra['book_base'] = book_base
+    if 'media_base' in field_names:
+        extra['media_base'] = media_base
+    return Collection(collection_key, zh, en, provider=provider, **extra)
+
+
+def load_our5etools_collection(
+    data_dir: Path | str = paths.OUR5ETOOLS_DATA,
+    source_dir: Path | str | None = None,
+    tour_path: Path | str | None = None,
+    *,
+    lazy_media: bool = False,
+) -> Collection | None:
+    """Load the read-only our5etools Collection when built artifacts are complete; else return None."""
+    return _load_5etools_family_collection(
+        data_dir,
+        source_dir,
+        tour_path,
+        collection_key=COLLECTION_KEY,
+        zh=COLLECTION_ZH,
+        en=COLLECTION_EN,
+        default_tour_name='our5etools.json',
+        lazy_media=lazy_media,
+    )
+
+
+def load_fivetools_collection(
+    data_dir: Path | str = paths.FIVETOOLS_DATA,
+    source_dir: Path | str | None = None,
+    tour_path: Path | str | None = None,
+    *,
+    lazy_media: bool = False,
+) -> Collection | None:
+    """Load the reserved standalone 5etools Collection when built separately; else return None."""
+    return _load_5etools_family_collection(
+        data_dir,
+        source_dir,
+        tour_path,
+        collection_key=FIVETOOLS_COLLECTION_KEY,
+        zh=FIVETOOLS_COLLECTION_KEY,
+        en=FIVETOOLS_COLLECTION_KEY,
+        default_tour_name='5etools.json',
+        lazy_media=lazy_media,
+    )

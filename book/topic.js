@@ -4,10 +4,10 @@
   'use strict';
   const context = JSON.parse(document.getElementById('anna-bindings').textContent).reader;
   const pathname = typeof location !== 'undefined' && typeof location.pathname === 'string' ? location.pathname : '';
-  const contentBase = pathname.startsWith('/our5etools-book/') ? '/our5etools-book/'
-    : (context?.content_base || '/book/');
+  const extMatch = pathname.match(/^\/([a-z0-9-]+)-book\//);
+  const contentBase = extMatch ? '/' + extMatch[1] + '-book/' : (context?.content_base || '/book/');
   const definitionBase = context?.definition_base || (contentBase + 'definition/');
-  const collection = context?.collection || (contentBase === '/our5etools-book/' ? '5etools' : '5echm');
+  const collection = context?.collection || (extMatch ? extMatch[1] : '5echm');
   const pagePrefixes = Array.isArray(context?.page_prefixes) && context.page_prefixes.length
     ? context.page_prefixes
     : ['topics/', 'books/', 'adventures/', 'brew-books/', 'brew-adventures/'];
@@ -112,11 +112,12 @@
   function hydrateLazyMedia(lazyMedia, cachedMedia) {
     const cached = new Set(Array.isArray(cachedMedia) ? cachedMedia : []);
     if (!lazyMedia && !cached.size) return;
+    const mediaBase = context?.media_base || ('/' + collection + '-media/');
     for (const el of document.querySelectorAll('[data-lazy-media]')) {
       const src = el.getAttribute('data-lazy-media') || '';
-      if (!src.startsWith('/our5etools-media/')) continue;
+      if (!src.startsWith(mediaBase)) continue;
       let rel = '';
-      try { rel = decodeURIComponent(src.slice('/our5etools-media/'.length)); } catch { continue; }
+      try { rel = decodeURIComponent(src.slice(mediaBase.length)); } catch { continue; }
       if (!lazyMedia && !cached.has(rel)) continue;
       el.removeAttribute('data-lazy-media');
       if (el.getAttribute('data-media-kind') === 'audio') {

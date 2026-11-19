@@ -8,12 +8,14 @@ BRANCH ?= pages
 5ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DIR)")
 5ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
 5ETOOLS_BRANCH ?= main
-# our5etools is an independent collection (5etools), kept separate from 5ETOOLS_DIR (5etools-cn).
+# our5etools (collection=our5etools) and reserved standalone 5etools (collection=5etools) are kept separate from comparison-only 5ETOOLS_DIR (5etools-cn).
 OUR5ETOOLS_DIR ?=
 OUR5ETOOLS_IMG_DIR ?=
 OUR5ETOOLS_DATA ?= data/our5etools
+5ETOOLS_DATA ?= data/5etools
 OUR5ETOOLS_PATH := $(shell python3 -c 'import os, sys; from anna.paths import OUR5ETOOLS; print(os.path.abspath(sys.argv[1]) if sys.argv[1] else OUR5ETOOLS)' "$(OUR5ETOOLS_DIR)")
 OUR5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(OUR5ETOOLS_DATA)")
+5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DATA)")
 LAZY_MEDIA ?= 0
 LAZY_MEDIA_FLAG := $(if $(filter 1 true yes on,$(LAZY_MEDIA)),--lazy-media,)
 ANNA_PORT ?= 8000
@@ -92,7 +94,7 @@ build: clone icons
 	@if [ -d "$(OUR5ETOOLS_PATH)/data" ] && [ -f "$(OUR5ETOOLS_PATH)/__api/books.json" ]; then \
 		$(MAKE) --no-print-directory our5etools-build OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" OUR5ETOOLS_DATA="$(OUR5ETOOLS_DATA_PATH)"; \
 	else \
-		echo "our5etools: skipped (set OUR5ETOOLS_DIR to build 5etools collection)"; \
+		echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"; \
 	fi
 
 our5etools-build:
@@ -121,10 +123,10 @@ linked:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 upper:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 # Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:

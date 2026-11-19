@@ -23,9 +23,10 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from bs4 import BeautifulSoup, NavigableString, Tag
 
 
-READER_COLLECTION = '5etools'
+READER_COLLECTION = 'our5etools'
 CONTENT_BASE = '/our5etools-book/'
 DEFINITION_BASE = '/our5etools-book/definition/'
+MEDIA_BASE = '/our5etools-media/'
 PAGE_PREFIXES = ('books/', 'adventures/', 'brew-books/', 'brew-adventures/')
 PRESENTATION_RESOURCES = (
     {
@@ -1137,8 +1138,9 @@ def _safe_url(url: str) -> str | None:
     return None
 
 
-def _media_route(relpath: str) -> str:
-    return '/our5etools-media/' + '/'.join(quote(seg, safe='-._~') for seg in relpath.split('/'))
+def _media_route(relpath: str, media_base: str = MEDIA_BASE) -> str:
+    base = media_base if media_base.endswith('/') else (media_base + '/')
+    return base + '/'.join(quote(seg, safe='-._~') for seg in relpath.split('/'))
 
 
 def _remote_media_helpers(render_mod: Any, href_type: str, raw_value: str) -> tuple[str | None, list[str]]:
@@ -1170,10 +1172,11 @@ def _remote_media_helpers(render_mod: Any, href_type: str, raw_value: str) -> tu
     return f'ext/{sha256(safe.encode("utf-8")).hexdigest()[:24]}{ext}', [safe]
 
 
-def _rewrite_reader_hrefs(fragment_html: str) -> str:
-    """Rewrite `/read?collection=5etools&...&page=...` links to `/our5etools-book/...` for Stella."""
+def _rewrite_reader_hrefs(fragment_html: str, content_base: str = CONTENT_BASE) -> str:
+    """Rewrite `/read?collection=...&page=...` links to reader `content_base` URLs for Stella."""
     if '/read?' not in fragment_html:
         return fragment_html
+    base = content_base if content_base.endswith('/') else (content_base + '/')
     soup = BeautifulSoup(fragment_html, 'html.parser')
     changed = False
     for a in soup.find_all('a', href=True):
@@ -1190,7 +1193,7 @@ def _rewrite_reader_hrefs(fragment_html: str) -> str:
             continue
         anchor_vals = qs.get('anchor') or []
         anchor = unquote(anchor_vals[0]) if anchor_vals else ''
-        new_href = CONTENT_BASE + '/'.join(quote(seg, safe='') for seg in page_rel.split('/'))
+        new_href = base + '/'.join(quote(seg, safe='') for seg in page_rel.split('/'))
         if anchor:
             new_href += '#' + quote(anchor, safe='-_.~')
         a['href'] = new_href
@@ -1198,7 +1201,7 @@ def _rewrite_reader_hrefs(fragment_html: str) -> str:
     return str(soup) if changed else fragment_html
 
 
-def _render_inline_fallback(text: str, resolver: Any = None) -> str:
+def _render_inline_fallback(text: str, resolver: Any = None, content_base: str = CONTENT_BASE) -> str:
     """Safe, XSS-escaped inline 5etools tag renderer used when render.py inline helper is unavailable."""
     if not text:
         return ''
@@ -1271,7 +1274,8 @@ def _render_inline_fallback(text: str, resolver: Any = None) -> str:
                 elif len(target) == 1:
                     page_rel = str(target[0] or '')
             if page_rel:
-                href = CONTENT_BASE + '/'.join(quote(seg, safe='') for seg in page_rel.split('/'))
+                base = content_base if content_base.endswith('/') else (content_base + '/')
+                href = base + '/'.join(quote(seg, safe='') for seg in page_rel.split('/'))
                 if frag:
                     href += '#' + quote(frag, safe='-_.~')
                 out.append(f'<a class="ref-book" href="{html.escape(href, quote=True)}">{html.escape(display, quote=True)}</a>')
@@ -1301,6 +1305,9 @@ def _make_render_context(
     resolver: Any,
     media_checker: Callable[[str], bool] | None,
     default_source: str = '',
+    *,
+    media_base: str = '',
+    content_base: str = CONTENT_BASE,
 ) -> Any | None:
     if render_mod is None or not hasattr(render_mod, 'RenderContext'):
         return None
@@ -1309,8 +1316,12 @@ def _make_render_context(
         kwargs['resolver'] = resolver
     if callable(media_checker):
         kwargs['media_checker'] = media_checker
+    if media_base:
+        kwargs['media_prefix'] = media_base
     try:
-        return render_mod.RenderContext(**kwargs)
+        ctx = render_mod.RenderContext(**kwargs)
+        ctx._content_base = content_base
+        return ctx
     except Exception:
         return None
 
@@ -1324,16 +1335,17 @@ def _render_inline_text(
     if text is None:
         return ''
     s = str(text)
+    cbase = getattr(render_ctx, '_content_base', CONTENT_BASE)
     if render_mod is not None and render_ctx is not None:
         fn = getattr(render_mod, 'render_inline', None)
         if callable(fn):
             try:
                 rendered = fn(s, render_ctx)
                 if isinstance(rendered, str):
-                    return _rewrite_reader_hrefs(rendered)
+                    return _rewrite_reader_hrefs(rendered, content_base=cbase)
             except Exception:
                 pass
-    return _render_inline_fallback(s, resolver)
+    return _render_inline_fallback(s, resolver, content_base=cbase)
 
 
 def _render_image_figure(
@@ -1345,6 +1357,7 @@ def _render_image_figure(
     extra_class: str = '',
     render_ctx: Any = None,
     remote_media_map: dict[str, list[str]] | None = None,
+    media_base: str = '',
 ) -> str:
     """Render local offline vs remote image cleanly without ever faking offline assets."""
     href = img.get('href') if isinstance(img.get('href'), dict) else {}
@@ -1358,6 +1371,7 @@ def _render_image_figure(
         caption_parts.append(f'<span class="o5e-media-credit">（{html.escape(credit, quote=True)}）</span>')
     caption_html = f'<figcaption>{"".join(caption_parts)}</figcaption>' if caption_parts else ''
 
+    resolved_media_base = media_base or getattr(render_ctx, 'media_prefix', '') or MEDIA_BASE
     cls = 'o5e-figure' + (f' {extra_class}' if extra_class else '')
     if href_type == 'internal':
         rel = str(href.get('path') or '').lstrip('/')
@@ -1369,7 +1383,7 @@ def _render_image_figure(
         alt = html.escape(title or (Path(rel).stem if rel else '配图'), quote=True)
         if is_local:
             served = local_rel if callable(media_checker) and media_checker(local_rel) else rel
-            src = _media_route(served)
+            src = _media_route(served, resolved_media_base)
             return (
                 f'<figure class="{cls}">'
                 f'<img src="{html.escape(src, quote=True)}" alt="{alt}" loading="lazy" decoding="async" data-o5e-fallback="1">'
@@ -1384,7 +1398,7 @@ def _render_image_figure(
                 for u in remote_urls:
                     if u not in bucket:
                         bucket.append(u)
-        lazy_attr = f' data-lazy-media="{html.escape(_media_route(san), quote=True)}"' if san else ''
+        lazy_attr = f' data-lazy-media="{html.escape(_media_route(san, resolved_media_base), quote=True)}"' if san else ''
         title_attr = f' title="{html.escape(san or rel, quote=True)}"' if (san or rel) else ''
         return (
             f'<figure class="{cls} o5e-media-remote"{lazy_attr} data-media-alt="{alt}"{title_attr}>'
@@ -1403,7 +1417,7 @@ def _render_image_figure(
                 if u not in bucket:
                     bucket.append(u)
     alt = html.escape(title or '配图', quote=True)
-    lazy_attr = f' data-lazy-media="{html.escape(_media_route(cache_rel), quote=True)}"' if cache_rel else ''
+    lazy_attr = f' data-lazy-media="{html.escape(_media_route(cache_rel, resolved_media_base), quote=True)}"' if cache_rel else ''
     link_html = (
         f'<a class="o5e-media-link" href="{html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
         if url
@@ -1945,17 +1959,18 @@ def _extract_plain_search_text(raw_html: str) -> str:
     return text.strip()
 
 
-def _inject_link_layer(raw_html_bytes: bytes, payload: dict[str, Any]) -> bytes:
+def _inject_link_layer(raw_html_bytes: bytes, payload: dict[str, Any], content_base: str = CONTENT_BASE) -> bytes:
     """Append `<!-- anna-link-layer -->...` after `</html>`, matching `anna/server/linked_book.py`."""
+    base = (content_base if content_base.endswith('/') else (content_base + '/')).encode('ascii')
     data = json.dumps(payload, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c')
     addition = (
         LINK_LAYER_MARKER
         + b'<script type="application/json" id="anna-bindings">'
         + data.encode('ascii')
         + b'</script>'
-        + b'<script charset="utf-8" src="/our5etools-book/anna-assets/link-labels.js"></script>'
-        + b'<script charset="utf-8" src="/our5etools-book/anna-assets/links.js"></script>'
-        + b'<script charset="utf-8" src="/our5etools-book/anna-assets/topic.js"></script>'
+        + b'<script charset="utf-8" src="' + base + b'anna-assets/link-labels.js"></script>'
+        + b'<script charset="utf-8" src="' + base + b'anna-assets/links.js"></script>'
+        + b'<script charset="utf-8" src="' + base + b'anna-assets/topic.js"></script>'
         + LINK_LAYER_END
     )
     return raw_html_bytes + addition
@@ -2000,6 +2015,9 @@ def build_reader_pages(
     entry_index_by_book_chapter: dict[Any, Any] | None = None,
     *,
     snapshot: str,
+    collection: str = READER_COLLECTION,
+    content_base: str | None = None,
+    media_base: str | None = None,
 ) -> dict[str, Any]:
     """Phase 2: Generate self-contained Stella HTML chapter files, TOC nodes, and search rows."""
     if isinstance(book_index, BookIndex):
@@ -2017,11 +2035,19 @@ def build_reader_pages(
     out_root.mkdir(parents=True, exist_ok=True)
     render_mod = _load_render_module()
 
+    col_key = (collection or READER_COLLECTION).strip() or READER_COLLECTION
+    raw_cbase = content_base or f'/{col_key}-book/'
+    norm_content_base = raw_cbase if raw_cbase.endswith('/') else (raw_cbase + '/')
+    norm_def_base = f'{norm_content_base}definition/'
+    raw_mbase = media_base or f'/{col_key}-media/'
+    norm_media_base = raw_mbase if raw_mbase.endswith('/') else (raw_mbase + '/')
+
     reader_context = {
         'snapshot': snapshot,
-        'collection': READER_COLLECTION,
-        'content_base': CONTENT_BASE,
-        'definition_base': DEFINITION_BASE,
+        'collection': col_key,
+        'content_base': norm_content_base,
+        'definition_base': norm_def_base,
+        'media_base': norm_media_base,
         'page_prefixes': list(PAGE_PREFIXES),
         'presentation_resources': [dict(res) for res in PRESENTATION_RESOURCES],
     }
@@ -2160,7 +2186,14 @@ def build_reader_pages(
                 if book.published:
                     meta_pills.append(f'<span class="o5e-pill">{html.escape(book.published, quote=True)}</span>')
 
-                render_ctx = _make_render_context(render_mod, resolver, media_checker, default_source=book.source_code)
+                render_ctx = _make_render_context(
+                    render_mod,
+                    resolver,
+                    media_checker,
+                    default_source=book.source_code,
+                    media_base=norm_media_base,
+                    content_base=norm_content_base,
+                )
 
                 cover_html = ''
                 if ch_idx == 0 and isinstance(book.cover, dict):
@@ -2213,7 +2246,7 @@ def build_reader_pages(
                     '<meta charset="utf-8">'
                     '<meta name="viewport" content="width=device-width,initial-scale=1">'
                     f'<title>{html.escape(doc_title, quote=True)}</title>'
-                    '<link id="our5etoolsBookStyles" rel="stylesheet" href="/our5etools-book/anna-assets/our5etools-book.css">'
+                    f'<link id="our5etoolsBookStyles" rel="stylesheet" href="{html.escape(norm_content_base, quote=True)}anna-assets/our5etools-book.css">'
                     '</head>'
                     '<body>'
                     f'<article class="o5e-chapter" data-book-id="{html.escape(book.book_id, quote=True)}" data-chapter="{ch_idx}">'
@@ -2306,7 +2339,7 @@ def build_reader_pages(
                     'references': references,
                     'reader': reader_context,
                 }
-                final_bytes = _inject_link_layer(raw_doc_html.encode('utf-8'), payload)
+                final_bytes = _inject_link_layer(raw_doc_html.encode('utf-8'), payload, content_base=norm_content_base)
                 dest = out_root / page_path
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(final_bytes)

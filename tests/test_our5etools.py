@@ -433,6 +433,159 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
             db.close()
             self.assertEqual(audit.main(['--data', str(out)]), 1)
 
+    def test_self_contained_bundle_and_opt_in_lazy_media(self):
+        import email.message
+        import io
+        import shutil
+        import socket
+        import urllib.error
+        import urllib.request
+
+        class _FakeResp(io.BytesIO):
+            def __init__(self, data: bytes, content_type: str, final_url: str, status: int = 200):
+                super().__init__(data)
+                self.status = status
+                self._final_url = final_url
+                msg = email.message.Message()
+                msg['Content-Type'] = content_type
+                msg['Content-Length'] = str(len(data))
+                self.headers = msg
+
+            def getcode(self) -> int:
+                return self.status
+
+            def geturl(self) -> str:
+                return self._final_url
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = _make_mini_repo(root)
+            (src / 'data/bestiary/fluff-bestiary-mm.json').write_text(
+                json.dumps(
+                    {
+                        'monsterFluff': [
+                            {
+                                'name': '吸血鬼',
+                                'ENG_name': 'Vampire',
+                                'source': 'MM',
+                                'images': [{'type': 'image', 'href': {'type': 'internal', 'path': 'bestiary/MM/Vampire.webp'}}],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding='utf-8',
+            )
+            out = root / 'built'
+            img_bundle = root / 'local-img'
+            (img_bundle / 'custom').mkdir(parents=True)
+            (img_bundle / 'custom/Hero.png').write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 32)
+
+            m1 = build.build(source=src, output=out, img_dir=img_bundle, quiet=True)
+            self.assertGreaterEqual(m1['counts']['bundled_media_files'], 1)
+            self.assertEqual(m1['counts']['bundled_img_dir_files'], 1)
+            self.assertTrue((out / 'media/audio/bestiary/vampire.opus').is_file())
+            self.assertTrue((out / 'media/img/custom/Hero.png').is_file())
+            self.assertTrue((out / 'media-remotes.json').is_file())
+
+            # Remove source repo completely to prove 100% runtime self-containment.
+            shutil.rmtree(src)
+
+            col_off = load_our5etools_collection(out, lazy_media=False)
+            assert col_off is not None
+            cat_off: Our5etoolsCatalog = col_off.provider
+            rdr_off: Our5etoolsReader = col_off.reader
+            self.assertIs(cat_off.meta()['lazy_media'], False)
+            self.assertIs(rdr_off.navigation()['lazy_media'], False)
+
+            vamp_id = cat_off.entries({'q': ['Vampire']})['rows'][0]['id']
+            vamp_layout_off = cat_off.layout(vamp_id)
+            self.assertIn('o5e-media-remote', vamp_layout_off['html'])
+            self.assertIn('data-lazy-media="/our5etools-media/img/bestiary/MM/Vampire.webp"', vamp_layout_off['html'])
+            self.assertNotIn('<img ', vamp_layout_off['html'])
+
+            # Bundled audio and --img-dir images serve offline with zero source repo.
+            audio_res = rdr_off.resolve_media_asset('audio/bestiary/vampire.opus')
+            self.assertIsNotNone(audio_res)
+            self.assertEqual(audio_res[0], (out / 'media/audio/bestiary/vampire.opus').resolve())
+            hero_res = rdr_off.resolve_media_asset('img/custom/Hero.png')
+            self.assertIsNotNone(hero_res)
+
+            # Uncached remote image is strictly offline (404) and makes zero network calls when lazy_media=False.
+            with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('unexpected fetch')):
+                self.assertIsNone(rdr_off.resolve_media_asset('img/bestiary/MM/Vampire.webp'))
+
+            # Opt-in lazy_media=True promotes markup and caches safely from allowlisted mirror fallback.
+            col_on = load_our5etools_collection(out, lazy_media=True)
+            assert col_on is not None
+            cat_on: Our5etoolsCatalog = col_on.provider
+            rdr_on: Our5etoolsReader = col_on.reader
+            self.assertIs(cat_on.meta()['lazy_media'], True)
+            self.assertIs(rdr_on.navigation()['lazy_media'], True)
+            self.assertEqual(rdr_on.navigation()['cached_media'], ['img/custom/Hero.png'])
+            vamp_layout_on = cat_on.layout(vamp_id)
+            self.assertIn('<img src="/our5etools-media/img/bestiary/MM/Vampire.webp"', vamp_layout_on['html'])
+            self.assertIn('loading="lazy" decoding="async" data-o5e-fallback="1"', vamp_layout_on['html'])
+
+            seen_urls: list[str] = []
+            webp_bytes = b'RIFF\x18\x00\x00\x00WEBPVP8 ' + b'\x00' * 16
+
+            def _public_dns(host, *args, **kwargs):
+                return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 443))]
+
+            def _mock_open(opener_self, req, timeout=10):
+                url = req.full_url
+                seen_urls.append(url)
+                if '5e.kiwee.top' in url:
+                    raise urllib.error.HTTPError(url, 404, 'Not Found', email.message.Message(), None)
+                return _FakeResp(webp_bytes, 'image/webp', url)
+
+            with patch.object(socket, 'getaddrinfo', side_effect=_public_dns):
+                with patch.object(urllib.request.OpenerDirector, 'open', autospec=True, side_effect=_mock_open):
+                    cached = rdr_on.resolve_media_asset('img/bestiary/MM/Vampire.webp')
+
+            self.assertIsNotNone(cached)
+            self.assertEqual(cached[1], 'image/webp')
+            self.assertEqual(cached[0].read_bytes(), webp_bytes)
+            self.assertTrue(any('5e.kiwee.top' in u for u in seen_urls))
+            self.assertTrue(any('raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/' in u for u in seen_urls))
+
+            # Once cached, default lazy_media=False serves it offline & promotes it cleanly.
+            col_cached = load_our5etools_collection(out, lazy_media=False)
+            assert col_cached is not None
+            self.assertIn('img/bestiary/MM/Vampire.webp', col_cached.reader.navigation()['cached_media'])
+            self.assertIsNotNone(col_cached.reader.resolve_media_asset('img/bestiary/MM/Vampire.webp'))
+            self.assertIn('<img src="/our5etools-media/img/bestiary/MM/Vampire.webp"', col_cached.provider.layout(vamp_id)['html'])
+
+            # Rebuild preserves previously cached lazy media under media/img/ & media/ext/.
+            src_rebuild = _make_mini_repo(root / 'src_rebuild')
+            m_rebuild = build.build(source=src_rebuild, output=out, img_dir=img_bundle, quiet=True)
+            self.assertGreaterEqual(m_rebuild['counts']['preserved_cached_media'], 1)
+            self.assertTrue((out / 'media/img/bestiary/MM/Vampire.webp').is_file())
+
+            # Security guards on fresh lazy reader: SSRF private IP blocked, HTML rejected, unlisted ext rejected.
+            rdr_sec = Our5etoolsReader(out, lazy_media=True)
+            with patch.object(
+                socket,
+                'getaddrinfo',
+                return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('127.0.0.1', 443))],
+            ):
+                with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('ssrf must block dns')):
+                    self.assertIsNone(rdr_sec.resolve_media_asset('img/bestiary/MM/Blocked.webp'))
+
+            with patch.object(socket, 'getaddrinfo', side_effect=_public_dns):
+                with patch.object(
+                    urllib.request.OpenerDirector,
+                    'open',
+                    autospec=True,
+                    side_effect=lambda o, r, timeout=10: _FakeResp(b'<html>404</html>', 'text/html', r.full_url),
+                ):
+                    self.assertIsNone(rdr_sec.resolve_media_asset('img/bestiary/MM/HtmlError.webp'))
+            self.assertFalse((out / 'media/img/bestiary/MM/HtmlError.webp').exists())
+
+            with patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('unlisted ext blocked')):
+                self.assertIsNone(rdr_sec.resolve_media_asset('ext/deadbeefdeadbeefdeadbeef.webp'))
+
 
 @unittest.skipUnless(REAL_CORPUS_READY, 'Requires local our5etools repo and built data/our5etools')
 class Our5etoolsRealCorpusInventoryAndSemanticsTests(unittest.TestCase):
@@ -595,6 +748,18 @@ class Our5etoolsRealCorpusInventoryAndSemanticsTests(unittest.TestCase):
                     self.assertTrue(target.startswith('o5e_'), f'{r["id"]} jumped to non-5etools target {target}')
                 for href in re.findall(r'class="ref-filter"[^>]*href="([^"]+)"', html_txt):
                     self.assertIn('collection=5etools', href)
+
+    def test_real_bundle_media_self_contained(self):
+        self.assertEqual(self.manifest['counts']['bundled_media_files'], 816)
+        self.assertTrue((OUR5ETOOLS_DATA / 'media-remotes.json').is_file())
+        col_self = load_our5etools_collection(OUR5ETOOLS_DATA, lazy_media=False)
+        self.assertIsNotNone(col_self)
+        assert col_self is not None
+        rdr: Our5etoolsReader = col_self.reader
+        self.assertEqual(rdr.media_dir, (OUR5ETOOLS_DATA / 'media').resolve())
+        audio = rdr.resolve_media_asset('audio/bestiary/vampire.opus')
+        self.assertIsNotNone(audio)
+        self.assertTrue(audio[0].is_file())
 
 
 @unittest.skipUnless(REAL_CORPUS_READY, 'Requires local our5etools repo and built data/our5etools')

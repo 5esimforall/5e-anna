@@ -173,10 +173,56 @@ test('5. provenance card and remote unbundled image notice render cleanly withou
   await expect(prov).toContainText('Adult Swim');
   await expect(prov).toContainText('C');
 
-  // Remote image notice is visible & explicitly marked as remote/unbundled
+  // Remote image notice is visible & explicitly marked as remote/unbundled (with compact CSS and lazy-media hook)
   const remoteFig=page.locator('#detail .o5e-media-remote').first();
   await expect(remoteFig).toBeVisible();
   await expect(remoteFig).toContainText('远端配图（未离线收录）');
+  await expect(page.locator('#detail [data-lazy-media]').first()).toBeVisible();
+});
+
+test('5b. lazy media displays served image and collapses cleanly to fallback note on 404',async({page})=>{
+  const okPng=Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  await page.route('**/our5etools-media/img/test-ok/Ok.png',route=>
+    route.fulfill({status:200,contentType:'image/png',body:okPng}),
+  );
+  await page.route('**/our5etools-media/img/test-fail/Fail.webp',route=>
+    route.fulfill({status:404,contentType:'text/plain',body:'missing'}),
+  );
+  await page.route('**/api/entry-layout*',async route=>{
+    const resp=await route.fetch();
+    const json=await resp.json();
+    if(typeof json.html==='string' && json.html.includes('o5e-media-remote')){
+      json.html=
+        '<figure class="o5e-figure" data-testid="lazy-ok">' +
+          '<img src="/our5etools-media/img/test-ok/Ok.png" alt="测试图" data-o5e-fallback="1">' +
+          '<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>' +
+        '</figure>' +
+        '<figure class="o5e-figure" data-testid="lazy-fail">' +
+          '<img src="/our5etools-media/img/test-fail/Fail.webp" alt="缺失图" data-o5e-fallback="1">' +
+          '<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>' +
+        '</figure>' +
+        json.html;
+    }
+    await route.fulfill({status:resp.status(),headers:resp.headers(),body:JSON.stringify(json)});
+  });
+
+  await page.goto(anna+'/?collection=5etools&type=magic_item&q='+encodeURIComponent('远古法师手册'));
+  await resultsReady(page);
+  await page.locator('#results .entry-name').filter({hasText:'远古法师手册'}).first().click();
+
+  const okFig=page.locator('#detail [data-testid="lazy-ok"]');
+  await expect(okFig.locator('img')).toBeVisible();
+  await expect.poll(()=>okFig.locator('img').evaluate(img=>img.complete && img.naturalWidth===1)).toBe(true);
+  await expect(okFig.locator('.o5e-media-fallback-note')).toBeHidden();
+
+  const failFig=page.locator('#detail [data-testid="lazy-fail"]');
+  await expect(failFig).toHaveClass(/o5e-img-failed/);
+  await expect(failFig.locator('img')).toBeHidden();
+  await expect(failFig.locator('.o5e-media-fallback-note')).toBeVisible();
+  await expect(failFig.locator('.o5e-media-fallback-note')).toContainText('远端配图（未离线收录）');
 });
 
 test('6. Tour (collection=5etools): bookshelf & pack drill-down, scope banner, widen-to-all, and mobile back',async({page})=>{

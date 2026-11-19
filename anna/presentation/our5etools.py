@@ -447,9 +447,11 @@ class Our5etoolsCatalog:
         self._sources_map: dict[str, dict[str, Any]] = {}
         self._packages_map: dict[str, dict[str, Any]] = {}
         self._held_types: set[str] = set()
+        self._bases: dict[str, tuple[str, str, str]] = {}
         self._scope_universe_cache: dict[tuple[str, ...], tuple[int, dict[str, set[str]], dict[str, int]]] = {}
         self._unfiltered_facets_cache: dict[str, Any] | None = None
         self._entry_locations: dict[str, dict[str, Any]] = {}
+        self._reader_roots: dict[str, str] = {}
         self._reader_sig: tuple[int, int, int] | None = None
 
     def _connect(self) -> sqlite3.Connection:
@@ -489,6 +491,13 @@ class Our5etoolsCatalog:
                     'data': data,
                 }
             held = {r[0] for r in db.execute('SELECT DISTINCT type FROM entries') if r[0]}
+            # A copied entry (5etools `_copy`) names the entry it was copied from and that entry's work.
+            bases: dict[str, tuple[str, str, str]] = {}
+            for copy, base, base_work, base_name_en in db.execute(
+                    "SELECT r.source_id, r.target_id, b.source_id, b.name_en FROM relations r JOIN entries b ON b.id = r.target_id "
+                    "WHERE r.type = 'copied_from' ORDER BY r.source_id, r.target_id"):
+                bases.setdefault(copy, (base, base_work, base_name_en))
+            self._bases = bases
             self._sources_map = sources_map
             self._packages_map = packages_map
             self._held_types = held
@@ -496,23 +505,29 @@ class Our5etoolsCatalog:
             self._unfiltered_facets_cache = None
             self._cache_sig = sig
 
-    def _get_entry_locations(self) -> dict[str, dict[str, Any]]:
+    def _load_reader_index(self) -> None:
+        """Entry locations and each work's book root from the built reader, reloaded when it changes."""
         sig = _file_sig(self.reader_path)
         with self._lock:
-            if sig == self._reader_sig:
-                return self._entry_locations
-            if sig is None:
-                self._entry_locations = {}
-                self._reader_sig = None
-                return self._entry_locations
-            try:
-                raw = json.loads(self.reader_path.read_text('utf-8'))
-                locs = raw.get('entry_locations')
-                self._entry_locations = locs if isinstance(locs, dict) else {}
-            except (OSError, ValueError):
-                self._entry_locations = {}
-            self._reader_sig = sig
-            return self._entry_locations
+            if sig == self._reader_sig and sig is not None:
+                return
+            locations: dict[str, dict[str, Any]] = {}
+            roots: dict[str, str] = {}
+            if sig is not None:
+                try:
+                    raw = json.loads(self.reader_path.read_text('utf-8'))
+                    locs = raw.get('entry_locations')
+                    locations = locs if isinstance(locs, dict) else {}
+                    for root in raw.get('roots') or []:
+                        if isinstance(root, dict) and root.get('source_id') and root.get('id'):
+                            roots.setdefault(root['source_id'], root['id'])
+                except (OSError, ValueError):
+                    locations, roots = {}, {}
+            self._entry_locations, self._reader_roots, self._reader_sig = locations, roots, sig
+
+    def _get_entry_locations(self) -> dict[str, dict[str, Any]]:
+        self._load_reader_index()
+        return self._entry_locations
 
     # --- Filtering & SQL builder (shared identically by entries() and facets()) ---
 
@@ -1348,17 +1363,25 @@ class Our5etoolsCatalog:
 
     def works(self) -> list[dict[str, Any]]:
         """Every work with its origin, rules generation and entry count: what the reader's library can include."""
+        self._load_reader_index()
         with closing(self._connect()) as db:
             self._ensure_static_cache(db)
             counts = dict(db.execute('SELECT source_id, count(*) FROM entries GROUP BY source_id'))
             out = []
             for sid, srec in sorted(self._sources_map.items(), key=lambda kv: (kv[1]['name'], kv[0])):
                 package = self._packages_map.get(srec['package_id'])
+                data = srec['data']
                 out.append({
                     'id': sid, 'name': srec['name'], 'label': srec['short_name'], 'origin': srec['origin'],
                     'ruleset': srec['ruleset'] if srec['ruleset'] in {'5e', '5r'} else '待核',
                     'group': package['name'] if package else srec['package_id'],
                     'count': int(counts.get(sid, 0)),
+                    # The names another collection may know this work by: its 5etools code and short label.
+                    'codes': [data['code']] if data.get('code') else [],
+                    'abbreviations': [srec['short_name']] if srec['short_name'] else [],
+                    'titles': list(dict.fromkeys(t for t in (srec['name'], data.get('code')) if t)),
+                    # The Stella root that opens this work's book, if it has one.
+                    'reader_root': self._reader_roots.get(sid),
                 })
             return out
 
@@ -1377,9 +1400,11 @@ class Our5etoolsCatalog:
             out = []
             for r in db.execute(sql, values):
                 source = self._sources_map.get(r['source_id'])
+                base, base_work, base_name_en = self._bases.get(r['id'], (None, None, None))
                 out.append({'id': r['id'], 'type': r['type'], 'name': r['name'], 'name_zh': r['name_zh'], 'name_en': r['name_en'],
                             'ruleset': r['ruleset'] or '待核', 'stack': r['group_id'], 'value': r['value'],
-                            'source_key': ((r['source_code'] or '').lower(),), 'origin': source['origin'] if source else '社区'})
+                            'source_key': ((r['source_code'] or '').lower(),), 'origin': source['origin'] if source else '社区',
+                            'work': r['source_id'] or None, 'base': base, 'base_work': base_work, 'base_name_en': base_name_en})
             return out
 
     def rows(self, ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -1414,6 +1439,8 @@ class Our5etoolsCatalog:
             values={'ruleset': frozenset(RULESETS), 'legacy': frozenset(LEGACIES), 'copy_status': frozenset(COPY_STATUSES),
                     'origin': frozenset(ORIGINS)},
             stackable=frozenset(otypes.STACKABLE_TYPES),
+            # Identity groups gather recorded reprints only; same-name entries of other works are the library's to stack.
+            same_name_groups=False,
         )
 
     def signature(self) -> tuple:

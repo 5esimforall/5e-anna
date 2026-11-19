@@ -4,14 +4,16 @@ A server offers collections (不全书, our5etools, …). Each reader chooses, i
 read and in what order, whether same-name versions share one row, and which rules generations and kinds of
 content to include. The query page sends that choice with every request; this module turns it into one table.
 
-A single collection answers through its own provider, as before. Several collections answer together: each
-provider ranks its matching versions cheaply, the library orders them in one sequence, stacks same-name
-versions across collections and reads only the shown rows in full. Collections keep their own entry IDs,
-evidence and identities; a stack is a presentation of same-name candidates, never a merged identity.
+A single collection whose own groups already gather its same-name versions answers through its own provider, as
+before. Otherwise the library answers: each provider ranks its matching versions cheaply, the library orders them
+in one sequence, stacks same-name versions across works and collections and reads only the shown rows in full.
+Collections keep their own entry IDs, evidence and identities; a stack is a presentation of same-name candidates,
+never a merged identity. Each version in a stack says how it relates to the one shown: by the collection's own
+group, as the same publication in another collection, as a copy of it, or by its name alone.
 """
 from __future__ import annotations
 
-from collections import Counter, OrderedDict
+from collections import Counter, OrderedDict, defaultdict
 import csv
 import io
 import json
@@ -22,13 +24,21 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import anna.catalog.views as browse
+from anna.presentation.alignment import Alignment, align
 from anna.presentation.collections import DEFAULT, Restriction
 
 # Origins as each collection records them, read as one vocabulary of kinds of content.
 CONTENT = ('official', 'partnered', 'unverified', 'curated', 'community')
 CONTENT_OF_ORIGIN = {'官方': 'official', '合作': 'partnered', '待核': 'unverified', '本站精选': 'curated', '社区': 'community'}
-# A published version heads its stack before homebrew of the same name; unverified origins sit between.
+# A published version heads its stack before homebrew of the same name; unverified origins sit between. Works that
+# are one publication in several collections share the rank of the most published of them.
 CONTENT_RANK = {'official': 0, 'partnered': 0, 'unverified': 1, 'curated': 2, 'community': 2}
+# How a version in a stack relates to the version it is compared with, by the evidence that links them:
+# version     the collection's own group (reprints, editions) or a chain of evidence without a copy
+# translation the same publication's entry in another collection
+# derived     one was copied from the other, or from the other's publication, and changed
+# candidate   nothing but the type and English name links them
+RELATIONS = ('version', 'translation', 'derived', 'candidate')
 RULESETS = ('5e', '5r', '待核')
 VERSIONS = ('stacked', 'each')
 PREFERENCES = {'5r': ('5r', '5e'), '5e': ('5e', '5r')}
@@ -102,6 +112,7 @@ class Scope:
     rulesets: frozenset[str] | None = None
     content: frozenset[str] | None = None
     hidden: frozenset[tuple[str, str]] = frozenset()
+    lead: frozenset[tuple[str, str]] = frozenset()
     versions: str = 'stacked'
     prefer: str = '5r'
     unavailable: tuple[str, ...] = ()
@@ -126,7 +137,7 @@ class Scope:
         return {'libraries': list(self.libraries), 'pinned': self.pinned, 'versions': self.versions, 'prefer': self.prefer,
                 'rulesets': sorted(self.rulesets) if self.rulesets is not None else list(RULESETS),
                 'content': [c for c in CONTENT if self.content is None or c in self.content],
-                'hidden': len(self.hidden), 'narrowed': self.narrowed,
+                'hidden': len(self.hidden), 'lead': len(self.lead), 'narrowed': self.narrowed,
                 'unavailable': list(self.unavailable), 'fallback': self.fallback}
 
 
@@ -148,6 +159,19 @@ def _choices(raw, allowed, label):
     return None if chosen == frozenset(allowed) else chosen
 
 
+def _works(raw, label):
+    """Works named as `collection:work id`, as `hide` and `lead` carry them."""
+    if len(raw) > MAX_HIDDEN:
+        raise ValueError(label + '过多')
+    out = set()
+    for item in raw:
+        key, sep, work = item.partition(':')
+        if not sep or not KEY_RE.fullmatch(key) or not work or len(work) > 300:
+            raise ValueError('无效的' + label)
+        out.add((key, work))
+    return frozenset(out)
+
+
 def parse_scope(params: dict[str, list[str]], registry) -> Scope:
     """Take the library scope out of request parameters; what remains are the query's own conditions.
 
@@ -157,22 +181,15 @@ def parse_scope(params: dict[str, list[str]], registry) -> Scope:
     raw_libraries = _one(params, 'libraries')
     rulesets = _choices(_one(params, 'rulesets'), RULESETS, '规则版本范围')
     content = _choices(_one(params, 'content'), CONTENT, '内容范围')
-    hidden = set()
-    raw_hidden = params.pop('hide', [])
-    if len(raw_hidden) > MAX_HIDDEN:
-        raise ValueError('隐藏的作品过多')
-    for item in raw_hidden:
-        key, sep, work = item.partition(':')
-        if not sep or not KEY_RE.fullmatch(key) or not work or len(work) > 300:
-            raise ValueError('无效的隐藏作品')
-        hidden.add((key, work))
+    hidden = _works(params.pop('hide', []), '隐藏的作品')
+    lead = _works(params.pop('lead', []), '领头的作品')
     versions = _one(params, 'versions') or 'stacked'
     if versions not in VERSIONS:
         raise ValueError('无效版本显示方式')
     prefer = _one(params, 'prefer') or '5r'
     if prefer not in PREFERENCES:
         raise ValueError('无效规则版本偏好')
-    common = dict(rulesets=rulesets, content=content, hidden=frozenset(hidden), versions=versions, prefer=prefer)
+    common = dict(rulesets=rulesets, content=content, hidden=hidden, lead=lead, versions=versions, prefer=prefer)
     if pin is not None:
         return Scope((registry.select(pin).key,), pinned=True, **common)
     requested = [DEFAULT] if raw_libraries is None else list(dict.fromkeys(k for k in raw_libraries.split(',') if k))
@@ -219,14 +236,68 @@ def meta_of(collection):
     return _fact(collection, 'meta', collection.provider.meta)
 
 
+@dataclass(frozen=True)
+class Publications:
+    """The publications behind the ready collections' works: which works of different collections are one
+    publication, and the content rank each publication takes from its most published work."""
+
+    alignment: Alignment
+    ranks: dict[str, int]
+
+    def of(self, collection: str, work: str | None) -> str | None:
+        return self.alignment.cluster(collection, work)
+
+    def rank(self, collection: str, work: str | None, origin: str | None) -> int:
+        own = CONTENT_RANK[content_of(origin)]
+        return min(own, self.ranks.get(self.of(collection, work), own))
+
+
+_publications: dict[tuple, Publications] = {}
+
+
+def publications_of(registry) -> Publications:
+    """Align the works of every ready collection once per set of snapshots."""
+    ready = [registry.get(k) for k in registry.ready()]
+    key = tuple((c.key, c.provider.signature()) for c in ready)
+    with _cache_lock:
+        if key in _publications:
+            return _publications[key]
+    sides, origins = [], {}
+    for c in ready:
+        stackable = capabilities_of(c).stackable
+        names: dict[str, set] = defaultdict(set)
+        for r in c.provider.ranked({}):
+            if r['type'] in stackable and r.get('work') and (folded := name_fold(r['name_en'])):
+                names[r['work']].add((r['type'], folded))
+        works = works_of(c)
+        origins.update(((c.key, w['id']), w['origin']) for w in works)
+        sides.append((c.key, works, names))
+    alignment = align(sides)
+    ranks = {cluster: min(CONTENT_RANK[content_of(origins.get(m))] for m in members)
+             for cluster, members in alignment.members.items()}
+    found = Publications(alignment, ranks)
+    with _cache_lock:
+        _publications.clear()
+        _publications[key] = found
+    return found
+
+
 def describe_works(registry, collection_keys):
-    """The works of each ready collection, with content kinds, for the reader's library settings."""
+    """The works of each ready collection, with content kinds and the same publication's works in the other
+    collections, for the reader's library settings."""
     out = []
+    alignment = publications_of(registry).alignment if len(registry.ready()) > 1 else Alignment()
     for key in collection_keys:
         collection = registry.get(key)
         if collection is None or collection.provider is None:
             continue
-        works = [w | {'content': content_of(w['origin'])} for w in works_of(collection)]
+        works = []
+        for w in works_of(collection):
+            work = {k: v for k, v in w.items() if k not in {'codes', 'abbreviations', 'titles'}} | {'content': content_of(w['origin'])}
+            counterparts = alignment.counterparts(key, w['id'])
+            if counterparts:
+                work['counterparts'] = [{'collection': c, 'id': i} for c, i in counterparts]
+            works.append(work)
         out.append({'id': key, 'works': works, 'total': sum(w['count'] for w in works)})
     return out
 
@@ -271,6 +342,56 @@ def localize(params, caps, every_condition, known_types):
     return local, unanswerable
 
 
+# --- How versions in a stack relate ------------------------------------------------------------------------------
+
+def _copied(u, v) -> bool:
+    """Whether u was copied from v, or from the entry of v's name in v's publication."""
+    if not u.get('base'):
+        return False
+    if u['collection'] == v['collection'] and u['base'] == v['id']:
+        return True
+    return (u.get('base_publication') is not None and u['base_publication'] == v.get('publication')
+            and name_fold(u.get('base_name_en')) == name_fold(v.get('name_en')))
+
+
+def _link(u, v) -> str | None:
+    """The evidence linking two same-name versions directly, if any."""
+    if u['collection'] == v['collection']:
+        if (u.get('stack') and u['stack'] == v.get('stack')) or (u.get('work') and u['work'] == v.get('work')):
+            return 'version'
+    elif u.get('publication') and u['publication'] == v.get('publication'):
+        return 'translation'
+    if _copied(u, v) or _copied(v, u):
+        return 'derived'
+    return None
+
+
+def relations(members, anchor: int = 0) -> list[str | None]:
+    """How each version relates to the anchor, read from the shortest chain of evidence between them. A version
+    reached through its own copy (it was copied from the version before it) is `derived`; one reached through
+    publications alone is a `translation`; any other chain makes it a `version`. Without a chain the versions share
+    only their name (`candidate`). The anchor itself relates as None."""
+    before = {anchor: None}
+    kinds = {anchor: frozenset()}
+    queue = [anchor]
+    for i in queue:
+        for j, other in enumerate(members):
+            if j not in kinds and (kind := _link(members[i], other)):
+                before[j], kinds[j] = i, kinds[i] | {kind}
+                queue.append(j)
+    out = []
+    for j, member in enumerate(members):
+        if j == anchor:
+            out.append(None)
+        elif j not in kinds:
+            out.append('candidate')
+        elif _copied(member, members[before[j]]):
+            out.append('derived')
+        else:
+            out.append('translation' if kinds[j] == {'translation'} else 'version')
+    return out
+
+
 # --- The library -------------------------------------------------------------------------------------------------
 
 class Library:
@@ -280,6 +401,15 @@ class Library:
         self.registry, self.scope = registry, scope
         self.members = [registry.get(k) for k in scope.libraries]
         self.rank = {c.key: i for i, c in enumerate(self.members)}
+        self._publications = None
+
+    @property
+    def publications(self) -> Publications:
+        """The publications behind the works; with one collection ready, every work is its own."""
+        if self._publications is None:
+            ready = len(self.registry.ready()) > 1
+            self._publications = publications_of(self.registry) if ready else Publications(Alignment(), {})
+        return self._publications
 
     # What any ready collection can answer: a condition none of them knows is passed on for its catalog to judge.
     @property
@@ -297,6 +427,17 @@ class Library:
     @property
     def federated(self) -> bool:
         return len(self.members) > 1
+
+    @property
+    def stacking(self) -> bool:
+        """Whether the library stacks the versions itself: several collections, or one whose own groups gather
+        recorded reprints only, so that its same-name works and homebrew still share a row."""
+        return self.scope.versions == 'stacked' and (self.federated or not capabilities_of(self.primary).same_name_groups)
+
+    @property
+    def alone(self) -> bool:
+        """Whether one collection answers through its own provider, exactly as when it is read whole."""
+        return not self.federated and not self.stacking
 
     def restrict(self, collection):
         if not self.scope.narrowed:
@@ -358,7 +499,7 @@ class Library:
 
     def entries(self, params) -> dict:
         offset, limit = _window(params)
-        if not self.federated:
+        if self.alone:
             collection = self.primary
             local, unanswerable = self._local(collection, params)
             if unanswerable:
@@ -384,7 +525,9 @@ class Library:
                 continue
             row = members[0]
             if self.scope.versions == 'stacked':
-                row['versions'] = [{k: v.get(k) for k in VERSION_FIELDS} for v in members]
+                related = ranking['relations']
+                row['versions'] = [{k: v.get(k) for k in VERSION_FIELDS} | {'relation': related.get((v['collection'], v['id']))}
+                                   for v in members]
                 spans = len({m['collection'] for m in members}) > 1
                 row['stack'] = {'id': 'library:' + row['collection'] + ':' + row['id'],
                                 'status': 'library_candidate' if spans else 'same_name_candidate'} if len(members) > 1 else None
@@ -447,13 +590,10 @@ class Library:
             local, unanswerable = self._local(collection, params)
             if unanswerable:
                 continue
-            stackable, lib = capabilities_of(collection).stackable, self.rank[collection.key]
-            for r in collection.provider.ranked(local, self.restrict(collection), field):
-                r.update(collection=collection.key, lib=lib, stackable=r['type'] in stackable)
-                rows.append(r)
+            rows.extend(self._versions(collection, collection.provider.ranked(local, self.restrict(collection), field)))
         ordered = self._ordered(rows, sort, desc, default, browse.latest_term(params))
-        stacks = self._stacks(ordered)
-        ranking = {'stacks': stacks, 'versions_total': len(ordered), 'schema': schema}
+        stacks, related = self._stacks(ordered)
+        ranking = {'stacks': stacks, 'relations': related, 'versions_total': len(ordered), 'schema': schema}
         with _cache_lock:
             _rankings[cache_key] = ranking
             while len(_rankings) > 12:
@@ -494,11 +634,31 @@ class Library:
             r['pos'] = i
         return rows
 
+    def _versions(self, collection, ranked):
+        """Ranked versions with what stacking and relating them needs: their collection and priority, publication,
+        the publication of the entry each was copied from, content rank and whether the reader leads its work."""
+        publications, key = self.publications, collection.key
+        stackable, lib = capabilities_of(collection).stackable, self.rank.get(key, len(self.rank))
+        for r in ranked:
+            r.update(collection=key, lib=lib, stackable=r['type'] in stackable,
+                     lead=0 if (key, r.get('work')) in self.scope.lead else 1,
+                     publication=publications.of(key, r.get('work')),
+                     base_publication=publications.of(key, r.get('base_work')) if r.get('base') else None,
+                     content_rank=publications.rank(key, r.get('work'), r['origin']))
+            yield r
+
+    def _head_key(self, r):
+        """A published version leads homebrew, then the preferred rules, the work the reader leads, the higher
+        collection and the earlier position."""
+        preference = PREFERENCES[self.scope.prefer]
+        ruleset = preference.index(r['ruleset']) if r['ruleset'] in preference else 2
+        return (r['content_rank'], ruleset, r['lead'], r['lib'], r.get('pos', 0))
+
     def _stacks(self, rows):
-        """Same-name published versions across collections share a row; each collection's own stacks are kept.
-        The row shows a published version before homebrew, then the preferred rules, then the higher collection."""
+        """Same-name versions share a row across works and collections; each collection's own stacks are kept.
+        Returns the stacks, head first, and each other version's relation to its head."""
         if self.scope.versions == 'each':
-            return [[(r['collection'], r['id'])] for r in rows]
+            return [[(r['collection'], r['id'])] for r in rows], {}
         parent: dict = {}
 
         def find(x):
@@ -516,27 +676,23 @@ class Library:
             find(node)
             if r['stack']:
                 union(node, ('local', r['collection'], r['stack']))
-            # Published versions (official, partnered or of unverified origin) stack by English name, as the book's
-            # same-name candidates do; homebrew of the same name is another work's object and keeps its own stack.
-            if r['stackable'] and r['name_en'] and CONTENT_RANK[content_of(r['origin'])] < 2:
-                folded = name_fold(r['name_en'])
-                if folded:
-                    union(node, ('name', r['type'], folded))
+            # Every stackable version stacks by type and English name, published or homebrew; how it relates to the
+            # version shown is told by the evidence between them, not assumed from the name.
+            if r['stackable'] and (folded := name_fold(r['name_en'])):
+                union(node, ('name', r['type'], folded))
         groups: dict = {}
         for r in rows:
             groups.setdefault(find(('row', r['collection'], r['id'])), []).append(r)
-        preference = PREFERENCES[self.scope.prefer]
-
-        def head_key(r):
-            ruleset = preference.index(r['ruleset']) if r['ruleset'] in preference else 2
-            return (CONTENT_RANK[content_of(r['origin'])], ruleset, r['lib'], r['pos'])
-
-        stacks = []
+        stacks, related = [], {}
         for members in groups.values():
-            members.sort(key=head_key)
+            members.sort(key=self._head_key)
             stacks.append(members)
+            if len(members) > 1:
+                for r, relation in zip(members, relations(members)):
+                    if relation:
+                        related[(r['collection'], r['id'])] = relation
         stacks.sort(key=lambda m: m[0]['pos'])
-        return [[(r['collection'], r['id']) for r in members] for members in stacks]
+        return [[(r['collection'], r['id']) for r in members] for members in stacks], related
 
     # --- Facets ---
 
@@ -609,46 +765,62 @@ class Library:
     def detail(self, entry_id: str) -> dict:
         collection = self.owner(entry_id)
         entry = collection.provider.detail(entry_id)
-        # A reader spanning collections learns whose entry this is; a single collection answers as it always has.
-        if collection.key != self.primary.key or self.federated:
+        # A reader the library answers learns whose entry this is; a collection answering alone does as it always has.
+        if collection.key != self.primary.key or not self.alone:
             entry['collection'] = collection.key
-        if self.federated and self.scope.versions == 'stacked':
-            self._cross_versions(entry, collection)
+        if self.stacking:
+            self._library_versions(entry, collection)
         return entry
 
     def layout(self, entry_id: str) -> dict:
         return self.owner(entry_id).provider.layout(entry_id)
 
-    def _cross_versions(self, entry, collection):
-        """The reader's version comparison widened to same-name versions in the reader's other collections."""
+    def _library_versions(self, entry, collection):
+        """The version comparison widened to every same-name version in the reader's collections, ordered as a
+        row would show them and each related to the opened version by the evidence between them."""
         if not entry.get('name_en') or entry['type'] not in capabilities_of(collection).stackable:
             return
         folded = name_fold(entry['name_en'])
-        foreign = []
-        for other in self.members:
-            if other.key == collection.key or entry['type'] not in capabilities_of(other).stackable:
+        own = entry.get('versions') or {}
+        mine = {entry['id'], *(m['id'] for m in own.get('members') or [])}
+        holders = [*self.members, *([] if collection.key in self.rank else [collection])]
+        found = {}
+        for other in holders:
+            if entry['type'] not in capabilities_of(other).stackable:
                 continue
             local, unanswerable = self._local(other, {'type': [entry['type']]})
             if unanswerable:
                 continue
-            ids = [r['id'] for r in other.provider.ranked(local, self.restrict(other)) if name_fold(r['name_en']) == folded]
-            rows = other.provider.rows(ids)
-            _mark(rows.values(), other.key)
-            foreign.extend(rows.values())
-        if not foreign:
+            # The opened version and its own group count whatever the scope; other versions only within it.
+            restrict = self.restrict(other) if other.key in self.rank else None
+            same = [r for r in other.provider.ranked(local)
+                    if (other.key == collection.key and r['id'] in mine) or (name_fold(r['name_en']) == folded and _within(restrict, r))]
+            found.update(((other.key, r['id']), r) for r in self._versions(other, same))
+        anchor_key = (collection.key, entry['id'])
+        if anchor_key not in found or all(k[0] == collection.key and k[1] in mine for k in found):
             return
-        own = entry.get('versions') or {'group_id': None, 'status': 'same_name_candidate',
-                                         'members': [{k: entry.get(k) for k in VERSION_FIELDS}]}
-        for m in own['members']:
-            m.setdefault('collection', collection.key)
-        members = [*own['members'], *({k: r.get(k) for k in VERSION_FIELDS} for r in foreign)]
+        versions = sorted(found.values(), key=self._head_key)
+        anchor = next(i for i, v in enumerate(versions) if (v['collection'], v['id']) == anchor_key)
+        related = dict(zip(((v['collection'], v['id']) for v in versions), relations(versions, anchor)))
+        ids: dict[str, list[str]] = defaultdict(list)
+        for v in versions:
+            ids[v['collection']].append(v['id'])
+        full = {}
+        for key, wanted in ids.items():
+            rows = self.registry.get(key).provider.rows(wanted)
+            _mark(rows.values(), key)
+            full.update(((key, i), row) for i, row in rows.items())
+        members = [{k: full[m].get(k) for k in VERSION_FIELDS} | {'relation': related[m]}
+                   for m in ((v['collection'], v['id']) for v in versions) if m in full]
         order = list(dict.fromkeys(k for m in members for k in browse.field_order({'type': entry['type'], 'fields': m['fields']})
                                    if k not in browse.METADATA_FIELDS))
         fields = []
         for k in order:
             known = {comparable(m, k) for m in members} - {None}
             fields.append({'field': k, 'values': [m['fields'].get(k) for m in members], 'differs': len(known) > 1})
-        entry['versions'] = {'group_id': own.get('group_id'), 'status': 'library_candidate', 'members': members, 'fields': fields}
+        spans = len({m['collection'] for m in members}) > 1
+        entry['versions'] = {'group_id': own.get('group_id'), 'status': 'library_candidate' if spans else 'same_name_candidate',
+                             'members': members, 'fields': fields}
 
     def export(self, params) -> tuple[bytes, str]:
         if not self.federated:
@@ -676,6 +848,12 @@ class Library:
                 full[m]['collection'] = m[0]
                 rows.append(full[m])
         return csv_export(rows, ranking['schema'], meta_of(self.primary)['types']), 'library'
+
+
+def _within(restrict, r) -> bool:
+    """Whether a ranked version lies inside a collection's restriction (its rules and works)."""
+    return restrict is None or ((restrict.rulesets is None or r['ruleset'] in restrict.rulesets)
+                                and (restrict.sources is None or r.get('work') in restrict.sources))
 
 
 def _mark(rows, key):

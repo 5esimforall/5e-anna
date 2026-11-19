@@ -26,6 +26,9 @@ const annaUiLabels = {
     fieldNotes:'字段批注',noteElsewhere:'证据不在本段原文',
     layoutUnavailable:{missing:'找不到原文页面，显示提取文本。',stale:'原文已更新，与数据库快照不一致，显示提取文本。',empty:'原文排版为空，显示提取文本。',error:'无法读取原文排版，显示提取文本。'},
     versionsTab:'版本对照',versionsIntro:'同名候选按规则版本排列；候选关系不代表同一规则身份。',versionsIntroLibrary:'同名候选来自资料库中的各个资料库；候选关系不代表同一规则身份。',differingFields:'不同的字段',sameFields:'相同或未提取的字段 {count} 项',currentVersion:'当前',
+    relationNames:{translation:'同一作品',derived:'派生',candidate:'同名候选'},
+    relationHints:{translation:'同一部作品在另一资料库中的文本',derived:'复制自同名条目或其所在作品，并作了修改',candidate:'只有类型与英文名相同，尚无证据表明是同一对象'},
+    diffAgainst:'标出与 {name} 的不同',diffShown:'正在标出与 {name} 的不同',diffLegend:'高亮：仅本版有　删除线：仅 {name} 有',diffNone:'与 {name} 的正文相同。',diffTooMany:'与 {name} 的正文差异较多，逐处标出反而难读；请在「版本对照」中逐字段比较。',diffUnavailable:'无法读取 {name} 的排版，不能标出差异。',
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']},
     provenance:'来源与出处',provCollection:'资料库',provOrigin:'来源性质',provPackage:'内容包',provOurs:'本站自有',provSource:'书籍来源',provAuthors:'作者',provTranslators:'译者',provTier:'社区分档',provRating:'评分',provCopiedFrom:'模板继承',provLicense:'许可与说明',provMedia:'媒体资源',provMediaLocal:'离线收录 {count} 项',provMediaRemote:'远端未随包 {count} 项',provMediaNone:'无外部媒体',provReadBook:'在书中阅读',provViewLink:'查看来源说明 ↗',
     flags:{true:'是',false:'否'},legend:'✓ 是　· 否　— 未提取　⚠ 存在字段冲突　·　点击结果行查看正文与证据'},
@@ -52,6 +55,9 @@ const annaUiLabels = {
     fieldNotes:'Field notes',noteElsewhere:'evidence outside this passage',
     layoutUnavailable:{missing:'The source page is missing; showing extracted text.',stale:'The source changed since this database snapshot; showing extracted text.',empty:'The source layout is empty; showing extracted text.',error:'Unable to load the source layout; showing extracted text.'},
     versionsTab:'Versions',versionsIntro:'Same-name candidates ordered by rules version; a candidate relation is not a shared rule identity.',versionsIntroLibrary:'Same-name candidates from the collections in your library; a candidate relation is not a shared rule identity.',differingFields:'Fields that differ',sameFields:'{count} fields equal or not extracted',currentVersion:'current',
+    relationNames:{translation:'Same work',derived:'Derived',candidate:'Same name'},
+    relationHints:{translation:'The same work’s text in another collection',derived:'Copied from a same-name entry or its work, then changed',candidate:'Only the type and English name match; nothing shows it is the same object'},
+    diffAgainst:'Mark differences from {name}',diffShown:'Marking differences from {name}',diffLegend:'Highlighted: only in this version　Struck through: only in {name}',diffNone:'The text matches {name}.',diffTooMany:'The text differs from {name} too much to mark word by word; compare the fields under Versions instead.',diffUnavailable:'Unable to load the layout of {name}, so differences cannot be marked.',
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']},
     provenance:'Provenance',provCollection:'Collection',provOrigin:'Origin',provPackage:'Package',provOurs:'Site curated',provSource:'Source',provAuthors:'Authors',provTranslators:'Translators',provTier:'Tier',provRating:'Rating',provCopiedFrom:'Copied from',provLicense:'License & notes',provMedia:'Media',provMediaLocal:'{count} bundled offline',provMediaRemote:'{count} remote unbundled',provMediaNone:'No external media',provReadBook:'Read in book',provViewLink:'View source note ↗',
     flags:{true:'Yes',false:'No'},legend:'✓ yes　· no　— not extracted　⚠ conflicting field　·　Select a row for its text and evidence'}
@@ -415,7 +421,10 @@ const versionSource=v=>(v.source_ids||[]).map(sourceShort).join(' / ');
 // our5etools' XPHB read as two collections' versions of one name.
 const foreignVersion=v=>v.collection&&v.collection!==metadata.collection;
 const versionLabel=v=>`${foreignVersion(v)?collectionName(v.collection)+' · ':''}${versionSource(v)} ${rulesetShort(v.ruleset)}`;
-const versionTitle=v=>`${v.collection?collectionName(v.collection)+' · ':''}${(v.source_names||v.source_ids||[]).join('；')} · ${rulesetFull(v.ruleset)}`;
+// How a version relates to the one shown: the same work elsewhere, a copy, or only the name. A version of the
+// collection's own group, or linked by a chain of evidence, carries no mark.
+const relationMark=v=>ui.relationNames[v.relation]?`<span class="version-relation" data-relation="${esc(v.relation)}">${esc(ui.relationNames[v.relation])}</span>`:'';
+const versionTitle=v=>`${v.collection?collectionName(v.collection)+' · ':''}${(v.source_names||v.source_ids||[]).join('；')} · ${rulesetFull(v.ruleset)}${ui.relationHints[v.relation]?' · '+ui.relationHints[v.relation]:''}`;
 // Other versions' values sit under the displayed one, so a rule change is visible in place.
 function versionDiffs(row,key){
   const ids=row.version_diffs?.[key];if(!ids)return '';
@@ -427,7 +436,7 @@ function versionPills(row){
   if(!(row.versions?.length>1))return '';
   const status=ui.stackStatus[row.stack?.status]||ui.stackStatus.same_name_candidate;
   return `<div class="versions" role="group" aria-label="${esc(status.replace('{count}',row.versions.length))}" title="${esc(status.replace('{count}',row.versions.length))}">${row.versions.map((v,i)=>
-    `<button type="button" class="version-pill ${i===0?'shown':''} ${v.ruleset==='待核'?'unverified':''}" data-entry="${esc(v.id)}" title="${esc(versionTitle(v)+(i===0?' · '+ui.shownVersion:''))}">${esc(versionLabel(v))}</button>`).join('')}</div>`;
+    `<button type="button" class="version-pill ${i===0?'shown':''} ${v.ruleset==='待核'?'unverified':''}" data-entry="${esc(v.id)}" title="${esc(versionTitle(v)+(i===0?' · '+ui.shownVersion:''))}">${esc(versionLabel(v))}${relationMark(v)}</button>`).join('')}</div>`;
 }
 function cell(row,key){
   const label=`data-label="${esc(fieldNames[key]||key)}"`,differs=row.version_diffs?.[key]?' differs':'';
@@ -693,6 +702,7 @@ $('#detail-content').addEventListener('click',e=>{
   const note=e.target.closest('.field-note[data-note]');
   if(note){lightNotes([note.dataset.note],true);$('#detail-content').querySelector(`mark.note[data-notes~="${CSS.escape(note.dataset.note)}"]`)?.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});}
   if(e.target.closest('[data-reader-full]')){setReaderFull(true);$('#reader-full').focus();}
+  const difference=e.target.closest('[data-difference]');if(difference)toggleDifferences(difference.dataset.difference);
 });
 for(const [type,on] of [['mouseover',true],['focusin',true],['mouseout',false],['focusout',false]])
   $('#detail-content').addEventListener(type,e=>{const el=e.target.closest('.field-note[data-note],mark.note');if(!el)return;

@@ -201,12 +201,19 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .library-kind-text { display: grid; gap: 2px; min-width: 0; }
 .library-kind-text small { color: var(--anna-muted); font-size: var(--anna-type-small); line-height: 1.5; }
 .library-kind-count { font-variant-numeric: tabular-nums; }
-.library-works { margin-top: 12px; }
-.library-works>summary { padding: 6px 0; color: var(--anna-secondary); cursor: pointer; }
-.library-works>summary:hover { color: var(--anna-ink); }
-.library-hidden-count { margin-inline-start: 6px; color: var(--anna-brand); font-size: var(--anna-type-small); }
-.library-works-body { max-height: 360px; overflow: auto; overscroll-behavior: contain; padding: 0 12px 10px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); }
-.library-filter { position: sticky; z-index: 1; top: 0; box-sizing: border-box; width: calc(100% + 24px); margin: 0 -12px 4px; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--anna-line); border-radius: 0; background: var(--anna-paper); }
+.library-works, .library-editions { margin-top: 12px; }
+.library-works>summary, .library-editions>summary { padding: 6px 0; color: var(--anna-secondary); cursor: pointer; }
+.library-works>summary:hover, .library-editions>summary:hover { color: var(--anna-ink); }
+.library-hidden-count, .library-editions-count { margin-inline-start: 6px; color: var(--anna-brand); font-size: var(--anna-type-small); }
+.library-works-body, .library-editions-body { max-height: 360px; overflow: auto; overscroll-behavior: contain; padding: 0 12px 10px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); }
+.library-editions-body>.library-hint { margin: 8px 0 4px; }
+.library-editions-body ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.library-edition { display: grid; gap: 2px; margin: 0; padding: 4px 0 6px; border: 0; border-bottom: 1px solid var(--anna-line); }
+.library-edition legend { padding: 4px 0 2px; font-weight: 600; }
+.library-edition label { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px; border-radius: var(--anna-radius-sm); cursor: pointer; }
+.library-edition label:hover { background: var(--anna-hover); }
+.library-edition label strong { font-weight: 600; }
+.library-filter, .library-edition-filter { position: sticky; z-index: 1; top: 0; box-sizing: border-box; width: calc(100% + 24px); margin: 0 -12px 4px; padding: 9px 12px; border: 0; border-bottom: 1px solid var(--anna-line); border-radius: 0; background: var(--anna-paper); }
 .library-works-group h4 { margin: 10px 0 2px; color: var(--anna-secondary); font-size: var(--anna-type-small); font-weight: 600; letter-spacing: .02em; }
 .library-class { margin: 0 0 6px; padding: 0; border: 0; }
 .library-class legend { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; }
@@ -386,6 +393,9 @@ tbody tr.row-selected .name-cell { box-shadow: inset 3px 0 var(--anna-brand); }
 .version-pill.shown { border-color: var(--anna-line-strong); color: var(--anna-ink); }
 .version-pill.unverified { border-style: dashed; border-color: var(--anna-warning); color: var(--anna-warning); }
 .version-pill[aria-current=true] { border-color: var(--anna-brand); background: var(--anna-selected); color: var(--anna-brand); }
+.version-relation { margin-left: 5px; padding-left: 5px; border-left: 1px solid var(--anna-line); color: var(--anna-muted); }
+.version-relation[data-relation=derived] { color: var(--anna-brand); }
+.version-relation[data-relation=candidate] { font-style: italic; }
 td.differs>.cell-value, td.differs>.marks { text-decoration: underline dotted var(--anna-brand); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 .version-diff { margin-top: 2px; color: var(--anna-secondary); font-size: var(--anna-type-ui); white-space: normal; }
 .version-source { color: var(--anna-muted); }
@@ -517,6 +527,16 @@ pre.body-text { font-family: var(--anna-sans); font-size: var(--anna-type-small)
 mark.note { background: transparent; color: inherit; text-decoration: underline solid var(--anna-note-line); text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
 mark.note.inferred { text-decoration-style: dashed; }
 mark.note.lit { background: var(--anna-selected); text-decoration-color: var(--anna-brand); }
+/* Another version's differences marked in the shown layout: what only this version says is highlighted, what only
+   the other says is struck through in place. */
+.difference-bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; max-width: var(--anna-measure); margin: 0 0 12px; font-family: var(--anna-sans); font-size: var(--anna-type-ui); }
+.difference-toggle { min-height: 26px; padding: 2px 9px; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-secondary); }
+.difference-toggle:hover { background: var(--anna-hover); }
+.difference-toggle[aria-pressed=true] { border-color: var(--anna-selected-line); background: var(--anna-selected); color: var(--anna-brand); }
+.difference-status { flex-basis: 100%; margin: 0; }
+.difference-status:empty { display: none; }
+ins.diff-own { background: var(--anna-mark); color: var(--anna-mark-ink); text-decoration: none; border-radius: 2px; }
+del.diff-other { color: var(--anna-error); text-decoration: line-through; text-decoration-thickness: 1.5px; }
 .layout-text .ref { min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--anna-brand); font: inherit; white-space: normal; text-decoration: underline dotted; text-underline-offset: 4px; }
 .layout-notice { margin: 16px 0 0; font-size: var(--anna-type-ui); }
 /* Notes move to the margin only when the text beside them still keeps about 32 characters a line. */

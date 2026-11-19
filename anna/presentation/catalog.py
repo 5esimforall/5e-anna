@@ -300,13 +300,24 @@ def query(db, params, export=False, restrict=None):
 
 def works(db):
     """Every work (book or other source) of this catalog with its origin, rules generation and entry count:
-    what the reader's library can include or leave out."""
+    what the reader's library can include or leave out. `codes`, `abbreviations` and `titles` are the names
+    another collection may know the same work by: 5etools source codes this build aligned by its own votes,
+    the book's abbreviations, and its titles and aliases."""
+    codes = {}
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counterpart_sources'").fetchone():
+        for source_id, code in db.execute("SELECT source_id, code FROM counterpart_sources WHERE status='上下文推得' AND code!=''"):
+            codes.setdefault(source_id, []).append(code)
     out = []
     for r in db.execute("SELECT s.id, s.name, s.origin, s.ruleset_hint, s.data, count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id "
                         "LEFT JOIN entries e ON e.id=es.entry_id AND e.type!='section' GROUP BY s.id ORDER BY s.name"):
         data = json.loads(r['data'])
+        titles = [r['name'], r['name'].split(' / ')[-1], *(data.get('aliases') or [])]
         out.append({'id':r['id'],'name':r['name'],'label':data.get('label') or r['name'],'origin':r['origin'] or '待核',
-                    'ruleset':r['ruleset_hint'] if r['ruleset_hint'] in {'5e','5r'} else '待核','group':data.get('group') or '','count':r['n']})
+                    'ruleset':r['ruleset_hint'] if r['ruleset_hint'] in {'5e','5r'} else '待核','group':data.get('group') or '','count':r['n'],
+                    'codes':sorted(codes.get(r['id'], [])),'abbreviations':list(data.get('abbreviations') or []),
+                    'titles':list(dict.fromkeys(t for t in titles if t)),
+                    # The Stella contents node that opens this work's book.
+                    'reader_root':data.get('toc_node') or None})
     return out
 
 
@@ -318,10 +329,13 @@ def ranked(db, params, restrict=None, sort_field=None):
     db.create_function('browse_query',0,lambda:latest)
     value = f"browse_rank(e.fields,'{sort_field}')" if sort_field else 'NULL'
     sql = ('WITH '+stack_members()+f', ranked AS (SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.stack, {value} AS value, '
-           "e.page_path AS path, e.start AS start, (SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin "
+           "e.page_path AS path, e.start AS start, (SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin, "
+           '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
            'FROM entries e LEFT JOIN m ON m.entry_id=e.id'+where+') SELECT * FROM ranked')
+    # The book records no entry as a copy of another, so no version here names a base.
     return [{'id':r['id'],'type':r['type'],'name':r['name'],'name_zh':r['name_zh'],'name_en':r['name_en'],'ruleset':r['ruleset'],
-             'stack':r['stack'],'value':r['value'],'source_key':(r['path'] or '',r['start'] or 0),'origin':r['origin'] or '待核'} for r in db.execute(sql, values)]
+             'stack':r['stack'],'value':r['value'],'source_key':(r['path'] or '',r['start'] or 0),'origin':r['origin'] or '待核',
+             'work':r['work'],'base':None,'base_work':None,'base_name_en':None} for r in db.execute(sql, values)]
 
 
 def rows(db, ids):

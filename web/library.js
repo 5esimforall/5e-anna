@@ -9,15 +9,17 @@ const annaLibrary = (() => {
   const RULESETS = ['5r','5e','待核'];
   // The two kinds of content readers ask for first; each stands for the classes it covers.
   const KINDS = {official:['official'], thirdParty:['partnered','curated','community'], unverified:['unverified']};
-  const VALID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  const VALID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/, WORK = /^[a-z0-9]+(?:-[a-z0-9]+)*:.{1,300}$/;
   const labels = {
     zh:{button:'资料库', buttonTitle:'资料库设置 · {summary}', narrowed:'已收窄范围', title:'资料库',
       intro:'选择 Anna 查阅哪些资料，以及重复的条目如何显示。设置保存在本浏览器，查询、导览与 Stella 共用。',
       libraries:'资料库与优先级', librariesHint:'勾选要查阅的资料库；拖动或用箭头排序，靠前的资料库在同名条目中优先。',
       entries:'{count} 部作品', reserved:'未接入', tour:'导览', reader:'阅读', moveUp:'上移 {name}', moveDown:'下移 {name}', drag:'拖动以排序',
-      lastLibrary:'至少保留一个资料库', onThisPage:'本页', showHere:'在本页打开',
+      lastLibrary:'至少保留一个资料库', onThisPage:'本页', showHere:'在本页打开', showBookHere:'在本页打开本书', showBookTitle:'在 {library} 中打开《{name}》',
       duplicates:'同名条目', dedupe:'去重：同名条目合为一行', prefer:'优先显示',
-      dedupeHint:'合为一行时，先显示官方出版物，再按优先的规则版本，最后按资料库顺序；其余版本列在行内，可逐一打开。',
+      dedupeHint:'同名的出版物与家酿合为一行：先显示官方与合作出版物，再按优先的规则版本、领头的译本与资料库顺序。其余版本列在行内，标出它与所示版本的关系：同一作品、派生或同名候选。',
+      editions:'同一作品的领头译本', editionsCount:'{count} 部作品在多个资料库中都有', editionsChosen:'已指定 {count} 部',
+      editionsHint:'同一部作品在几个资料库中各有一份文本时，选择由谁领头；未指定时按资料库顺序。', editionsFilter:'筛选作品名或缩写', byOrder:'按资料库顺序',
       rulesets:'规则版本', rulesetNames:{'5e':['2014 版','5e'],'5r':['2024 版','5.5e'],'待核':['待核','规则版本未确认']}, lastRuleset:'至少保留一种规则版本',
       content:'内容范围', kinds:{official:['官方内容','威世智出版物'],thirdParty:['第三方内容','合作出版物与社区家酿'],unverified:['性质待核','模组、UA、Drops 等出处尚未确认的作品']},
       classes:{official:'官方',partnered:'合作',unverified:'待核',curated:'本站精选',community:'社区'},
@@ -28,9 +30,11 @@ const annaLibrary = (() => {
       intro:'Choose what Anna reads and how repeated entries show. The setting stays in this browser and applies to search, the tour and Stella.',
       libraries:'Collections and priority', librariesHint:'Tick the collections to read; drag or use the arrows to order them. Earlier collections lead same-name entries.',
       entries:'{count} works', reserved:'not connected', tour:'Tour', reader:'Book', moveUp:'Move {name} up', moveDown:'Move {name} down', drag:'Drag to reorder',
-      lastLibrary:'Keep at least one collection', onThisPage:'This page', showHere:'Open here',
+      lastLibrary:'Keep at least one collection', onThisPage:'This page', showHere:'Open here', showBookHere:'Open this book here', showBookTitle:'Open {name} in {library}',
       duplicates:'Same-name entries', dedupe:'Deduplicate: one row per name', prefer:'Show first',
-      dedupeHint:'A row shows a published version first, then the preferred rules, then the higher collection; the other versions stay in the row.',
+      dedupeHint:'Publications and homebrew of the same name share a row: official and partnered publications first, then the preferred rules, the leading text and the collection order. The other versions stay in the row, each marked by how it relates to the one shown: same work, derived or same name.',
+      editions:'Leading text of shared works', editionsCount:'{count} works appear in several collections', editionsChosen:'{count} chosen',
+      editionsHint:'When a work appears in several collections, each with its own text, choose whose text leads; otherwise the collection order decides.', editionsFilter:'Filter by title or abbreviation', byOrder:'By collection order',
       rulesets:'Rules', rulesetNames:{'5e':['2014','5e'],'5r':['2024','5.5e'],'待核':['Unverified','Rules version unverified']}, lastRuleset:'Keep at least one rules version',
       content:'Content', kinds:{official:['Official','Wizards of the Coast publications'],thirdParty:['Third-party','Partnered publications and homebrew'],unverified:['Unverified origin','Adventures, UA, Drops and other works of unconfirmed origin']},
       classes:{official:'Official',partnered:'Partnered',unverified:'Unverified',curated:'Site curated',community:'Community'},
@@ -47,7 +51,8 @@ const annaLibrary = (() => {
 
   // --- The setting, as stored ---
   // order: every collection seen, in priority order; enabled: those read; versions/prefer: same-name rows;
-  // rulesets/content: what counts; hidden: works left out one by one, as {collection: [work id]}.
+  // rulesets/content: what counts; hidden: works left out one by one, as {collection: [work id]};
+  // lead: works whose text leads the same work's other texts, as ['collection:work id'].
   function catalog() {
     const raw = parse(annaKit.stored.get(CATALOG_KEY));
     return Array.isArray(raw) ? raw.filter(c => c && VALID.test(c.id)) : [];
@@ -71,8 +76,9 @@ const annaLibrary = (() => {
         }
       }
     }
+    const lead = Array.isArray(s.lead) ? [...new Set(s.lead.filter(v => typeof v === 'string' && WORK.test(v)))] : [];
     return {order, enabled: enabled.filter(k => order.includes(k)), versions: s.versions === 'each' ? 'each' : 'stacked',
-      prefer: s.prefer === '5e' ? '5e' : '5r', rulesets, content, hidden};
+      prefer: s.prefer === '5e' ? '5e' : '5r', rulesets, content, hidden, lead};
   }
   const read = () => normalize(parse(annaKit.stored.get(KEY)));
   function write(settings) {
@@ -100,11 +106,12 @@ const annaLibrary = (() => {
     if (s.rulesets.length < RULESETS.length) out.push(['rulesets', s.rulesets.join(',')]);
     if (s.content.length < CONTENT.length) out.push(['content', s.content.join(',')]);
     for (const [key, ids] of Object.entries(s.hidden)) for (const id of ids) out.push(['hide', key + ':' + id]);
+    for (const work of s.lead) out.push(['lead', work]);
     return out;
   }
   function withScope(path) {
     const url = new URL(path, location.origin);
-    for (const key of ['libraries','versions','prefer','rulesets','content','hide']) url.searchParams.delete(key);
+    for (const key of ['libraries','versions','prefer','rulesets','content','hide','lead']) url.searchParams.delete(key);
     for (const [k, v] of params()) url.searchParams.append(k, v);
     return url.pathname + url.search;
   }
@@ -147,7 +154,7 @@ const annaLibrary = (() => {
   }
   function renderButton() {
     if (!button) return;
-    const s = read(), text = summary(s), changed = narrowed(s) || s.versions !== 'stacked' || s.prefer !== '5r';
+    const s = read(), text = summary(s), changed = narrowed(s) || s.versions !== 'stacked' || s.prefer !== '5r' || s.lead.length > 0;
     button.querySelector('.library-summary').textContent = text;
     button.classList.toggle('changed', changed);
     const title = fill(ui().buttonTitle, {summary: text}) + (changed ? ' · ' + ui().narrowed : '');
@@ -173,6 +180,19 @@ const annaLibrary = (() => {
     if (page !== 'tour' && page !== 'book') return;
     if (new URLSearchParams(location.search).has('collection')) return;
     if (shownCollection && primaryFor(page) !== shownCollection) location.reload();
+  }
+
+  // Stella tells where it reads: the contents node and its ancestors, innermost first. The same publication's book
+  // in another collection then opens at its own root.
+  let place = [];
+  function setPlace(ids) { place = ids; if (dialog?.open) renderLibraries(); }
+  function sameBook(id) {
+    if (page !== 'book' || !place.length) return null;
+    const here = works().find(c => c.id === shownCollection), there = works().find(c => c.id === id);
+    const work = here && place.map(node => here.works.find(w => w.reader_root === node)).find(Boolean);
+    const counterpart = work?.counterparts?.find(p => p.collection === id);
+    const target = counterpart && there?.works.find(w => w.id === counterpart.id);
+    return target?.reader_root ? {root: target.reader_root, name: target.name} : null;
   }
 
   // --- The dialog ---
@@ -206,6 +226,7 @@ const annaLibrary = (() => {
     dialog.addEventListener('change', onChange);
     dialog.addEventListener('input', event => {
       if (event.target.matches('.library-filter')) { filterText = event.target.value.trim().toLocaleLowerCase(); filterWorks(); }
+      if (event.target.matches('.library-edition-filter')) { editionText = event.target.value.trim().toLocaleLowerCase(); filterEditions(); }
     });
     dialog.addEventListener('close', () => button?.focus());
     // Esc closes the dialog only; the page beneath (an open reader, a menu) keeps its own state.
@@ -257,7 +278,45 @@ const annaLibrary = (() => {
     }
     if (el.matches('[data-kind]')) { setClasses(KINDS[el.dataset.kind], el.checked); sync(); return; }
     if (el.matches('[data-class]')) { setClasses([el.dataset.class], el.checked); sync(); return; }
-    if (el.matches('[data-work]')) { setWork(el.dataset.collection, el.dataset.work, el.checked); sync(); }
+    if (el.matches('[data-work]')) { setWork(el.dataset.collection, el.dataset.work, el.checked); sync(); return; }
+    if (el.matches('[data-edition]')) {
+      const members = shownEditions[Number(el.dataset.edition)]?.members.map(m => m.key) || [];
+      change(s => { s.lead = [...s.lead.filter(k => !members.includes(k)), ...(el.value ? [el.value] : [])]; });
+      sync();
+    }
+  }
+  // Works that are one publication in several of the collections read, each a choice of whose text leads.
+  let shownEditions = [], editionText = '';
+  function editions(s = read()) {
+    const libs = libraries(s), groups = works().filter(c => libs.includes(c.id)).sort((a, b) => libs.indexOf(a.id) - libs.indexOf(b.id));
+    const index = new Map(groups.flatMap(c => c.works.map(w => [c.id + ':' + w.id, {collection: c.id, work: w}])));
+    const seen = new Set(), out = [];
+    for (const c of groups) for (const w of c.works) {
+      const key = c.id + ':' + w.id;
+      if (seen.has(key) || !w.counterparts?.length) continue;
+      const members = [key, ...w.counterparts.map(p => p.collection + ':' + p.id)].filter(k => index.has(k));
+      if (new Set(members.map(k => index.get(k).collection)).size < 2) continue;
+      for (const k of members) seen.add(k);
+      out.push({members: members.map(k => ({key: k, ...index.get(k)}))});
+    }
+    return out;
+  }
+  function renderEditions() {
+    const box = dialog.querySelector('.library-editions');
+    if (!box) return;
+    const t = ui();
+    shownEditions = described?.works ? editions() : [];
+    box.hidden = !shownEditions.length;
+    box.querySelector('.library-editions-body').innerHTML = `<p class="library-hint">${esc(t.editionsHint)}</p><input type="search" class="library-edition-filter" placeholder="${esc(t.editionsFilter)}" aria-label="${esc(t.editionsFilter)}" value="${esc(editionText)}"><ul>${shownEditions.map((edition, i) => {
+      const first = edition.members[0].work, words = edition.members.map(m => m.work.name + ' ' + m.work.label).join(' ').toLocaleLowerCase();
+      return `<li data-filter="${esc(words)}"><fieldset class="library-edition"><legend>${esc(first.name)}</legend>
+        <label><input type="radio" name="lead-${i}" data-edition="${i}" value=""><span>${esc(t.byOrder)}</span></label>
+        ${edition.members.map(m => `<label><input type="radio" name="lead-${i}" data-edition="${i}" value="${esc(m.key)}"><span><strong>${esc(nameOf(m.collection))}</strong> ${esc(m.work.label)} · ${esc(m.work.name)}</span></label>`).join('')}</fieldset></li>`;
+    }).join('')}</ul>`;
+    filterEditions();
+  }
+  function filterEditions() {
+    for (const li of dialog?.querySelectorAll('.library-editions li[data-filter]') || []) li.hidden = !!editionText && !li.dataset.filter.includes(editionText);
   }
   // Turning a kind of content on shows all of its works; turning it off leaves the works' own choices behind.
   function setClasses(classes, on) {
@@ -298,7 +357,8 @@ const annaLibrary = (() => {
       <section class="library-section" aria-labelledby="library-dup-title"><h3 id="library-dup-title">${esc(t.duplicates)}</h3>
         <div class="library-line"><label class="library-check"><input type="checkbox" data-dedupe><span>${esc(t.dedupe)}</span></label>
         <div class="library-prefer"><span>${esc(t.prefer)}</span><div class="segmented" role="group" aria-label="${esc(t.prefer)}">${['5r','5e'].map(r => `<button type="button" data-prefer="${r}" title="${esc(t.rulesetNames[r].join(' · '))}">${esc(t.rulesetNames[r][0])}</button>`).join('')}</div></div></div>
-        <p class="library-hint">${esc(t.dedupeHint)}</p></section>
+        <p class="library-hint">${esc(t.dedupeHint)}</p>
+        <details class="library-editions" hidden><summary>${esc(t.editions)} <span class="library-editions-count"></span></summary><div class="library-editions-body"></div></details></section>
       <section class="library-section" aria-labelledby="library-rules-title"><h3 id="library-rules-title">${esc(t.rulesets)}</h3>
         <div class="library-chips" role="group" aria-labelledby="library-rules-title">${RULESETS.map(r => `<label class="chip"><input type="checkbox" data-ruleset="${esc(r)}"><span>${esc(t.rulesetNames[r][0])}<small class="chip-count">${esc(t.rulesetNames[r][1])}</small></span></label>`).join('')}</div></section>
       <section class="library-section" aria-labelledby="library-content-title"><h3 id="library-content-title">${esc(t.content)}</h3>
@@ -306,6 +366,7 @@ const annaLibrary = (() => {
         <details class="library-works"><summary>${esc(t.works)} <span class="library-hidden-count"></span></summary><div class="library-works-body"></div></details></section>`;
     renderLibraries();
     renderWorks();
+    renderEditions();
     sync();
   }
   function renderLibraries() {
@@ -319,7 +380,8 @@ const annaLibrary = (() => {
       const offers = [ready && c.tour ? t.tour : '', ready && c.reader ? t.reader : ''].filter(Boolean).join(' · ');
       const meta = ready ? [counts.has(id) ? fill(t.entries, {count: fmt(counts.get(id))}) : '', offers].filter(Boolean).join(' · ') : t.reserved;
       const pageOffers = (page === 'tour' || page === 'book') && ready && c[capability(page)];
-      const showHere = pageOffers && id !== here ? `<a class="library-here" href="${esc((page === 'book' ? '/read' : '/tour') + '?' + new URLSearchParams({collection: id}))}">${esc(t.showHere)}</a>` : '';
+      const book = pageOffers && id !== here ? sameBook(id) : null;
+      const showHere = pageOffers && id !== here ? `<a class="library-here" href="${esc((page === 'book' ? '/read' : '/tour') + '?' + new URLSearchParams({collection: id, ...(book ? {root: book.root} : {})}))}" ${book ? `title="${esc(fill(t.showBookTitle, {library: name, name: book.name}))}"` : ''}>${esc(book ? t.showBookHere : t.showHere)}</a>` : '';
       const current = pageOffers && id === here ? `<span class="library-current">${esc(t.onThisPage)}</span>` : '';
       return `<li class="library-row ${ready ? '' : 'reserved'}" data-library-row="${esc(id)}" draggable="${ready}">
         <span class="library-handle" aria-hidden="true" title="${esc(t.drag)}"><svg viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></svg></span>
@@ -368,6 +430,18 @@ const annaLibrary = (() => {
     }
     const dedupe = dialog.querySelector('[data-dedupe]');
     if (dedupe) dedupe.checked = s.versions === 'stacked';
+    // The shared works follow the collections read; their choices follow the stored lead.
+    if (described?.works && editions(s).map(e => e.members.map(m => m.key).join()).join('|') !== shownEditions.map(e => e.members.map(m => m.key).join()).join('|')) renderEditions();
+    for (const input of dialog.querySelectorAll('[data-edition]')) {
+      const members = shownEditions[Number(input.dataset.edition)]?.members.map(m => m.key) || [];
+      input.checked = input.value ? s.lead.includes(input.value) : !members.some(k => s.lead.includes(k));
+      input.disabled = s.versions !== 'stacked';
+    }
+    const editionsCount = dialog.querySelector('.library-editions-count');
+    if (editionsCount) {
+      const chosen = shownEditions.filter(e => e.members.some(m => s.lead.includes(m.key))).length;
+      editionsCount.textContent = [fill(t.editionsCount, {count: fmt(shownEditions.length)}), chosen ? fill(t.editionsChosen, {count: fmt(chosen)}) : ''].filter(Boolean).join(' · ');
+    }
     for (const b of dialog.querySelectorAll('[data-prefer]')) { b.setAttribute('aria-pressed', String(s.prefer === b.dataset.prefer)); b.disabled = s.versions !== 'stacked'; }
     for (const input of dialog.querySelectorAll('[data-ruleset]')) {
       input.checked = s.rulesets.includes(input.dataset.ruleset);
@@ -411,5 +485,5 @@ const annaLibrary = (() => {
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
-  return {read, write, reset, params, withScope, libraries, narrowed, subscribe, primaryFor, pageCollection, describe, open, nameOf, DEFAULT};
+  return {read, write, reset, params, withScope, libraries, narrowed, subscribe, primaryFor, pageCollection, describe, open, nameOf, setPlace, DEFAULT};
 })();

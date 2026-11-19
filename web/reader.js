@@ -434,6 +434,7 @@
       route = target.entry ? {root,entry:target.entry,node:nodeId} : {root,page:data.path,anchor:target.anchor || '',node:nodeId};
       if (!saved?.expanded && contentsFollowing) reveal(nodeId);
       renderTree(); renderPage();
+      annaLibrary.setPlace(ancestors(nodeId || root).map(node => node.id).reverse());
       if (saved) { $('#book-tree-scroll').scrollTop = saved.treeScroll || 0; $('#panel-outline').scrollTop = saved.outlineScroll || 0; }
       loading = false;
       $('#book-loading').hidden = true; $('#book-error').hidden = true;

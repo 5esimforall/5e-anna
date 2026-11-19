@@ -33,6 +33,9 @@ class Capabilities:
     packages: frozenset[str] = frozenset()
     values: dict[str, frozenset[str]] | None = None
     stackable: frozenset[str] = frozenset()
+    # Whether the catalog's own version groups already gather the same-name entries of its different works.
+    # When they do, the catalog read alone stacks its rows itself; otherwise the library stacks them.
+    same_name_groups: bool = True
 
 
 class CatalogProvider(Protocol):

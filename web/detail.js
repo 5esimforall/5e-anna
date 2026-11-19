@@ -218,7 +218,7 @@ function renderDetail(tab='body') {
   // One compact head: name, then what and where it is, then its versions and outside links. The tabs stay
   // pinned while the text scrolls, and the toolbar takes over the name once the head has scrolled away.
   const badges=`${e.legacy&&e.legacy!=='unmarked'&&legacy[e.legacy]?badge(legacy[e.legacy]):''}${conflicts.length?badge(`${conflicts.length} 个字段冲突`,'amber'):''}`;
-  const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}</button>`).join('')}</div>`:'';
+  const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}${relationMark(m)}</button>`).join('')}</div>`:'';
   const native=nativeEntry(e),reader=bookReaderURL();
   const extBookHref=!native?readerLocationHref(e.reader_location||e.provenance?.reader_location,e.collection):'';
   const bookLink=native&&reader
@@ -231,6 +231,7 @@ function renderDetail(tab='body') {
   const name=e.name_zh||e.name;
   $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(sourceIds.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(tabButton).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section><p class="reader-hint">${esc(readerHint())}</p>`;
   $('#reader-name').textContent=name;updatePageChrome();watchReaderTitle();markTableFrames();
+  if(tab==='body')markDifferences(e);
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
 // The entry and its source layout load together, and the text appears once, already in the book's layout;
@@ -277,7 +278,43 @@ function renderBody(e){
     const inner=`<span class="note-field">${esc(fieldNames[n.field]||n.field)}</span><span class="note-value">${esc(fieldText(e,n.field))}</span>`;
     return `<li>${n.located?`<button type="button" class="field-note ${n.status==='原文明示'?'':'inferred'}" data-note="${esc(n.field)}" title="${esc(label)}">${inner}</button>`:`<span class="field-note unlocated" title="${esc(label)}">${inner}</span>`}</li>`;
   }).join('');
-  return `<div class="layout-reading${notes?' with-notes':''}">${notes?`<ul class="field-notes" aria-label="${esc(ui.fieldNotes)}">${notes}</ul>`:''}<div class="layout-text">${framedTables(l.html)}</div></div>${prov}`;
+  return `${differenceBar(e)}<div class="layout-reading${notes?' with-notes':''}">${notes?`<ul class="field-notes" aria-label="${esc(ui.fieldNotes)}">${notes}</ul>`:''}<div class="layout-text">${framedTables(l.html)}</div></div>${prov}`;
+}
+// Versions whose text comes from the same collection can be marked in this version's layout: the same
+// translation and renderer, so what differs is the rules text, not the wording. A copy opens marked against the
+// entry it was copied from.
+function differenceTargets(e){
+  const here=e.collection||metadata.collection;
+  return (e.versions?.members||[]).filter(m=>m.id!==e.id&&(m.collection||here)===here&&m.relation!=='translation');
+}
+function differenceBar(e){
+  const targets=differenceTargets(e);
+  if(!targets.length)return '';
+  if(e.differenceWith===undefined){const base=e.provenance?.copied_from?.id;e.differenceWith=targets.some(m=>m.id===base)?base:null;}
+  const buttons=targets.map(m=>{const on=m.id===e.differenceWith,name=versionLabel(m);
+    return `<button type="button" class="difference-toggle" data-difference="${esc(m.id)}" aria-pressed="${on}">${esc((on?ui.diffShown:ui.diffAgainst).replace('{name}',name))}</button>`;}).join('');
+  return `<div class="difference-bar">${buttons}<p class="difference-status muted" role="status"></p></div>`;
+}
+async function markDifferences(e){
+  const id=e.differenceWith,text=$('#detail-content .layout-text'),status=$('#detail-content .difference-status');
+  const target=differenceTargets(e).find(m=>m.id===id);
+  if(!target||!text||!status)return;
+  const name=versionLabel(target);
+  e.differenceLayouts||={};
+  const other=await (e.differenceLayouts[id]||=layoutOf(id));
+  if(currentEntry!==e||e.differenceWith!==id||!text.isConnected)return;
+  if(other?.status!=='ok'){status.textContent=ui.diffUnavailable.replace('{name}',name);return;}
+  const template=document.createElement('template');template.innerHTML=other.html;
+  const result=annaDifferences.mark(text,template.content);
+  text.classList.toggle('differences-marked',result.status==='marked');
+  status.textContent=(result.status==='marked'?ui.diffLegend:result.status==='same'?ui.diffNone:ui.diffTooMany).replace('{name}',name);
+}
+function toggleDifferences(id){
+  const e=currentEntry;if(!e||detailTab!=='body')return;
+  e.differenceWith=e.differenceWith===id?null:id;
+  const top=$('#detail-content').scrollTop;
+  $('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();markDifferences(e);
+  $('#detail-panel').querySelector(`[data-difference="${CSS.escape(id)}"]`)?.focus();
 }
 // Each source table scrolls inside its own frame, so a wide table never drags the prose sideways.
 // A frame whose table is wider than the reader offers full-width reading.
@@ -310,7 +347,7 @@ function loadLayout(e){
   if(e.layout||e.layoutAwaited)return;
   e.layoutAwaited=(e.layoutRequest||layoutOf(e.id)).then(layout=>{
     e.layout=layout;
-    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();}
+    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();markDifferences(e);}
   });
 }
 // A note and the words it was read from light up together; activating a note brings its words into view.
@@ -321,7 +358,7 @@ function lightNotes(fields,on){
 // Versions are compared field by field; differing fields lead, equal or unextracted ones fold away.
 function renderVersions(e){
   const {members,fields}=e.versions;
-  const head=`<thead><tr><th scope="col">${esc(ui.fields)}</th>${members.map(m=>`<th scope="col"><button type="button" class="link-button" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''}>${esc(versionLabel(m))}</button>${m.id===e.id?` <span class="muted">${esc(ui.currentVersion)}</span>`:''}</th>`).join('')}</tr></thead>`;
+  const head=`<thead><tr><th scope="col">${esc(ui.fields)}</th>${members.map(m=>`<th scope="col"><button type="button" class="link-button" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''}>${esc(versionLabel(m))}${relationMark(m)}</button>${m.id===e.id?` <span class="muted">${esc(ui.currentVersion)}</span>`:''}</th>`).join('')}</tr></thead>`;
   const rows=list=>list.map(f=>`<tr class="${f.differs?'differs':''}"><th scope="row">${esc(fieldNames[f.field]||f.field)}</th>${members.map(m=>`<td>${esc(fieldText(m,f.field))}</td>`).join('')}</tr>`).join('');
   const differing=fields.filter(f=>f.differs),same=fields.filter(f=>!f.differs);
   return `<p class="muted versions-intro">${esc(e.versions.status==='library_candidate'?ui.versionsIntroLibrary:ui.versionsIntro)}</p>

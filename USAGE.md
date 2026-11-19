@@ -8,9 +8,9 @@
 | --- | --- |
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
 | `make build` | 从同一原文快照重建不全书数据库（含 `book_search`）与链接版；存在 our5etools 镜像时同步执行 `our5etools-build` |
-| `make our5etools-build` | 从 `OUR5ETOOLS_DIR` 独立构建 `data/our5etools/` 只读查询库、Stella 整书章节与对账清单 |
+| `make our5etools-build` | 从 `OUR5ETOOLS_DIR` 构建完全自包含的 `data/our5etools/` 查询库、Stella 整书章节、随包媒体（`media/`，可选 `OUR5ETOOLS_IMG_DIR`）与对账清单 |
 | `make our5etools-audit` | 核查 `data/our5etools/` 的不变量并生成 `data/our5etools/audit.md` |
-| `make up` | 启动单端口查询、导览、阅读与正文资源服务（存在 `data/our5etools/manifest.json` 时自动挂载 `5etools` 资料库） |
+| `make up` | 启动单端口查询、导览、阅读与正文资源服务（存在 `data/our5etools/manifest.json` 时自动挂载 `5etools` 资料库；可用 `LAZY_MEDIA=1` 开启远端配图按需懒加载缓存） |
 | `make upper` | 开发用：同上，不全书或 our5etools 重建完成后自动校验并热重载 |
 | `make icons` | 从原始人物图生成界面图标 |
 | `make linked` | 由现有不全书数据库生成链接版，并校验原文快照 |
@@ -30,7 +30,7 @@
 
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `python -m anna.catalog.build` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
 
-[our5etools 资料库](#our5etools-资料库)是独立的 `5etools` 资料库，与 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。通过 `OUR5ETOOLS_DIR=/路径` 指定本地镜像（未指定时由 `anna.paths.OUR5ETOOLS` 依次探测同级 `our5etools/` 与本机镜像），通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。`make build` 仅在目标目录存在 `data/` 和 `__api/books.json` 时自动触发 `make our5etools-build`，镜像缺席时安静跳过，不影响不全书构建。
+[our5etools 资料库](#our5etools-资料库)是独立的 `5etools` 资料库，与 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。通过 `OUR5ETOOLS_DIR=/路径` 指定本地镜像（未指定时由 `anna.paths.OUR5ETOOLS` 依次探测同级 `our5etools/` 与本机镜像），可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。`make build` 仅在目标目录存在 `data/` 和 `__api/books.json` 时自动触发 `make our5etools-build`，镜像缺席时安静跳过，不影响不全书构建。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
@@ -311,41 +311,44 @@ make build
 ### 构建、增量更新与回滚
 
 ```sh
-# 使用 Makefile（可用 OUR5ETOOLS_DIR / OUR5ETOOLS_DATA 覆盖默认路径）
+# 使用 Makefile（可用 OUR5ETOOLS_DIR / OUR5ETOOLS_IMG_DIR / OUR5ETOOLS_DATA 覆盖默认路径）
 make our5etools-build
 make our5etools-audit
 
 # 直接调用模块命令行
-.venv/bin/python -m anna.our5etools.build --source /绝对路径/our5etools --output data/our5etools [--quiet]
+.venv/bin/python -m anna.our5etools.build --source /绝对路径/our5etools --output data/our5etools [--img-dir /绝对路径/5etools-img] [--quiet]
 .venv/bin/python -m anna.our5etools.audit --data data/our5etools --output data/our5etools/audit.md [--json]
 
-# 启动服务并显式指定 our5etools 产物与镜像目录（make up / make upper 默认自动传入）
-.venv/bin/python -m anna.server.app --port 8000 --our5etools-data data/our5etools --our5etools-source /绝对路径/our5etools [--watch]
+# 启动服务（默认完全离线自包含；加 LAZY_MEDIA=1 / --lazy-media 或 ANNA_LAZY_MEDIA=1 开启远端配图按需懒加载与本地落盘缓存）
+make up [LAZY_MEDIA=1]
+.venv/bin/python -m anna.server.app --port 8000 --our5etools-data data/our5etools [--lazy-media] [--watch]
 ```
 
-构建过程先校验源镜像（`data/`、`__api/books.json`、`homebrew/_recipes/all.json`），再写入同级临时目录 `<output>.tmp.<pid>`；全部表、阅读章节与清单校验通过后，经 `.prev` 原子替换目标目录并在成功后清理备份。任意阶段失败时删除临时目录，保留既有 `data/our5etools/` 快照不受破坏。相同源镜像重复构建保持幂等（相同 `snapshot`，`delta` 零增删）。`make upper`（`--watch`）在 `data/our5etools/manifest.json` 更新并稳定后自动热重载 `5etools` 资料库。
+构建过程先校验源镜像（`data/`、`__api/books.json`、`homebrew/_recipes/all.json`），再写入同级临时目录 `<output>.tmp.<pid>`；其中随包打包源镜像全部本地媒体至 `media/`，并保留此前已懒加载缓存的 `media/img/` 与 `media/ext/` 图像。全部表、阅读章节、媒体清单与文件校验通过后，经 `.prev` 原子替换目标目录并在成功后清理备份。任意阶段失败时删除临时目录，保留既有 `data/our5etools/` 快照不受破坏。相同源镜像重复构建保持幂等（相同 `snapshot`，`delta` 零增删）。`make upper`（`--watch`）在 `data/our5etools/manifest.json` 更新并稳定后自动热重载 `5etools` 资料库。
 
-当前实测全量构建（321 个配方自制包 + 1 个站点科普漫画 + 官方数据，盘点全部 2,048 个镜像文件）耗时约 42 秒，产物 `data/our5etools/` 总计约 659 MiB（`catalog.sqlite` 约 533 MiB，`reader/` 约 126 MiB），包含 61,480 条条目（29 类）、541 个来源、323 个资料包、50,009 条关系、2,589 个同包重印叠放组、378 册书目与冒险（2,436 章、18,013 个目录节点）；常规 SQLite 筛选计数与分页查询耗时在 50 ms 以内。
+当前实测全量构建（321 个配方自制包 + 1 个站点科普漫画 + 官方数据，盘点全部 2,048 个镜像文件）耗时约 42 秒，产物 `data/our5etools/` 总计约 719 MiB（`catalog.sqlite` 约 544 MiB，`reader/` 约 132 MiB，`media/` 约 38 MiB 收录全部 816 个本地媒体文件），包含 61,480 条条目（29 类）、541 个来源、323 个资料包、50,009 条关系、2,589 个同包重印叠放组、378 册书目与冒险（2,436 章、18,013 个目录节点）；常规 SQLite 筛选计数与分页查询耗时在 50 ms 以内。
 
 ### 只读产物与诊断对账
 
-构建产物集中输出于 `data/our5etools/`，只读服务与审计命令共同消费，不触碰源镜像：
+构建产物集中输出于 `data/our5etools/`，只读服务与审计命令共同消费，运行时完全自包含、不触碰源镜像：
 
 | 文件／目录 | 用途 |
 | --- | --- |
 | `catalog.sqlite` | 只读查询库，包含 `entries`、`entry_sources`、`entry_facets`、`sources`、`packages`、`identity_groups`、`identity_members`、`relations`、`book_pages`、`book_search` 与 `metadata` |
 | `reader/` | 2,436 页 Stella 章节 HTML（`books/`、`adventures/`、`brew-books/`、`brew-adventures/`）、`anna-assets/` 样式与脚本及 `anna-reader.json`（`schema: 6`） |
+| `media/` | 快照随包的全部 816 个本地媒体文件（715 个音频、68 个字体、33 个根图像）以及 `--img-dir` 打包图像与按需懒加载落盘缓存的 `img/`／`ext/` 媒体；由 `/our5etools-media/` 只读提供 |
+| `media-remotes.json` | 22,271 项未离线打包远端媒体路由与允许上游 URL 映射，供 `--lazy-media` 开启时按需回源获取与校验 |
 | `manifest.json`、`summary.json` | 本次快照摘要、分类／来源／包统计与相对上一快照的 `delta` |
 | `inventory.json` | 源镜像全部 2,048 个文件的分类处置（导入位置或排除原因）与分片完整性校验 |
 | `reconciliation.json` | 与 `__api/stats.json` 和 `__api/books.json` 的输入输出对账、`_copy`／变体／子种族／孤立背景文本诊断、`{@...}` 链接解析与未解析样例、未知标签／结构块及本地与远端媒体统计 |
 | `attribution.json` | 全部资料包与来源署名，以及不可随包二次分发资源清单 |
-| `audit.md` | `make our5etools-audit` 输出的中文审计报告，校验 17 项数据与阅读器不变量（全部通过退出 0，任一失败退出 1） |
+| `audit.md` | `make our5etools-audit` 输出的中文审计报告，校验 18 项数据、自包含媒体包与阅读器不变量（全部通过退出 0，任一失败退出 1） |
 
 ### 导览与 Stella 整书阅读
 
 - **查询与筛选**：在顶栏「资料库」切换至 `our5etools`（`/?collection=5etools`），支持中文与英文名称、正文检索、`source`／`package`／`origin`／`ruleset` 与领域分面筛选（含排除条件 `not_*`）、同包 5e／5r 重印叠放与展开、以及带 UTF-8 BOM 的 `5e-anna-5etools.csv` 导出。详情页展示来源卡片（来源性质、内容包、作者、译者、分档评分、`_copy` 继承来源、本地音频播放与远端配图提示），所有 `{@...}` 与 `{@filter ...}` 链接保持在 `collection=5etools` 内。
 - **范围导览**：`/tour?collection=5etools` 由 `tour/our5etools.json` 与库内书架、资料包动态组合，覆盖建角入门、施法与灵能、城主资料与遭遇、装备魔法物品与奇珍、规则参考、书架（官方规则书 65 册、官方冒险 100 册、社区扩展书籍 137 册、社区扩展冒险 75 册、站点科普漫画 1 册）与资料包（站点自有精选包与社区扩展包）。进入具体书目或资料包后，子项与查询出口默认继承该范围，页面顶部显示当前范围横幅与显式「放宽到全库」按钮；超过 24 项的书架与资料包分组内置即时筛选框。
-- **整书阅读**：`/read?collection=5etools` 从 `/our5etools-book/` 加载章节 HTML 与 DOM 链接层，支持目录导航、章节分页、库内全文搜索、定义与引用定位以及刷新后位置恢复；源镜像自带的本地音频、字体与图标通过 `/our5etools-media/` 只读提供（支持 `Range` 分段音频播放与路径穿越防护），未离线收录的远端配图明确标注为远端外链而不伪装为离线资源。
+- **整书阅读与媒体策略**：`/read?collection=5etools` 从 `/our5etools-book/` 加载章节 HTML 与 DOM 链接层，支持目录导航、章节分页、库内全文搜索、定义与引用定位以及刷新后位置恢复；`/our5etools-media/` 完全从 `data/our5etools/media/` 提供音频（支持 `Range` 分段播放）、字体与图像，不依赖源镜像目录。由于上游 `our5etools` 仓库本身未打包 `img/` 图包（原站点在浏览器端通过 JS 将 `img/...` 动态指向 `5e.kiwee.top/img/` 等外链），默认运行保持严格离线（`CSP img-src 'self' data:`）与安静的单行「远端配图（未离线收录）」提示；加入 `LAZY_MEDIA=1`、`--lazy-media` 或环境变量 `ANNA_LAZY_MEDIA=1` 后，界面按需把配图提升为延迟加载图像，由服务端按白名单镜像（主站 `5e.kiwee.top/img/`、备站 `raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/` 或 `media-remotes.json`）做校验后原子缓存到 `data/our5etools/media/{img,ext}/`，既保持同源 CSP 策略，后续即使恢复默认离线模式也能直接复用已缓存配图。
 
 ### 署名与分发边界
 
@@ -353,8 +356,8 @@ make our5etools-audit
 
 - **官方与合作出版物（16,190 条）**：Wizards of the Coast 及合作出版内容受版权保护，仅在本机个人查阅使用。
 - **社区与站点自制包（322 个）**：保留原作者、译者、来源链接与 `_meta` 许可注记。
-- **未随包远端媒体（10,914 处）**：外部配图与音频未离线打包在镜像仓库中，页面保留外链与提示。
-- **本地字体（68 个，位于 `fonts/` 等目录）**：仅由本机镜像只读提供，二次分发前需核对 `__ours/fonts/OFL.txt` 等字体许可。
+- **未随包远端媒体（10,914 处引用／22,271 条映射键）**：源镜像仓库未离线打包 `img/` 与外部图床媒体；默认显示为静默占位提示，仅在显式启用 `--lazy-media` 时按需本地缓存，或在构建时通过 `--img-dir` 纳入本机离线图包。
+- **随包本地字体（68 个，已打入 `data/our5etools/media/`）**：构建自上游仓库 `fonts/` 与 `__ours/fonts/`，二次分发前需核对 `__ours/fonts/OFL.txt` 等字体许可。
 
 ## 自动化验证
 

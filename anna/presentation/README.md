@@ -30,9 +30,9 @@ HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；�
 
 资料库标识内容来自哪套整理数据库；`source` 仍是该库中的书籍等文献，`ruleset` 仍是规则代际，`package` 标识所属内容包。不带 `collection` 的 URL 继续查询不全书（`5echm`）。带 `collection` 的查询、计数、详情、排版、导出以及（若提供者实现了对应能力）导览与阅读均由同一资料库负责。条目链接用资料库和库内条目 ID 定位；不同库的同名条目或相同 ID 不合并、不互相回退。
 
-接入新的库时，实现 `CatalogProvider`，返回既有的查询／筛选／详情消费结构；若同时提供导览或整书阅读，可在 `Collection` 上挂载可选的 `reader_url`、`snapshot`、`tour` 与 `reader` 字段。提供者负责只读访问自己的数据和生成经安全处理的排版，不得在导入或请求阶段加载任何构建、审计或提取模块；没有可用排版时返回 `{"status":"empty"}`，正文仍来自详情的 `body`。使用 `create_server(..., additional_collections=(Collection(key, zh, en, provider, ...),))` 注册；`anna.server.app` 在存在 `--our5etools-data` 的 `manifest.json` 时按需懒加载 `load_our5etools_collection()` 注册 `5etools` 资料库，而未传入额外资料库时 `5etools` 仍保持 `reserved` 占位。构建用的 `5ETOOLS_DIR` 仍只供应不全书对照，不会启用 `5etools` 资料库。
+接入新的库时，实现 `CatalogProvider`，返回既有的查询／筛选／详情消费结构；若同时提供导览或整书阅读，可在 `Collection` 上挂载可选的 `reader_url`、`snapshot`、`tour` 与 `reader` 字段。提供者负责只读访问自己的数据和生成经安全处理的排版，不得在导入或请求阶段加载任何构建、审计或提取模块；没有可用排版时返回 `{"status":"empty"}`，正文仍来自详情的 `body`。使用 `create_server(..., additional_collections=(Collection(key, zh, en, provider, ...),))` 注册；`anna.server.app` 在存在 `--our5etools-data` 的 `manifest.json` 时按需懒加载 `load_our5etools_collection()` 注册 `5etools` 资料库，运行时仅消费完全自包含的 `data/our5etools/`（含 `media/`）而不读取源镜像，而未传入额外资料库时 `5etools` 仍保持 `reserved` 占位。构建用的 `5ETOOLS_DIR` 仍只供应不全书对照，不会启用 `5etools` 资料库。
 
-`/api/meta` 返回当前库、默认库、各库状态（`ready`／`reserved`）及该库自身的 `reader_url`、`tour_url` 和 `snapshot`；未知、未启用、重复／空库参数以及不支持导览或阅读的资料库分别返回明确错误（404／409／400）。非不全书资料库不开放 `/source` 原文范围；`our5etools` 的导览（`/tour?collection=5etools`，含书目／资料包范围继承与显式「放宽到全库」）与 Stella 阅读（`/read?collection=5etools`，正文路由 `/our5etools-book/`、本地媒体路由 `/our5etools-media/`）均绑定各自构建快照，不全书的导览、Stella 和原文证据继续沿用原有快照与锚点。
+`/api/meta` 返回当前库、默认库、各库状态（`ready`／`reserved`）及该库自身的 `reader_url`、`tour_url` 和 `snapshot`；未知、未启用、重复／空库参数以及不支持导览或阅读的资料库分别返回明确错误（404／409／400）。非不全书资料库不开放 `/source` 原文范围；`our5etools` 的导览（`/tour?collection=5etools`，含书目／资料包范围继承与显式「放宽到全库」）与 Stella 阅读（`/read?collection=5etools`，正文路由 `/our5etools-book/`、本地媒体路由 `/our5etools-media/` 从 `data/our5etools/media/` 提供服务，保持同源 `CSP img-src 'self' data:`，并在传入 `--lazy-media` 时按需校验并原子缓存远端配图）均绑定各自构建快照，不全书的导览、Stella 和原文证据继续沿用原有快照与锚点。
 
 ## 验证与后续修改
 

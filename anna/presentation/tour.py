@@ -1,8 +1,10 @@
 """The tour: where to start and what to read next, laid over the book's own organisation.
 
-Curated topics name a few starting points (a contents node, an Anna query, or both) and the topics a contents
-node leads on to. Everything below them comes from the source: contents children, the entries a page holds
-by text range, and recorded relations between entries. Leads and hints quote the source; anna writes none.
+Curated topics (`tour/tour.json`, shared by every collection) name a few starting points: a chapter in each
+collection's own contents, an Anna query, or a collection's own listing, and the topics a contents node leads on
+to. The library tour (`library_tour.py`) keeps the first column; this module reads the curation and answers the
+book's levels below it from the source: contents children, the entries a page holds by text range, and recorded
+relations between entries. Leads and hints quote the source; anna writes none.
 """
 from __future__ import annotations
 
@@ -21,16 +23,16 @@ from anna.presentation.layout import span_layout, text_start
 from anna.source.registry import QUICK_REFERENCE
 
 CURATION = paths.PROJECT / 'tour' / 'tour.json'
-SCHEMA = 1
+SCHEMA = 2
 # A node is named by one URL segment: a contents node (`n924`), an entry version (`ver_…`) or a topic key.
 CONTENTS_SEGMENT = re.compile(r'n([0-9]+|page_[0-9a-f]+)')
 ENTRY_SEGMENT = re.compile(r'ver_[0-9a-f]+')
 TOPIC_KEY = re.compile(r'[a-z][a-z0-9-]*')
+COLLECTION_KEY = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 # Contents dividers such as “——核心规则——” name the group of siblings that follows; bare rules only divide.
 DIVIDER = re.compile(r'[—–-]{2,}(.*?)[—–-]{2,}')
 LANGUAGES = ('zh', 'en')
 RULESETS = ('5e', '5r')
-FACETS = ('type', *browse.LABELS)
 LEAD_LIMIT = 220
 HINT_LIMIT = 60
 # Groups this short carry a hint per item; longer ones list names only.
@@ -64,13 +66,32 @@ class Entry:
 
 @dataclass(frozen=True)
 class Topic:
+    """A curated starting point. Its chapter is named once per collection by the collection's own contents path;
+    its query and facet are asked of the whole library; a dynamic list is one collection's own listing."""
+
     key: str
     label: dict
     ruleset: str | None
-    contents: str | None
+    contents: dict
     query: dict | None
     facet: str | None
     sequence: bool
+    dynamic: dict
+
+    def contents_in(self, collection):
+        return self.contents.get(collection)
+
+    def dynamic_in(self, collection):
+        return self.dynamic.get(collection)
+
+
+def curation_revision(path) -> tuple[str, int, int, int]:
+    """The file identity shared by the collection tours and the library's curated views."""
+    try:
+        stat = Path(path).stat()
+    except OSError as exc:
+        raise TourError('curation_invalid', 500, f'导览精选无法读取：{exc}') from exc
+    return str(path), stat.st_ino, stat.st_size, stat.st_mtime_ns
 
 
 def load(path=CURATION):
@@ -104,9 +125,13 @@ def load(path=CURATION):
     if not isinstance(choices, dict):
         problems.append('choices')
         choices = {}
-    for where, keys in choices.items():
-        if not isinstance(keys, list) or any(k not in topics for k in keys):
-            problems.append(f'choices {where!r}')
+    for collection, places in choices.items():
+        if not COLLECTION_KEY.fullmatch(str(collection)) or not isinstance(places, dict):
+            problems.append(f'choices {collection!r}')
+            continue
+        for where, keys in places.items():
+            if not isinstance(keys, list) or any(k not in topics for k in keys):
+                problems.append(f'choices {collection!r} {where!r}')
     if problems:
         raise TourError('curation_invalid', 500, '导览精选格式无效：' + '；'.join(problems))
     return {'sections': sections, 'topics': topics, 'choices': choices}
@@ -116,9 +141,21 @@ def label_ok(label):
     return isinstance(label, dict) and all(isinstance(label.get(lang), str) and label[lang] for lang in LANGUAGES)
 
 
+def per_collection(raw, key, field, problems):
+    """A field named once per collection, as {collection: text}."""
+    value = raw.get(field)
+    if value is None:
+        return {}
+    if not isinstance(value, dict) or not value or any(
+            not COLLECTION_KEY.fullmatch(str(k)) or not isinstance(v, str) or not v for k, v in value.items()):
+        problems.append(f'topic {key!r} {field}')
+        return {}
+    return dict(value)
+
+
 def topic_of(raw, problems):
     key = raw.get('key') if isinstance(raw, dict) else None
-    # Topic keys share the URL with contents nodes and entries, so they may not look like either.
+    # Topic keys share the URL with qualified nodes, so they may not look like a contents node or an entry.
     if not isinstance(key, str) or not TOPIC_KEY.fullmatch(key) or CONTENTS_SEGMENT.fullmatch(key) or key.startswith('ver_'):
         problems.append(f'topic {key!r}')
         return None
@@ -127,15 +164,17 @@ def topic_of(raw, problems):
             isinstance(v, list) and v and all(isinstance(x, str) for x in v) for v in query.values())):
         problems.append(f'topic {key!r} query')
         query = None
-    if facet is not None and (facet not in FACETS or query is None):
+    if facet is not None and (not isinstance(facet, str) or not re.fullmatch(r'[a-z_]+', facet) or query is None):
         problems.append(f'topic {key!r} facet')
     if raw.get('ruleset') not in (None, *RULESETS):
         problems.append(f'topic {key!r} ruleset')
     if not label_ok(raw.get('label')):
         problems.append(f'topic {key!r} label')
-    if raw.get('contents') is None and query is None:
+    contents = per_collection(raw, key, 'contents', problems)
+    dynamic = per_collection(raw, key, 'dynamic', problems)
+    if not contents and query is None and not dynamic:
         problems.append(f'topic {key!r} leads nowhere')
-    return Topic(key, raw.get('label'), raw.get('ruleset'), raw.get('contents'), query, facet, raw.get('sequence') is True)
+    return Topic(key, raw.get('label'), raw.get('ruleset'), contents, query, facet, raw.get('sequence') is True, dynamic)
 
 
 def divider(node):
@@ -161,10 +200,16 @@ def first_sentence(text):
 
 
 class Tour:
-    """One snapshot's tour: contents, page entries and relations read once, curated topics resolved against them."""
+    """The book's levels of the tour in one snapshot: contents, page entries and relations read once.
 
-    def __init__(self, db_path, nodes, locatable, curation):
+    The library tour composes collections' tours: it keeps the curated first column, the shelf and the topics, and
+    asks this one for the levels below them, named by the book's own segments (`n924`, `ver_…`)."""
+
+    collection = '5echm'
+
+    def __init__(self, db_path, nodes, locatable, curation, source_root):
         self.db_path = Path(db_path)
+        self.source_root = Path(source_root)
         self.locatable = locatable
         self.nodes = {n['id']: n for n in nodes}
         self.children = defaultdict(list)
@@ -213,13 +258,13 @@ class Tour:
             self.subclasses[key].sort(key=self.reading_order)
         # Page texts and query counts are read on demand and shared by every request on this snapshot.
         self.texts, self.counts, self.cache_lock = {}, {}, threading.Lock()
-        self.curation = curation
-        self.topics = curation['topics']
-        self.topic_nodes = {key: self.resolve(t.contents) for key, t in self.topics.items() if t.contents}
         self.choices = defaultdict(list)
-        # Curated paths that name no single contents node; topics show their status, choices drop out.
-        self.unresolved = {('topic', key): status for key, (status, _) in self.topic_nodes.items() if status != 'ok'}
-        for where, keys in curation['choices'].items():
+        # Curated paths that name no single contents node in this book; topics show their status, choices drop out.
+        self.unresolved = {}
+        for key, topic in curation['topics'].items():
+            if topic.contents_in(self.collection) and (status := self.resolve(topic.contents_in(self.collection))[0]) != 'ok':
+                self.unresolved[('topic', key)] = status
+        for where, keys in curation['choices'].get(self.collection, {}).items():
             status, node = self.resolve(where)
             if status == 'ok':
                 self.choices[node].extend(keys)
@@ -314,21 +359,16 @@ class Tour:
             if segment not in self.entries:
                 raise TourError('node_missing', 404)
             return self.entry_span(self.entries[segment])
-        if TOPIC_KEY.fullmatch(segment):
-            if segment not in self.topics:
-                raise TourError('node_missing', 404)
-            node = self.topic_nodes.get(segment, (None, None))[1]
-            return self.own_span('n' + node) if node else None
         raise TourError('invalid_node', 400)
 
-    def layout(self, segment, source_root):
+    def layout(self, segment):
         """A level's own words as the book sets them: what an expanded detail shows in place of its lead."""
         span = self.own_span(segment)
         if span is None:
             return {'status': 'empty'}
         path, start, stop, owner = span
         with closing(catalog.connect(self.db_path)) as db:
-            return span_layout(db, path, start, stop, Path(source_root), owner)
+            return span_layout(db, path, start, stop, self.source_root, owner)
 
     def lead(self, text):
         if not text:
@@ -371,19 +411,6 @@ class Tour:
                      'count': len(self.parts.get(eid, [])) or None})
         return item
 
-    def topic_item(self, key):
-        topic = self.topics[key]
-        item = {'id': key, 'kind': 'topic', 'label': topic.label, 'status': 'ok', 'ruleset': topic.ruleset, 'count': None}
-        if topic.contents:
-            status, node = self.topic_nodes[key]
-            item['status'] = status
-        # A topic that names a collection counts its entries; a chapter counts the rows it opens onto.
-        if topic.query:
-            item['count'] = self.query_count(topic.query)
-        elif item['status'] == 'ok':
-            item['count'] = self.below(self.topic_nodes[key][1])
-        return item
-
     def query_count(self, params):
         """How many entries a topic's query finds, counted once per snapshot."""
         key = json.dumps(params, sort_keys=True, ensure_ascii=False)
@@ -409,8 +436,6 @@ class Tour:
         return self.shaped(self.level(segment))
 
     def level(self, segment):
-        if not segment:
-            return self.root_view()
         if CONTENTS_SEGMENT.fullmatch(segment):
             node = segment[1:]
             if node not in self.nodes:
@@ -420,29 +445,7 @@ class Tour:
             if segment not in self.entries:
                 raise TourError('node_missing', 404)
             return self.entry_view(self.entries[segment])
-        if TOPIC_KEY.fullmatch(segment):
-            if segment not in self.topics:
-                raise TourError('node_missing', 404)
-            return self.topic_view(self.topics[segment])
         raise TourError('invalid_node', 400)
-
-    def root_view(self):
-        groups = [{'key': 'section', 'section': s['key'], 'label': s['label'], 'ordered': False,
-                   'items': [self.topic_item(k) for k in s['topics']]} for s in self.curation['sections']]
-        groups.append(self.group('shelf', self.shelf()))
-        return {'id': '', 'kind': 'root', 'groups': groups}
-
-    def shelf(self):
-        """Top-level contents as the book shelf: loose books first, then each named divider as one group."""
-        items = []
-        for node_id in self.children.get('', []):
-            name = divider(self.nodes[node_id])
-            if name is None and not any(i['kind'] == 'shelf' for i in items):
-                items.append(self.contents_item(node_id))
-            elif name:
-                items.append({'id': 'n' + node_id, 'kind': 'shelf', 'title': name, 'status': 'ok',
-                              'count': sum(len(g) for _, g in self.divided(self.shelved(node_id)))})
-        return items
 
     def shelved(self, divider_id):
         """The siblings a named divider heads: up to the next named divider."""
@@ -509,7 +512,8 @@ class Tour:
         if outline:
             view['groups'].append(self.group('outline', [self.entry_item(e, len(outline) <= HINTED_GROUP) for e in outline]))
         if self.choices.get(node_id):
-            view['groups'].append(self.group('choices', [self.topic_item(k) for k in self.choices[node_id]]))
+            # The library tour answers each topic for the whole library; here it is only named.
+            view['groups'].append(self.group('choices', [{'id': k, 'kind': 'topic'} for k in self.choices[node_id]]))
         children = self.children.get(node_id, [])
         hinted = self.contents_count(node_id) <= HINTED_GROUP
         view['groups'] += [self.group('contents', [self.contents_item(c, hinted) for c in ids], label=label)
@@ -548,56 +552,11 @@ class Tour:
                                                              'title': None, 'role': 'spells'}]))
         return view
 
-    def topic_view(self, topic):
-        view = {'id': topic.key, 'kind': 'topic', 'trail': [], 'label': topic.label, 'ruleset': topic.ruleset,
-                'sources': [], 'status': 'ok', 'lead': None, 'read': None, 'anna': None, 'groups': []}
-        if topic.contents:
-            status, node = self.topic_nodes[topic.key]
-            view['status'] = status
-            if node:
-                shown = self.contents_view(node)
-                view.update({k: shown[k] for k in ('trail', 'sources', 'lead', 'read', 'anna', 'groups')})
-                view['trail'] = view['trail'] + [shown['title']]
-                if topic.sequence:
-                    for group in view['groups']:
-                        group['ordered'] = group['key'] == 'contents'
-        if topic.query:
-            view['anna'] = {'query': topic.query, 'count': self.query_count(topic.query)}
-            with closing(catalog.connect(self.db_path)) as db:
-                if topic.facet:
-                    view['groups'].append(self.facet_group(db, topic.query, topic.facet))
-                elif not topic.contents:
-                    view['groups'].append(self.entry_list(db, topic.query))
-        return view
-
     # Collections answered by Anna's own query, so counts and order read the same as in the table
 
     def count(self, db, params):
         where, values = catalog.filters(db, params)
         return db.execute('SELECT count(*) FROM entries e' + where, values).fetchone()[0]
-
-    def facet_group(self, db, params, facet):
-        key = facet if facet == 'type' else 'f_' + facet
-        found = next((g for g in catalog.facets(db, params)['groups'] if g['key'] == key), None)
-        options = [o for o in (found or {}).get('options', []) if o['count'] and not o['value'].startswith('__')]
-        if facet == 'type':
-            chosen = set(params.get('type', []))
-            options = [o for o in options if not chosen or o['value'] in chosen]
-        items = [{'id': None, 'kind': 'query', 'title': o['label'], 'count': o['count'],
-                  'query': {**params, key: [o['value']]}} for o in options]
-        return self.group('facet', items, label=found['label'] if found else None)
-
-    def entry_list(self, db, params):
-        result = catalog.query(db, {**params, 'limit': [str(ENTRY_LIST)]})
-        items = []
-        for row in result['rows']:
-            item = self.entry_item(row['id']) if row['id'] in self.entries else {'id': row['id'], 'kind': 'entry', 'title': row['name']}
-            item['versions'] = [{'id': v['id'], 'ruleset': v.get('ruleset')} for v in row.get('versions', []) if v['id'] != row['id']]
-            items.append(item)
-        group = self.group('entries', items)
-        if result['total'] > len(items):
-            group['more'] = result['total'] - len(items)
-        return group
 
 
 class TourCache:
@@ -606,13 +565,9 @@ class TourCache:
     def __init__(self):
         self.lock, self.key, self.tour = threading.Lock(), None, None
 
-    def get(self, db_path, nodes, locatable, snapshot, curation_path=CURATION):
-        try:
-            stat = Path(curation_path).stat()
-        except OSError as exc:
-            raise TourError('curation_invalid', 500, f'导览精选无法读取：{exc}') from exc
-        key = (snapshot, str(curation_path), stat.st_mtime_ns, stat.st_size)
+    def get(self, db_path, nodes, locatable, snapshot, source_root, curation_path=CURATION):
+        key = (snapshot, curation_revision(curation_path))
         with self.lock:
             if self.key != key:
-                self.tour, self.key = Tour(db_path, nodes, locatable(), load(curation_path)), key
+                self.tour, self.key = Tour(db_path, nodes, locatable(), load(curation_path), source_root), key
             return self.tour

@@ -1,24 +1,27 @@
 /* Controlled document heights isolate scheduling and reclamation from source-book layout. */
 const {test:base,expect}=require('@playwright/test');
+const {bookAddress,bookCollection,bookNode}=require('./locations.cjs');
 const anna=`http://127.0.0.1:${process.env.ANNA_E2E_PORT||18380}`;
-const path=index=>`topics/window-${index}.htm`;
+const rawPath=index=>`topics/window-${index}.htm`;
+const path=index=>bookAddress(rawPath(index));
 const test=base.extend({page:async({page},use)=>{
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await use(page);expect(errors).toEqual([]);
 }});
 async function fixture(page,request,{count=12,height=2400}={}){
   const meta=await (await request.get(anna+'/api/reader')).json();
-  const nodes=Array.from({length:count},(_,i)=>({id:`page-${i}`,parent_id:i?'page-0':'',path:path(i),fragment:'',label:`Page ${i+1}`,status:'present'}));
-  nodes.push({id:'outside',parent_id:'',path:path('outside'),fragment:'',label:'Outside',status:'present'});
+  const {id:collection,snapshot}=bookCollection(meta);
+  const nodes=Array.from({length:count},(_,i)=>bookNode({id:`page-${i}`,parent_id:i?'page-0':'',path:rawPath(i),fragment:'',label:`Page ${i+1}`,status:'present'}));
+  nodes.push(bookNode({id:'outside',parent_id:'',path:rawPath('outside'),fragment:'',label:'Outside',status:'present'}));
   const reads=[],heights=new Map();
   await page.route('**/api/reader',route=>route.fulfill({json:{...meta,nodes,default_page:path(0)}}));
   await page.route('**/api/reader-page?**',route=>{
     const source=new URL(route.request().url()).searchParams.get('path');
-    return route.fulfill({json:{snapshot:meta.snapshot,path:source,title:source,fragment:'',definitions:[]}});
+    return route.fulfill({json:{collection,snapshot,path:source,title:source,fragment:'',definitions:[]}});
   });
   await page.route('**/book/topics/window-*.htm',route=>{
-    const source=new URL(route.request().url()).pathname.slice('/book/'.length);reads.push(source);
-    return route.fulfill({contentType:'text/html',body:`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0}.content{height:${heights.get(source)||height}px;box-sizing:border-box;padding:24px}</style></head><body><div class="content"><h1>${source}</h1><p>Stable reading text</p><a id="target" href="#target">Target</a></div><script type="application/json" id="anna-bindings">${JSON.stringify({reader:{snapshot:meta.snapshot,presentation_resources:[]}})}</script><script src="/book/anna-assets/topic.js"></script></body></html>`});
+    const source=new URL(route.request().url()).pathname.slice('/book/'.length),address=bookAddress(source);reads.push(address);
+    return route.fulfill({contentType:'text/html',body:`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0}.content{height:${heights.get(address)||height}px;box-sizing:border-box;padding:24px}</style></head><body><div class="content"><h1>${source}</h1><p>Stable reading text</p><a id="target" href="#target">Target</a></div><script type="application/json" id="anna-bindings">${JSON.stringify({reader:{snapshot,collection,presentation_resources:[]}})}</script><script src="/book/anna-assets/topic.js"></script></body></html>`});
   });
   await page.addInitScript(()=>{
     window.maxMountedDocuments=0;
@@ -28,7 +31,7 @@ async function fixture(page,request,{count=12,height=2400}={}){
   return {reads,heights};
 }
 async function ready(page){await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');await expect(page.locator('#book-error')).toBeHidden();}
-async function visit(page){await page.goto(anna+'/read?root=page-0');await ready(page);}
+async function visit(page){await page.goto(anna+'/read?'+new URLSearchParams({root:bookAddress('page-0')}));await ready(page);}
 const section=(page,index)=>page.locator(`.book-page[data-path="${path(index)}"]`);
 async function mounted(page,index){await expect(section(page,index).locator('iframe')).toHaveCSS('visibility','visible');}
 async function scrollTo(page,index,y){await section(page,index).evaluate((section,y)=>{
@@ -64,7 +67,7 @@ test('near-bottom loading is sequential, scope-bound, and does not alter the cur
   await scrollTo(page,0,1700);await mounted(page,1);await position(page,0,1700);
   await page.waitForTimeout(400);expect(reads).toEqual([path(0),path(1)]);
   expect(await page.evaluate(()=>window.history.length)).toBe(history);
-  expect((await saved(page)).root).toBe('page-0');
+  expect((await saved(page)).root).toBe(bookAddress('page-0'));
   await expect(page.locator('#book-page-count')).toHaveText('1 / 12');
   await jump(page,'Page 12');await ready(page);
   await scrollTo(page,11,1900);await page.waitForTimeout(400);
@@ -84,7 +87,7 @@ test('long reading releases distant frames, keeps measured space, and rehydrates
   expect(reads.filter(p=>p===path(0))).toHaveLength(2);
   const count=reads.length;await page.waitForTimeout(600);expect(reads.length).toBe(count);
   expect(await page.evaluate(()=>window.maxMountedDocuments)).toBeLessThanOrEqual(5);
-  expect((await saved(page)).root).toBe('page-0');
+  expect((await saved(page)).root).toBe(bookAddress('page-0'));
 });
 
 test('far pagination and history restore reclaimed pages without fetching skipped documents',async({page,request})=>{
@@ -95,7 +98,7 @@ test('far pagination and history restore reclaimed pages without fetching skippe
   await page.goBack();await ready(page);await position(page,0,600);
   await expect(page.locator('#book-page-count')).toHaveText('1 / 12');
   await page.reload();await ready(page);await position(page,0,600);
-  expect((await saved(page)).root).toBe('page-0');
+  expect((await saved(page)).root).toBe(bookAddress('page-0'));
 });
 
 test('automatic failures do not retry in a loop; explicit retry retains existing content',async({page,request})=>{
@@ -123,10 +126,10 @@ test('a pending automatic request is single-flight and cannot return after a sco
   try{
     await visit(page);await scrollTo(page,0,1700);await expect.poll(()=>attempts).toBe(1);
     await scrollTo(page,0,1750);await page.waitForTimeout(300);expect(attempts).toBe(1);
-    await page.locator('#book-tree [data-node="outside"] a').click();await ready(page);release();
+    await page.locator('#book-tree [data-node="5echm:outside"] a').click();await ready(page);release();
     await expect(page.locator('#book-scope-title')).toHaveText('Outside');
     await page.waitForTimeout(300);await expect(page.locator('.book-document')).toHaveCount(1);
-    expect((await saved(page)).root).toBe('outside');
+    expect((await saved(page)).root).toBe(bookAddress('outside'));
   }finally{release();}
 });
 

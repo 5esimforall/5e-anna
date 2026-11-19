@@ -3,7 +3,7 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Protocol
+from typing import Any, Callable, Protocol
 
 import anna.catalog.views as browse
 from anna.presentation import catalog
@@ -59,20 +59,31 @@ class CatalogProvider(Protocol):
 
 
 class TourProvider(Protocol):
-    """Optional read-only guided tour interface for an external collection."""
+    """Optional read-only guided tour over one collection; the library tour composes them."""
 
-    def view(self, at: str = '', *, scope_source: str | None = None, scope_package: str | None = None) -> dict: ...
-    def layout(self, entry_id: str, source_root: Path | None = None) -> dict: ...
+    def view(self, at: str = '') -> dict: ...
+    def layout(self, segment: str) -> dict: ...
+
+
+@dataclass(frozen=True)
+class SearchHits:
+    """One collection's full-text matches, best first: whether every term matched, (score, key) pairs, and how
+    to show the match a key names. Collections rank by the same rule, so a library can interleave their hits."""
+
+    match: str
+    hits: list[tuple[int, Any]]
+    result: Callable[[Any, int], dict]
 
 
 class ReaderProvider(Protocol):
-    """Optional read-only Stella chapter reader and media asset interface for an external collection."""
+    """Optional read-only Stella reader over one collection's pages: contents, pages, full-text search and the
+    assets its pages load. Addresses here are the collection's own; the library shelf qualifies them."""
 
+    @property
+    def snapshot(self) -> str: ...
     def navigation(self) -> dict: ...
     def page_data(self, path: str | None = None, entry: str | None = None) -> dict: ...
-    def book_search(self, query: str = '', root: str | None = None, *, params: Params | None = None) -> dict: ...
-    def resolve_book_asset(self, relpath: str) -> tuple[Path, str] | None: ...
-    def resolve_media_asset(self, relpath: str) -> tuple[Path, str] | None: ...
+    def search(self, keyword: str, *, title_only: bool = False) -> SearchHits: ...
 
 
 @dataclass(frozen=True)
@@ -146,21 +157,20 @@ class Collection:
     zh: str
     en: str
     provider: CatalogProvider | None = None
-    reader_url: str | None = None
     snapshot: str | None = None
     tour: TourProvider | object | None = None
     reader: ReaderProvider | object | None = None
     book_base: str | None = None
     media_base: str | None = None
 
-    def describe(self, *, tour=None, reader=None, snapshot=None):
+    def describe(self):
         """The collection's name and what it offers: a query table, a tour, a book reader, and the build they share."""
         ready = self.provider is not None
         return {'id': self.key, 'label': {'zh': self.zh, 'en': self.en},
                 'status': 'ready' if ready else 'reserved',
-                'tour': ready and (self.tour is not None if tour is None else tour),
-                'reader': ready and ((self.reader is not None or self.reader_url is not None) if reader is None else reader),
-                'snapshot': (self.snapshot if snapshot is None else snapshot) if ready else None}
+                'tour': ready and self.tour is not None,
+                'reader': ready and self.reader is not None,
+                'snapshot': self.snapshot if ready else None}
 
 
 OUR5ETOOLS = Collection(
@@ -186,9 +196,13 @@ class CollectionError(ValueError):
 
 
 class CollectionRegistry:
-    def __init__(self, book: BookCatalog, additional=()):
+    """The collections the server knows. The default book's tour and reader come with its validated bundle, so a
+    query-only server registers the book without them."""
+
+    def __init__(self, book: BookCatalog, additional=(), *, book_tour=None, book_reader=None, book_snapshot=None):
         self.book = book
-        self._items = {DEFAULT: Collection(DEFAULT, '不全书', 'D&D 5e Incomplete Book', book)}
+        self._items = {DEFAULT: Collection(DEFAULT, '不全书', 'D&D 5e Incomplete Book', book, snapshot=book_snapshot,
+                                           tour=book_tour, reader=book_reader, book_base='/book/')}
         for collection in additional:
             if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', collection.key):
                 raise ValueError(f'Invalid collection key: {collection.key!r}')
@@ -198,10 +212,9 @@ class CollectionRegistry:
         self._items.setdefault(OUR5ETOOLS.key, OUR5ETOOLS)
         self._items.setdefault(FIVETOOLS.key, FIVETOOLS)
 
-    def describe(self, *, book_reader=False, book_snapshot=None):
-        """Every collection in registration order; the default book offers its tour and reader through the unified server."""
-        return [collection.describe(tour=book_reader, reader=book_reader, snapshot=book_snapshot) if key == DEFAULT else collection.describe()
-                for key, collection in self._items.items()]
+    def describe(self):
+        """Every collection in registration order, with what each offers."""
+        return [collection.describe() for collection in self._items.values()]
 
     def get(self, key):
         return self._items.get(key)

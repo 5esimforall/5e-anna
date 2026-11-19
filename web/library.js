@@ -1,7 +1,7 @@
-/* The reader's library: which collections Anna reads, in what priority, how same-name entries show, and which
-   rules generations and works count. Like the theme it belongs to this browser and every page shares it: the
-   topbar opens it on every page, Anna sends it with each query, and the tour and Stella open the first
-   collection in it that has a tour or a book.
+/* The reader's library: which collections Anna and Stella read, in what priority, how same-name entries show,
+   whose text leads a work several collections hold, and which rules generations and works count. Like the theme
+   it belongs to this browser and every page shares it: the topbar opens it on every page, and every request of
+   the query page, the tour and Stella carries it.
    It loads before topbar.js; the button and its dialog are wired once the page has parsed. */
 const annaLibrary = (() => {
   const KEY = 'anna.library', CATALOG_KEY = 'anna.libraryCatalog', DEFAULT = '5echm', EVENT = 'anna-library';
@@ -12,35 +12,35 @@ const annaLibrary = (() => {
   const VALID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/, WORK = /^[a-z0-9]+(?:-[a-z0-9]+)*:.{1,300}$/;
   const labels = {
     zh:{button:'资料库', buttonTitle:'资料库设置 · {summary}', narrowed:'已收窄范围', title:'资料库',
-      intro:'选择 Anna 查阅哪些资料，以及重复的条目如何显示。设置保存在本浏览器，查询、导览与 Stella 共用。',
+      intro:'选择查阅和阅读哪些资料，以及重复的条目与作品如何显示。设置保存在本浏览器，查询、导览与 Stella 共用。',
       libraries:'资料库与优先级', librariesHint:'勾选要查阅的资料库；拖动或用箭头排序，靠前的资料库在同名条目中优先。',
       entries:'{count} 部作品', reserved:'未接入', tour:'导览', reader:'阅读', moveUp:'上移 {name}', moveDown:'下移 {name}', drag:'拖动以排序',
-      lastLibrary:'至少保留一个资料库', onThisPage:'本页', showHere:'在本页打开', showBookHere:'在本页打开本书', showBookTitle:'在 {library} 中打开《{name}》',
+      lastLibrary:'至少保留一个资料库',
       duplicates:'同名条目', dedupe:'去重：同名条目合为一行', prefer:'优先显示',
       dedupeHint:'同名的出版物与家酿合为一行：先显示官方与合作出版物，再按优先的规则版本、领头的译本与资料库顺序。其余版本列在行内，标出它与所示版本的关系：同一作品、派生或同名候选。',
       editions:'同一作品的领头译本', editionsCount:'{count} 部作品在多个资料库中都有', editionsChosen:'已指定 {count} 部',
-      editionsHint:'同一部作品在几个资料库中各有一份文本时，选择由谁领头；未指定时按资料库顺序。', editionsFilter:'筛选作品名或缩写', byOrder:'按资料库顺序',
+      editionsHint:'同一部作品在几个资料库中各有一份文本时，选择由谁领头：同名条目的行首，以及书架上默认打开的文本；未指定时按资料库顺序。', editionsFilter:'筛选作品名或缩写', byOrder:'按资料库顺序',
       rulesets:'规则版本', rulesetNames:{'5e':['2014 版','5e'],'5r':['2024 版','5.5e'],'待核':['待核','规则版本未确认']}, lastRuleset:'至少保留一种规则版本',
       content:'内容范围', kinds:{official:['官方内容','威世智出版物'],thirdParty:['第三方内容','合作出版物与社区家酿'],unverified:['性质待核','模组、UA、Drops 等出处尚未确认的作品']},
       classes:{official:'官方',partnered:'合作',unverified:'待核',curated:'本站精选',community:'社区'},
       works:'按作品挑选', worksHidden:'隐藏了 {count} 部', worksFilter:'筛选作品名或缩写', worksEmpty:'没有匹配的作品。', kindCount:'{on} / {all} 部 · {entries} 条',
       reset:'恢复默认', done:'完成', close:'关闭', summary:'{libraries} · {works} / {total} 部作品',
-      loading:'正在读取资料库…', loadError:'无法读取资料库：{message}', retry:'重试', pinned:'本页只看 {name}'},
+      loading:'正在读取资料库…', loadError:'无法读取资料库：{message}', retry:'重试'},
     en:{button:'Library', buttonTitle:'Library settings · {summary}', narrowed:'Scope narrowed', title:'Library',
-      intro:'Choose what Anna reads and how repeated entries show. The setting stays in this browser and applies to search, the tour and Stella.',
+      intro:'Choose what to search and read, and how repeated entries and works show. The setting stays in this browser and applies to search, the tour and Stella.',
       libraries:'Collections and priority', librariesHint:'Tick the collections to read; drag or use the arrows to order them. Earlier collections lead same-name entries.',
       entries:'{count} works', reserved:'not connected', tour:'Tour', reader:'Book', moveUp:'Move {name} up', moveDown:'Move {name} down', drag:'Drag to reorder',
-      lastLibrary:'Keep at least one collection', onThisPage:'This page', showHere:'Open here', showBookHere:'Open this book here', showBookTitle:'Open {name} in {library}',
+      lastLibrary:'Keep at least one collection',
       duplicates:'Same-name entries', dedupe:'Deduplicate: one row per name', prefer:'Show first',
       dedupeHint:'Publications and homebrew of the same name share a row: official and partnered publications first, then the preferred rules, the leading text and the collection order. The other versions stay in the row, each marked by how it relates to the one shown: same work, derived or same name.',
       editions:'Leading text of shared works', editionsCount:'{count} works appear in several collections', editionsChosen:'{count} chosen',
-      editionsHint:'When a work appears in several collections, each with its own text, choose whose text leads; otherwise the collection order decides.', editionsFilter:'Filter by title or abbreviation', byOrder:'By collection order',
+      editionsHint:'When a work appears in several collections, each with its own text, choose whose text leads: at the head of same-name rows and when the work opens from the shelf; otherwise the collection order decides.', editionsFilter:'Filter by title or abbreviation', byOrder:'By collection order',
       rulesets:'Rules', rulesetNames:{'5e':['2014','5e'],'5r':['2024','5.5e'],'待核':['Unverified','Rules version unverified']}, lastRuleset:'Keep at least one rules version',
       content:'Content', kinds:{official:['Official','Wizards of the Coast publications'],thirdParty:['Third-party','Partnered publications and homebrew'],unverified:['Unverified origin','Adventures, UA, Drops and other works of unconfirmed origin']},
       classes:{official:'Official',partnered:'Partnered',unverified:'Unverified',curated:'Site curated',community:'Community'},
       works:'Choose works', worksHidden:'{count} hidden', worksFilter:'Filter by title or abbreviation', worksEmpty:'No matching works.', kindCount:'{on} of {all} works · {entries} entries',
       reset:'Reset', done:'Done', close:'Close', summary:'{libraries} · {works} of {total} works',
-      loading:'Loading the library…', loadError:'Unable to load the library: {message}', retry:'Try again', pinned:'This page reads only {name}'}
+      loading:'Loading the library…', loadError:'Unable to load the library: {message}', retry:'Try again'}
   };
   const lang = () => document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
   const ui = () => labels[lang()];
@@ -95,8 +95,7 @@ const annaLibrary = (() => {
     document.addEventListener(EVENT, listener);
     annaKit.stored.watch(KEY, listener);
   }
-  // The scope Anna's requests carry. A page pinned to one collection (`collection=` in its address) still
-  // sends the rest; the server lets the pin choose the collection.
+  // The scope every request of the query page, the tour and Stella carries.
   function params(s = read()) {
     const out = [];
     const libs = libraries(s);
@@ -114,16 +113,6 @@ const annaLibrary = (() => {
     for (const key of ['libraries','versions','prefer','rulesets','content','hide','lead']) url.searchParams.delete(key);
     for (const [k, v] of params()) url.searchParams.append(k, v);
     return url.pathname + url.search;
-  }
-  // The tour and Stella show one collection: the address's, else the first one read that offers that page.
-  const capability = page => page === 'book' ? 'reader' : 'tour';
-  function primaryFor(page, s = read()) {
-    const known = new Map(catalog().map(c => [c.id, c]));
-    return libraries(s).find(k => known.get(k)?.status === 'ready' && known.get(k)?.[capability(page)]) || DEFAULT;
-  }
-  function pageCollection(page) {
-    const raw = new URLSearchParams(location.search).get('collection');
-    return raw && raw.trim() ? raw.trim() : primaryFor(page);
   }
   const nameOf = id => { const c = catalog().find(x => x.id === id); return c?.label?.[lang()] || c?.label?.zh || id; };
 
@@ -165,36 +154,13 @@ const annaLibrary = (() => {
     button = header?.querySelector('.library-button');
     if (!button) return;
     page = header.dataset.page;
-    if (page === 'tour' || page === 'book') shownCollection = pageCollection(page);
     button.querySelector('.library-word').textContent = ui().button;
     button.hidden = false;
     renderButton();
     button.addEventListener('click', open);
-    subscribe(() => { renderButton(); if (dialog?.open) sync(); followPrimary(); });
-    // A first visit has no list of collections yet; once it arrives the page may owe a different collection.
-    describe().then(() => { renderButton(); followPrimary(); }).catch(() => {});
+    subscribe(() => { renderButton(); if (dialog?.open) sync(); });
+    describe().then(renderButton).catch(() => {});
   }
-  // A tour or book page that follows the library (no `collection` in its address) turns to the new first collection.
-  let shownCollection = null;
-  function followPrimary() {
-    if (page !== 'tour' && page !== 'book') return;
-    if (new URLSearchParams(location.search).has('collection')) return;
-    if (shownCollection && primaryFor(page) !== shownCollection) location.reload();
-  }
-
-  // Stella tells where it reads: the contents node and its ancestors, innermost first. The same publication's book
-  // in another collection then opens at its own root.
-  let place = [];
-  function setPlace(ids) { place = ids; if (dialog?.open) renderLibraries(); }
-  function sameBook(id) {
-    if (page !== 'book' || !place.length) return null;
-    const here = works().find(c => c.id === shownCollection), there = works().find(c => c.id === id);
-    const work = here && place.map(node => here.works.find(w => w.reader_root === node)).find(Boolean);
-    const counterpart = work?.counterparts?.find(p => p.collection === id);
-    const target = counterpart && there?.works.find(w => w.id === counterpart.id);
-    return target?.reader_root ? {root: target.reader_root, name: target.name} : null;
-  }
-
   // --- The dialog ---
   let filterText = '';
   function open() {
@@ -350,9 +316,7 @@ const annaLibrary = (() => {
   function renderBody() {
     const body = dialog.querySelector('.library-body');
     const t = ui();
-    const pin = page === 'query' && new URLSearchParams(location.search).get('collection');
     body.innerHTML = `<p class="library-intro">${esc(t.intro)}</p>
-      ${pin ? `<p class="library-pin">${esc(fill(t.pinned, {name: nameOf(pin)}))}</p>` : ''}
       <section class="library-section" aria-labelledby="library-order-title"><h3 id="library-order-title">${esc(t.libraries)}</h3><p class="library-hint">${esc(t.librariesHint)}</p><ol class="library-order"></ol></section>
       <section class="library-section" aria-labelledby="library-dup-title"><h3 id="library-dup-title">${esc(t.duplicates)}</h3>
         <div class="library-line"><label class="library-check"><input type="checkbox" data-dedupe><span>${esc(t.dedupe)}</span></label>
@@ -374,19 +338,13 @@ const annaLibrary = (() => {
     if (!list) return;
     const s = read(), t = ui(), known = new Map((described?.collections || catalog()).map(c => [c.id, c]));
     const counts = new Map(works().map(c => [c.id, c.works.length]));
-    const here = shownCollection;
     list.innerHTML = s.order.filter(id => known.has(id)).map((id, i, ids) => {
       const c = known.get(id), ready = c.status === 'ready', name = nameOf(id);
       const offers = [ready && c.tour ? t.tour : '', ready && c.reader ? t.reader : ''].filter(Boolean).join(' · ');
       const meta = ready ? [counts.has(id) ? fill(t.entries, {count: fmt(counts.get(id))}) : '', offers].filter(Boolean).join(' · ') : t.reserved;
-      const pageOffers = (page === 'tour' || page === 'book') && ready && c[capability(page)];
-      const book = pageOffers && id !== here ? sameBook(id) : null;
-      const showHere = pageOffers && id !== here ? `<a class="library-here" href="${esc((page === 'book' ? '/read' : '/tour') + '?' + new URLSearchParams({collection: id, ...(book ? {root: book.root} : {})}))}" ${book ? `title="${esc(fill(t.showBookTitle, {library: name, name: book.name}))}"` : ''}>${esc(book ? t.showBookHere : t.showHere)}</a>` : '';
-      const current = pageOffers && id === here ? `<span class="library-current">${esc(t.onThisPage)}</span>` : '';
       return `<li class="library-row ${ready ? '' : 'reserved'}" data-library-row="${esc(id)}" draggable="${ready}">
         <span class="library-handle" aria-hidden="true" title="${esc(t.drag)}"><svg viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></svg></span>
         <label class="library-name"><input type="checkbox" data-library="${esc(id)}" ${ready ? '' : 'disabled'}><span><strong>${esc(name)}</strong><small>${esc(meta)}</small></span></label>
-        ${current}${showHere}
         <span class="library-moves"><button type="button" class="icon-button" data-library="${esc(id)}" data-move="-1" aria-label="${esc(fill(t.moveUp, {name}))}" title="${esc(fill(t.moveUp, {name}))}" ${i ? '' : 'disabled'}><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button type="button" class="icon-button" data-library="${esc(id)}" data-move="1" aria-label="${esc(fill(t.moveDown, {name}))}" title="${esc(fill(t.moveDown, {name}))}" ${i < ids.length - 1 ? '' : 'disabled'}><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button></span>
       </li>`;
     }).join('');
@@ -435,7 +393,6 @@ const annaLibrary = (() => {
     for (const input of dialog.querySelectorAll('[data-edition]')) {
       const members = shownEditions[Number(input.dataset.edition)]?.members.map(m => m.key) || [];
       input.checked = input.value ? s.lead.includes(input.value) : !members.some(k => s.lead.includes(k));
-      input.disabled = s.versions !== 'stacked';
     }
     const editionsCount = dialog.querySelector('.library-editions-count');
     if (editionsCount) {
@@ -485,5 +442,5 @@ const annaLibrary = (() => {
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
-  return {read, write, reset, params, withScope, libraries, narrowed, subscribe, primaryFor, pageCollection, describe, open, nameOf, setPlace, DEFAULT};
+  return {read, write, reset, params, withScope, libraries, narrowed, subscribe, describe, open, nameOf, DEFAULT};
 })();

@@ -1,6 +1,7 @@
 /* End-to-end browser verification for the live our5etools collection in Anna, Tour, and Stella. */
 const {test:base,expect}=require('@playwright/test');
-const fs=require('fs');
+const fs=require('node:fs');
+const {bookAddress}=require('./locations.cjs');
 
 const port=Number(process.env.ANNA_E2E_PORT||18380);
 const anna=`http://127.0.0.1:${port}`;
@@ -20,7 +21,16 @@ const test=base.extend({
   },
 });
 
-const pin=page=>page.locator('#library-pin');
+const summary=page=>page.locator('.library-summary');
+const both=['5echm','our5etools'];
+const ourAddress=local=>'our5etools:'+local;
+const readerURL=params=>'/read?'+new URLSearchParams(params);
+const tourURL=at=>'/tour?'+new URLSearchParams({at});
+async function chooseLibraries(page,enabled){
+  await page.goto(anna+'/anna-logo.png');
+  await page.evaluate(enabled=>localStorage.setItem('anna.library',JSON.stringify({order:enabled,enabled})),enabled);
+}
+test.beforeEach(async({page})=>chooseLibraries(page,['our5etools']));
 const resultsReady=page=>expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
 const tourLevel=(page,depth)=>page.locator(`.tour-column[data-depth="${depth}"]`);
 const tourNamed=name=>new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(\\s|$)');
@@ -43,75 +53,73 @@ function o5eFrame(page){
   return page.frames().find(f=>f.url().startsWith(o5eBook+'/'));
 }
 
-test('1. a link pinned to our5etools stays pinned through reload, and back returns to the library',async({page})=>{
-  await page.goto(anna+'/?type=feat');
-  await resultsReady(page);
-  await expect(pin(page)).toBeHidden();
-
-  await page.goto(anna+'/?collection=our5etools');
-  await resultsReady(page);
-  await expect(pin(page)).toContainText('仅 our5etools');
-  await expect(page.locator('#results tr').first()).toBeVisible();
-
-  // Reload stays in our5etools
-  await page.reload();
-  await resultsReady(page);
-  await expect(pin(page)).toContainText('仅 our5etools');
-  await expect(page).toHaveURL(anna+'/?collection=our5etools');
-
-  // Browser back returns cleanly to the reader's library
-  await page.goBack();
-  await resultsReady(page);
-  await expect(pin(page)).toBeHidden();
-  await expect(page).toHaveURL(anna+'/?type=feat');
-});
-
-test('1b. with our5etools in the library, published same-name versions share a row across collections',async({page})=>{
-  await page.goto(anna+'/tour');
-  await page.evaluate(()=>localStorage.setItem('anna.library',JSON.stringify({order:['5echm','our5etools'],enabled:['5echm','our5etools']})));
+test('same-name versions share a row, and Stella opens the selected version in its own text',async({page,context})=>{
+  await chooseLibraries(page,both);
   await page.goto(anna+'/?type=spell&q='+encodeURIComponent('火球术'));
   await resultsReady(page);
   const row=page.locator('#results tr').filter({has:page.locator('.entry-name',{hasText:/^火球术$/})}).first();
   await expect(row.locator('.version-pill.shown')).toHaveText('PHB24 2024');
   await expect(row.locator('.version-pill').filter({hasText:/^our5etools · /})).toHaveCount(2);
-  // Homebrew of the same name keeps its own rows.
+  // Same-name homebrew stacks for display, but the two version IDs stay distinct.
   const brew=await (await page.request.get(anna+'/api/entries?libraries=5echm,our5etools&q='+encodeURIComponent('下毒术')+'&type=spell')).json();
-  expect(brew.rows.filter(r=>r.name_zh==='下毒术').length).toBeGreaterThanOrEqual(2);
-  // A version from our5etools opens from its own collection, with links that stay there.
-  await row.locator('.version-pill').filter({hasText:/^our5etools · /}).first().click();
+  const [envenom,...other]=brew.rows.filter(r=>r.name_zh==='下毒术');
+  expect(other).toEqual([]);
+  expect(new Set(envenom.versions.map(v=>v.id)).size).toBe(2);
+  // The selected version stays in its own collection through Anna → Stella → Anna.
+  const version=row.locator('.version-pill').filter({hasText:/^our5etools · /}).first();
+  const id=await version.getAttribute('data-entry');
+  await version.click();
   await expect(page.locator('#entry-title')).toHaveText('火球术');
   await expect(page.locator('#detail .o5e-provenance')).toContainText('our5etools');
-  await page.evaluate(()=>localStorage.removeItem('anna.library'));
+  const bookLink=page.locator('#detail .book-definition');
+  await expect(bookLink).toHaveAttribute('href',readerURL({entry:ourAddress(id)}));
+  const [stella]=await Promise.all([context.waitForEvent('page'),bookLink.click()]);
+  await readerReady(stella);
+  expect(new URL(stella.url()).searchParams.get('entry')).toBe(ourAddress(id));
+  expect(o5eFrame(stella)).toBeTruthy();
+  await stella.locator('#tab-outline').click();
+  const entryLink=stella.locator(`#book-outline a[href="/?entry=${id}"]`);
+  const [entry]=await Promise.all([context.waitForEvent('page'),entryLink.click()]);
+  await expect(entry.locator('#entry-title')).toHaveText('火球术');
+  await expect(entry.locator('#detail .o5e-provenance')).toContainText('our5etools');
+  expect(new URL(entry.url()).searchParams.get('entry')).toBe(id);
 });
 
-test('2. Chinese & English search, 5e/5r stacking vs each, community homonym isolation, and Chinese-only entry',async({page})=>{
+test('Chinese and English search works in one library, with and without stacking',async({page})=>{
   // Chinese exact search: 火球术 stacks PHB (5e) + XPHB (5r) into 1 official row
-  await page.goto(anna+'/?collection=our5etools&type=spell&q='+encodeURIComponent('火球术'));
+  await page.goto(anna+'/?type=spell&q='+encodeURIComponent('火球术'));
   await resultsReady(page);
   const stackedCount=await page.locator('#results tr').count();
   expect(stackedCount).toBeGreaterThanOrEqual(1);
 
   // One row per version is a library choice, not part of the link.
-  await page.evaluate(()=>localStorage.setItem('anna.library',JSON.stringify({versions:'each'})));
+  await page.evaluate(()=>{
+    const settings=JSON.parse(localStorage.getItem('anna.library'));
+    localStorage.setItem('anna.library',JSON.stringify({...settings,versions:'each'}));
+  });
   await page.reload();
   await resultsReady(page);
   const eachCount=await page.locator('#results tr').count();
   expect(eachCount).toBeGreaterThan(stackedCount);
-  await page.evaluate(()=>localStorage.removeItem('anna.library'));
+  await page.evaluate(()=>{
+    const settings=JSON.parse(localStorage.getItem('anna.library'));
+    localStorage.setItem('anna.library',JSON.stringify({...settings,versions:'stacked'}));
+  });
 
   // English search: Fireball
-  await page.goto(anna+'/?collection=our5etools&type=spell&q=Fireball');
+  await page.goto(anna+'/?type=spell&q=Fireball');
   await resultsReady(page);
   await expect(page.locator('#results .entry-name').filter({hasText:'火球术'}).first()).toBeVisible();
 
-  // Community package homonyms (下毒术 in 2 distinct brew packages) stay unmerged even in stacked mode!
-  await page.goto(anna+'/?collection=our5etools&type=spell&q='+encodeURIComponent('下毒术'));
+  // Even when only our5etools is selected, the two community versions share a row.
+  await page.goto(anna+'/?type=spell&q='+encodeURIComponent('下毒术'));
   await resultsReady(page);
   const homonymRows=page.locator('#results .entry-name').filter({hasText:/^下毒术$/});
-  await expect(homonymRows).toHaveCount(2);
+  await expect(homonymRows).toHaveCount(1);
+  await expect(homonymRows.locator('xpath=ancestor::tr').locator('.version-pill')).toHaveCount(2);
 
   // Chinese-only entry without English name (DND5e2014新人向科普) is searchable & openable
-  await page.goto(anna+'/?collection=our5etools&q='+encodeURIComponent('DND5e2014新人向科普'));
+  await page.goto(anna+'/?q='+encodeURIComponent('DND5e2014新人向科普'));
   await resultsReady(page);
   const comicRow=page.locator('#results .entry-name').filter({hasText:'DND5e2014新人向科普'}).first();
   await expect(comicRow).toBeVisible();
@@ -120,9 +128,9 @@ test('2. Chinese & English search, 5e/5r stacking vs each, community homonym iso
   await expect(page.locator('#detail .o5e-provenance')).toBeVisible();
 });
 
-test('3. monster _copy parent ref button and local .opus audio playback route',async({page,request})=>{
+test('monster copy parent resolves to its entry and audio plays from the local route',async({page,request})=>{
   // Creature with _copy parent (阿弗纳斯的大公扎瑞尔 -> 扎瑞尔)
-  await page.goto(anna+'/?collection=our5etools&type=creature&q='+encodeURIComponent('阿弗纳斯的大公扎瑞尔'));
+  await page.goto(anna+'/?type=creature&q='+encodeURIComponent('阿弗纳斯的大公扎瑞尔'));
   await resultsReady(page);
   await page.locator('#results .entry-name').filter({hasText:'阿弗纳斯的大公扎瑞尔'}).first().click();
   await expect(page.locator('#entry-title')).toHaveText('阿弗纳斯的大公扎瑞尔');
@@ -131,10 +139,10 @@ test('3. monster _copy parent ref button and local .opus audio playback route',a
   const parentName=(await copyParentBtn.textContent()).trim();
   await copyParentBtn.click();
   await expect(page.locator('#entry-title')).toHaveText(parentName);
-  expect(new URL(page.url()).searchParams.get('collection')).toBe('our5etools');
+  expect(new URL(page.url()).searchParams.has('collection')).toBe(false);
 
   // Creature with transcoded local .opus audio (吸血鬼 -> /our5etools-media/audio/bestiary/vampire.opus)
-  await page.goto(anna+'/?collection=our5etools&type=creature&q='+encodeURIComponent('吸血鬼')+'&source=src%3AXMM');
+  await page.goto(anna+'/?type=creature&q='+encodeURIComponent('吸血鬼')+'&source=src%3AXMM');
   await resultsReady(page);
   await page.locator('#results .entry-name').filter({hasText:/^吸血鬼$/}).first().click();
   await expect(page.locator('#entry-title')).toHaveText('吸血鬼');
@@ -148,8 +156,8 @@ test('3. monster _copy parent ref button and local .opus audio playback route',a
   expect(rangeResp.status()).toBe(206);
 });
 
-test('4. class 1-20 progression table, {@filter} link, and button.ref stay strictly inside collection=our5etools',async({page})=>{
-  await page.goto(anna+'/?collection=our5etools&type=class&q='+encodeURIComponent('法师')+'&source=src%3AXPHB');
+test('class progression, filter links and references retain their targets',async({page})=>{
+  await page.goto(anna+'/?type=class&q='+encodeURIComponent('法师')+'&source=src%3AXPHB');
   await resultsReady(page);
   await page.locator('#results .entry-name').filter({hasText:/^法师$/}).first().click();
   await expect(page.locator('#entry-title')).toHaveText('法师');
@@ -165,24 +173,25 @@ test('4. class 1-20 progression table, {@filter} link, and button.ref stay stric
   await expect(refBtn).toBeVisible();
   const targetId=await refBtn.getAttribute('data-entry');
   await refBtn.click();
-  await expect(page).toHaveURL(new RegExp('collection=our5etools'));
   await expect(page).toHaveURL(new RegExp('entry='+targetId));
 
-  // Return to Wizard and verify {@filter} link navigates within collection=our5etools with valid facets
+  // The rendered filter link keeps its query; it does not set the reader’s collection.
   await page.goBack();
   await expect(page.locator('#entry-title')).toHaveText('法师');
-  const filterLink=page.locator('#detail-content a.ref-filter[href*="collection=our5etools"]').first();
+  const filterLink=page.locator('#detail-content a.ref-filter').first();
   await expect(filterLink).toBeVisible();
   const href=await filterLink.getAttribute('href');
-  expect(href).toContain('collection=our5etools');
   await page.goto(anna+href);
   await resultsReady(page);
-  await expect(pin(page)).toContainText('our5etools');
+  await expect(summary(page)).toHaveText('our5etools');
+  expect(new URL(page.url()).searchParams.has('collection')).toBe(false);
+  const requested=new URL(href,anna).searchParams;
+  for(const [key,value] of requested)if(key!=='collection')expect(new URL(page.url()).searchParams.getAll(key)).toContain(value);
   expect(await page.locator('#results tr').count()).toBeGreaterThan(0);
 });
 
-test('5. provenance card and remote unbundled image notice render cleanly without claiming offline bundle',async({page})=>{
-  await page.goto(anna+'/?collection=our5etools&type=magic_item&q='+encodeURIComponent('远古法师手册'));
+test('the provenance card distinguishes an unbundled image from local media',async({page})=>{
+  await page.goto(anna+'/?type=magic_item&q='+encodeURIComponent('远古法师手册'));
   await resultsReady(page);
   await page.locator('#results .entry-name').filter({hasText:'远古法师手册'}).first().click();
   await expect(page.locator('#entry-title')).toHaveText('远古法师手册');
@@ -201,7 +210,7 @@ test('5. provenance card and remote unbundled image notice render cleanly withou
   await expect(page.locator('#detail [data-lazy-media]').first()).toBeVisible();
 });
 
-test('5b. lazy media displays served image and collapses cleanly to fallback note on 404',async({page})=>{
+test('lazy media displays a served image and falls back to the note on 404',async({page})=>{
   const okPng=Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
     'base64',
@@ -230,7 +239,7 @@ test('5b. lazy media displays served image and collapses cleanly to fallback not
     await route.fulfill({status:resp.status(),headers:resp.headers(),body:JSON.stringify(json)});
   });
 
-  await page.goto(anna+'/?collection=our5etools&type=magic_item&q='+encodeURIComponent('远古法师手册'));
+  await page.goto(anna+'/?type=magic_item&q='+encodeURIComponent('远古法师手册'));
   await resultsReady(page);
   await page.locator('#results .entry-name').filter({hasText:'远古法师手册'}).first().click();
 
@@ -246,108 +255,178 @@ test('5b. lazy media displays served image and collapses cleanly to fallback not
   await expect(failFig.locator('.o5e-media-fallback-note')).toContainText('远端配图（未离线收录）');
 });
 
-test('6. Tour (collection=our5etools): bookshelf & pack drill-down, scope banner, widen-to-all, and mobile back',async({page})=>{
-  await page.setViewportSize({width:1280,height:800});
-  await page.goto(anna+'/tour?collection=our5etools');
-  await tourReady(page,0);
-  await expect(tourLevel(page,0).locator('h3').first()).toHaveText('建角入门');
+test('the unified tour lists extra books and packages, and its chapter follows the chosen text',async({page,request})=>{
+  await chooseLibraries(page,both);
+  const collections=await (await request.get(anna+'/api/library?works=1')).json();
+  const ourPHB=collections.collections.find(c=>c.id==='our5etools').works.find(w=>w.reader_root==='n_book_xphb');
+  const spells=await (await request.get(anna+'/api/entries?libraries=5echm,our5etools&type=spell&limit=1')).json();
 
-  // Drill into official books -> filter -> open 玩家手册（2024）
-  await tourRow(page,0,'官方规则书').click();
-  await tourReady(page,1);
-  const filterInput=tourLevel(page,1).locator('.tour-filter-input').first();
-  await expect(filterInput).toBeVisible();
-  await filterInput.fill('玩家手册');
-  await tourRow(page,1,'玩家手册（2024）').click();
-  await tourReady(page,2);
+  await page.goto(anna+tourURL('create'));await tourReady(page,1);
+  const read=tourLevel(page,1).locator('.tour-go[href^="/read?"]');
+  await expect(read).toHaveAttribute('href',/^\/read\?root=5echm%3A/);
+  await page.locator('.library-button').click();
+  const editions=page.locator('.library-editions');
+  await editions.locator('summary').click();
+  await editions.locator(`input[data-edition][value="${ourAddress(ourPHB.id)}"]`).check();
+  await page.keyboard.press('Escape');
+  await expect(read).toHaveAttribute('href',/^\/read\?root=our5etools%3A/);
+  await expect(page).toHaveURL(anna+tourURL('create'));
 
-  // Scoped banner & explicit widen-to-all
-  const scopeBanner=tourLevel(page,2).locator('.tour-scope');
-  await expect(scopeBanner).toBeVisible();
-  await expect(scopeBanner).toContainText('当前范围');
-  const widenLink=scopeBanner.locator('a[data-widen]');
-  await expect(widenLink).toBeVisible();
-  await expect(widenLink).toContainText('放宽到全库');
+  await page.goto(anna+'/tour');await tourReady(page,0);
+  const root=tourLevel(page,0);
+  await expect(root.locator('h3').first()).toHaveText('开始游戏');
+  await expect(tourRow(page,0,'官方规则书').locator('.tour-item-hint')).toHaveText('our5etools');
+  await expect(root.locator('[data-segment="spells"] .tour-item-count')).toHaveText(spells.versions_total.toLocaleString('zh-CN'));
 
-  // Scoped topic with explicit scope_source narrows and widens back cleanly
-  await page.goto(anna+'/tour?collection=our5etools&at=spells-by-level&scope_source=src%3AXPHB');
-  await tourReady(page,1);
-  const scopedBanner=tourLevel(page,1).locator('.tour-scope');
-  await expect(scopedBanner).toBeVisible();
-  const scopedText=await scopedBanner.textContent();
-  await scopedBanner.locator('a[data-widen]').click();
-  await tourReady(page,1);
-  await expect(tourLevel(page,1).locator('.tour-scope')).toHaveCount(0);
-  expect(new URL(page.url()).searchParams.get('scope_source')).toBeNull();
-  expect(scopedText).toContain('当前范围');
-
-  // Drill into site packs
-  await page.goto(anna+'/tour?collection=our5etools');
-  await tourReady(page,0);
-  await tourRow(page,0,'站点自有包（精选）').click();
-  await tourReady(page,1);
-  await tourLevel(page,1).locator('.tour-item').first().click();
-  await tourReady(page,2);
-  await expect(tourLevel(page,2).locator('.tour-scope')).toBeVisible();
-
-  // Narrow mobile viewport (<760px): drill-down & back link
   await page.setViewportSize({width:375,height:812});
-  await page.goto(anna+'/tour?collection=our5etools');
-  await tourReady(page,0);
-  await tourRow(page,0,'法术（按环阶）').click();
-  await tourReady(page,1);
-  const backBtn=tourLevel(page,1).locator('.tour-back');
-  await expect(backBtn).toBeVisible();
-  await backBtn.click();
-  await tourReady(page,0);
+  await tourRow(page,0,'站点自有包（精选）').click();await tourReady(page,1);
+  const first=tourLevel(page,1).locator('.tour-item[data-segment^="our5etools:pack."]').first();
+  const segment=await first.getAttribute('data-segment');
+  await first.click();await tourReady(page,2);
+  expect(new URL(page.url()).searchParams.get('at')).toBe('packs-ours/'+segment);
+  const packQuery=tourLevel(page,2).locator('.tour-go[href*="package="]');
+  await expect(packQuery).toBeVisible();
+  const packageURL=new URL(await packQuery.getAttribute('href'),anna);
+  expect(packageURL.searchParams.get('package')).toBeTruthy();
+  expect(packageURL.searchParams.has('collection')).toBe(false);
+  await tourLevel(page,2).locator('.tour-back').click();await tourReady(page,1);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.setViewportSize({width:1280,height:800});
 });
 
-test('7. Stella reader (/read?collection=our5etools): TOC, chapter iframe, paging, book search, reload & mobile 375px',async({page})=>{
-  await page.setViewportSize({width:1280,height:800});
-  await page.goto(anna+'/read?collection=our5etools&root=n_book_phb&page=books%2Fphb%2F0.html');
-  await readerReady(page);
-  expect(new URL(page.url()).searchParams.get('collection')).toBe('our5etools');
+test('Stella opens our5etools chapters on the shared shelf and restores paging after reload',async({page})=>{
+  await chooseLibraries(page,both);
+  const initial={root:ourAddress('n_book_phb'),page:ourAddress('books/phb/0.html')};
+  await page.goto(anna+readerURL(initial));await readerReady(page);
+  expect(o5eFrame(page)).toBeTruthy();
+  await expect(o5eFrame(page).locator('body')).toContainText('玩家手册');
 
-  // Chapter iframe is served from /our5etools-book/
-  const frame=o5eFrame(page);
-  expect(frame).toBeTruthy();
-  await expect(frame.locator('body')).toContainText('玩家手册');
-
-  // Next chapter paging stays inside collection=our5etools and renders chapter tables
   const nextBtn=page.locator('#book-next');
-  await expect(nextBtn).toHaveAttribute('aria-disabled','false');
-  await nextBtn.click();
-  await readerReady(page);
-  expect(new URL(page.url()).searchParams.get('collection')).toBe('our5etools');
-  expect(new URL(page.url()).searchParams.get('page')).toBe('books/phb/1.html');
+  await expect(nextBtn).toHaveAttribute('aria-disabled','false');await nextBtn.click();await readerReady(page);
+  const at=()=>Object.fromEntries(new URL(page.url()).searchParams);
+  expect(at()).toMatchObject({root:initial.root,page:ourAddress('books/phb/1.html')});
   const nextFrame=page.frames().find(f=>f.url().endsWith('/our5etools-book/books/phb/1.html'));
   expect(nextFrame).toBeTruthy();
   await expect(nextFrame.locator('table').first()).toBeVisible();
 
-  // Reload restores location in collection=our5etools
-  await page.reload();
-  await readerReady(page);
-  expect(new URL(page.url()).searchParams.get('collection')).toBe('our5etools');
-  expect(new URL(page.url()).searchParams.get('page')).toBe('books/phb/1.html');
+  await page.reload();await readerReady(page);
+  expect(at()).toMatchObject({root:initial.root,page:ourAddress('books/phb/1.html')});
 
-  // Book search finds 火球术 and stays inside collection=our5etools
-  await page.locator('#tab-search').click();
-  await page.locator('#book-search').fill('火球术');
-  await page.locator('#book-search-form button').click();
-  await expect(page.locator('#book-search-results li').first()).toBeVisible();
-  const firstSearchLink=page.locator('#book-search-results li a').first();
-  await expect(firstSearchLink).toHaveAttribute('href',/collection=our5etools/);
-
-  // 375x812 mobile viewport has zero horizontal overflow
   await page.setViewportSize({width:375,height:812});
-  await page.goto(anna+'/read?collection=our5etools&root=n_book_phb&page=books%2Fphb%2F0.html');
-  await readerReady(page);
+  await page.goto(anna+readerURL(initial));await readerReady(page);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.setViewportSize({width:1280,height:800});
 });
 
-test('8. CSV export (5e-anna-our5etools.csv) and 5echm unscoped links non-regression',async({page})=>{
-  await page.goto(anna+'/?collection=our5etools&type=spell&q='+encodeURIComponent('火球术'));
+test('Stella shows one text for a shared work and switches to the matching chapter',async({page,request})=>{
+  await chooseLibraries(page,both);
+  const shelf=await (await request.get(anna+'/api/reader?libraries=5echm,our5etools')).json();
+  const nativeRoot=shelf.nodes.find(n=>n.label==='玩家手册2024'&&!n.parent_id);
+  const otherRoot=shelf.nodes.find(n=>n.id===ourAddress('n_book_xphb'));
+  const chapter=root=>shelf.nodes.find(n=>n.parent_id===root.id&&n.label.endsWith('章：进行游戏'));
+  const native=chapter(nativeRoot), other=chapter(otherRoot);
+  const url=()=>Object.fromEntries(new URL(page.url()).searchParams);
+  const treeNode=root=>page.locator(`#book-tree [data-node="${root.id}"]`);
+  const texts=page.getByRole('group',{name:'这部作品在资料库中有 2 份文本'});
+  const nativeText=texts.getByRole('button',{name:'不全书',exact:true});
+  const otherText=texts.getByRole('button',{name:'our5etools',exact:true});
+
+  await page.goto(anna+readerURL({root:native.id}));await readerReady(page);
+  await expect(treeNode(nativeRoot)).toBeVisible();
+  await expect(treeNode(otherRoot)).toHaveCount(0);
+  await expect(nativeText).toHaveAttribute('aria-pressed','true');
+  await expect(otherText).toHaveAttribute('aria-pressed','false');
+
+  await otherText.press('Enter');
+  await expect(otherText).toHaveAttribute('aria-pressed','true');await readerReady(page);
+  expect(url()).toMatchObject({root:other.id,node:other.id,page:other.path});
+  await expect(treeNode(nativeRoot)).toHaveCount(0);
+  await expect(treeNode(otherRoot).locator('.toc-collection')).toHaveText('our5etools');
+  await expect(page.frameLocator('#content').locator('body')).toContainText('进行游戏');
+
+  await page.goBack();await readerReady(page);
+  expect(url().root).toBe(native.id);
+  await expect(nativeText).toHaveAttribute('aria-pressed','true');
+  await page.goForward();await readerReady(page);
+  await page.reload();await readerReady(page);
+  expect(url()).toMatchObject({root:other.id,node:other.id,page:other.path});
+  await expect(otherText).toHaveAttribute('aria-pressed','true');
+
+  // Reordering the shelf uses the new scope without reloading the text being read.
+  const frame=o5eFrame(page);
+  await frame.evaluate(()=>window.testReadingMarker='kept');
+  await page.locator('.library-button').click();
+  const reordered=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/reader' &&
+    new URL(r.url()).searchParams.get('libraries')==='our5etools,5echm' && r.ok());
+  await page.getByRole('button',{name:'上移 our5etools'}).click();
+  await page.keyboard.press('Escape');
+  await reordered;
+  await expect(treeNode(otherRoot).locator('.toc-collection')).toHaveCount(0);
+  expect(await o5eFrame(page).evaluate(()=>window.testReadingMarker)).toBe('kept');
+  expect(url()).toMatchObject({root:other.id,node:other.id,page:other.path});
+});
+
+test('full-text results from both libraries identify their source and open the exact chapter',async({page})=>{
+  await chooseLibraries(page,both);
+  await page.goto(anna+'/read');await readerReady(page);
+  await page.locator('#tab-search').click();
+  await page.locator('#book-search').fill('进行游戏');
+  await page.locator('#book-title-only').check();
+  await page.locator('#book-search-form button').click();
+  const native=page.locator('#book-search-results li').filter({has:page.getByRole('link',{name:'第一章：进行游戏',exact:true})});
+  const other=page.locator('#book-search-results li').filter({has:page.getByRole('link',{name:'玩家手册（2024） — 第 1 章：进行游戏',exact:true})});
+  await expect(native.locator('small')).toContainText('不全书');
+  await expect(other.locator('small')).toContainText('our5etools');
+  expect(new URL(await native.getByRole('link').getAttribute('href'),anna).searchParams.get('page')).toBe(bookAddress('topics/玩家手册2024/第一章：进行游戏.htm'));
+  await other.getByRole('link').click();await readerReady(page);
+  expect(new URL(page.url()).searchParams.get('page')).toBe(ourAddress('books/xphb/1.html'));
+  expect(o5eFrame(page)).toBeTruthy();
+});
+
+test('an address outside the selected shelf explains how to enable its collection',async({page})=>{
+  await chooseLibraries(page,['5echm']);
+  const url=anna+readerURL({page:ourAddress('books/phb/0.html')});
+  await page.goto(url);
+  await expect(page.locator('#book-error')).toContainText('不在你的资料库设置中');
+  await expect(page.locator('#content')).toHaveCount(0);
+  await page.getByRole('button',{name:'资料库设置…'}).press('Enter');
+  const dialog=page.getByRole('dialog',{name:'资料库'});
+  await expect(dialog).toBeVisible();
+  const included=dialog.locator('input[data-library="our5etools"]');
+  await expect(included).not.toBeChecked();await included.check();
+  await page.keyboard.press('Escape');
+  await page.reload();await readerReady(page);
+  expect(o5eFrame(page)).toBeTruthy();
+});
+
+test('a reading root outside the selected shelf offers library settings',async({page})=>{
+  const root=ourAddress('n_book_phb'),chapter=ourAddress('books/phb/1.html');
+  for(const [enabled,target] of [
+    [['5echm'],{root}],
+    [['demo'],{root}], // The only enabled collection has no reader.
+    [['5echm'],{root,page:chapter}],
+  ]){
+    await chooseLibraries(page,enabled);
+    await page.goto(anna+readerURL(target));
+    await expect(page.locator('#book-error')).toContainText('不在你的资料库设置中');
+    await expect(page.getByRole('button',{name:'资料库设置…'})).toBeVisible();
+    await expect(page.locator('#content')).toHaveCount(0);
+  }
+
+  await page.getByRole('button',{name:'资料库设置…'}).press('Enter');
+  const dialog=page.getByRole('dialog',{name:'资料库'});
+  await expect(dialog).toBeVisible();
+  const included=dialog.locator('input[data-library="our5etools"]');
+  await expect(included).not.toBeChecked();await included.check();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await page.reload();await readerReady(page);
+  expect(Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({root,page:chapter});
+  expect(o5eFrame(page).url()).toBe(o5eBook+'/books/phb/1.html');
+});
+
+test('export uses the selected library and navigation links stay unscoped',async({page})=>{
+  await page.goto(anna+'/?type=spell&q='+encodeURIComponent('火球术'));
   await resultsReady(page);
   const [download]=await Promise.all([
     page.waitForEvent('download'),
@@ -361,10 +440,11 @@ test('8. CSV export (5e-anna-our5etools.csv) and 5echm unscoped links non-regres
   expect(csvText).toContain('火球术');
   expect(csvText).toContain('our5etools');
 
-  // 5echm default links stay clean and unscoped (no collection=5echm)
+  // Navigation links stay clean; changing the library, not the link, brings the default source back.
+  await chooseLibraries(page,['5echm']);
   await page.goto(anna);
   await resultsReady(page);
-  await expect(pin(page)).toBeHidden();
+  await expect(summary(page)).toHaveText('不全书');
   expect(new URL(page.url()).searchParams.get('collection')).toBeNull();
   const tourSwitch=page.locator('.page-switch a').filter({hasText:'导览'});
   await expect(tourSwitch).toHaveAttribute('href',/^\/tour($|\?at=)/);

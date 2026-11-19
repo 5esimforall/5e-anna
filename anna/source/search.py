@@ -217,30 +217,12 @@ def make_preview(text: str, text_lower: str, terms: list[str]) -> str:
     )
 
 
-def search_entries(entries: list[dict], params: dict[str, list[str]]) -> dict:
-    keyword = (params.get("keyword") or [""])[0].strip()
-    terms = parse_terms(keyword)
-    if not terms:
-        return {"results": [], "total": 0, "page": 1, "totalPages": 0, "pageSize": 0}
+def ranked_hits(entries: list[dict], terms: list[str], *, title_only: bool = False, category: str = "all",
+                allowed: set[int] | None = None) -> tuple[str, list[tuple[int, int]]]:
+    """Every page matching all terms, best first, or any term when none matches all.
 
-    def first(name: str, default: str) -> str:
-        return (params.get(name) or [default])[0]
-
-    title_only = first("titleOnly", "false").lower() in ("true", "1")
-    category = first("category", "all")
-    try:
-        page = max(1, int(first("page", "1") or 1))
-    except ValueError:
-        page = 1
-    try:
-        page_size = min(200, max(1, int(first("pageSize", "100") or 100)))
-    except ValueError:
-        page_size = 100
-
-    allowed: set[int] | None = None
-    base = first("baseIndexes", "")
-    if base:
-        allowed = {int(x) for x in base.split(",") if x.strip().isdigit()}
+    Returns the match mode and (score, page index) pairs. A title hit counts a thousand body hits, so scores from
+    different collections ranked by the same rule compare directly."""
 
     def collect(require_all: bool) -> list[tuple[int, int]]:
         hits: list[tuple[int, int]] = []
@@ -276,24 +258,49 @@ def search_entries(entries: list[dict], params: dict[str, list[str]]) -> dict:
         hits = collect(require_all=False)
         match = 'any'
     hits.sort(key=lambda item: (-item[0], item[1]))
+    return match, hits
 
+
+def search_result(entry: dict, terms: list[str], score: int) -> dict:
+    """One page as a search result, its preview cut around the first term found."""
+    return {
+        "index": entry["i"],
+        "title": entry["title"],
+        "rawTitle": entry["title"],
+        "path": entry["url"],
+        "sourcePath": entry["src"],
+        "rank": score,
+        "preview": make_preview(entry["text"], entry["tl"], terms),
+        "category": entry["cat"],
+    }
+
+
+def search_entries(entries: list[dict], params: dict[str, list[str]]) -> dict:
+    keyword = (params.get("keyword") or [""])[0].strip()
+    terms = parse_terms(keyword)
+    if not terms:
+        return {"results": [], "total": 0, "page": 1, "totalPages": 0, "pageSize": 0}
+
+    def first(name: str, default: str) -> str:
+        return (params.get(name) or [default])[0]
+
+    title_only = first("titleOnly", "false").lower() in ("true", "1")
+    try:
+        page = max(1, int(first("page", "1") or 1))
+    except ValueError:
+        page = 1
+    try:
+        page_size = min(200, max(1, int(first("pageSize", "100") or 100)))
+    except ValueError:
+        page_size = 100
+    allowed: set[int] | None = None
+    base = first("baseIndexes", "")
+    if base:
+        allowed = {int(x) for x in base.split(",") if x.strip().isdigit()}
+    match, hits = ranked_hits(entries, terms, title_only=title_only, category=first("category", "all"), allowed=allowed)
     total = len(hits)
     start = (page - 1) * page_size
-    results = []
-    for score, index in hits[start:start + page_size]:
-        entry = entries[index]
-        results.append(
-            {
-                "index": entry["i"],
-                "title": entry["title"],
-                "rawTitle": entry["title"],
-                "path": entry["url"],
-                "sourcePath": entry["src"],
-                "rank": score,
-                "preview": make_preview(entry["text"], entry["tl"], terms),
-                "category": entry["cat"],
-            }
-        )
+    results = [search_result(entries[index], terms, score) for score, index in hits[start:start + page_size]]
     return {
         "results": results,
         "match": match,

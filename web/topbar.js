@@ -3,50 +3,16 @@
    It runs right after the page's header so the bar is complete before the first paint. The header names its
    page and holds only the controls that belong to that page; this script adds everything the pages share. */
 const annaTopbar = (() => {
-  const defaultCollection = '5echm';
-  const thisPage = document.querySelector('header.topbar[data-page]')?.dataset.page;
   const library = typeof annaLibrary === 'undefined' ? null : annaLibrary;
-  // The collection this page shows: the address's, else (on the tour and Stella) the first one in the reader's library.
-  function activeCollection(page = thisPage) {
-    if (typeof location === 'undefined') return defaultCollection;
-    const raw = new URLSearchParams(location.search).get('collection');
-    if (raw && raw.trim()) return raw.trim();
-    return library && (page === 'tour' || page === 'book') ? library.pageCollection(page) : defaultCollection;
-  }
-  // Anna's query page reads the whole library; a link there names a collection only when the library leaves it out.
-  function withCollection(href, collection = activeCollection()) {
-    if (!href || !collection || collection === defaultCollection) return href;
-    if (library && /^\/(\?|$)/.test(href) && library.libraries().includes(collection)) return href;
-    try {
-      const url = new URL(href, 'http://anna.local');
-      if (!url.searchParams.has('collection')) {
-        const next = new URLSearchParams();
-        next.set('collection', collection);
-        for (const [k, v] of url.searchParams.entries()) next.append(k, v);
-        return url.pathname + '?' + next + url.hash;
-      }
-      return url.pathname + url.search + url.hash;
-    } catch {
-      return href;
-    }
-  }
-  function tourStorageKey(collection = activeCollection()) {
-    return collection && collection !== defaultCollection ? 'anna.tour.' + collection : 'anna.tour';
-  }
+  // A tour level is named by its segments from the first column down, each `topic` or `collection:segment`.
+  const TOUR_PATH = /^[A-Za-z0-9_.:-]+(\/[A-Za-z0-9_.:-]+)*$/;
   // Each page belongs to one companion: Anna answers queries and keeps the tour, Stella reads the book with you.
   const pages = {
     query:{home:'/', logo:'/anna-logo.png', companion:'query'},
     // The tour remembers the last level the reader opened; turning back to it from the query page returns there.
     tour:{home:'/tour', logo:'/anna-logo.png', companion:'query', resume() {
-      const col = activeCollection('tour');
-      const at = annaKit.stored.get(tourStorageKey(col));
-      if (!at) return null;
-      if (col === defaultCollection) {
-        return /^[\w-]+(\.[\w-]+)*$/.test(at) ? '/tour?at=' + at : null;
-      }
-      if (!/^[\w.-]+(\/[\w.-]+)*$/.test(at) || at.split('/').some(seg => seg === '.' || seg === '..')) return null;
-      const params = new URLSearchParams({collection: col, at});
-      return '/tour?' + params;
+      const at = annaKit.stored.get('anna.tour');
+      return at && TOUR_PATH.test(at) ? '/tour?' + new URLSearchParams({at}) : null;
     }},
     book:{home:'/read', logo:'/stella-logo.png', companion:'book'}
   };
@@ -67,7 +33,7 @@ const annaTopbar = (() => {
     const nav = document.createElement('nav'); nav.className = 'page-switch'; nav.setAttribute('aria-label', labels.label);
     for (const key of ['tour', 'query'].filter(key => siblings.includes(key))) {
       const link = document.createElement('a');
-      link.href = withCollection(key === page ? pages[key].home : pages[key].resume?.() || pages[key].home, activeCollection(key === 'query' ? page : key));
+      link.href = key === page ? pages[key].home : pages[key].resume?.() || pages[key].home;
       link.dataset.page = key;
       link.textContent = labels[key];
       if (key === page) link.setAttribute('aria-current', 'page');
@@ -77,7 +43,7 @@ const annaTopbar = (() => {
   }
   function render(header) {
     const page = header.dataset.page, {home, logo} = pages[page];
-    const brand = document.createElement('a'); brand.className = 'brand'; brand.href = withCollection(home);
+    const brand = document.createElement('a'); brand.className = 'brand'; brand.href = home;
     const image = document.createElement('img'); image.className = 'brand-logo'; image.src = logo;
     image.width = image.height = 36; image.alt = ''; // The name beside it already labels the link.
     brand.append(image, annaBrands[page]);
@@ -100,7 +66,7 @@ const annaTopbar = (() => {
   // A page that remembers where the reader was points its switch link there instead of at its home.
   function pointSwitch(page, href) {
     const link = document.querySelector(`.page-switch a[data-page="${page}"]`);
-    if (link && href) link.href = withCollection(href);
+    if (link && href) link.href = href;
   }
-  return {pages, pointSwitch, activeCollection, withCollection, tourStorageKey};
+  return {pages, pointSwitch};
 })();

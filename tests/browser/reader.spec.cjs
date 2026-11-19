@@ -1,5 +1,6 @@
 /* Real-corpus reader checks. Faults below affect transport, never rule identity. */
 const {test:base,expect} = require('@playwright/test');
+const {bookAddress,bookCollection,localAddress}=require('./locations.cjs');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
 const anna=`http://127.0.0.1:${port}`, book=`http://127.0.0.1:${port}/book`, original=`http://127.0.0.1:${port}/__original`;
 const test=base.extend({context:async({context},use)=>{
@@ -103,7 +104,7 @@ function markColors(frame){
 
 test('marking links tints every link anna recognized, by destination and theme, without changing the source',async({page},testInfo)=>{
   const {PNG}=require('pngjs'),pixelmatch=(await import('pixelmatch')).default;
-  await visit(page,{page:cases.spell.path});
+  await visit(page,{page:bookAddress(cases.spell.path)});
   const toggle=page.locator('#book-link-marks'),f=content(page);
   await expect(toggle).toBeVisible();
   await expect(toggle).toHaveAccessibleName('标出 Anna 识别的链接');
@@ -149,15 +150,15 @@ test('marking links tints every link anna recognized, by destination and theme, 
 
 test('link marks persist in this browser, reach later documents and other tabs; without text highlights there is no switch',async({page,context,browser})=>{
   const ref=cases.reference;
-  await visit(page,{page:cases.reference_source});
+  await visit(page,{page:bookAddress(cases.reference_source)});
   await page.locator('#book-link-marks').click();
   expect(await page.evaluate(()=>localStorage.getItem('anna.linkMarks'))).toBe('on');
   // A document mounted afterwards starts marked: follow a marked reference to its definition on another page.
   await page.frameLocator('#content').getByRole('link',{name:'查看定义: '+ref.text,exact:true}).first().click();
-  await expect.poll(()=>new URL(page.url()).searchParams.get('entry')).toBe(ref.id);await ready(page);
+  await expect.poll(()=>new URL(page.url()).searchParams.get('entry')).toBe(bookAddress(ref.id));await ready(page);
   const target=()=>page.frames().find(f=>decodeURIComponent(f.url()).includes(ref.path));
   await expect.poll(async()=>target() && linkMarks(target())).toEqual(await boundLinks(target()));
-  const other=await context.newPage();await visit(other,{page:cases.spell.path});
+  const other=await context.newPage();await visit(other,{page:bookAddress(cases.spell.path)});
   await expect(other.locator('#book-link-marks')).toHaveAttribute('aria-pressed','true');
   await expect.poll(async()=>(await linkMarks(content(other))).references.length).toBeGreaterThan(0);
   await page.reload();await ready(page);
@@ -170,7 +171,7 @@ test('link marks persist in this browser, reach later documents and other tabs; 
   await expect.poll(()=>linkMarks(content(other))).toEqual({references:[],definitions:[]});
   const plain=await browser.newContext();
   await plain.addInitScript(()=>{if(window===top)Object.defineProperty(CSS,'highlights',{value:undefined,configurable:true});});
-  const unsupported=await plain.newPage();await visit(unsupported,{page:cases.spell.path});
+  const unsupported=await plain.newPage();await visit(unsupported,{page:bookAddress(cases.spell.path)});
   await expect(unsupported.locator('#book-link-marks')).toBeHidden();
   await plain.close();
 });
@@ -188,7 +189,7 @@ test('titles name the open content on both pages',async({page})=>{
   // The open entry is the topic the switcher turns to; companions.spec.cjs covers where each choice leads.
   await page.locator('#results .entry-name').first().click();await expect(page.locator('#entry-title')).toHaveText(name);
   await page.locator('.companion-go').click();await ready(page);
-  expect(new URL(page.url()).searchParams.get('entry')).toBe(entry);
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(bookAddress(entry));
   await expect(page).toHaveTitle(/ · 5e Stella$/);
 });
 
@@ -211,7 +212,7 @@ test('query and reader use the new app; upstream reading entries are gone',async
 
 test('legacy WinCHM page no longer redirects or synchronizes a removed frame',async({page})=>{
   const path='topics/艾伯伦：从终末战争中崛起/背景-家族代理人.html';
-  await visit(page,{page:path});
+  await visit(page,{page:bookAddress(path)});
   await expect(content(page).locator('body')).toContainText('你宣誓效忠于其中一个龙纹家族');
   expect(await content(page).locator('script').allTextContents()).not.toEqual(expect.arrayContaining([expect.stringContaining('parent.nav.tree')]));
   await page.goto(book+'/'+path.split('/').map(encodeURIComponent).join('/'));
@@ -221,12 +222,12 @@ test('legacy WinCHM page no longer redirects or synchronizes a removed frame',as
 
 test('reader footer shows the printed source release and only the search shortcut',async({page})=>{
   await visit(page);
-  expect(meta.source_release.path).toBe('topics/写在前面.html');
-  expect(meta.source_release.version).toMatch(/^\d{8}(?:\.\d+)*$/);
-  await expect(page.locator('.book-sidebar-foot')).toHaveText('不全书 v'+meta.source_release.version+'/ 搜索');
+  expect(bookCollection(meta).source_release.path).toBe('topics/写在前面.html');
+  expect(bookCollection(meta).source_release.version).toMatch(/^\d{8}(?:\.\d+)*$/);
+  await expect(page.locator('.book-sidebar-foot')).toHaveText('不全书 v'+bookCollection(meta).source_release.version+'/ 搜索');
   await expect(page.locator('#book-snapshot')).toHaveCount(0);
   await page.route('**/api/reader',async route=>{
-    const response=await route.fetch();const data=await response.json();data.source_release=null;
+    const response=await route.fetch();const data=await response.json();bookCollection(data).source_release=null;
     await route.fulfill({response,json:data});
   });
   await page.reload();await ready(page);
@@ -236,9 +237,9 @@ test('reader footer shows the printed source release and only the search shortcu
 
 test('duplicate directory entries retain their node; filtering restores expansion and keyboard navigation',async({page})=>{
   const path='topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm';
-  const repeated=meta.nodes.filter(n=>n.path===path && n.status==='present');expect(repeated.length).toBeGreaterThan(1);
+  const repeated=meta.nodes.filter(n=>n.path===bookAddress(path) && n.status==='present');expect(repeated.length).toBeGreaterThan(1);
   const selected=repeated.at(-1);
-  await visit(page,{page:path,node:selected.id});
+  await visit(page,{page:bookAddress(path),node:selected.id});
   await expect(page.locator('#book-tree a[aria-current=page]')).toHaveCount(1);
   await expect(page.locator(`#book-tree [data-node="${selected.id}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
   const expanded=await page.locator('#book-tree [aria-expanded=true]').evaluateAll(nodes=>nodes.map(n=>n.dataset.node));
@@ -260,7 +261,7 @@ test('duplicate directory entries retain their node; filtering restores expansio
 
 test('source reference navigation has one history entry and restores scroll on back, forward and reload',async({page})=>{
   const m=cases.mention;
-  await visit(page,{page:m.path});
+  await visit(page,{page:bookAddress(m.path)});
   const source=content(page);
   const link=source.getByRole('link',{name:'查看定义: '+m.text,exact:true}).first();
   await scrollToPosition(page,1000);
@@ -269,11 +270,11 @@ test('source reference navigation has one history entry and restores scroll on b
   expect(before).toBeGreaterThan(0);
   await expect.poll(()=>page.evaluate(()=>history.state?.book?.position.y)).toBeCloseTo(before,0);
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(new RegExp('entry='+m.target_id));await ready(page);
+  await expect(page).toHaveURL(new RegExp('entry='+encodeURIComponent(bookAddress(m.target_id))));await ready(page);
   expect(content(page).url()).toContain('#'+m.target.fragment);
   await page.goBack();await expect(page).toHaveURL(url);await ready(page);
   await expect.poll(()=>readingPosition(page)).toBeCloseTo(before,0);
-  await page.goForward();await ready(page);await expect(page).toHaveURL(new RegExp('entry='+m.target_id));
+  await page.goForward();await ready(page);await expect(page).toHaveURL(new RegExp('entry='+encodeURIComponent(bookAddress(m.target_id))));
   await page.locator('#book-scroll').evaluate(e=>e.scrollBy(0,250));
   const position=await readingPosition(page);expect(position).toBeGreaterThan(200);
   await page.reload();await ready(page);
@@ -285,13 +286,13 @@ const workspaceKey='anna.workspace';
 async function latestPlace(page){return page.evaluate(key=>JSON.parse(localStorage.getItem(key))?.book[0],workspaceKey);}
 test('closing and reopening the reader resumes its page, directory entry and scroll',async({page,context})=>{
   const path='topics/玩家手册2024/角色职业/野蛮人/野蛮人.htm';
-  const node=meta.nodes.filter(n=>n.path===path && n.status==='present').at(-1).id;
-  await visit(page,{page:path,node});
+  const node=meta.nodes.filter(n=>n.path===bookAddress(path) && n.status==='present').at(-1).id;
+  await visit(page,{page:bookAddress(path),node});
   await scrollToPosition(page,950);
   await expect.poll(async()=>(await latestPlace(page))?.position.y).toBe(950);
   await page.close();
   const reopened=await context.newPage();await visit(reopened);
-  expect(new URL(reopened.url()).searchParams.get('page')).toBe(path);
+  expect(new URL(reopened.url()).searchParams.get('page')).toBe(bookAddress(path));
   expect(new URL(reopened.url()).searchParams.get('node')).toBe(node);
   await expect.poll(()=>readingPosition(reopened)).toBe(950);
   await expect(reopened.locator(`#book-tree [data-node="${node}"] > .toc-row a`)).toHaveAttribute('aria-current','page');
@@ -301,54 +302,56 @@ test('closing and reopening the reader resumes its page, directory entry and scr
 });
 
 test('explicit page and entry links take priority over the remembered reading position',async({page,context})=>{
-  await visit(page,{page:'topics/玩家手册2024/法术详述/1环.htm'});
+  await visit(page,{page:bookAddress('topics/玩家手册2024/法术详述/1环.htm')});
   await scrollToPosition(page,1100);
   await expect.poll(async()=>(await latestPlace(page))?.position.y).toBe(1100);
-  const explicit=await context.newPage();await visit(explicit,{entry:cases.spell.id});
-  expect(new URL(explicit.url()).searchParams.get('entry')).toBe(cases.spell.id);
+  const explicit=await context.newPage();await visit(explicit,{entry:bookAddress(cases.spell.id)});
+  expect(new URL(explicit.url()).searchParams.get('entry')).toBe(bookAddress(cases.spell.id));
   expect(content(explicit).url()).toContain('#anna-'+cases.spell.id);
-  await visit(explicit,{page:'topics/玩家手册2024/法术详述/1环.htm'});
+  await visit(explicit,{page:bookAddress('topics/玩家手册2024/法术详述/1环.htm')});
   await expect.poll(()=>readingPosition(explicit)).toBe(0);
   await page.reload();await ready(page);
   await expect.poll(()=>readingPosition(page)).toBe(1100);
 });
 
 test('invalid, outdated or foreign remembered places fall back to the default page',async({page})=>{
-  await page.goto(anna);
-  const valid={version:2,snapshot:meta.snapshot,root:'',page:'topics/玩家手册2024/法术详述/1环.htm',node:'',position:{x:0,y:900}};
-  for(const book of [[{...valid,position:{x:0,y:-1}}],[{...valid,position:{x:0,y:'900'}}],[{...valid,page:'topics/../index.htm'}],
-      [{...valid,root:'missing-node'}],'not a list']){
-    for(const record of ['{',JSON.stringify({version:1,snapshot:meta.snapshot,book}),JSON.stringify({version:1,snapshot:'old',book:[valid]})]){
-      await page.evaluate(({key,record})=>localStorage.setItem(key,record),{key:workspaceKey,record});
-      await visit(page);
-      expect(content(page).url()).toContain(encodeURI(meta.default_page));
-      await expect.poll(()=>readingPosition(page)).toBe(0);
-      await page.goto(anna);
-    }
+  const valid={version:2,snapshot:bookCollection(meta).snapshot,root:'',page:bookAddress(cases.spell.path),node:'',position:{x:0,y:900}};
+  const books=[
+    [{...valid,position:{x:0,y:-1}}],[{...valid,position:{x:0,y:'900'}}],
+    [{...valid,page:'5echm:topics/../index.htm'}],[{...valid,root:'5echm:missing-node'}],
+    [{...valid,snapshot:'old'}],[{...valid,page:'other:topics/test.htm'}],'not a list'
+  ];
+  for(const record of ['{',...books.map(book=>JSON.stringify({version:2,book}))]){
+    // A static page does not save over the record before the reader validates it.
+    await page.goto(anna+'/anna-logo.png');
+    await page.evaluate(({key,record})=>localStorage.setItem(key,record),{key:workspaceKey,record});
+    await visit(page);
+    expect(content(page).url()).toContain(encodeURI(localAddress(meta.default_page)));
+    await expect.poll(()=>readingPosition(page)).toBe(0);
   }
 });
 
 test('retired single-position storage is ignored and version one positions are rejected',async({page})=>{
   await page.goto(anna);
-  const value={version:1,snapshot:meta.snapshot,page:'topics/玩家手册2024/法术详述/1环.htm',node:'',position:{x:0,y:900}};
+  const value={version:1,snapshot:bookCollection(meta).snapshot,page:bookAddress(cases.spell.path),node:'',position:{x:0,y:900}};
   const raw=JSON.stringify(value);
   await page.evaluate(raw=>localStorage.setItem('anna.bookPosition',raw),raw);
   await visit(page);
-  expect(content(page).url()).toContain(encodeURI(meta.default_page));
+  expect(content(page).url()).toContain(encodeURI(localAddress(meta.default_page)));
   await expect.poll(()=>readingPosition(page)).toBe(0);
   expect(await page.evaluate(()=>localStorage.getItem('anna.bookPosition'))).toBe(raw);
   const model=require('../../web/reader-model.js');
-  expect(model.remembered(value,meta.snapshot,model.index(meta.nodes))).toBeNull();
+  expect(model.remembered(value,()=>bookCollection(meta).snapshot,model.index(meta.nodes))).toBeNull();
 });
 
 test('failed navigation does not replace the last successfully read position',async({page,context})=>{
-  await visit(page,{page:'topics/玩家手册2024/法术详述/1环.htm'});
+  await visit(page,{page:bookAddress('topics/玩家手册2024/法术详述/1环.htm')});
   await scrollToPosition(page,850);
   await expect.poll(async()=>(await latestPlace(page))?.position.y).toBe(850);
   // Leaving the page saves the same place again; only where it is matters.
   const place=({root,page,node,position})=>({root,page,node,position});
   const before=place(await latestPlace(page));
-  await page.goto(anna+'/read?entry=missing-entry');
+  await page.goto(anna+'/read?entry=5echm%3Amissing-entry');
   await expect(page.locator('#book-error')).toBeVisible();
   expect(place(await latestPlace(page))).toEqual(before);
   const reopened=await context.newPage();await visit(reopened);
@@ -356,7 +359,7 @@ test('failed navigation does not replace the last successfully read position',as
 });
 
 test('mobile drawer, focus, outline and resize keep the same document',async({page},testInfo)=>{
-  await page.setViewportSize({width:390,height:844});await visit(page,{entry:cases.spell.id});
+  await page.setViewportSize({width:390,height:844});await visit(page,{entry:bookAddress(cases.spell.id)});
   await expect(page.locator('#book-sidebar')).not.toBeVisible();
   await sidebar(page,'outline');await expect(page.locator('#book-sidebar')).toHaveJSProperty('open',true);
   expect(await page.locator('#book-sidebar').evaluate(e=>e.matches(':modal'))).toBe(true);
@@ -409,17 +412,26 @@ test('full-text results, paging and reading state survive reload; search failure
 });
 
 test('missing and conflicting targets fail explicitly; navigation remains available',async({page})=>{
-  await page.goto(anna+'/read?entry=missing');
+  await page.goto(anna+'/read?entry=5echm%3Amissing');
   await expect(page.locator('#book-error')).toContainText('不会自动跳到同名条目');
   await expect(page.locator('#content')).not.toBeVisible();
   // A failed first target must still leave the complete directory usable.
   await page.locator('#book-error a').click();await ready(page);
-  await page.goto(anna+'/read?entry=missing&page=topics/test.htm');
+  await page.goto(anna+'/read?entry=5echm%3Amissing&page=5echm%3Atopics%2Ftest.htm');
   await expect(page.locator('#book-error')).toContainText('阅读地址无效');
 });
 
+test('an unknown root does not offer settings for a missing or unreadable collection',async({page})=>{
+  for(const root of [bookAddress('absent'),'demo:absent','reserved-demo:absent','not-registered:absent']){
+    await page.goto(anna+'/read?'+new URLSearchParams({root}));
+    await expect(page.locator('#book-error')).toContainText('阅读地址无效');
+    await expect(page.getByRole('button',{name:'资料库设置…'})).toBeHidden();
+    await expect(page.locator('#content')).toHaveCount(0);
+  }
+});
+
 test('late responses and unrelated messages cannot replace the current page',async({page})=>{
-  await visit(page,{entry:cases.spell.id});await sidebar(page,'outline');
+  await visit(page,{entry:bookAddress(cases.spell.id)});await sidebar(page,'outline');
   const links=page.locator('#book-outline li > a:first-child');
   const slow=await links.nth(0).getAttribute('href'), fast=await links.nth(1).getAttribute('href');
   const slowId=new URL(slow,anna).searchParams.get('entry');
@@ -429,13 +441,13 @@ test('late responses and unrelated messages cannot replace the current page',asy
   });
   await links.nth(0).click();await links.nth(1).click();
   await expect(page).toHaveURL(anna+fast);await ready(page);
-  await page.evaluate(snapshot=>window.postMessage({channel:'anna-reader',version:2,type:'navigate',snapshot,route:{page:'topics/写在前面.html'}},location.origin),meta.snapshot);
+  await page.evaluate(snapshot=>window.postMessage({channel:'anna-reader',version:2,type:'navigate',snapshot,route:{page:'5echm:topics/写在前面.html'}},location.origin),bookCollection(meta).snapshot);
   await page.waitForTimeout(650);await expect(page).toHaveURL(anna+fast);
 });
 
 test('disabled storage still permits navigation, shared shell theme and link marks; original text stays unchanged',async({page,context})=>{
   await context.addInitScript(()=>{Storage.prototype.getItem=()=>{throw new Error('blocked')};Storage.prototype.setItem=()=>{throw new Error('blocked')};Storage.prototype.removeItem=()=>{throw new Error('blocked')};});
-  await visit(page,{entry:cases.spell.id});
+  await visit(page,{entry:bookAddress(cases.spell.id)});
   const before=await content(page).locator('body').innerText();
   await expect(page.locator('#theme')).not.toHaveAttribute('aria-keyshortcuts');
   for(const preference of ['light','dark','system']){
@@ -460,7 +472,7 @@ for(const [label,path] of [
   test(`embedded original layout ${label} ${width}px ${theme}`,async({page,context},testInfo)=>{
     const {PNG}=require('pngjs'),pixelmatch=(await import('pixelmatch')).default;
     await page.emulateMedia({colorScheme:theme});
-    await page.setViewportSize({width,height:900});await visit(page,{page:path});
+    await page.setViewportSize({width,height:900});await visit(page,{page:bookAddress(path)});
     const f=content(page),frameRect=await page.locator('#content').boundingBox(),scrollRect=await page.locator('#book-scroll').boundingBox();
     const size={...frameRect,height:scrollRect.height};
     const source=await context.newPage();await source.setViewportSize({width:Math.round(size.width)+(width>800?290:0),height:Math.round(size.height)});
@@ -508,7 +520,7 @@ test('reader labels have matching Chinese and English resources',async()=>{
 });
 
 for(const width of [390,1280,1920]) test(`text fills the reading area without duplicate headings ${width}px`,async({page})=>{
-  await page.setViewportSize({width,height:900});await visit(page,{page:cases.spell.path});
+  await page.setViewportSize({width,height:900});await visit(page,{page:bookAddress(cases.spell.path)});
   const rect=await page.locator('#content').boundingBox();
   const scroll=await page.locator('#book-scroll').boundingBox();
   expect(rect.y).toBe(scroll.y);
@@ -532,7 +544,7 @@ test('parsed text is available before delayed images and late loads do not repla
   });
   try {
     const started=Date.now();
-    await page.goto(anna+'/read?'+new URLSearchParams({page:'topics/玩家手册2024/附录A：多元宇宙.htm'}),{waitUntil:'domcontentloaded'});
+    await page.goto(anna+'/read?'+new URLSearchParams({page:bookAddress('topics/玩家手册2024/附录A：多元宇宙.htm')}),{waitUntil:'domcontentloaded'});
     await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false',{timeout:4000});
     await expect.poll(()=>imageRequested).toBe(true);
     await expect(page.locator('#book-error')).toBeHidden();

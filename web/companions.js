@@ -9,70 +9,38 @@ const annaCompanionLabels = {
     go:'{brand}: {action}', more:'Recent places', recent:'Recent', showing:'Current', allEntries:'All entries'}
 };
 const annaCompanions = (() => {
-  const defaultCollection = '5echm';
   let labels;
   // The companion each page turns to; Anna's tour faces Stella like her query page does.
   const other = {query:'book', tour:'book', book:'query'};
   const fill = (template, values) => Object.entries(values).reduce((s,[k,v]) => s.replaceAll('{'+k+'}', v), template);
-  let page, snapshot, collection = defaultCollection, slot, go, more, menu;
-  const isExternal = () => !!collection && collection !== defaultCollection;
-  function resolveCollection(explicit) {
-    if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
-    if (typeof location !== 'undefined') {
-      const fromUrl = new URLSearchParams(location.search).get('collection');
-      if (fromUrl && fromUrl.trim()) return fromUrl.trim();
-    }
-    return defaultCollection;
-  }
-  function homeHref(companion) {
-    const base = annaTopbar.pages[companion].home;
-    return isExternal() ? base + '?' + new URLSearchParams({collection}) : base;
-  }
+  // `snapshots` are the builds of the collections the page reads, {collection: snapshot}.
+  let page, snapshots, slot, go, more, menu;
+  const homeHref = companion => annaTopbar.pages[companion].home;
   // Where each choice leads. A recent place also asks the page it opens to restore that place.
   function bookHref(choice) {
+    const params = new URLSearchParams();
     if (choice.kind === 'topic') {
       const loc = choice.topic.bookLocation;
-      if (loc && (loc.page || loc.path)) {
-        const params = new URLSearchParams();
-        if (isExternal()) params.set('collection', collection);
-        if (loc.root) params.set('root', loc.root);
-        params.set('page', loc.page || loc.path);
-        if (loc.node || loc.node_id) params.set('node', loc.node || loc.node_id);
-        const frag = loc.fragment ? '#' + String(loc.fragment).replace(/^#/, '') : '';
-        return '/read?' + params + frag;
-      }
-      if (isExternal()) return '/read?' + new URLSearchParams({collection});
-      return '/read?' + new URLSearchParams({entry:choice.topic.entry});
+      if (!loc) return '/read?' + new URLSearchParams({entry:choice.topic.entry});
+      for (const field of ['root', 'page', 'node']) if (loc[field]) params.set(field, loc[field]);
+      if (loc.fragment) params.set('anchor', loc.fragment);
+      return '/read?' + params;
     }
-    const {root, page:memPage, node} = choice.memory;
-    const params = new URLSearchParams();
-    if (isExternal()) params.set('collection', collection);
-    for (const [k, value] of [['root', root], ['page', memPage], ['node', node]]) {
-      if (value) params.set(k, value);
-    }
+    for (const field of ['root', 'page', 'node']) if (choice.memory[field]) params.set(field, choice.memory[field]);
     return '/read?' + params;
   }
+  // Anna names an entry by its own id; the collection that holds it answers.
   function queryHref(choice, state) {
-    if (choice.kind === 'topic') {
-      // The topic opens beside the latest query, so its conditions stay in view.
-      const params = new URLSearchParams(state.query[0]?.query || '');
-      if (isExternal()) params.set('collection', collection);
-      else params.delete('collection');
-      params.set('entry', choice.topic.entry);
-      return '/?' + params;
-    }
-    const params = new URLSearchParams(choice.memory.query);
-    if (isExternal()) params.set('collection', collection);
-    else params.delete('collection');
-    if (choice.memory.entry) {
-      params.set('entry', choice.memory.entry);
-    }
+    // The topic opens beside the latest query, so its conditions stay in view.
+    const params = new URLSearchParams(choice.kind === 'topic' ? state.query[0]?.query || '' : choice.memory.query);
+    const entry = choice.kind === 'topic' ? choice.topic.entry : choice.memory.entry;
+    if (entry) params.set('entry', annaWorkspace.localOf(entry));
     return '/' + (params.size ? '?' + params : '');
   }
   const href = (choice, state) => choice.kind === 'home' ? homeHref(other[page]) :
     other[page] === 'book' ? bookHref(choice) : queryHref(choice, state);
   function memoryName(companion, memory) {
-    return companion === 'book' ? memory.label || memory.scopeLabel || memory.page.split('/').at(-1).replace(/\.html?$/,'') :
+    return companion === 'book' ? memory.label || memory.scopeLabel || annaWorkspace.localOf(memory.page).split('/').at(-1).replace(/\.html?$/,'') :
       memory.entryName || memory.title || labels.allEntries;
   }
   function action(choice) {
@@ -89,7 +57,7 @@ const annaCompanions = (() => {
   }
   function render() {
     if (!slot) return;
-    const state = annaWorkspace.read(snapshot, collection), companion = other[page], choice = annaWorkspace.offer(state, companion);
+    const state = annaWorkspace.read(snapshots), companion = other[page], choice = annaWorkspace.offer(state, companion);
     const brand = annaBrands[companion], text = action(choice);
     go.href = href(choice, state);
     if (choice.kind === 'resume') go.dataset.resume = annaWorkspace.memoryId[companion](choice.memory);
@@ -118,7 +86,7 @@ const annaCompanions = (() => {
     return anchor;
   }
   function items() {
-    const state = annaWorkspace.read(snapshot, collection), companion = other[page], groups = [];
+    const state = annaWorkspace.read(snapshots), companion = other[page], groups = [];
     if (state.topic && state.topic.from !== companion) {
       const choice = {kind:'topic', topic:state.topic};
       groups.push(group(labels.showing, [entry(choice, state, action(choice))]));
@@ -135,12 +103,11 @@ const annaCompanions = (() => {
   function follow(event) {
     const anchor = event.target.closest('a[data-resume]');
     if (!anchor || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    annaWorkspace.requestResume(other[page], anchor.dataset.resume, collection);
+    annaWorkspace.requestResume(other[page], anchor.dataset.resume);
   }
-  // Pages mount the companion once they know the build snapshot; without the other page there is nobody to turn to.
+  // Pages mount the companion once they know their collections' builds; without the other page there is nobody to turn to.
   function mount(options) {
-    ({page, snapshot} = options);
-    collection = resolveCollection(options.collection);
+    ({page, snapshots} = options);
     labels = annaCompanionLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
     slot = document.querySelector('.topbar .companion');
     const companion = other[page];
@@ -158,7 +125,7 @@ const annaCompanions = (() => {
     const control = annaMenu.create(menu, {items});
     control.bind(more); control.attach(slot);
     slot.addEventListener('click', follow);
-    annaWorkspace.subscribe(render, collection);
+    annaWorkspace.subscribe(render);
     render(); slot.hidden = false;
   }
   return {mount, refresh:render};

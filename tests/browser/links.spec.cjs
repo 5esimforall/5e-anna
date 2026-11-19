@@ -1,4 +1,5 @@
 const {test:base,expect} = require('@playwright/test');
+const {bookAddress}=require('./locations.cjs');
 const fs = require('node:fs/promises');
 const {PNG} = require('pngjs');
 const port=Number(process.env.ANNA_E2E_PORT || 18380);
@@ -86,11 +87,11 @@ test('definition → new anna tab → reader → same definition; original pages
   const reader=await popupPromise;await reader.waitForLoadState('load');
   const frame=reader.frameLocator('#content');
   await expect(frame.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true})).toBeVisible();
-  await expect(reader).toHaveURL(new RegExp('/read\\?.*entry='+s.id));
+  await expect(reader).toHaveURL(new RegExp('/read\\?.*entry='+encodeURIComponent(bookAddress(s.id))));
   await expect(reader.locator('#book-main')).toHaveAttribute('aria-busy','false');
   await expect.poll(async()=>reader.locator('#content').evaluate(f=>f.getBoundingClientRect().top+f.contentDocument.querySelector('#Shield').getBoundingClientRect().top-document.querySelector('#book-scroll').getBoundingClientRect().top)).toBeGreaterThanOrEqual(0);
   expect(await reader.locator('#content').evaluate(f=>f.getBoundingClientRect().top+f.contentDocument.querySelector('#Shield').getBoundingClientRect().top-document.querySelector('#book-scroll').getBoundingClientRect().top)).toBeLessThan(80);
-  await expect.poll(async()=>new URL(reader.url()).searchParams.get('entry')).toBe(s.id);
+  expect(new URL(reader.url()).searchParams.get('entry')).toBe(bookAddress(s.id));
   await reader.reload();
   await expect(frame.getByRole('link',{name:'查看 Anna 条目: '+s.name,exact:true})).toBeVisible();
   expect(await reader.locator('#content').evaluate(f=>f.getBoundingClientRect().top+f.contentDocument.querySelector('#Shield').getBoundingClientRect().top-document.querySelector('#book-scroll').getBoundingClientRect().top)).toBeLessThan(80);

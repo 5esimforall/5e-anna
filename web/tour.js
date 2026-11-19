@@ -14,7 +14,6 @@ const annaTourLabels = {
     spellList:'可用法术', more:'另有 {count} 项', moreInAnna:'另有 {count} 项，在 Anna 中查看全部',
     previous:'上一项：{name}', next:'下一项：{name}', back:'‹ {name}', table:'表', versions:'其他版本',
     rest:'选择一项，它会在这里展开', unfold:'展开「{name}」',
-    scopeBanner:'当前范围：{label}（{count} 条）', widenTour:'放宽到全库（共 {count} 条）', widenQuery:'在 Anna 查看全库',
     filterPlaceholder:'筛选此列表…', filterLabel:'筛选 {name}', filterCount:'{shown} / {total}', filterEmpty:'没有匹配项。',
     loading:'正在读取…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
     bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。',
@@ -28,7 +27,6 @@ const annaTourLabels = {
     spellList:'Spell list', more:'{count} more', moreInAnna:'{count} more; open them all in Anna',
     previous:'Previous: {name}', next:'Next: {name}', back:'‹ {name}', table:'Table', versions:'Other versions',
     rest:'Choose an item to open it here', unfold:'Show {name}',
-    scopeBanner:'Scope: {label} ({count})', widenTour:'Widen to full library ({count})', widenQuery:'Open full library in Anna',
     filterPlaceholder:'Filter this list…', filterLabel:'Filter {name}', filterCount:'{shown} / {total}', filterEmpty:'No matching items.',
     loading:'Loading…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
     bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.',
@@ -38,13 +36,8 @@ const annaTourLabels = {
 const annaTour = (() => {
   const lang = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
   const ui = annaTourLabels[lang], {esc, stored} = annaKit;
-  const DEFAULT_COLLECTION = '5echm';
-  const initialSearch = new URLSearchParams(location.search);
-  // The address names the collection; without it the tour opens the first collection in the reader's library that has one.
-  const collection = initialSearch.get('collection') || (typeof annaLibrary === 'undefined' ? DEFAULT_COLLECTION : annaLibrary.pageCollection('tour'));
-  const isExternal = collection !== DEFAULT_COLLECTION;
-  const MEMORY = isExternal ? 'anna.tour.' + collection : 'anna.tour';
-  const SEGMENTS = /^[\w-]+(\.[\w-]+)*$/, EXT_SEGMENT = /^[A-Za-z0-9._-]+$/, FILTER_THRESHOLD = 24;
+  // A level is named by one segment: a topic key, or `collection:segment` for a level of one collection's own.
+  const MEMORY = 'anna.tour', SEGMENT = /^[A-Za-z0-9_.:-]+$/, FILTER_THRESHOLD = 24;
   const columns = document.querySelector('#tour-columns'), notice = document.querySelector('#tour-notice');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   // How many levels stay open side by side; the rest fold. Phones read one level at a time.
@@ -61,9 +54,7 @@ const annaTour = (() => {
   const views = new Map(), layouts = new Map(), reading = new WeakMap(), motions = new WeakMap();
   /* `shown` is the generation whose levels are in place; `landing` is where the focus goes once the levels on their
      way are. `openOnRest` opens the row a held key rests on, when the key is released or `restTimer` runs out. */
-  let snapshot = null, path = [], generation = 0, shown = 0, landing = null, mounted = false, topic = null;
-  let scopeSource = isExternal ? (initialSearch.get('scope_source') || '') : '';
-  let scopePackage = isExternal ? (initialSearch.get('scope_package') || '') : '';
+  let snapshot = null, snapshots = {}, path = [], generation = 0, shown = 0, landing = null, mounted = false, topic = null;
   let restTimer = 0, openOnRest = null;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
@@ -72,82 +63,35 @@ const annaTour = (() => {
   const labelText = value => value && typeof value === 'object' ? (value[lang] || value.zh || value.en || '') : (value || '');
   const nameOf = item => item.label ? labelText(item.label) : item.title || '';
   const rulesetTag = r => r && ui.rulesets[r] ? `<span class="tour-ruleset${r === '待核' ? ' unverified' : ''}" title="${esc(ui.rulesets[r][1])}">${esc(ui.rulesets[r][0])}</span>` : '';
-  const joinSegments = segments => segments.join(isExternal ? '/' : '.');
-  const scopeKey = () => isExternal ? `${scopeSource}|${scopePackage}` : '';
-  const viewKey = segment => isExternal ? `${segment}|${scopeSource}|${scopePackage}` : segment;
+  const joinSegments = segments => segments.join('/');
   const segmentsOf = search => {
     const at = new URLSearchParams(search).get('at') || '';
-    if (!at) return [];
-    if (isExternal) {
-      const parts = at.split('/').filter(Boolean);
-      return parts.length && parts.every(s => EXT_SEGMENT.test(s)) ? parts : [];
-    }
-    return SEGMENTS.test(at) ? at.split('.') : [];
+    const parts = at.split('/').filter(Boolean);
+    return parts.length && parts.every(part => SEGMENT.test(part)) ? parts : [];
   };
-  const scopeOf = search => {
-    if (!isExternal) return {scopeSource:'', scopePackage:''};
-    const p = new URLSearchParams(search);
-    return {scopeSource:p.get('scope_source') || '', scopePackage:p.get('scope_package') || ''};
-  };
-  const tourHref = (segments, scope = {scopeSource, scopePackage}) => {
-    const params = new URLSearchParams();
-    if (isExternal) params.set('collection', collection);
-    if (segments.length) params.set('at', joinSegments(segments));
-    if (isExternal && scope.scopeSource) params.set('scope_source', scope.scopeSource);
-    if (isExternal && scope.scopePackage) params.set('scope_package', scope.scopePackage);
-    const qs = params.toString();
-    return '/tour' + (qs ? '?' + qs : '');
-  };
-  const queryHref = query => {
-    const entries = [];
-    if (isExternal && !('collection' in query)) entries.push(['collection', collection]);
-    for (const [key, values] of Object.entries(query)) {
-      const list = Array.isArray(values) ? values : [values];
-      for (const v of list) entries.push([key, v]);
-    }
-    return '/?' + new URLSearchParams(entries);
-  };
-  const readHref = read => {
-    const params = new URLSearchParams();
-    if (isExternal && !('collection' in read)) params.set('collection', collection);
-    for (const [k, v] of Object.entries(read)) if (v !== null && v !== undefined && v !== '') params.set(k, v);
-    return '/read?' + params;
-  };
-  const entryHref = anna => {
-    const params = new URLSearchParams();
-    if (isExternal) params.set('collection', collection);
-    if (anna.type) params.set('type', anna.type);
-    params.set('entry', anna.entry);
-    return '/?' + params;
-  };
+  const tourHref = segments => '/tour' + (segments.length ? '?' + new URLSearchParams({at:joinSegments(segments)}) : '');
+  const queryHref = query => '/?' + new URLSearchParams(Object.entries(query).flatMap(([key, values]) => (Array.isArray(values) ? values : [values]).map(v => [key, v])));
+  const readHref = read => '/read?' + new URLSearchParams(Object.entries(read).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+  // Anna names an entry by its own id; the collection that holds it answers.
+  const entryHref = anna => '/?' + new URLSearchParams({...(anna.type ? {type:anna.type} : {}), entry:anna.entry});
+  // A segment of one collection's own: the collection that answers it, and its own name there.
+  const collectionOf = segment => annaWorkspace.collectionOf(segment);
   const icon = '<svg class="tour-item-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
 
   class LoadError extends Error {
     constructor(code, status) { super(code); this.code = code; this.status = status; }
   }
+  // The tour reads the reader's library; every request carries it as Anna's do.
   async function load(api, cache, segment) {
-    const key = api === '/api/tour' ? viewKey(segment) : segment;
-    if (cache.has(key)) return cache.get(key);
-    const params = new URLSearchParams();
-    if (isExternal) {
-      params.set('collection', collection);
-      if (api === '/api/tour') {
-        if (segment) params.set('at', segment);
-        if (scopeSource) params.set('scope_source', scopeSource);
-        if (scopePackage) params.set('scope_package', scopePackage);
-      } else {
-        params.set('id', segment);
-      }
-    } else {
-      params.set('node', segment);
-    }
+    if (cache.has(segment)) return cache.get(segment);
+    const params = new URLSearchParams({at:segment});
     if (snapshot) params.set('snapshot', snapshot);
     let response, body = null;
-    try { response = await fetch(api + '?' + params); } catch { throw new LoadError('network', 0); }
+    try { response = await fetch(annaLibrary.withScope(api + '?' + params)); } catch { throw new LoadError('network', 0); }
     try { body = await response.json(); } catch { body = null; }
     if (!response.ok || !body) throw new LoadError(body?.code || 'error', response.status);
-    snapshot ||= body.snapshot;
-    cache.set(key, body);
+    if (body.snapshot) { snapshot ||= body.snapshot; snapshots = body.snapshots || snapshots; }
+    cache.set(segment, body);
     return body;
   }
   const fetchView = segment => load('/api/tour', views, segment);
@@ -159,7 +103,8 @@ const annaTour = (() => {
     if (['section', 'choices', 'entries', 'class', 'subclasses', 'feats'].includes(group.key) && row.ruleset !== view.ruleset) tags.push(rulesetTag(row.ruleset));
     if (row.table) tags.push(`<span class="tour-tag">${esc(ui.table)}</span>`);
     const status = ui.status[row.status] && row.status !== 'placeholder' ? ui.status[row.status] : '';
-    const hint = status || row.hint || '';
+    // A part of the shelf a later collection adds names that collection.
+    const hint = status || row.hint || (row.collection ? annaLibrary.nameOf(row.collection) : '');
     const main = `<span class="tour-item-main"><span class="tour-item-title">${esc(title)}</span>${hint ? `<span class="tour-item-hint">${esc(hint)}</span>` : ''}</span>` +
       (tags.length ? `<span class="tour-item-tags">${tags.join('')}</span>` : '') +
       (row.count ? `<span class="tour-item-count">${fmt(row.count)}</span>` : '');
@@ -194,25 +139,12 @@ const annaTour = (() => {
   }
   function head(view, depth) {
     const title = view.kind === 'root' ? ui.title : nameOf(view);
-    const parent = depth > 0 ? views.get(viewKey(['', ...path][depth - 1])) : null;
+    const parent = depth > 0 ? views.get(['', ...path][depth - 1]) : null;
     const back = parent ? `<a class="tour-back" href="${esc(tourHref(path.slice(0, depth - 1)))}" data-at>${esc(fill(ui.back, {name:parent.kind === 'root' ? ui.title : nameOf(parent)}))}</a>` : '';
     const trail = view.trail?.length ? `<p class="tour-trail" title="${esc(view.trail.join(' › '))}">${esc(view.trail.join(' › '))}</p>` : '';
     const meta = [rulesetTag(view.ruleset), view.type_label && view.type !== 'section' ? esc(view.type_label) : '', esc((view.sources || []).join('；'))].filter(Boolean);
     return `<header>${back}${trail}<h2 id="tour-title-${depth}">${esc(title)}</h2>${meta.length ? `<p class="tour-meta">${meta.join('<span aria-hidden="true">·</span>')}</p>` : ''}` +
       (view.kind === 'root' ? `<p class="tour-intro">${esc(ui.intro)}</p>` : '') + '</header>';
-  }
-  function scopeBanner(view) {
-    const sc = view.scope_context;
-    if (!sc) return '';
-    const label = fill(ui.scopeBanner, {label:sc.label || sc.id || '', count:fmt(sc.scoped_count ?? 0)});
-    const actions = [];
-    if (sc.widen_tour_href) {
-      actions.push(`<a class="tour-scope-widen" href="${esc(sc.widen_tour_href)}" data-widen>${esc(fill(ui.widenTour, {count:fmt(sc.unscoped_count ?? 0)}))}</a>`);
-    }
-    if (sc.widen_query_href) {
-      actions.push(`<a class="tour-scope-query" href="${esc(sc.widen_query_href)}">${esc(ui.widenQuery)}</a>`);
-    }
-    return `<div class="tour-scope" role="region" aria-label="${esc(label)}"><span class="tour-scope-label">${esc(label)}</span>${actions.length ? `<span class="tour-scope-actions">${actions.join('')}</span>` : ''}</div>`;
   }
   function steps(view, depth) {
     let first = 0;
@@ -235,14 +167,13 @@ const annaTour = (() => {
     }).join('')}</nav>` : '';
     // The level's own words, then where it leads; a wide detail sets the second beside the first.
     const rail = (actions.length ? `<div class="tour-actions">${actions.join('')}</div>` : '') + steps(view, depth) + sequence;
-    return head(view, depth) + scopeBanner(view) + `<div class="tour-main">${status}${lead}</div>` + (rail ? `<div class="tour-rail">${rail}</div>` : '');
+    return head(view, depth) + `<div class="tour-main">${status}${lead}</div>` + (rail ? `<div class="tour-rail">${rail}</div>` : '');
   }
 
   // A folded level keeps a spine that names it; the spine brings it back into view.
   function column(segment, depth) {
     const section = document.createElement('section');
     section.className = 'tour-column'; section.dataset.depth = depth; section.dataset.segment = segment;
-    section.dataset.scopeKey = scopeKey();
     section.setAttribute('aria-labelledby', `tour-title-${depth}`);
     section.setAttribute('aria-busy', 'true');
     section.innerHTML = `<button type="button" class="tour-spine"><span>${esc(ui.loading)}</span>${icon}</button><div class="tour-sheet"><div class="tour-column-body"><h2 id="tour-title-${depth}">${esc(ui.loading)}</h2></div></div>`;
@@ -438,13 +369,13 @@ const annaTour = (() => {
   }
 
   async function show(segments) {
-    const run = ++generation, wanted = ['', ...segments], curScope = scopeKey();
+    const run = ++generation, wanted = ['', ...segments];
     path = segments;
     say('');
     const existing = [...columns.children];
     let keep = 0;
     while (keep < existing.length && keep < wanted.length && existing[keep].dataset.segment === wanted[keep] &&
-           existing[keep].dataset.scopeKey === curScope && existing[keep].dataset.state === 'ready') keep++;
+           existing[keep].dataset.state === 'ready') keep++;
     /* The levels being replaced stay until the new ones can take their place, and the row that opens them shows at
        once. New levels that load within LOADING_DELAY open in one step, the deepest with a detail's own words; past
        it they open showing that they are loading, and take their final form in a second step. */
@@ -465,7 +396,7 @@ const annaTour = (() => {
       // A level that no longer exists in this snapshot returns the reader to the level above it.
       if (error.status === 404 && depth > 0) {
         const kept = segments.slice(0, depth - 1);
-        history.replaceState({tour:joinSegments(kept), scopeSource, scopePackage}, '', tourHref(kept));
+        history.replaceState({tour:joinSegments(kept)}, '', tourHref(kept));
         await show(kept);
         if (run + 1 === generation) say(ui.nodeMissing);
         return;
@@ -489,27 +420,22 @@ const annaTour = (() => {
     land();
     return moved;
   }
-  function querySwitchHref(latest) {
-    if (!isExternal) return latest ? '/?' + latest.query : '/';
-    const params = new URLSearchParams(latest ? latest.query : '');
-    if (!params.has('collection')) params.set('collection', collection);
-    return '/?' + params;
-  }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
   function settle() {
-    const last = views.get(viewKey(['', ...path].at(-1)));
+    const last = views.get(['', ...path].at(-1));
     document.title = annaPageTitle('tour', last && last.kind !== 'root' ? nameOf(last) : ui.title);
     stored.set(MEMORY, path.length ? joinSegments(path) : null);
     if (!snapshot) return;
-    if (!mounted && typeof annaCompanions !== 'undefined') { annaCompanions.mount({page:'tour', snapshot, collection}); mounted = true; }
-    const latest = annaWorkspace.read(snapshot, collection).query[0];
-    annaTopbar.pointSwitch('query', querySwitchHref(latest));
-    const shownEntry = last?.kind === 'entry' && last.type !== 'section' ? last : null;
-    if (topic && topic !== shownEntry?.id) annaWorkspace.update(snapshot, state => annaWorkspace.clearTopic(state, topic), collection);
-    if (shownEntry && topic !== shownEntry.id && (!isExternal || shownEntry.read)) {
-      const nextTopic = {entry:shownEntry.id, name:shownEntry.title, from:'query', at:Date.now()};
-      if (shownEntry.read && (shownEntry.read.page || shownEntry.read.path)) nextTopic.bookLocation = shownEntry.read;
-      annaWorkspace.update(snapshot, state => annaWorkspace.setTopic(state, nextTopic), collection);
+    if (!mounted && typeof annaCompanions !== 'undefined') { annaCompanions.mount({page:'tour', snapshots}); mounted = true; }
+    const latest = annaWorkspace.read(snapshots).query[0];
+    annaTopbar.pointSwitch('query', latest ? '/?' + latest.query : '/');
+    // An entry shown here is the topic Stella can turn to: named by its collection, bound to that collection's build.
+    const shownEntry = last?.kind === 'entry' && last.type !== 'section' && collectionOf(last.id) ? last : null;
+    if (topic && topic !== shownEntry?.id) annaWorkspace.update(snapshots, state => annaWorkspace.clearTopic(state, topic));
+    if (shownEntry && topic !== shownEntry.id) {
+      const nextTopic = {entry:shownEntry.id, name:shownEntry.title, from:'query', snapshot:snapshots[collectionOf(shownEntry.id)], at:Date.now()};
+      if (shownEntry.read?.page) nextTopic.bookLocation = shownEntry.read;
+      annaWorkspace.update(snapshots, state => annaWorkspace.setTopic(state, nextTopic));
     }
     topic = shownEntry?.id || null;
   }
@@ -517,18 +443,12 @@ const annaTour = (() => {
   // lands once the levels are in place: `depth` names the level, `enter` enters it rather than its rows, and `open`
   // opens the row it lands on.
   function go(segments, options = {}) {
-    const nextSource = options.scope ? (options.scope.scopeSource || '') : scopeSource;
-    const nextPackage = options.scope ? (options.scope.scopePackage || '') : scopePackage;
-    const samePath = joinSegments(segments) === joinSegments(path);
-    const sameScope = nextSource === scopeSource && nextPackage === scopePackage;
-    if (samePath && sameScope) {
+    if (joinSegments(segments) === joinSegments(path)) {
       if (options.focus) aim(options.focus);
       return;
     }
-    scopeSource = nextSource;
-    scopePackage = nextPackage;
     landing = options.focus ?? null;
-    history[options.replace ? 'replaceState' : 'pushState']({tour:joinSegments(segments), scopeSource, scopePackage}, '', tourHref(segments));
+    history[options.replace ? 'replaceState' : 'pushState']({tour:joinSegments(segments)}, '', tourHref(segments));
     return show(segments);
   }
 
@@ -543,30 +463,20 @@ const annaTour = (() => {
     if (retry) { show(path); return; }
     const spine = event.target.closest('.tour-spine');
     if (spine) { unfold(spine.closest('.tour-column')); return; }
-    const widen = event.target.closest('a[data-widen]');
-    if (widen) {
-      event.preventDefault();
-      const targetUrl = new URL(widen.href, location.origin);
-      const nextSegs = segmentsOf(targetUrl.search);
-      const nextScope = scopeOf(targetUrl.search);
-      // If widening an inherently-scoped book/pack node whose href stays on the same node with no URL scope, jump to tour root.
-      const clearSame = !scopeSource && !scopePackage && joinSegments(nextSegs) === joinSegments(path);
-      go(clearSame ? [] : nextSegs, {scope:nextScope});
-      return;
-    }
     // A reference inside a detail's own words opens its definition as the next level.
     const ref = event.target.closest('button.ref[data-entry]');
     if (ref) {
-      const depth = Number(ref.closest('.tour-column').dataset.depth);
-      go([...path.slice(0, depth), ref.dataset.entry], {focus:{depth:depth + 1, enter:true}});
+      const column = ref.closest('.tour-column'), depth = Number(column.dataset.depth);
+      // The words are one collection's; the entry they refer to is that collection's own.
+      const owner = views.get(column.dataset.segment)?.collection;
+      if (owner) go([...path.slice(0, depth), owner + ':' + ref.dataset.entry], {focus:{depth:depth + 1, enter:true}});
       return;
     }
     const link = event.target.closest('a[data-at]');
     if (!link) return;
     event.preventDefault();
     if (link.getAttribute('aria-disabled') === 'true') return;
-    const linkUrl = new URL(link.href);
-    go(segmentsOf(linkUrl.search), {scope:scopeOf(linkUrl.search)});
+    go(segmentsOf(new URL(link.href).search));
   });
   // Unfolding a level closes just enough levels below it to bring it back among the open ones.
   function unfold(section) {
@@ -685,10 +595,7 @@ const annaTour = (() => {
       event.preventDefault();
       const focus = {depth:depth + 1, enter:true, open:true};
       if (link.getAttribute('aria-current') === 'true') aim(focus);
-      else {
-        const linkUrl = new URL(link.href);
-        go(segmentsOf(linkUrl.search), {focus, scope:scopeOf(linkUrl.search)});
-      }
+      else go(segmentsOf(new URL(link.href).search), {focus});
       return;
     } else return;
     event.preventDefault();
@@ -700,16 +607,19 @@ const annaTour = (() => {
   columns.addEventListener('pointerdown', stopFollowing);
   window.addEventListener('popstate', () => {
     stopFollowing();
-    const nextScope = scopeOf(location.search);
-    scopeSource = nextScope.scopeSource;
-    scopePackage = nextScope.scopePackage;
     landing = columns.contains(document.activeElement) ? 'kept' : null;
     show(segmentsOf(location.search));
   });
   for (const query of [roomy, phone]) query.addEventListener('change', () => move(arrange).then(reveal));
 
+  // The library decides what the tour answers; a changed library reads every level afresh.
+  let libraryTimer;
+  annaLibrary.subscribe(() => {
+    clearTimeout(libraryTimer);
+    libraryTimer = setTimeout(() => { views.clear(); layouts.clear(); snapshot = null; columns.replaceChildren(); show(path); }, 250);
+  });
   const start = segmentsOf(location.search);
-  history.replaceState({tour:joinSegments(start), scopeSource, scopePackage}, '', tourHref(start));
+  history.replaceState({tour:joinSegments(start)}, '', tourHref(start));
   show(start);
   return {show, go};
 })();

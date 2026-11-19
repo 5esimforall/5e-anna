@@ -18,6 +18,7 @@ const annaReaderLabels = {
     linkMarks:'标出 Anna 识别的链接', linkMarksLegend:'蓝底跳到 Stella 中的定义，红底在 Anna 打开条目',
     scopeNavigation:'章节内分页', scopeTitle:'阅读范围：{name}', pathChildren:'下一层：{name}', pathMore:'更多层级',
     pageCount:'{page} / {pages}',
+    librarySettings:'资料库设置…', texts:'文本', textsTitle:'这部作品在资料库中有 {count} 份文本', textSwitch:'改读 {name} 的文本', textCurrent:'正在读 {name} 的文本',
     unloadedPages:'第 {start}–{end} 页尚未加载', loadNext:'加载下一页：{name}', loadPrevious:'加载前一页：{name}',
     scopeEnd:'已到本章节末尾',
     releasedPage:'此页已释放，接近时会自动重新载入。', reloadPage:'重新载入：{name}',
@@ -34,7 +35,9 @@ const annaReaderLabels = {
       reload_failed:'数据重建未通过校验，服务未切换到新快照；请查看 make upper 的终端输出并重新构建。',
       snapshot_changed:'原文快照已经变化，请刷新页面后重新定位。',
       frame_timeout:'正文未能完成加载，请重试；若已重建数据，请重启 make up。',
-      fragment_missing:'正文已打开，但原锚点无法定位。请通过本页条目重新选择位置。'
+      fragment_missing:'正文已打开，但原锚点无法定位。请通过本页条目重新选择位置。',
+      outside_library:'这一页所在的资料库不在你的资料库设置中。在顶栏的「资料库」中勾选它后即可阅读。',
+      no_counterpart:'另一份文本中找不到这部作品。'
     }
   },
   en: {
@@ -50,11 +53,12 @@ const annaReaderLabels = {
     previousResults:'Previous results', nextResults:'Next results', noOutline:'No locatable entries have been extracted on this page. The complete source is still available.',
     entry:'Open entry in Anna', pageEntries:'Entries on this page', previous:'Previous page in chapter', next:'Next page in chapter',
     original:'Original layout', loading:'Opening the source…', ready:'Source ready',
-    notInContents:'Page outside the contents', sourceVersion:'Collection v{version}', retry:'Retry', home:'Reader home',
+    notInContents:'Page outside the contents', sourceVersion:'Incomplete Book v{version}', retry:'Retry', home:'Reader home',
     keyboard:'/ Search',
     linkMarks:'Mark links recognized by Anna', linkMarksLegend:'Blue jumps to the definition in Stella; red opens the entry in Anna',
     scopeNavigation:'Chapter pagination', scopeTitle:'Reading scope: {name}', pathChildren:'Next level: {name}', pathMore:'More levels',
     pageCount:'{page} / {pages}',
+    librarySettings:'Library settings…', texts:'Text', textsTitle:'Your library holds {count} texts of this work', textSwitch:'Read the {name} text', textCurrent:'Reading the {name} text',
     unloadedPages:'Pages {start}–{end} not loaded', loadNext:'Load next page: {name}', loadPrevious:'Load previous page: {name}',
     scopeEnd:'End of this chapter',
     releasedPage:'This page was released and will reload as you approach.', reloadPage:'Reload: {name}',
@@ -71,7 +75,9 @@ const annaReaderLabels = {
       reload_failed:'The rebuild did not validate, so the service kept its previous snapshot. Check the make upper terminal and build again.',
       snapshot_changed:'The source snapshot changed. Refresh before navigating again.',
       frame_timeout:'The source did not finish loading. Retry, or restart make up if the data was rebuilt.',
-      fragment_missing:'The source is open, but its anchor could not be located. Choose an entry on this page.'
+      fragment_missing:'The source is open, but its anchor could not be located. Choose an entry on this page.',
+      outside_library:'This page belongs to a collection your library leaves out. Tick it under Library in the top bar to read it.',
+      no_counterpart:'The other text does not hold this work.'
     }
   }
 };

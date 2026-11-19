@@ -108,7 +108,6 @@ class Scope:
     """Which collections answer (in priority order), how versions show, and which rules and works count."""
 
     libraries: tuple[str, ...]
-    pinned: bool = False
     rulesets: frozenset[str] | None = None
     content: frozenset[str] | None = None
     hidden: frozenset[tuple[str, str]] = frozenset()
@@ -134,7 +133,7 @@ class Scope:
         return Restriction(self.rulesets, sources)
 
     def describe(self) -> dict:
-        return {'libraries': list(self.libraries), 'pinned': self.pinned, 'versions': self.versions, 'prefer': self.prefer,
+        return {'libraries': list(self.libraries), 'versions': self.versions, 'prefer': self.prefer,
                 'rulesets': sorted(self.rulesets) if self.rulesets is not None else list(RULESETS),
                 'content': [c for c in CONTENT if self.content is None or c in self.content],
                 'hidden': len(self.hidden), 'lead': len(self.lead), 'narrowed': self.narrowed,
@@ -175,9 +174,7 @@ def _works(raw, label):
 def parse_scope(params: dict[str, list[str]], registry) -> Scope:
     """Take the library scope out of request parameters; what remains are the query's own conditions.
 
-    `collection` pins one collection (a link from a collection's tour or book); otherwise `libraries` lists
-    the reader's collections in priority order, of which those the server can open now answer."""
-    pin = params.pop('collection', None)
+    `libraries` lists the reader's collections in priority order, of which those the server can open now answer."""
     raw_libraries = _one(params, 'libraries')
     rulesets = _choices(_one(params, 'rulesets'), RULESETS, '规则版本范围')
     content = _choices(_one(params, 'content'), CONTENT, '内容范围')
@@ -190,8 +187,6 @@ def parse_scope(params: dict[str, list[str]], registry) -> Scope:
     if prefer not in PREFERENCES:
         raise ValueError('无效规则版本偏好')
     common = dict(rulesets=rulesets, content=content, hidden=hidden, lead=lead, versions=versions, prefer=prefer)
-    if pin is not None:
-        return Scope((registry.select(pin).key,), pinned=True, **common)
     requested = [DEFAULT] if raw_libraries is None else list(dict.fromkeys(k for k in raw_libraries.split(',') if k))
     if any(not KEY_RE.fullmatch(k) for k in requested):
         raise ValueError('无效资料库')
@@ -445,8 +440,6 @@ class Library:
         return self.scope.restriction(collection.key, works_of(collection))
 
     def _local(self, collection, params):
-        if self.scope.pinned:
-            return dict(params), {}
         return localize(params, capabilities_of(collection), self.every_condition, self.known_types)
 
     def _presentation(self, params):
@@ -753,8 +746,8 @@ class Library:
     # --- Detail, layout and export ---
 
     def owner(self, entry_id: str):
-        """The collection holding a version: a pinned page's own, else the reader's libraries first, then any other ready one."""
-        if self.scope.pinned or len(self.registry.ready()) == 1:
+        """The collection holding a version: the reader's libraries first, then any other ready one."""
+        if len(self.registry.ready()) == 1:
             return self.primary
         for key in [*self.scope.libraries, *(k for k in self.registry.ready() if k not in self.rank)]:
             collection = self.registry.get(key)
@@ -765,9 +758,8 @@ class Library:
     def detail(self, entry_id: str) -> dict:
         collection = self.owner(entry_id)
         entry = collection.provider.detail(entry_id)
-        # A reader the library answers learns whose entry this is; a collection answering alone does as it always has.
-        if collection.key != self.primary.key or not self.alone:
-            entry['collection'] = collection.key
+        # Whose entry this is: its reading place, its build and its versions belong to that collection.
+        entry['collection'] = collection.key
         if self.stacking:
             self._library_versions(entry, collection)
         return entry

@@ -11,8 +11,7 @@ const annaUiLabels = {
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     body:'正文',fields:'属性',relations:'关系',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
-    collectionHome:'回到默认资料库',collectionRestart:'服务还不支持资料库切换。若刚更新 Anna，请重启 make up。',
-    librarySettings:'资料库设置…',libraryPinned:'仅 {name}',libraryUnpin:'改为查阅整个资料库',libraryPinnedTitle:'本页只查阅 {name}（来自链接）；点击改为查阅资料库设置中的全部资料库',
+    librarySettings:'资料库设置…',
     emptyLibrary:'资料库设置收窄了规则版本或作品范围，部分条目未列出。',filterLibraryHint:'资料库、规则版本与作品范围在顶栏「资料库」中设置。',
     libraryState:{narrowed:'已收窄',each:'不去重'},
     collectionErrors:{invalid_collection:'资料库地址无效。',unknown_collection:'未找到这个资料库。',collection_unavailable:'这个资料库尚未接入。'},
@@ -40,8 +39,7 @@ const annaUiLabels = {
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     body:'Text',fields:'Attributes',relations:'Relations',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
-    collectionHome:'Return to the default collection',collectionRestart:'The running server does not support collections. If you just updated Anna, restart make up.',
-    librarySettings:'Library settings…',libraryPinned:'Only {name}',libraryUnpin:'Read the whole library instead',libraryPinnedTitle:'This page reads only {name} (from the link); select to read every collection in your library',
+    librarySettings:'Library settings…',
     emptyLibrary:'Your library settings leave out some rules versions or works, so some entries are not listed.',filterLibraryHint:'Collections, rules versions and works are set under Library in the top bar.',
     libraryState:{narrowed:'narrowed',each:'not deduplicated'},
     collectionErrors:{invalid_collection:'Invalid collection address.',unknown_collection:'Collection not found.',collection_unavailable:'This collection is not connected yet.'},
@@ -112,34 +110,16 @@ function fieldText(entry,field,short=false){
   if(raw===undefined||raw===null||raw==='')return '—';
   return Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
 }
-// Detail and layout requests carry the same collection as the list, even for IDs
-// that also occur in a different collection. Keep the unqualified book URLs valid.
-function collectionURL(path){
-  if(!params.has('collection'))return path;
-  const url=new URL(path,location.origin);
-  url.searchParams.delete('collection');
-  for(const key of params.getAll('collection'))url.searchParams.append('collection',key);
-  return url.pathname+url.search;
-}
-// Every request carries the reader's library (annaLibrary); a link's own `collection` pins it to one collection.
-async function api(path,signal){const r=await fetch(annaLibrary.withScope(collectionURL(path)),{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败');return d;}
-// A link may pin the page to one collection (from that collection's tour or book). The heading names the pin;
-// removing it reads the reader's whole library with the same conditions.
+// Every request carries the reader's library (annaLibrary).
+async function api(path,signal){const r=await fetch(annaLibrary.withScope(path),{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败');return d;}
 const collectionName=id=>metadata?.collections?.find(c=>c.id===id)?.label?.[locale]||annaLibrary.nameOf(id);
 function showLibrary(){
-  const pin=$('#library-pin'),pinned=!!metadata.library?.pinned&&params.has('collection');
-  pin.hidden=!pinned;
-  if(pinned){
-    const name=collectionName(metadata.collection);
-    pin.innerHTML=`<button type="button" class="condition-text" title="${esc(ui.libraryPinnedTitle.replace('{name}',name))}">${esc(ui.libraryPinned.replace('{name}',name))}</button><button type="button" class="condition-remove" aria-label="${esc(ui.libraryUnpin)}" title="${esc(ui.libraryUnpin)}">×</button>`;
-  }
   // The note qualifies anna's own extraction from the book; it shows while the book is among the collections read.
   $('.heading-note').hidden=!(metadata.library?.libraries||[metadata.collection]).includes(metadata.default_collection);
   const library=metadata.library||{},state=[library.narrowed?ui.libraryState.narrowed:'',library.versions==='each'?ui.libraryState.each:''].filter(Boolean).join(' · ');
   $('#library-state').textContent=state;
   $('#display-toggle').classList.toggle('changed',!!state);
 }
-$('#library-pin').addEventListener('click',()=>{params.delete('collection');historyUpdate();reloadLibrary();});
 // A changed library changes the table's universe: its types, works and counts. The query keeps its conditions
 // (those another collection cannot answer hold for none of its entries) and the reader keeps its entry.
 let libraryTimer;
@@ -165,8 +145,12 @@ function captureUiState(){
     readerTop:$('#detail-content').scrollTop,lastResultEntry,loadedRows:currentData?.rows.length||0};
 }
 function saveUiState(){if(restoringUi)return;clearTimeout(uiSaveTimer);uiSaveTimer=0;history.replaceState({...history.state,anna:captureUiState()},'');rememberQuery();}
-// Anna shares her places with Stella only when both run from the same build.
-const sharing=()=>!!(metadata?.reader_url&&metadata.snapshot);
+// Anna shares her places with Stella when the server reads books; each place is bound to its collection's build.
+const sharing=()=>!!metadata?.reader_url;
+const snapshots=()=>Object.fromEntries((metadata?.collections||[]).filter(c=>c.snapshot).map(c=>[c.id,c.snapshot]));
+// An entry belongs to its own collection: Stella and the shared workspace name it `collection:id`.
+const entryCollection=e=>e?.collection||metadata.collection;
+const qualifiedEntry=e=>e?entryCollection(e)+':'+e.id:'';
 // A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
 function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');return query.toString();}
 // Names a remembered query by its heading and search words, as a reader would describe it.
@@ -174,38 +158,34 @@ function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.
 // This tab's query is Anna's latest place in the shared workspace, so Stella's switcher can lead back to it.
 function rememberQuery(){
   if(!sharing())return;
-  annaWorkspace.update(metadata.snapshot,state=>annaWorkspace.rememberQuery(state,{query:queryKey(),entry:currentReaderId||'',
-    entryName:currentEntry?(currentEntry.name_zh||currentEntry.name):'',title:queryTitle(),ui:captureUiState(),at:Date.now()}),metadata.collection);
+  const entry=currentEntry&&currentEntry.id===currentReaderId?qualifiedEntry(currentEntry):'';
+  annaWorkspace.update(snapshots(),state=>annaWorkspace.rememberQuery(state,{query:queryKey(),entry,snapshot:entry?snapshots()[entryCollection(currentEntry)]:'',
+    entryName:entry?(currentEntry.name_zh||currentEntry.name):'',title:queryTitle(),ui:captureUiState(),at:Date.now()}));
 }
 // A remembered query chosen from Stella's switcher returns as this tab last showed it; another entry opens fresh.
 function resumedUi(id){
   if(id===null||!sharing())return null;
-  const memory=annaWorkspace.read(metadata.snapshot,metadata.collection).query.find(m=>m.query===id);
+  const memory=annaWorkspace.read(snapshots()).query.find(m=>m.query===id);
   if(!memory?.ui||memory.query!==queryKey())return null;
-  return memory.entry===(params.get('entry')||'')?memory.ui:{...memory.ui,readerId:null,readerTab:'body',readerTop:0,readerFull:false};
+  return annaWorkspace.localOf(memory.entry)===(params.get('entry')||'')?memory.ui:{...memory.ui,readerId:null,readerTab:'body',readerTop:0,readerFull:false};
 }
 // The open entry is the topic Stella can turn to; closing it ends the topic. Restoring a remembered place or a
 // history entry shows its entry again without bringing it up as a new topic.
 let quietTopic=false;
-// An entry belongs to its own collection; its topic goes to that collection's Stella, bound to that collection's build.
-const entryCollection=e=>e?.collection||metadata.collection;
-const collectionSnapshot=id=>metadata.collections?.find(c=>c.id===id)?.snapshot||(id===metadata.collection?metadata.snapshot:null);
 function shareTopic(){
   if(!sharing()||!currentEntry||quietTopic)return;
-  const collection=entryCollection(currentEntry),snapshot=collectionSnapshot(collection);
-  if(!snapshot)return;
-  const loc=currentEntry.reader_location||null;
-  const locPage=loc&&(loc.page||loc.path);
-  // External collections only share a topic with Stella when the entry has an actual book location.
-  if(collection!==metadata.default_collection&&!locPage)return;
-  const bookLocation=locPage?{root:loc.root||'',page:locPage,node:loc.node_id||loc.node||'',fragment:loc.fragment||''}:null;
-  const payload={snapshot,entry:currentReaderId,name:currentEntry.name_zh||currentEntry.name,from:'query',collection,bookLocation,at:Date.now()};
-  if(typeof annaWorkspace.noteTopic==='function')annaWorkspace.noteTopic(payload);
-  else annaWorkspace.update(snapshot,state=>annaWorkspace.setTopic(state,payload),collection);
+  const collection=entryCollection(currentEntry),book=metadata.collections?.find(c=>c.id===collection);
+  if(!book?.reader)return;
+  // Another collection's entry is a topic for Stella only where it has a place in that collection's book.
+  const loc=currentEntry.reader_location||null,page=loc&&(loc.page||loc.path);
+  if(collection!==metadata.default_collection&&!page)return;
+  const q=local=>local?collection+':'+local:'';
+  const bookLocation=page?{root:q(loc.root),page:q(page),node:q(loc.node_id||loc.node),fragment:loc.fragment||''}:null;
+  annaWorkspace.update(snapshots(),state=>annaWorkspace.setTopic(state,{entry:qualifiedEntry(currentEntry),name:currentEntry.name_zh||currentEntry.name,
+    from:'query',snapshot:book.snapshot,bookLocation,at:Date.now()}));
 }
-function endTopic(id,collection=metadata?.collection){
-  const snapshot=sharing()&&collectionSnapshot(collection);
-  if(snapshot&&id)annaWorkspace.update(snapshot,state=>annaWorkspace.clearTopic(state,id),collection);
+function endTopic(entry){
+  if(sharing()&&entry)annaWorkspace.update(snapshots(),state=>annaWorkspace.clearTopic(state,qualifiedEntry(entry)));
 }
 function historyUpdate(replace=false){
   if(!replace)saveUiState();
@@ -650,7 +630,7 @@ $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#fi
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
 $('#reset').onclick=()=>{
   clearDraft();committed=[];
-  for(const key of [...params.keys()])if(!['collection','sort','dir'].includes(key))params.delete(key);
+  for(const key of [...params.keys()])if(!['sort','dir'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 };
 function dropCondition(key){
@@ -856,8 +836,9 @@ async function init(){
     // Leave its original unscoped queries usable, but never read it as a requested library.
     // Same-name rows and the preferred rules belong to the reader's library now; old links drop them.
     params.delete('versions');params.delete('prefer');
+    // A link no longer narrows the page to one collection: the reader's library decides what Anna reads.
+    params.delete('collection');
     const meta=await api('/api/meta');
-    if(!meta.collections&&params.has('collection'))throw new Error(ui.collectionRestart);
     metadata=meta;Object.assign(fieldNames,metadata.fields);showLibrary();
     const pageSwitch=document.querySelector('.topbar .page-switch');
     if(pageSwitch){
@@ -868,21 +849,18 @@ async function init(){
         if(tourHref&&typeof annaTopbar?.pointSwitch==='function')annaTopbar.pointSwitch('tour',tourHref);
       }
     }
-    if(sharing())annaCompanions.mount({page:'query',snapshot:metadata.snapshot,collection:metadata.collection});
+    if(sharing())annaCompanions.mount({page:'query',snapshots:snapshots()});
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');
     // Category views became type filters; an old view link opens on all entries with its other conditions.
     readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
-    const resumed=resumedUi(annaWorkspace.takeResume('query',metadata.collection));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
+    const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
   }catch(e){
     const error=$('#error');error.hidden=false;error.textContent=e.message;
-    if(params.has('collection')){
-      const back=document.createElement('a');back.href='/';back.textContent=ui.collectionHome;error.append(' ',back);
-    }
     $('#result-count').textContent='服务未就绪';
   }
   finally{restoringUi=false;quietTopic=false;saveUiState();}

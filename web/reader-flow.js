@@ -1,10 +1,11 @@
-/* One scroll surface, bounded live documents, and measured placeholders for released pages. */
+/* One scroll surface, bounded live documents, and measured placeholders for released pages.
+   Pages are named `collection:path`; each collection serves its pages from its own base, bound to its own build. */
 const PAGE_STAR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12.7 8.6 15.4 11.3 22.5 12 15.4 12.7 12.7 15.4 12 22.5 11.3 15.4 8.6 12.7 1.5 12 8.6 11.3 11.3 8.6 12 1.5Z"/></svg>';
 class AnnaReaderFlow {
-  constructor({scroll, container, snapshot, contentBase, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch, lazyMedia = false, cachedMedia = []}) {
-    Object.assign(this,{scroll,container,snapshot,contentBase,fetchPage,labels,text,onActive,onNavigate,onTools,onSearch});
-    this.lazyMedia = !!lazyMedia;
-    this.cachedMedia = Array.isArray(cachedMedia) ? cachedMedia : [];
+  constructor({scroll, container, collections, fetchPage, labels, text, onActive, onNavigate, onTools, onSearch}) {
+    Object.assign(this,{scroll,container,fetchPage,labels,text,onActive,onNavigate,onTools,onSearch});
+    // {collection: {page_base, snapshot, lazy_media, cached_media}}
+    this.collections = new Map(collections.map(c => [c.id, c]));
     this.records = new Map(); this.documentSequence = 0; this.locationSequence = 0; this.scope = null; this.active = null;
     this.windowRadius = 2; this.maxDocuments = 5; this.linkMarks = false;
     new ResizeObserver(() => this.scheduleMaintenance()).observe(this.scroll);
@@ -232,8 +233,9 @@ class AnnaReaderFlow {
     const foot = document.createElement('div'); foot.className = 'book-page-foot'; foot.setAttribute('aria-hidden','true');
     foot.append(this.mark(this.text('pageCount',{page:index+1,pages:this.scope.pages.length})));
     element.replaceChildren(heading,statusHost,frame,...(index < this.scope.pages.length-1 ? [foot] : []));
+    const collection = this.collections.get(path.slice(0, path.indexOf(':')));
     const record = {item,index,element,heading,statusElement:status,frame,surface:frame,status:'loading',height:existing?.height || 120,
-      navigationId:++this.documentSequence,documentId:'',abort:new AbortController(),data};
+      navigationId:++this.documentSequence,documentId:'',abort:new AbortController(),data,collection};
     record.promise = new Promise((resolve,reject) => { record.resolve=resolve; record.reject=reject; });
     const completion = record.promise;
     // A rejection is also consumed by the caller; cancellation can happen before it awaits.
@@ -246,7 +248,9 @@ class AnnaReaderFlow {
       frame.title = record.data.title;
       this.label(heading,index,record.data.title);
       record.timer = setTimeout(() => this.fail(record,new Error('frame_timeout')),15000);
-      frame.contentWindow.location.replace(this.contentBase + path.split('/').map(encodeURIComponent).join('/'));
+      if (!collection) throw new Error('outside_library');
+      const local = path.slice(path.indexOf(':') + 1);
+      frame.contentWindow.location.replace(collection.page_base + local.split('/').map(encodeURIComponent).join('/'));
     } catch (error) { this.fail(record,error); }
     return completion;
   }
@@ -290,7 +294,7 @@ class AnnaReaderFlow {
   send(record,type,detail = {}) {
     if (!record?.documentId || !record.frame) return;
     record.frame.contentWindow.postMessage({channel:'anna-reader',version:2,type,documentId:record.documentId,
-      snapshot:this.snapshot,navigationId:record.navigationId,...detail},location.origin);
+      snapshot:record.collection.snapshot,navigationId:record.navigationId,...detail},location.origin);
   }
   theme(value) { for (const record of this.records.values()) this.send(record,'theme',{theme:value}); }
   // Whether source pages mark anna's links; pages that start later receive it with their theme.
@@ -298,13 +302,14 @@ class AnnaReaderFlow {
   focus() { this.active?.frame.focus(); this.send(this.active,'focus'); }
   message(event) {
     const data = event.data;
-    if (event.origin !== location.origin || !data || data.channel !== 'anna-reader' || data.version !== 2 || data.snapshot !== this.snapshot) return;
+    if (event.origin !== location.origin || !data || data.channel !== 'anna-reader' || data.version !== 2 || typeof data.path !== 'string') return;
     const record = this.records.get(data.path);
-    if (!record?.frame || event.source !== record.frame.contentWindow || record.status === 'error') return;
+    if (!record?.frame || event.source !== record.frame.contentWindow || record.status === 'error' || data.snapshot !== record.collection.snapshot) return;
     if (data.type === 'ready' && record.status === 'loading' && typeof data.documentId === 'string' && data.documentId.length < 100) {
       record.documentId = data.documentId;
       this.resize(record,data.height);
-      this.send(record,'initialize',{theme:document.documentElement.dataset.theme,linkMarks:this.linkMarks,lazyMedia:this.lazyMedia,cachedMedia:this.cachedMedia}); return;
+      this.send(record,'initialize',{theme:document.documentElement.dataset.theme,linkMarks:this.linkMarks,
+        lazyMedia:!!record.collection.lazy_media,cachedMedia:record.collection.cached_media || []}); return;
     }
     if (data.documentId !== record.documentId || data.navigationId !== record.navigationId) return;
     if (data.type === 'initialized') {

@@ -19,7 +19,6 @@ from anna.paths import WEB
 from anna.presentation.collections import BookCatalog, Collection
 from anna.presentation.our5etools import load_our5etools_collection
 import anna.server.app as up
-import anna.source.search as search
 
 PORT=int(os.environ.get('ANNA_E2E_PORT','18380'))
 DB=Path(os.environ.get('ANNA_E2E_DB',up.catalog.DB)).resolve()
@@ -80,8 +79,8 @@ def demo_collection(root):
 
 
 def main(scratch):
-    manifest=up.validate_bundle(WEB,DB,BOOK)
-    data=json.dumps(cases(manifest),ensure_ascii=False).encode()
+    bundle=up.load_bundle(WEB,DB,BOOK)
+    data=json.dumps(cases(bundle.manifest),ensure_ascii=False).encode()
     raw,linked=fixture()
     additional=[
         demo_collection(scratch),
@@ -90,7 +89,7 @@ def main(scratch):
     our5etools=load_our5etools_collection()
     if our5etools is not None:
         additional.append(our5etools)
-    server=up.create_server(DB,BOOK,manifest,PORT,additional_collections=tuple(additional))
+    server=up.create_server(DB,BOOK,bundle.manifest,PORT,bundle=bundle,additional_collections=tuple(additional))
     app_handler=server.RequestHandlerClass
     class BrowserTestHandler(app_handler, SimpleHTTPRequestHandler):
         def __init__(self,*args,**kwargs):super().__init__(*args,directory=str(WEB),**kwargs)
@@ -117,7 +116,6 @@ def main(scratch):
     server.RequestHandlerClass=BrowserTestHandler
     thread=None;stop=threading.Event()
     try:
-        BrowserTestHandler.search_entries=search.load_index(DB,WEB,quiet=True)
         for sig in (signal.SIGINT,signal.SIGTERM):signal.signal(sig,lambda *_:stop.set())
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         print('Browser test server ready',flush=True);stop.wait()

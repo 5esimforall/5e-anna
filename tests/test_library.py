@@ -14,7 +14,7 @@ import unittest
 import anna.catalog.views as browse
 from anna.presentation import catalog
 from anna.presentation.alignment import align, title_key
-from anna.presentation.collections import BookCatalog, Capabilities, Collection, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.collections import BookCatalog, Capabilities, Collection, CollectionRegistry, DEFAULT
 from anna.presentation.library import Library, Scope, localize, merge_order, parse_scope, describe_works, relations
 
 from test_presentation_contracts import endpoint, fixture
@@ -65,18 +65,18 @@ class LibraryTests(unittest.TestCase):
         fallback = parse_scope({'libraries': ['reserved-demo']}, self.registry)
         self.assertEqual((fallback.libraries, fallback.fallback), ((DEFAULT,), True))
 
-    def test_scope_rejects_malformed_choices_and_pins_one_collection(self):
+    def test_scope_rejects_malformed_choices(self):
         for params in ({'rulesets': ['5x']}, {'rulesets': ['']}, {'content': ['homebrew']}, {'versions': ['all']},
                        {'prefer': ['4e']}, {'hide': ['no-colon']}, {'hide': ['Bad:src']}, {'libraries': ['../x']},
-                       {'versions': ['each', 'stacked']}):
+                       {'libraries': ['demo', '5echm']}, {'lead': ['demo:']}, {'versions': ['each', 'stacked']}):
             with self.subTest(params=params), self.assertRaises(ValueError):
                 parse_scope(dict(params), self.registry)
-        pinned = parse_scope({'collection': ['demo'], 'libraries': ['5echm']}, self.registry)
-        self.assertEqual((pinned.libraries, pinned.pinned), (('demo',), True))
-        for value, code in ((['reserved-demo'], 'collection_unavailable'), (['ghost'], 'unknown_collection'), ([''], 'invalid_collection')):
-            with self.subTest(value=value), self.assertRaises(CollectionError) as caught:
-                parse_scope({'collection': value}, self.registry)
-            self.assertEqual(caught.exception.code, code)
+
+    def test_scope_deduplicates_libraries_in_priority_order_and_keeps_query_conditions(self):
+        library, params = self.library(libraries='demo,5echm,demo', lead='demo:'+PHB24, q='Shield')
+        self.assertEqual(library.scope.libraries, ('demo', DEFAULT))
+        self.assertEqual(library.scope.lead, frozenset({('demo', PHB24)}))
+        self.assertEqual(params, {'q': ['Shield']})
 
     def test_merge_order_keeps_the_first_order_and_places_newcomers_after_their_predecessor(self):
         self.assertEqual(merge_order([['name', 'cr', 'sources', 'ruleset'], ['name', 'cr', 'lair', 'sources', 'ruleset'], ['x']]),
@@ -185,9 +185,9 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(entry['versions']['status'], 'library_candidate')
         self.assertEqual([m['collection'] for m in entry['versions']['members']], ['demo', DEFAULT])
         self.assertFalse(any(f['differs'] for f in entry['versions']['fields']))
-        # A single collection answers exactly as its provider does.
+        # Stella needs the owner even when only one collection answers.
         library, _ = self.library()
-        self.assertNotIn('collection', library.detail(SHIELD))
+        self.assertEqual(library.detail(SHIELD), self.registry.book.detail(SHIELD) | {'collection': DEFAULT})
         with self.assertRaises(LookupError):
             self.library(libraries='5echm,demo')[0].detail('ver_missing')
 
@@ -410,10 +410,10 @@ class LibraryRouteTests(unittest.TestCase):
             self.assertEqual([[v['collection'] for v in r['versions']] for r in rows], [[DEFAULT, 'demo']])
             status, headers, _ = request('/api/export?libraries=5echm,demo')
             self.assertEqual((status, headers['Content-Disposition']), (200, 'attachment; filename="5e-anna-library.csv"'))
-            for route, expected in (('/api/entries?rulesets=9e', 400), ('/api/entries?collection=ghost', 404),
-                                    ('/api/meta?collection=5etools', 409)):
+            for route in ('/api/entries?rulesets=9e', '/api/entries?libraries=../ghost',
+                          '/api/meta?libraries=demo&libraries=5echm'):
                 with self.subTest(route=route):
-                    self.assertEqual(request(route)[0], expected)
+                    self.assertEqual(request(route)[0], 400)
 
 
 if __name__ == '__main__':

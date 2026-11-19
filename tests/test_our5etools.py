@@ -13,6 +13,7 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 from anna.our5etools import audit, books, build, inventory, render, semantics, types as otypes
 from anna.paths import OUR5ETOOLS, OUR5ETOOLS_DATA
@@ -23,6 +24,8 @@ from anna.presentation.our5etools import (
     load_fivetools_collection,
     load_our5etools_collection,
 )
+from anna.presentation.reader import SCHEMA
+from anna.presentation.tour import load as load_curation
 from anna.server.app import create_server
 from anna.server.linked_book import build_book
 
@@ -634,32 +637,34 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
                         resp = conn.getresponse()
                         return resp.status, dict(resp.getheaders()), resp.read()
 
-                st, _, body = req('/api/meta?collection=our5etools')
-                self.assertEqual(st, 200)
-                meta_our = json.loads(body)
-                self.assertEqual(meta_our['collection'], 'our5etools')
-                self.assertEqual(meta_our['tour_url'], '/tour?collection=our5etools')
-                self.assertEqual(meta_our['reader_url'], '/read?collection=our5etools')
+                for col in (col_our, col_5e):
+                    with self.subTest(collection=col.key):
+                        st, _, body = req('/api/meta?libraries='+col.key)
+                        meta = json.loads(body)
+                        self.assertEqual((st, meta['collection'], meta['tour_url'], meta['reader_url']),
+                                         (200, col.key, '/tour', '/read'))
+                        member = next(c for c in meta['collections'] if c['id'] == col.key)
+                        self.assertEqual((member['tour'], member['reader'], member['snapshot']), (True, True, col.snapshot))
 
-                st, _, body = req('/api/meta?collection=5etools')
-                self.assertEqual(st, 200)
-                meta_5e = json.loads(body)
-                self.assertEqual(meta_5e['collection'], '5etools')
-                self.assertIsNone(meta_5e['tour_url'])
-                self.assertEqual(meta_5e['reader_url'], '/read?collection=5etools')
+                st, _, body = req('/api/tour?libraries=5etools&at=5etools:nn_book_phb')
+                view = json.loads(body)
+                self.assertEqual((st, view['collection'], view['read']['root']), (200, '5etools', '5etools:n_book_phb'))
+                st, _, body = req('/api/tour?libraries=5etools&at=packs-ours')
+                self.assertEqual((st, json.loads(body)), (404, {'code': 'node_missing'}))
 
-                st, _, body = req('/api/tour?collection=5etools')
-                self.assertEqual((st, json.loads(body)), (400, {'code': 'collection_unsupported'}))
-
-                st, hdrs, _ = req('/api/export?collection=5etools&type=spell')
+                st, hdrs, _ = req('/api/export?libraries=5etools&type=spell')
                 self.assertEqual(st, 200)
                 self.assertEqual(hdrs['Content-Disposition'], 'attachment; filename="5e-anna-5etools.csv"')
 
-                st, _, nav_5e_raw = req('/api/reader?collection=5etools')
+                st, _, nav_5e_raw = req('/api/reader?libraries=5etools')
                 self.assertEqual(st, 200)
                 nav_5e = json.loads(nav_5e_raw)
-                self.assertEqual(nav_5e['collection'], '5etools')
-                self.assertEqual(nav_5e['page_base'], '/5etools-book/')
+                (reader,) = nav_5e['collections']
+                self.assertEqual((reader['id'], reader['page_base'], reader['snapshot']),
+                                 ('5etools', '/5etools-book/', col_5e.snapshot))
+                self.assertTrue(nav_5e['default_page'].startswith('5etools:books/'))
+                st, _, body = req('/api/reader-page?libraries=our5etools&path=5etools:books/phb/0.html')
+                self.assertEqual((st, json.loads(body)), (404, {'code': 'outside_library'}))
 
                 st, _, ch_5e = req('/5etools-book/books/phb/0.html')
                 self.assertEqual(st, 200)
@@ -673,14 +678,6 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
                 server.server_close()
                 thread.join()
 
-            tour_5e_path = root / 'tour-5etools.json'
-            tour_5e_path.write_text(
-                json.dumps({'schema': 1, 'collection': '5etools', 'sections': []}),
-                encoding='utf-8',
-            )
-            col_5e_with_tour = load_fivetools_collection(out_5e, tour_path=tour_5e_path)
-            assert col_5e_with_tour is not None and col_5e_with_tour.tour is not None
-            self.assertEqual(col_5e_with_tour.tour.view()['collection'], '5etools')
 
 
 @unittest.skipUnless(REAL_CORPUS_READY, 'Requires local our5etools repo and built data/our5etools')
@@ -884,7 +881,6 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
     def test_catalog_meta_entries_facets_and_csv_export(self):
         meta = self.cat.meta()
         self.assertEqual(meta['collection'], 'our5etools')
-        self.assertEqual(meta['tour_url'], '/tour?collection=our5etools')
         self.assertEqual(len(meta['sources']), 541)
         self.assertEqual(len(meta['packages']), 323)
         self.assertEqual(set(meta['types']), set(otypes.TYPES))
@@ -923,43 +919,27 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
         with self.assertRaises(LookupError):
             self.cat.layout('o5e_0000000000000000')
 
-    def test_tour_traversal_and_scope_retention(self):
-        books_node = self.tour.view(at='books-official')
-        self.assertEqual(len(books_node['groups'][0]['items']), 65)
+    def test_tour_books_and_dynamic_packages_link_to_their_own_entries(self):
+        phb = self.tour.view('nn_book_phb')
+        self.assertEqual(phb['read'], {'root': 'n_book_phb', 'page': 'books/phb/0.html'})
+        chapter = next(g for g in phb['groups'] if g['key'] == 'contents')['items'][0]
+        self.assertEqual(self.tour.view(chapter['id'])['read']['page'], 'books/phb/0.html')
+        self.assertEqual(phb['anna']['query'], {'source': ['src:PHB']})
+        self.assertEqual(phb['anna']['count'], self.cat.entries(phb['anna']['query'])['versions_total'])
 
-        ours_node = self.tour.view(at='packs-ours')
-        self.assertGreaterEqual(len(ours_node['groups'][0]['items']), 34)
-
-        phb_node = self.tour.view(at='book.book-PHB')
-        sc_phb = phb_node['scope_context']
-        self.assertEqual(sc_phb['kind'], 'source')
-        self.assertEqual(sc_phb['id'], 'src:PHB')
-        self.assertIn('widen_tour_href', sc_phb)
-        self.assertIn('widen_query_href', sc_phb)
-
-        # Scoped child retains scope_source across child choices and exposes widen links
-        scoped_spells = self.tour.view(at='spells-by-level', scope_source='src:PHB')
-        sc_child = scoped_spells['scope_context']
-        self.assertEqual(sc_child['kind'], 'source')
-        self.assertEqual(sc_child['id'], 'src:PHB')
-        self.assertLess(sc_child['scoped_count'], sc_child['unscoped_count'])
-        self.assertEqual(sc_child['widen_tour_href'], '/tour?collection=our5etools&at=spells-by-level')
-        self.assertIn('collection=our5etools', sc_child['widen_query_href'])
-        for item in scoped_spells['groups'][0]['items']:
-            self.assertEqual(item['query'].get('source'), ['src:PHB'])
-
-        # Package node & scope_package retention
-        pack_id = ours_node['groups'][0]['items'][0]['id']
-        pack_node = self.tour.view(at=pack_id)
-        sc_pack = pack_node['scope_context']
-        self.assertEqual(sc_pack['kind'], 'package')
-        self.assertTrue(sc_pack['id'])
-        self.assertIn('widen_tour_href', sc_pack)
-        self.assertIn('widen_query_href', sc_pack)
+        (packs,) = self.tour.view('packs-ours')['groups']
+        self.assertEqual(packs['key'], 'packages')
+        self.assertGreaterEqual(len(packs['items']), 34)
+        self.assertEqual(self.tour.listing_count(load_curation()['topics']['packs-ours']),
+                         len(packs['items']) + packs.get('more', 0))
+        pack = self.tour.view(packs['items'][0]['id'])
+        self.assertTrue(pack['provenance']['ours'])
+        self.assertEqual(pack['anna']['query'], {'package': [pack['provenance']['package_id']]})
+        self.assertEqual(pack['anna']['count'], self.cat.entries(pack['anna']['query'])['versions_total'])
 
     def test_server_routes_reader_media_and_security(self):
         reader_json = json.loads((OUR5ETOOLS_DATA / 'reader/anna-reader.json').read_text(encoding='utf-8'))
-        locatable_id = next(iter(reader_json['entry_locations']))
+        locatable_id, location = next((eid, loc) for eid, loc in reader_json['entry_locations'].items() if loc['locatable'])
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -977,27 +957,45 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
                         body = resp.read()
                         return resp.status, dict(resp.getheaders()), body
 
-                # /api/reader?collection=our5etools
-                st, _, body = req('/api/reader?collection=our5etools')
+                st, _, body = req('/api/reader?libraries=our5etools')
                 self.assertEqual(st, 200)
                 nav = json.loads(body)
-                self.assertEqual(nav['schema'], 6)
-                self.assertEqual(nav['collection'], 'our5etools')
-                self.assertEqual(nav['page_base'], '/our5etools-book/')
-                self.assertEqual(len(nav['nodes']), 18013)
+                self.assertEqual(nav['schema'], SCHEMA)
+                (reader,) = nav['collections']
+                self.assertEqual((reader['id'], reader['page_base'], reader['snapshot']),
+                                 ('our5etools', '/our5etools-book/', self.col.snapshot))
+                self.assertEqual(nav['default_page'], 'our5etools:' + reader_json['default_page'])
+                self.assertEqual([n['id'] for n in nav['nodes']], ['our5etools:' + n['id'] for n in reader_json['nodes']])
 
-                # /api/reader-page valid & stale snapshot 409
-                st, _, body = req('/api/reader-page?collection=our5etools&path=books/phb/0.html')
+                page = '/api/reader-page?' + urlencode({'libraries': 'our5etools', 'path': 'our5etools:books/phb/0.html'})
+                st, _, body = req(page + '&snapshot=' + reader['snapshot'])
                 self.assertEqual(st, 200)
-                self.assertEqual(json.loads(body)['path'], 'books/phb/0.html')
-                st, _, body = req('/api/reader-page?collection=our5etools&path=books/phb/0.html&snapshot=stale-snap')
+                page_data = json.loads(body)
+                self.assertEqual((page_data['path'], page_data['collection']), ('our5etools:books/phb/0.html', 'our5etools'))
+                st, _, body = req(page + '&snapshot=stale-snap')
                 self.assertEqual(st, 409)
                 self.assertEqual(json.loads(body)['code'], 'snapshot_changed')
 
+                # A shared Anna entry remains readable outside the selection. Its Stella address does not
+                # silently switch the reader's library or resolve the ID against the default book.
+                st, _, body = req('/api/entry?' + urlencode({'id': locatable_id}))
+                detail = json.loads(body)
+                self.assertEqual((st, detail['id'], detail['collection']), (200, locatable_id, 'our5etools'))
+                entry = '/api/reader-page?' + urlencode({'entry': 'our5etools:' + locatable_id})
+                st, _, body = req(entry)
+                self.assertEqual((st, json.loads(body)), (404, {'code': 'outside_library'}))
+                st, _, body = req(entry + '&libraries=our5etools&snapshot=' + reader['snapshot'])
+                located = json.loads(body)
+                self.assertEqual((st, located['path'], located['fragment']),
+                                 (200, 'our5etools:' + location['path'], location['fragment']))
+
                 # /api/book-search
-                st, _, body = req('/api/book-search?collection=our5etools&keyword=%E7%81%AB%E7%90%83%E6%9C%AF')
+                st, _, body = req('/api/book-search?' + urlencode({'libraries': 'our5etools', 'keyword': '火球术'}))
                 self.assertEqual(st, 200)
-                self.assertGreater(json.loads(body)['total'], 0)
+                hits = json.loads(body)
+                self.assertGreater(hits['total'], 0)
+                self.assertTrue(hits['results'])
+                self.assertTrue(all(r['collection'] == 'our5etools' and r['path'].startswith('our5etools:') for r in hits['results']))
 
                 # /our5etools-book/ chapter HTML, /definition/<id> 302, traversal & metadata 404
                 st, _, body = req('/our5etools-book/books/phb/0.html')

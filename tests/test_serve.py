@@ -77,7 +77,11 @@ class WebTests(unittest.TestCase):
         status,_,body=self.request('/api/meta')
         self.assertEqual(status,200)
         # Running alone, the query page has no reader to share a workspace with.
-        self.assertEqual({k:json.loads(body)[k] for k in ('reader_url','snapshot')},{'reader_url':None,'snapshot':None})
+        meta=json.loads(body)
+        self.assertIsNone(meta['reader_url'])
+        self.assertIsNone(meta['tour_url'])
+        book=next(c for c in meta['collections'] if c['id']=='5echm')
+        self.assertEqual((book['reader'],book['tour'],book['snapshot']),(False,False,None))
         self.assertEqual(self.request('/api/entries?type=invalid')[0],400)
         self.assertEqual(self.request('/api/facets?type=invalid')[0],400)
         self.assertEqual(self.request('/api/export?type=invalid')[0],400)

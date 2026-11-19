@@ -1,4 +1,5 @@
-/* Directory-scoped reading, one outer scroll surface and one application history. */
+/* Directory-scoped reading over the reader's whole library, one outer scroll surface and one application history.
+   Every address names its collection: `collection:node`, `collection:path`, `collection:entry`. */
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
@@ -11,14 +12,7 @@
   }
   for (const element of document.querySelectorAll('[data-placeholder]')) element.placeholder = ui[element.dataset.placeholder];
   const sidebar = $('#book-sidebar'), narrow = matchMedia('(max-width:800px)');
-  const DEFAULT_COLLECTION = '5echm';
-  // The address names the collection; without it Stella opens the first collection in the reader's library with a book.
-  const activeCollection = (() => {
-    const raw = new URL(location.href).searchParams.get('collection');
-    if (raw && raw.trim()) return raw.trim();
-    return typeof annaLibrary === 'undefined' ? DEFAULT_COLLECTION : annaLibrary.pageCollection('book');
-  })();
-  const isExternalCollection = activeCollection !== DEFAULT_COLLECTION;
+  const collectionOf = address => annaWorkspace.collectionOf(address);
   // Scrolling updates the position continuously; the history entry only needs the position where it stops.
   const HISTORY_SAVE_DELAY = 200;
   let metadata, model, scope, flow, page, route, nodeId = '', focusedNode = '', nodes = new Map(), children = new Map(), pageNodes = new Map();
@@ -28,20 +22,27 @@
   let restoring = true, contentsFollowing = true, contentsSyncTimer, historySaveTimer;
   history.scrollRestoration = 'manual';
 
+  // Stella reads the reader's library, so every request carries it as Anna's do.
   function apiURL(endpoint, params = null) {
     const qs = params instanceof URLSearchParams ? new URLSearchParams(params) : new URLSearchParams(params || {});
-    if (isExternalCollection) qs.set('collection', activeCollection);
-    return endpoint + (qs.size ? '?' + qs : '');
+    return annaLibrary.withScope(endpoint + (qs.size ? '?' + qs : ''));
   }
+  // The collections on the shelf, each with its build snapshot and the base its pages load from.
+  const shelfCollection = key => metadata?.collections.find(c => c.id === key);
+  const snapshotOf = key => shelfCollection(key)?.snapshot || '';
+  const snapshots = () => Object.fromEntries((metadata?.collections || []).map(c => [c.id, c.snapshot]));
+  const collectionName = key => { const c = shelfCollection(key); return c?.label?.[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'] || c?.label?.zh || key; };
+  // A saved place is good while the build of its page's collection is the one it was saved in.
+  const restorable = saved => saved && typeof saved.page === 'string' && saved.snapshot === snapshotOf(collectionOf(saved.page)) ? saved : null;
+  // Anna names an entry by its own id; the collection that holds it answers.
   function queryURL(params = {}) {
     const qs = new URLSearchParams();
-    if (isExternalCollection) qs.set('collection', activeCollection);
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') qs.set(k, v);
     return '/' + (qs.size ? '?' + qs : '');
   }
   function readRoute() {
     const p = new URL(location.href).searchParams;
-    for (const key of ['collection','root','entry','page','anchor','node']) if (p.getAll(key).length > 1) throw new Error('invalid_location');
+    for (const key of ['root','entry','page','anchor','node']) if (p.getAll(key).length > 1) throw new Error('invalid_location');
     if (p.has('entry') && p.has('page') || p.has('entry') && !p.get('entry') || p.has('page') && !p.get('page')) throw new Error('invalid_location');
     if (p.has('root') && !p.get('root')) throw new Error('invalid_location');
     return p.has('entry') ? {root:p.get('root') || '',entry:p.get('entry'),node:p.get('node') || ''} :
@@ -49,7 +50,6 @@
   }
   function routeURL(target) {
     const params = new URLSearchParams();
-    if (isExternalCollection) params.set('collection', activeCollection);
     for (const key of ['root','entry','page','anchor','node']) if (target[key]) params.set(key, target[key]);
     return '/read' + (params.size ? '?' + params : '');
   }
@@ -60,7 +60,7 @@
   function save(url = '') {
     clearTimeout(historySaveTimer); historySaveTimer = 0;
     if (!metadata || restoring || loading) return;
-    const state = {version:2,snapshot:metadata.snapshot,root:scope?.root || '',page:page?.path || '',position, expanded:[...expanded], pane, sidebar:sidebarOpen, node:nodeId,
+    const state = {version:2,snapshot:snapshotOf(collectionOf(page?.path)),root:scope?.root || '',page:page?.path || '',position, expanded:[...expanded], pane, sidebar:sidebarOpen, node:nodeId,
       followContents:contentsFollowing, filter:$('#book-filter').value, treeScroll:$('#book-tree-scroll').scrollTop, outlineScroll:$('#panel-outline').scrollTop,
       search:{query:searchQuery, titleOnly:searchTitleOnly, page:searchPage, draft:$('#book-search').value, scroll:$('#panel-search').scrollTop}};
     const next = {...history.state, book:state};
@@ -78,13 +78,14 @@
   /* Stella's places live in the shared workspace, newest first. A bare /read resumes the latest; a place chosen
      from Anna's switcher resumes in the tab that chose it. */
   function rememberedPosition(id = null) {
-    const places = annaWorkspace.read(metadata.snapshot).book;
+    const places = annaWorkspace.read(snapshots()).book.filter(memory => shelfCollection(collectionOf(memory.page)));
     const place = id === null ? places[0] : places.find(memory => annaWorkspace.memoryId.book(memory) === id);
-    return annaReaderModel.remembered(place, metadata.snapshot, model);
+    return annaReaderModel.remembered(place, snapshotOf, model);
   }
   function rememberPlace(root, path, node, offset) {
-    annaWorkspace.update(metadata.snapshot, state => annaWorkspace.rememberBook(state, {root, page:path, node, position:offset,
-      label:nodes.get(node)?.label || (path === page?.path ? page.title : ''), scopeLabel:nodes.get(root)?.label || '', at:Date.now()}));
+    annaWorkspace.update(snapshots(), state => annaWorkspace.rememberBook(state, {root, page:path, node, position:offset,
+      snapshot:snapshotOf(collectionOf(path)), label:nodes.get(node)?.label || (path === page?.path ? page.title : ''),
+      scopeLabel:nodes.get(root)?.label || '', at:Date.now()}));
   }
   function rememberPosition() {
     if (!metadata || !page || loading || !flow?.active || flow.active.status !== 'ready') return;
@@ -100,14 +101,9 @@
   function shareTopic(id) {
     topicId = id;
     const entry = page?.definitions.find(definition => definition.id === id);
-    if (entry) {
-      const topic = {entry:id, name:entry.name, from:'book', at:Date.now()};
-      if (isExternalCollection) {
-        topic.collection = activeCollection;
-        topic.bookLocation = {root:scope?.root || '', page:page?.path || '', fragment:entry.fragment || ''};
-      }
-      annaWorkspace.update(metadata.snapshot, state => annaWorkspace.setTopic(state, topic));
-    }
+    if (entry) annaWorkspace.update(snapshots(), state => annaWorkspace.setTopic(state, {entry:page.collection + ':' + id, name:entry.name,
+      from:'book', snapshot:snapshotOf(page.collection), at:Date.now(),
+      bookLocation:{root:scope?.root || '', page:page.path, node:nodeId, fragment:entry.fragment || ''}}));
   }
   function capturePosition() { flow?.capture(); save(); }
   function activeDocument(data, nextPosition, item) {
@@ -134,6 +130,21 @@
       throw new Error(error.code || (response.status === 404 && isReaderBootstrap ? 'unavailable' : 'network'));
     }
     return response.json();
+  }
+  // The shelf omits unselected collections. Only a registered reader can be enabled from the error panel.
+  async function hasReader(key) {
+    if (!key) return false;
+    const library = await annaLibrary.describe().catch(() => null);
+    return library?.collections.some(c => c.id === key && c.status === 'ready' && c.reader) ?? false;
+  }
+  async function fetchShelf() {
+    try {
+      return await api(apiURL('/api/reader'));
+    } catch (error) {
+      // Even when none of the selected collections has a reader, a qualified root can point to one the server knows.
+      if (error.message === 'unavailable' && await hasReader(collectionOf(readRoute().root))) throw new Error('outside_library');
+      throw error;
+    }
   }
   function setSidebar(open, focus = false) {
     sidebarOpen = open;
@@ -173,6 +184,18 @@
      within it. Each level after the scope name lists its siblings, and a trailing control lists the current node's
      children, so the path doubles as a one-level-at-a-time view of the contents tree. */
   const chevron = d => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${d}"/></svg>`;
+  /* A work several collections hold stands once in the contents: as the text being read, else the one the reader
+     leads with. Its other texts stay out of the tree, the path menus and the filter until the reader turns to one. */
+  let readingTexts = new Set();
+  function updateReadingTexts() {
+    readingTexts = new Set(ancestors(nodeId || scope?.root || '').filter(node => node.texts).map(node => node.id));
+  }
+  function shownText(node) {
+    if (!node.texts) return true;
+    return node.id === (node.texts.find(text => readingTexts.has(text.id)) || node.texts[0]).id;
+  }
+  const inShownText = node => ancestors(node.id).every(shownText);
+  const shownChildren = id => (children.get(id) || []).filter(shownText);
   function firstReadable(node) {
     if (node.status === 'present') return node;
     for (const child of children.get(node.id) || []) { const found = firstReadable(child); if (found) return found; }
@@ -183,7 +206,7 @@
     return target && {root:scope.root,page:target.path,anchor:target.fragment,node:target.id};
   }
   function renderPath() {
-    pathMenu.close(false);
+    pathMenu.close(false); updateReadingTexts();
     const path = $('#book-path'), focused = [...path.querySelectorAll('button')].indexOf(document.activeElement);
     const scopeNode = nodes.get(scope.root), scopeName = scopeNode?.label || page.title;
     const outside = scopeNode ? ancestors(scope.root).slice(0,-1) : [];
@@ -211,7 +234,7 @@
       if (node === current) button.setAttribute('aria-current','page');
       items.push(item(node === current ? 'book-path-level current' : 'book-path-level',button));
     }
-    if (current && children.get(current.id)?.length) {
+    if (current && shownChildren(current.id).length) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'book-path-children';
       button.dataset.menu = 'children'; button.dataset.node = current.id; button.innerHTML = chevron('M9 6l6 6-6 6');
       button.setAttribute('aria-label',text('pathChildren',{name:current.label})); button.title = button.getAttribute('aria-label');
@@ -248,7 +271,7 @@
   function pathMenuNodes(button) {
     if (button.dataset.menu === 'more') return [...$('#book-path').querySelectorAll('.folded [data-node]')].map(el => nodes.get(el.dataset.node));
     const node = nodes.get(button.dataset.node);
-    return children.get(button.dataset.menu === 'children' ? node.id : node.parent_id) || [];
+    return shownChildren(button.dataset.menu === 'children' ? node.id : node.parent_id);
   }
   // Each item opens the first readable page under its node, within the current scope.
   function pathMenuItems(button) {
@@ -333,24 +356,29 @@
     const retainedFocusId = focused?.closest('[data-node]')?.dataset.node;
     const query = $('#book-filter').value.trim().toLocaleLowerCase();
     $('#book-filter-clear').hidden = !query;
+    updateReadingTexts();
+    // A work shared by several collections, and the shelf a later collection adds, name whose text they are.
+    const first = metadata.collections[0]?.id;
+    const tag = (node, depth) => (node.texts?.length > 1 || depth === 0) && collectionOf(node.id) !== first
+      ? `<small class="toc-collection">${esc(collectionName(collectionOf(node.id)))}</small>` : '';
     const allowed = new Set();
     if (query) {
       const terms = query.split(/\s+/);
-      for (const node of nodes.values()) if (terms.every(term => node.label.toLocaleLowerCase().includes(term)))
+      for (const node of nodes.values()) if (terms.every(term => node.label.toLocaleLowerCase().includes(term)) && inShownText(node))
         ancestors(node.id).forEach(parent => allowed.add(parent.id));
     }
     const visibleIds = [];
     function branch(parent, depth) {
-      const siblings = (children.get(parent) || []).filter(node => !query || allowed.has(node.id));
+      const siblings = shownChildren(parent).filter(node => !query || allowed.has(node.id));
       return siblings.map((node,index) => {
         visibleIds.push(node.id);
-        const hasChildren = !!children.get(node.id)?.length;
-        const open = query ? !!children.get(node.id)?.some(child => allowed.has(child.id)) : expanded.has(node.id);
+        const hasChildren = !!shownChildren(node.id).length;
+        const open = query ? shownChildren(node.id).some(child => allowed.has(child.id)) : expanded.has(node.id);
         const selected = node.id === nodeId;
         return `<li role="treeitem" data-node="${esc(node.id)}" tabindex="-1" aria-label="${esc(node.label)}" aria-level="${depth+1}" aria-posinset="${index+1}" aria-setsize="${siblings.length}"${hasChildren?` aria-expanded="${open}"`:''}>
           <div class="toc-row${selected?' current':''}${node.status==='missing'?' missing':''}">
           ${hasChildren?`<button type="button" tabindex="-1" data-expand="${esc(node.id)}" aria-label="${esc(text(open?'collapseNode':'expandNode',{name:node.label}))}">${open?'▾':'▸'}</button>`:'<span class="toc-indent"></span>'}
-          ${node.status==='present' || hasChildren?`<a tabindex="-1" href="${esc(routeURL(nodeRoute(node)))}"${selected?' aria-current="page"':''}>${esc(node.label)}</a>`:`<span class="toc-label"${node.status==='missing'?` title="${esc(ui.missingNode)}"`:''}>${esc(node.label)}</span>`}</div>
+          ${node.status==='present' || hasChildren?`<a tabindex="-1" href="${esc(routeURL(nodeRoute(node)))}"${selected?' aria-current="page"':''}>${esc(node.label)}</a>`:`<span class="toc-label"${node.status==='missing'?` title="${esc(ui.missingNode)}"`:''}>${esc(node.label)}</span>`}${tag(node, depth)}</div>
           ${hasChildren && open?`<ul role="group">${branch(node.id,depth+1)}</ul>`:''}</li>`;
       }).join('');
     }
@@ -371,7 +399,7 @@
     $('#book-outline-title').textContent = page.title;
     const definitions = page.definitions.filter(entry => entry.locatable);
     $('#book-outline-empty').hidden = definitions.length > 0;
-    $('#book-outline').innerHTML = definitions.map(entry => `<li><a href="${esc(routeURL({root:scope.root,entry:entry.id,node:nodeId}))}"${route.entry===entry.id || route.anchor===entry.fragment?' aria-current="location"':''}>${esc(entry.name)}</a><a href="${esc(queryURL({entry:entry.id}))}" target="_blank" rel="noopener" aria-label="${esc(ui.entry+': '+entry.name)}" title="${esc(ui.entry)}">↗</a></li>`).join('');
+    $('#book-outline').innerHTML = definitions.map(entry => `<li><a href="${esc(routeURL({root:scope.root,entry:page.collection+':'+entry.id,node:nodeId}))}"${route.entry===page.collection+':'+entry.id || route.anchor===entry.fragment?' aria-current="location"':''}>${esc(entry.name)}</a><a href="${esc(queryURL({entry:entry.id}))}" target="_blank" rel="noopener" aria-label="${esc(ui.entry+': '+entry.name)}" title="${esc(ui.entry)}">↗</a></li>`).join('');
     const ordered = scope.pages;
     const index = ordered.findIndex(item => item.path === page.path);
     $('#book-paging').hidden = false;
@@ -383,7 +411,32 @@
       if (node) { link.href = routeURL(pageRoute(node)); link.title = node.label; link.tabIndex = 0; }
       else { link.removeAttribute('href'); link.removeAttribute('title'); link.tabIndex = -1; }
     }
+    renderTexts();
     scheduleContentsSync();
+  }
+  // The texts of the work being read, when the library holds more than one: each opens at the same place.
+  function renderTexts() {
+    const box = $('#book-texts'), work = ancestors(nodeId || scope.root).find(node => node.texts);
+    box.hidden = !(work?.texts.length > 1);
+    if (box.hidden) { box.replaceChildren(); return; }
+    box.setAttribute('aria-label', text('textsTitle', {count:work.texts.length}));
+    box.replaceChildren(...work.texts.map(option => {
+      const button = document.createElement('button'), name = collectionName(option.collection), shown = option.id === work.id;
+      button.type = 'button'; button.dataset.collection = option.collection; button.textContent = name;
+      button.setAttribute('aria-pressed', String(shown));
+      button.title = shown ? text('textCurrent', {name}) : text('textSwitch', {name});
+      return button;
+    }));
+  }
+  async function switchText(collection) {
+    try {
+      const found = await api(apiURL('/api/reader-counterpart', {node:nodeId || scope.root, collection, scope:scope.root}));
+      const target = nodes.get(found.node), readable = target && firstReadable(target);
+      if (!readable || !nodes.has(found.root)) throw new Error('no_counterpart');
+      navigate({root:found.root, page:readable.path, anchor:readable.fragment, node:readable.id});
+    } catch (error) {
+      $('#book-status').textContent = ui.errors[error.message] || ui.errors.network; $('#book-status').hidden = false;
+    }
   }
   function showError(code) {
     loading = false;
@@ -391,6 +444,7 @@
     $('#book-error').classList.toggle('preserve-reading',!!flow?.active);
     if (!flow?.active) document.title = annaPageTitle('book');
     $('#book-error-text').textContent = ui.errors[code] || ui.errors.network;
+    $('#book-library').hidden = code !== 'outside_library';
     $('#book-main').setAttribute('aria-busy','false'); $('#book-status').textContent = '';
   }
   async function load(target, saved, preserveScope = false) {
@@ -402,13 +456,17 @@
     $('#book-main').setAttribute('aria-busy','true'); $('#book-status').hidden = true;
     try {
       let root = target.root || saved?.root || '';
-      if (root && !nodes.has(root)) throw new Error('invalid_location');
+      if (root && !nodes.has(root)) {
+        const key = collectionOf(root);
+        const outside = !shelfCollection(key) && await hasReader(key);
+        throw new Error(outside ? 'outside_library' : 'invalid_location');
+      }
       let sourcePath = target.page;
       if (!target.entry && !sourcePath && root) {
         sourcePath = model.scope(root).pages[0]?.path;
         if (!sourcePath) throw new Error('empty_scope');
       }
-      const query = new URLSearchParams({snapshot:metadata.snapshot});
+      const query = new URLSearchParams({snapshot:snapshotOf(collectionOf(target.entry || sourcePath))});
       if (target.entry) query.set('entry',target.entry);
       else if (sourcePath) query.set('path',sourcePath);
       else throw new Error('invalid_location');
@@ -434,7 +492,6 @@
       route = target.entry ? {root,entry:target.entry,node:nodeId} : {root,page:data.path,anchor:target.anchor || '',node:nodeId};
       if (!saved?.expanded && contentsFollowing) reveal(nodeId);
       renderTree(); renderPage();
-      annaLibrary.setPlace(ancestors(nodeId || root).map(node => node.id).reverse());
       if (saved) { $('#book-tree-scroll').scrollTop = saved.treeScroll || 0; $('#panel-outline').scrollTop = saved.outlineScroll || 0; }
       loading = false;
       $('#book-loading').hidden = true; $('#book-error').hidden = true;
@@ -474,13 +531,15 @@
     $('#book-search-results').inert = true; $('#book-search-paging').hidden = true;
     $('#book-search-fallback').hidden = true; save();
     try {
-      const params = new URLSearchParams({keyword:searchQuery,page:number,pageSize:30,titleOnly,snapshot:metadata.snapshot});
+      const params = new URLSearchParams({keyword:searchQuery,page:number,pageSize:30,titleOnly});
       const data = await api(apiURL('/api/book-search', params), searchRequest.signal);
       if (sequence !== searchSequence) return;
       searchTotalPages = data.totalPages;
       $('#book-search-status').textContent = data.total ? text('found',{count:data.total.toLocaleString()}) : ui.searchEmpty;
       $('#book-search-fallback').hidden = data.match !== 'any';
-      $('#book-search-results').innerHTML = data.results.map(result => `<li><a href="${esc(routeURL({page:result.path}))}">${esc(result.title)}</a><small>${esc(result.category)}</small><p>${esc(result.preview)}</p></li>`).join('');
+      // With more than one collection on the shelf, each result names whose page it is.
+      const several = metadata.collections.length > 1;
+      $('#book-search-results').innerHTML = data.results.map(result => `<li><a href="${esc(routeURL({page:result.path}))}">${esc(result.title)}</a><small>${esc([several ? collectionName(result.collection) : '', result.category].filter(Boolean).join(' · '))}</small><p>${esc(result.preview)}</p></li>`).join('');
       $('#book-search-page').textContent = text('searchPage',{page:number,pages:Math.max(1,data.totalPages)});
       $('#book-search-prev').disabled = number <= 1; $('#book-search-next').disabled = number >= data.totalPages;
       $('#book-search-paging').hidden = data.totalPages <= 1;
@@ -499,8 +558,7 @@
     const link = event.target.closest('a[href]');
     if (!link || link.target === '_blank') return;
     const url = new URL(link.href);
-    const targetCollection = url.searchParams.get('collection') || DEFAULT_COLLECTION;
-    if (url.origin !== location.origin || url.pathname !== '/read' || targetCollection !== activeCollection) return;
+    if (url.origin !== location.origin || url.pathname !== '/read') return;
     event.preventDefault();
     const params = url.searchParams;
     const target = params.has('entry') ? {root:params.get('root') || '',entry:params.get('entry'),node:params.get('node') || ''} :
@@ -582,6 +640,27 @@
       if (next !== null) { event.preventDefault(); selectPane(tabs[next].dataset.pane,true); }
     });
   });
+  $('#book-texts').addEventListener('click', event => {
+    const button = event.target.closest('[data-collection]');
+    if (button && button.getAttribute('aria-pressed') !== 'true') switchText(button.dataset.collection);
+  });
+  $('#book-library').onclick = () => annaLibrary.open();
+  /* The shelf follows the reader's library: a changed order, a collection added or left out, or another leading
+     text lays the shelf out again in place. The page being read stays while its collection is on the shelf. */
+  let shelfTimer;
+  annaLibrary.subscribe(() => { clearTimeout(shelfTimer); shelfTimer = setTimeout(reshelve, 250); });
+  async function reshelve() {
+    if (!metadata || !flow) return;
+    try {
+      metadata = await fetchShelf();
+      model = annaReaderModel.index(metadata.nodes);
+      ({nodes,children,pageNodes} = model);
+      flow.collections = new Map(metadata.collections.map(c => [c.id, c]));
+      if (page && !shelfCollection(page.collection)) { showError('outside_library'); return; }
+      renderTree();
+      if (page && scope) renderPage();
+    } catch (error) { showError(error.message); }
+  }
   $('#book-search-form').onsubmit = event => { event.preventDefault(); if (metadata) search($('#book-search').value); };
   $('#book-search-prev').onclick = () => search(searchQuery,Math.max(1,searchPage-1),searchTitleOnly);
   $('#book-search-next').onclick = () => search(searchQuery,Math.min(searchTotalPages,searchPage+1),searchTitleOnly);
@@ -628,7 +707,7 @@
   document.addEventListener('visibilitychange', () => { if (document.hidden) capturePosition(); });
   window.addEventListener('popstate', async () => {
     if (!metadata) return;
-    const saved = history.state?.book?.snapshot === metadata.snapshot ? history.state.book : null;
+    const saved = restorable(history.state?.book);
     loading = true; restoring = true; restore(saved); restoring = false;
     if (saved?.search?.query) search(saved.search.query,saved.search.page,saved.search.titleOnly,saved.search.scroll);
     try { await load(readRoute(),saved); } catch (error) { showError(error.message); }
@@ -640,32 +719,30 @@
     const saved = history.state?.book;
     restoring = true; setSidebar(!narrow.matches);
     try {
-      metadata = await api(apiURL('/api/reader'));
+      metadata = await fetchShelf();
       model = annaReaderModel.index(metadata.nodes);
       ({nodes,children,pageNodes} = model);
-      flow = new AnnaReaderFlow({scroll:$('#book-scroll'),container:$('#book-pages'),snapshot:metadata.snapshot,
-        contentBase:metadata.page_base || metadata.content_base || '/book/',
-        lazyMedia:!!metadata.lazy_media,
-        cachedMedia:Array.isArray(metadata.cached_media)?metadata.cached_media:[],
-        fetchPage:(path,signal) => api(apiURL('/api/reader-page',{path,snapshot:metadata.snapshot}),signal),
+      flow = new AnnaReaderFlow({scroll:$('#book-scroll'),container:$('#book-pages'),collections:metadata.collections,
+        fetchPage:(path,signal) => api(apiURL('/api/reader-page',{path,snapshot:snapshotOf(collectionOf(path))}),signal),
         labels:ui,text,onActive:activeDocument,onNavigate:target => navigate(target,true,true),
         onTools:() => $('#book-menu').focus(),onSearch:() => { selectPane('search'); setSidebar(true,true); }});
       flow.markLinks(linkMarks);
-      $('#book-version').hidden = !metadata.source_release;
-      $('#book-version').textContent = metadata.source_release ? text('sourceVersion',metadata.source_release) : '';
-      annaCompanions.mount({page:'book', snapshot:metadata.snapshot, collection:activeCollection});
-      const current = saved?.snapshot === metadata.snapshot ? saved : null;
+      const release = metadata.collections.find(c => c.source_release)?.source_release;
+      $('#book-version').hidden = !release;
+      $('#book-version').textContent = release ? text('sourceVersion',release) : '';
+      annaCompanions.mount({page:'book', snapshots:snapshots()});
+      const kept = restorable(saved);
       const params = new URL(location.href).searchParams;
       // A place chosen from Anna's switcher arrives with its location in the URL and its offset in the workspace.
       const resumeId = annaWorkspace.takeResume('book');
-      let resumed = !current && resumeId !== null ? rememberedPosition(resumeId) : null;
+      let resumed = !kept && resumeId !== null ? rememberedPosition(resumeId) : null;
       if (resumed && (params.get('page') !== resumed.page || (params.get('root') || '') !== resumed.root)) resumed = null;
-      const remembered = !current && !resumed && !['root','entry','page','anchor','node'].some(key => params.has(key))
+      const remembered = !kept && !resumed && !['root','entry','page','anchor','node'].some(key => params.has(key))
         ? rememberedPosition() : null;
       if (remembered) history.replaceState(history.state, '', routeURL({root:remembered.root,page:remembered.page,node:remembered.node}));
-      restore(current); renderTree(); restoring = false;
-      if (current?.search?.query) search(current.search.query,current.search.page,current.search.titleOnly,current.search.scroll);
-      await load(readRoute(),current || resumed || remembered);
+      restore(kept); renderTree(); restoring = false;
+      if (kept?.search?.query) search(kept.search.query,kept.search.page,kept.search.titleOnly,kept.search.scroll);
+      await load(readRoute(),kept || resumed || remembered);
     } catch (error) { showError(error.message); }
     finally { restoring = false; }
   }

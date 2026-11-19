@@ -14,14 +14,12 @@ WEB = paths.PROJECT / 'web'
 
 class Handler(BaseHTTPRequestHandler):
     db_path=catalog.DB
-    reader_url=None
-    # The build snapshot the query page shares with the reader; None when the query page runs alone.
-    snapshot=None
     db_signature=None
     source_root=paths.WEB
     additional_collections=()
 
     def collection_registry(self):
+        """The collections this server answers for; the query-only server has no linked book to read or tour."""
         return CollectionRegistry(BookCatalog(self.db_path, Path(self.source_root)), self.additional_collections)
 
     def collection_conflict(self, key):
@@ -32,15 +30,14 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def log_message(self,*args): pass
+    def reads_books(self):
+        return any(getattr(collection, 'reader', None) is not None for collection in self.additional_collections)
     def send(self,body,kind='application/json; charset=utf-8',status=200,download=False):
         if not isinstance(body,bytes): body=json.dumps(body,ensure_ascii=False).encode()
         self.send_response(status)
         self.send_header('Content-Type',kind); self.send_header('Content-Length',str(len(body)))
         self.send_header('Cache-Control','no-store'); self.send_header('X-Content-Type-Options','nosniff')
-        has_reader = bool(self.reader_url) or any(
-            getattr(collection, 'reader', None) is not None for collection in self.additional_collections
-        )
-        frames = "'self'" if urlsplit(self.path).path == '/read' and has_reader else "'none'"
+        frames = "'self'" if urlsplit(self.path).path == '/read' and self.reads_books() else "'none'"
         self.send_header(
             'Content-Security-Policy',
             f"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self'; font-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; frame-src {frames}",
@@ -74,10 +71,9 @@ class Handler(BaseHTTPRequestHandler):
             # Blank values set nothing, except where the scope itself must reject them (an empty `collection`).
             filled = lambda q:{k:[x for x in v if x] for k,v in q.items() if any(v)}
             if url.path=='/source':
-                registry.select(p.get('collection'), book_only=True)
                 if issue := self.collection_conflict(DEFAULT):
                     self.send(issue, status=409); return
-                self.serve_source(registry.book, filled({k:v for k,v in p.items() if k!='collection'})); return
+                self.serve_source(registry.book, filled(p)); return
             if url.path=='/api/library':
                 self.send(self.describe_library(registry, works=catalog.first(p,'works')=='1')); return
             scope = parse_scope(p, registry)
@@ -88,18 +84,18 @@ class Handler(BaseHTTPRequestHandler):
             library = Library(registry, scope)
             primary = library.primary
             if url.path=='/api/meta':
-                native = primary.key == DEFAULT
+                members = [registry.get(k) for k in scope.libraries]
                 self.send({
                     **library.meta(),
                     'collection': primary.key,
                     'default_collection': DEFAULT,
-                    'collections': registry.describe(book_reader=bool(self.reader_url), book_snapshot=self.snapshot),
+                    'collections': registry.describe(),
                     'library': scope.describe(),
                     # The default book's extracted page text (/source) serves its entries whenever the book is read.
                     'source_text': DEFAULT in scope.libraries,
-                    'reader_url': self.reader_url if native else primary.reader_url,
-                    'snapshot': self.snapshot if native else primary.snapshot,
-                    'tour_url': '/tour' if native else (f'/tour?collection={primary.key}' if primary.tour is not None else None),
+                    # Stella and the tour read the whole library; they are there when a collection in it offers them.
+                    'reader_url': '/read' if any(c.reader is not None for c in members) else None,
+                    'tour_url': '/tour' if any(c.tour is not None for c in members) else None,
                 })
             elif url.path=='/api/facets': self.send(library.facets(p))
             elif url.path=='/api/entries': self.send(library.entries(p))
@@ -119,7 +115,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def describe_library(self, registry, works=False):
         """Every collection the server knows and what it offers; with `works=1`, each ready one's works too."""
-        collections = registry.describe(book_reader=bool(self.reader_url), book_snapshot=self.snapshot)
+        collections = registry.describe()
         works = {w['id']: w for w in describe_works(registry, registry.ready())} if works else {}
         return {'default_collection': DEFAULT,
                 'collections': [c | ({'works': works[c['id']]['works'], 'total': works[c['id']]['total']} if c['id'] in works else {})

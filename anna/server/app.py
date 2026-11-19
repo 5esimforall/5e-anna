@@ -15,13 +15,19 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from anna.server.linked_book import BOOK, fingerprint
 from anna.paths import FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
-from anna.presentation.reader import SCHEMA, ReaderError, page_data
+from anna.presentation.reader import SCHEMA, BookReader, ReaderError
 from anna.review.store import load_annotations
 import anna.server.query as serve
 from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.library import parse_scope
+from anna.presentation.library_tour import LibraryTour
+from anna.presentation.shelf import Shelf
 from anna.presentation.tour import TourCache, TourError
 import anna.source.search as search
+
+# Stella and the tour read the reader's whole library; their requests carry its scope as Anna's queries do.
+READER_ROUTES = {'/api/reader', '/api/reader-page', '/api/reader-counterpart', '/api/book-search', '/api/tour', '/api/tour-layout'}
 
 
 def _try_load_our5etools(data_dir, source_dir=None, *, lazy_media=False):
@@ -90,6 +96,8 @@ class Bundle:
         self.entries = entries
         self.signature = bundle_signature(self.db, self.book)
         self.tours = TourCache()
+        self.book_reader = BookReader(self.reader, manifest, entries)
+        self.book_tour = BookTour(self)
 
     @property
     def snapshot(self):
@@ -98,7 +106,26 @@ class Bundle:
     def tour(self):
         """The tour over this snapshot, read on first use; a changed curation file is read again."""
         locatable = lambda: {eid for eid, e in self.manifest['entries'].items() if e['locatable']}
-        return self.tours.get(self.db, self.reader['nodes'], locatable, self.snapshot)
+        return self.tours.get(self.db, self.reader['nodes'], locatable, self.snapshot, self.source)
+
+
+class BookTour:
+    """The book's tour levels, read only once a tour request needs them."""
+
+    def __init__(self, bundle):
+        self.bundle = bundle
+
+    def view(self, segment):
+        return self.bundle.tour().view(segment)
+
+    def layout(self, segment):
+        return self.bundle.tour().layout(segment)
+
+    def resolve(self, label_path):
+        return self.bundle.tour().resolve(label_path)
+
+    def below(self, node_id):
+        return self.bundle.tour().below(node_id)
 
 
 def load_bundle(source, db, book, quiet=True):
@@ -268,16 +295,19 @@ class AnnaServer(ThreadingHTTPServer):
 
 
 class AnnaHandler(serve.Handler):
-    reader_url = '/read'
-
     # Requests pin one bundle in do_GET; a reload only affects later requests.
     @property
     def db_path(self):
         return self.current.db
 
-    @property
-    def snapshot(self):
-        return self.current.snapshot
+    def collection_registry(self):
+        """Every collection, the book with the reader and tour of the bundle this request reads."""
+        bundle = self.current
+        return CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections,
+                                  book_tour=bundle.book_tour, book_reader=bundle.book_reader, book_snapshot=bundle.snapshot)
+
+    def reads_books(self):
+        return True
 
     @property
     def source_root(self):
@@ -286,10 +316,6 @@ class AnnaHandler(serve.Handler):
     @property
     def additional_collections(self):
         return self.server.additional_collections
-
-    @property
-    def search_entries(self):
-        return self.current.entries
 
     def handle(self):
         try:
@@ -506,83 +532,39 @@ class AnnaHandler(serve.Handler):
             else:
                 self.serve_our5etools_media(rel, reader=reader)
             return
-        if url.path not in {'/api/reader', '/api/reader-page', '/api/book-search', '/api/tour', '/api/tour-layout'}:
+        if url.path not in READER_ROUTES:
             super().do_GET()
             return
         params = parse_qs(url.query, keep_blank_values=True)
         try:
-            collection = self.collection_registry().select(params.pop('collection', None), book_only=False)
-            if issue := self.collection_conflict(collection.key):
-                self.send(issue, status=409)
+            registry = self.collection_registry()
+            scope = parse_scope(params, registry)
+            for key in scope.libraries:
+                if issue := self.collection_conflict(key):
+                    self.send(issue, status=409)
+                    return
+            touring = url.path in {'/api/tour', '/api/tour-layout'}
+            if any(len(v) != 1 for v in params.values()):
+                raise TourError('invalid_node', 400) if touring else ReaderError('invalid_location', 400)
+            one = lambda name: catalog.first(params, name)
+            if touring:
+                tour = LibraryTour(registry, scope)
+                tour.check(one('snapshot'))
+                self.send(tour.view(one('at')) if url.path == '/api/tour' else tour.layout(one('at')))
                 return
-            if collection.key == DEFAULT:
-                if 'snapshot' in params and params['snapshot'] != [self.current.snapshot]:
-                    raise ReaderError('snapshot_changed', 409)
-                if url.path == '/api/reader':
-                    reader = self.current.reader
-                    self.send({k: reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page', 'source_release')} | {'content_base': '/book/'})
-                elif url.path == '/api/tour':
-                    if any(len(v) != 1 for v in params.values()):
-                        raise TourError('invalid_node', 400)
-                    self.send(self.current.tour().view(catalog.first(params, 'node')) | {'snapshot': self.current.snapshot})
-                elif url.path == '/api/tour-layout':
-                    if any(len(v) != 1 for v in params.values()):
-                        raise TourError('invalid_node', 400)
-                    self.send(self.current.tour().layout(catalog.first(params, 'node'), self.current.source))
-                elif url.path == '/api/reader-page':
-                    if any(len(v) != 1 for v in params.values()):
-                        raise ReaderError('invalid_location', 400)
-                    self.send(page_data(self.current.reader, self.current.manifest, path=catalog.first(params, 'path'), entry=catalog.first(params, 'entry')))
-                else:
-                    if len(catalog.first(params, 'keyword')) > 2000:
-                        raise ReaderError('invalid_search', 400)
-                    self.send(search.search_entries(self.search_entries, params))
-                return
-
-            if 'snapshot' in params and collection.snapshot and params['snapshot'] != [collection.snapshot]:
-                raise ReaderError('snapshot_changed', 409)
-            if url.path == '/api/tour':
-                if collection.tour is None:
-                    raise CollectionError('collection_unsupported', 400)
-                if any(len(v) != 1 for v in params.values()):
-                    raise TourError('invalid_node', 400)
-                at = catalog.first(params, 'at') or catalog.first(params, 'node') or None
-                scope_source = catalog.first(params, 'scope_source') or None
-                scope_package = catalog.first(params, 'scope_package') or None
-                self.send(collection.tour.view(at=at, scope_source=scope_source, scope_package=scope_package))
-            elif url.path == '/api/tour-layout':
-                if collection.tour is None:
-                    raise CollectionError('collection_unsupported', 400)
-                if any(len(v) != 1 for v in params.values()):
-                    raise TourError('invalid_node', 400)
-                target_id = catalog.first(params, 'id') or catalog.first(params, 'node') or catalog.first(params, 'at')
-                self.send(collection.tour.layout(target_id))
-            elif url.path == '/api/reader':
-                if collection.reader is None:
-                    raise CollectionError('collection_unsupported', 400)
-                nav = collection.reader.navigation()
-                base = nav.get('page_base') or nav.get('content_base') or self._collection_book_base(collection)
-                self.send({**nav, 'collection': collection.key, 'page_base': base, 'content_base': base})
+            shelf = Shelf(registry, scope)
+            if url.path == '/api/reader':
+                self.send(shelf.navigation())
             elif url.path == '/api/reader-page':
-                if collection.reader is None:
-                    raise CollectionError('collection_unsupported', 400)
-                if any(len(v) != 1 for v in params.values()):
-                    raise ReaderError('invalid_location', 400)
-                self.send(collection.reader.page_data(
-                    path=catalog.first(params, 'path') or None,
-                    entry=catalog.first(params, 'entry') or None,
-                ))
+                self.send(shelf.page(path=one('path'), entry=one('entry'), snapshot=one('snapshot')))
+            elif url.path == '/api/reader-counterpart':
+                self.send(shelf.counterpart(one('node'), one('collection'), one('scope')))
             else:
-                if collection.reader is None:
-                    raise CollectionError('collection_unsupported', 400)
-                query = catalog.first(params, 'keyword') or catalog.first(params, 'q')
-                if len(query) > 2000:
-                    raise ReaderError('invalid_search', 400)
-                root = catalog.first(params, 'root') or None
                 try:
-                    self.send(collection.reader.book_search(query, root=root, params=params))
-                except TypeError:
-                    self.send(collection.reader.book_search(query, root=root))
+                    page, size = int(one('page') or 1), int(one('pageSize') or 30)
+                except ValueError:
+                    raise ReaderError('invalid_search', 400) from None
+                self.send(shelf.search(one('keyword'), title_only=one('titleOnly').lower() in {'true', '1'}, page=page, page_size=size))
         except (ReaderError, TourError, CollectionError) as exc:
             self.send({'code': exc.code}, status=exc.status)
         except ValueError as exc:

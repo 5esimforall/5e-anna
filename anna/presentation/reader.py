@@ -6,8 +6,10 @@ import re
 from bs4 import BeautifulSoup
 from pathlib import PurePosixPath
 
+from anna.presentation.collections import SearchHits
 from anna.source.html import resolve_link
 from anna.source.pages import Toc
+import anna.source.search as search
 
 SCHEMA = 6
 
@@ -148,3 +150,27 @@ def page_data(reader, manifest, *, path='', entry=''):
     if page is None:
         raise ReaderError('page_missing', 404)
     return {'snapshot': reader['snapshot'], 'path': path, 'fragment': fragment, **page}
+
+
+class BookReader:
+    """The linked book as one collection's reader: its contents, pages and full-text index in one snapshot."""
+
+    def __init__(self, reader, manifest, entries):
+        self.reader, self.manifest, self.entries = reader, manifest, entries
+
+    @property
+    def snapshot(self):
+        return self.reader['snapshot']
+
+    def navigation(self):
+        return {k: self.reader[k] for k in ('schema', 'snapshot', 'nodes', 'default_page', 'source_release')} | {'page_base': '/book/'}
+
+    def page_data(self, path=None, entry=None):
+        return page_data(self.reader, self.manifest, path=path or '', entry=entry or '')
+
+    def search(self, keyword, *, title_only=False):
+        terms = search.parse_terms(keyword.strip())
+        if not terms:
+            return SearchHits('all', [], lambda key, score: {})
+        match, hits = search.ranked_hits(self.entries, terms, title_only=title_only)
+        return SearchHits(match, hits, lambda index, score: search.search_result(self.entries[index], terms, score))

@@ -141,7 +141,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .library-summary { min-width: 0; overflow: hidden; color: var(--anna-muted); text-overflow: ellipsis; white-space: nowrap; }
 .library-summary:not(:empty)::before { content: '·'; margin-right: 6px; }
 .library-button.changed::after { content: ''; position: absolute; top: 4px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--anna-brand); box-shadow: 0 0 0 2px var(--anna-canvas); }
-.library-pin-chip { align-self: center; margin-inline-start: auto; }
 .library-dialog { width: min(680px, calc(100vw - 32px)); max-height: min(88vh, 920px); padding: 0; border: 1px solid var(--anna-line); border-radius: var(--anna-radius-lg);
   background: var(--anna-paper); color: var(--anna-ink); box-shadow: var(--anna-shadow); font-size: var(--anna-type-ui); }
 .library-dialog[open] { display: flex; flex-direction: column; }
@@ -158,7 +157,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .library-done { border-color: var(--anna-brand); background: var(--anna-brand); color: var(--anna-on-brand); font-weight: 600; }
 .library-done:hover { border-color: var(--anna-brand-hover); background: var(--anna-brand-hover); }
 .library-intro { margin: 12px 0 2px; color: var(--anna-secondary); line-height: 1.6; }
-.library-pin { margin: 8px 0 0; padding: 6px 10px; border-radius: var(--anna-radius-sm); background: var(--anna-warning-bg); color: var(--anna-warning); }
 .library-section { padding: 16px 0; border-bottom: 1px solid var(--anna-line); }
 .library-section:last-child { border-bottom: 0; }
 .library-section h3 { margin: 0 0 3px; font-size: 14px; }
@@ -180,8 +178,6 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .library-name>span { display: grid; min-width: 0; }
 .library-name strong { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .library-name small { color: var(--anna-muted); font-size: var(--anna-type-small); }
-.library-current { padding: 1px 7px; border-radius: 10px; background: var(--anna-selected); color: var(--anna-brand); font-size: var(--anna-type-small); white-space: nowrap; }
-.library-here { color: var(--anna-brand); white-space: nowrap; }
 .library-moves { display: flex; gap: 2px; }
 .library-moves .icon-button { width: 30px; height: 30px; }
 .library-moves .icon-button:disabled { opacity: .3; }

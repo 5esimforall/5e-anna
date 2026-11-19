@@ -16,7 +16,7 @@ async function openLibrary(page){
   await expect(dialog(page).locator('.library-total')).toContainText('部作品');
 }
 async function setLibrary(page,settings){
-  await page.goto(anna+'/tour');
+  await page.goto(anna+'/anna-logo.png');
   await page.evaluate(s=>{s?localStorage.setItem('anna.library',JSON.stringify(s)):localStorage.removeItem('anna.library');},settings);
 }
 const shieldRow=page=>page.locator('#results tr').filter({has:page.locator('.entry-name',{hasText:'护盾术'})}).first();
@@ -126,47 +126,39 @@ test('rules versions and kinds of content bound the table, and an empty table po
   await expect(shieldRow(page).locator('.version-pill')).toHaveCount(2);
 });
 
-test('a link pinned to one collection reads it alone until the pin is lifted',async({page})=>{
+test('a query link keeps its filters but cannot pin the reader to one collection',async({page})=>{
   await setLibrary(page,null);
-  await page.goto(anna+'/?collection=demo');await resultsReady(page);
-  await expect(page.locator('#library-pin')).toContainText('仅 测试资料库');
-  await expect(page.locator('#results tr')).toHaveCount(2);
-  await page.locator('#library-pin .condition-remove').click();await resultsReady(page);
-  expect(new URL(page.url()).searchParams.get('collection')).toBeNull();
-  await expect(page.locator('#library-pin')).toBeHidden();
-  expect(await page.locator('#results tr').count()).toBeGreaterThan(2);
-  // A reserved collection named by a link is reported with a way back.
-  for(const id of ['5etools','reserved-demo']){
-    await page.goto(anna+'/?collection='+id);
-    await expect(page.getByRole('alert').filter({hasText:'这个资料库尚未接入。'})).toBeVisible();
-    await expect(page.locator('#results tr')).toHaveCount(0);
-  }
-  await page.getByRole('link',{name:'回到默认资料库'}).click();await resultsReady(page);
-  await expect(page.locator('#library-pin')).toBeHidden();
-});
+  const query=new URLSearchParams({type:'spell',q:'护盾术'}).toString();
+  await page.goto(anna+'/?collection=demo&'+query);await resultsReady(page);
+  await expect(page).toHaveURL(anna+'/?'+query);
+  await expect(shieldRow(page).locator('.version-pill')).toHaveCount(2);
 
-test('the tour and Stella open the first collection in the library that has one',async({page})=>{
-  await setLibrary(page,{order:['demo','5echm'],enabled:['demo','5echm']});
-  // demo offers neither a tour nor a book, so both pages keep the book.
-  await page.goto(anna+'/tour');
-  await expect(page.locator('.tour-column').first()).toHaveAttribute('data-state','ready');
-  expect(new URL(page.url()).searchParams.get('collection')).toBeNull();
   await openLibrary(page);
-  await expect(dialog(page).locator('[data-library-row="5echm"] .library-current')).toHaveText('本页');
-  await expect(dialog(page).locator('[data-library-row="demo"] .library-here')).toHaveCount(0);
+  await libraryBox(page,'demo').check();await libraryBox(page,'5echm').uncheck();
+  await page.keyboard.press('Escape');
+  await expect(button(page).locator('.library-summary')).toHaveText('测试资料库');
+  await page.goto(anna+'/?collection=5echm&'+query);await resultsReady(page);
+  await expect(page).toHaveURL(anna+'/?'+query);
+  await expect(shieldRow(page).locator('td[data-label="规则版本"]')).toHaveText('2014');
+  await page.reload();await resultsReady(page);
+  await expect(button(page).locator('.library-summary')).toHaveText('测试资料库');
+  await expect(shieldRow(page).locator('td[data-label="规则版本"]')).toHaveText('2014');
 });
 
-test('before restarting an old service only the original unscoped queries are allowed',async({page,request})=>{
-  await setLibrary(page,null);
-  const meta=await (await request.get(anna+'/api/meta')).json();
-  for(const key of ['collections','collection','default_collection','source_text','library'])delete meta[key];
-  await page.route('**/api/meta*',route=>route.fulfill({json:meta}));
-  await page.goto(anna+'/?type=spell');
-  await resultsReady(page);
-  await expect(page.locator('#library-pin')).toBeHidden();
-  await page.locator('#results .entry-name').first().click();
-  await expect(page.locator('#detail .detail-links a[href^="/source?"]')).toBeVisible();
-  await page.goto(anna+'/?collection=demo');
-  await expect(page.locator('#error')).toContainText('请重启 make up');
-  await expect(page.locator('#results tr')).toHaveCount(0);
+test('a query-only collection can lead the table without taking the tour and Stella away',async({page,request})=>{
+  await setLibrary(page,{order:['demo','5echm'],enabled:['demo','5echm']});
+  const {versions_total:count}=await (await request.get(anna+'/api/entries?libraries=demo,5echm&type=spell&limit=1')).json();
+  await page.goto(anna+'/?type=spell');await resultsReady(page);
+  await expect(button(page).locator('.library-summary')).toHaveText('测试资料库 + 不全书');
+  await page.locator('.page-switch a[data-page=tour]').click();
+  const root=page.locator('.tour-column[data-depth="0"]');
+  await expect(root).toHaveAttribute('data-state','ready');
+  // The tour still counts spells from both selected collections.
+  await expect(root.locator('.tour-item').filter({hasText:'法术（按环阶）'}).locator('.tour-item-count')).toHaveText(count.toLocaleString('zh-CN'));
+  await root.locator('[data-segment="create"]').click();
+  const stella=page.locator('.tour-column[data-depth="1"] .tour-go[href^="/read?"]');
+  await expect(stella).toHaveAttribute('href',/^\/read\?root=5echm%3A/);
+  await stella.click();
+  await expect(page.locator('#content')).toHaveCSS('visibility','visible');
+  await expect(button(page).locator('.library-summary')).toHaveText('测试资料库 + 不全书');
 });

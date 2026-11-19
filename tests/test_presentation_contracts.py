@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 from anna.presentation import catalog, contracts, reader
 from anna.presentation.collections import (
     BookCatalog,
+    Capabilities,
     CatalogProvider,
     Collection,
     CollectionRegistry,
@@ -113,7 +114,7 @@ class CatalogContractTests(unittest.TestCase):
                 self.assertEqual(body.decode(), case['csv'])
             for case in self.data['details']:
                 status, _, body = request('/api/entry?' + urlencode({'id': case['id']}))
-                self.assertEqual((status, json.loads(body)), (200, case['expected']))
+                self.assertEqual((status, json.loads(body)), (200, case['expected'] | {'collection': DEFAULT}))
             for route, status, message in [
                 ('/api/entry?id=absent', 404, '条目不存在'),
                 ('/api/entries?type=unknown', 400, '未知条目类型'),
@@ -122,7 +123,7 @@ class CatalogContractTests(unittest.TestCase):
                 self.assertEqual(actual, status)
                 self.assertIn(message, json.loads(body)['error'])
 
-    def test_collection_selection_does_not_silently_fall_back(self):
+    def test_library_reports_unavailable_collections_and_fallback(self):
         with endpoint(self.data) as request:
             status, _, body = request('/api/meta')
             self.assertEqual(status, 200)
@@ -132,31 +133,33 @@ class CatalogContractTests(unittest.TestCase):
             self.assertTrue(meta['source_text'])
             self.assertEqual({c['id']: c['status'] for c in meta['collections']},
                              {DEFAULT: 'ready', OUR5ETOOLS.key: 'reserved', FIVETOOLS.key: 'reserved'})
-            for suffix, status, code in (
-                ('our5etools', 409, 'collection_unavailable'),
-                ('5etools', 409, 'collection_unavailable'),
-                ('not-registered', 404, 'unknown_collection'),
-                ('', 400, 'invalid_collection'),
-                ('5echm&collection=our5etools', 400, 'invalid_collection'),
-                ('5echm&collection=5etools', 400, 'invalid_collection'),
-            ):
-                actual, _, body = request('/api/entries?collection='+suffix)
-                self.assertEqual((actual, json.loads(body)), (status, {'code':code}))
+            for libraries, fallback in ((f'{DEFAULT},our5etools,unknown', False), ('our5etools,unknown', True)):
+                with self.subTest(libraries=libraries):
+                    status, _, body = request('/api/meta?' + urlencode({'libraries': libraries}))
+                    self.assertEqual(status, 200)
+                    scope = json.loads(body)['library']
+                    self.assertEqual((scope['libraries'], scope['unavailable'], scope['fallback']),
+                                     ([DEFAULT], ['our5etools', 'unknown'], fallback))
 
     def test_second_provider_serves_every_projection_in_its_own_scope(self):
         detail = self.data['details'][1]
         eid = detail['id']
         external = Mock(spec=CatalogProvider)
+        external.capabilities.return_value = Capabilities(conditions=frozenset({'q'}), facets=frozenset(),
+                                                          types=frozenset({'spell'}), sources=frozenset())
+        external.signature.return_value = ('external-fixture',)
         external.meta.return_value = {'sources':[{'id':'external-book'}]}
         external.entries.return_value = {'rows':[{'id':eid}]}
         external.facets.return_value = {'groups':[]}
-        external.detail.return_value = {'id':eid,'body':'外部正文'}
+        external_entry = {'id':eid,'body':'外部正文'}
+        external.rows.return_value = {eid: {'id': eid}}
+        external.detail.side_effect = lambda _: dict(external_entry)
         external.layout.return_value = {'status':'empty'}
         external.export.return_value = b'external\n'
         # A future provider fills the reserved key without changing the router.
         with endpoint(self.data, (Collection(FIVETOOLS.key, FIVETOOLS.zh, FIVETOOLS.en, external),)) as request:
             def selected(path):
-                return request(path+('&' if '?' in path else '?')+'collection=5etools')
+                return request(path+('&' if '?' in path else '?')+'libraries=5etools')
             status, _, body = selected('/api/meta')
             self.assertEqual(status, 200)
             meta = json.loads(body)
@@ -165,12 +168,12 @@ class CatalogContractTests(unittest.TestCase):
             self.assertIn({'id':'5etools','label':{'zh':'5etools','en':'5etools'},'status':'ready','tour':False,'reader':False,'snapshot':None},meta['collections'])
             self.assertIn({'id':'our5etools','label':{'zh':'our5etools','en':'our5etools'},'status':'reserved','tour':False,'reader':False,'snapshot':None},meta['collections'])
             self.assertIsNone(meta['reader_url'])
-            self.assertIsNone(meta['snapshot'])
+            self.assertIsNone(meta['tour_url'])
             self.assertFalse(meta['source_text'])
             for path, expected in (
                 ('/api/entries?q=Shield', external.entries.return_value),
                 ('/api/facets?q=Shield', external.facets.return_value),
-                ('/api/entry?id='+eid, external.detail.return_value),
+                ('/api/entry?id='+eid, external_entry | {'collection': FIVETOOLS.key}),
                 ('/api/entry-layout?id='+eid, external.layout.return_value),
             ):
                 status, _, body = selected(path)
@@ -183,9 +186,7 @@ class CatalogContractTests(unittest.TestCase):
             external.detail.assert_called_once_with(eid)
             external.layout.assert_called_once_with(eid)
             # The same raw ID in the default collection still opens the original record.
-            self.assertEqual(json.loads(request('/api/entry?id='+eid)[2]), detail['expected'])
-            status, _, body = selected('/source')
-            self.assertEqual((status, json.loads(body)), (400, {'code':'collection_unsupported'}))
+            self.assertEqual(json.loads(request('/api/entry?id='+eid)[2]), detail['expected'] | {'collection': DEFAULT})
 
     def test_registration_requires_distinct_safe_keys(self):
         book = BookCatalog(Path('unused.sqlite'), Path('.'))

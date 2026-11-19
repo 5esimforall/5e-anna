@@ -12,9 +12,11 @@ import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+from urllib.parse import urlencode
 import anna.server.app as up
 from anna.server.app import validate_bundle,create_server
-from anna.server.linked_book import build_book
+from anna.server.linked_book import build_book,fingerprint
+from anna.source.html import Document
 import test_linked_book as fixtures
 
 class ServerTests(unittest.TestCase):
@@ -35,16 +37,32 @@ class ServerTests(unittest.TestCase):
                 for old_path in ('/topics/test.htm', '/definition/ver_test', '/anna/entry/ver_test', '/book/assets/webhelp-shell.js'):
                     self.assertEqual(self.request(server,old_path)[0],404)
                 reader=json.loads(self.request(server,'/api/reader')[2])
-                self.assertEqual(reader['content_base'],'/book/')
-                self.assertIsNone(reader['source_release'])
-                # One bundle binds the query page's snapshot to the reader's model.
-                handler=object.__new__(up.AnnaHandler);handler.current=server.bundle
-                self.assertEqual((up.AnnaHandler.reader_url,handler.snapshot),('/read',reader['snapshot']))
-                target=json.loads(self.request(server,'/api/reader-page?entry=ver_test')[2])
-                self.assertEqual((target['path'],target['fragment']),('topics/test.htm','anna-ver_test'))
-                self.assertEqual(self.request(server,'/api/reader-page?entry=ver_test&path=topics/test.htm')[0],400)
-                self.assertEqual(self.request(server,'/api/reader-page?path=../style.css')[0],404)
-                self.assertEqual(self.request(server,'/api/reader-page?entry=ver_test&snapshot=old')[0],409)
+                (collection,)=reader['collections']
+                self.assertEqual((collection['id'],collection['page_base'],collection['source_release']),('5echm','/book/',None))
+                self.assertEqual(reader['default_page'],'5echm:topics/test.htm')
+                self.assertTrue(all(n['id'].startswith('5echm:') for n in reader['nodes']))
+                # One bundle binds Anna's handoff to the collection on Stella's shelf.
+                meta=json.loads(self.request(server,'/api/meta')[2])
+                advertised=next(c for c in meta['collections'] if c['id']=='5echm')
+                self.assertEqual((meta['reader_url'],meta['tour_url'],advertised['snapshot']),('/read','/tour',collection['snapshot']))
+                status,_,body=self.request(server,'/api/entry?id=ver_test')
+                self.assertEqual(status,200)
+                address=json.loads(body)['collection']+':ver_test'
+                status,_,body=self.request(server,'/api/reader-page?'+urlencode({'entry':address,'snapshot':collection['snapshot']}))
+                target=json.loads(body)
+                self.assertEqual((status,target['collection'],target['path'],target['fragment']),
+                                 (200,'5echm','5echm:topics/test.htm','anna-ver_test'))
+                for query,status,code in (
+                    ('entry=5echm:ver_test&path=5echm:topics/test.htm',400,'invalid_location'),
+                    ('entry=5echm:ver_test&entry=5echm:absent',400,'invalid_location'),
+                    ('entry=ver_test',400,'invalid_location'),
+                    ('path=5echm:../style.css',404,'page_missing'),
+                    ('entry=5echm:absent',404,'entry_missing'),
+                    ('entry=5echm:ver_test&snapshot=old',409,'snapshot_changed'),
+                ):
+                    with self.subTest(query=query):
+                        actual,_,body=self.request(server,'/api/reader-page?'+query)
+                        self.assertEqual((actual,json.loads(body)),(status,{'code':code}))
                 self.assertEqual(self.request(server,'/book/anna/entry/ver_test')[0],404)
                 self.assertEqual(self.request(server,'/book/api/reader-context')[0],404)
                 self.assertEqual(self.request(server,'/__original/index.htm')[0],404)
@@ -153,7 +171,11 @@ class WatchTests(unittest.TestCase):
             c.request('GET',path);r=c.getresponse();return r.status,r.read()
     def snapshot(self,server):
         status,body=self.request(server,'/api/reader')
-        return json.loads(body)['snapshot'] if status==200 else None
+        return json.loads(body)['collections'][0]['snapshot'] if status==200 else None
+    def search(self,server,keyword):
+        status,body=self.request(server,'/api/book-search?'+urlencode({'keyword':keyword}))
+        self.assertEqual(status,200)
+        return [(row['collection'],row['path']) for row in json.loads(body)['results']]
     def wait_for(self,predicate,timeout=15):
         deadline=time.monotonic()+timeout
         while time.monotonic()<deadline:
@@ -167,7 +189,8 @@ class WatchTests(unittest.TestCase):
     def start(self,root,source,db,book,manifest):
         stack=ExitStack()
         stack.enter_context(patch.object(up.search,'WEB',source))
-        server=create_server(db,book,manifest,0,watch=True)
+        bundle=up.Bundle(source,db,book,manifest,up.search.load_index(db,source,quiet=True))
+        server=create_server(db,book,manifest,0,watch=True,bundle=bundle)
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         self.addCleanup(stack.close);self.addCleanup(thread.join)
         self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
@@ -178,16 +201,28 @@ class WatchTests(unittest.TestCase):
             manifest,_=build_book(source,db,book)
             server=self.start(root,source,db,book,manifest)
             before=self.snapshot(server);self.assertTrue(before)
-            self.rebuilt_database(db)
+            self.assertEqual(self.search(server,'定义'),[('5echm','5echm:topics/test.htm')])
+            self.assertEqual(self.search(server,'重订'),[])
+            path=source/'topics/test.htm'
+            revised=path.read_text().replace('定义','重订')
+            path.write_text(revised)
+            doc=Document('topics/test.htm',revised)
+            try:
+                with closing(sqlite3.connect(db)) as conn:
+                    conn.execute('UPDATE pages SET sha256=?,text=?',(fingerprint(path),doc.text));conn.commit()
+            finally:
+                doc.close()
             build_book(source,db,book)
             self.assertTrue(self.wait_for(lambda:self.snapshot(server) not in (None,before)),'service did not swap in the rebuilt bundle')
             self.assertEqual(self.snapshot(server),json.loads((book/'anna-reader.json').read_text())['snapshot'])
             self.assertIsNone(server.reload_error)
             self.assertEqual(server.bundle.snapshot,self.snapshot(server))
-            handler=object.__new__(up.AnnaHandler);handler.current=server.bundle
-            self.assertEqual((handler.snapshot,handler.search_entries),(server.bundle.snapshot,server.bundle.entries))
             self.assertEqual(self.request(server,'/book/topics/test.htm')[0],200)
-            self.assertEqual(self.request(server,'/api/reader-page?entry=ver_test&snapshot=stale')[0],409)
+            self.assertEqual(self.search(server,'定义'),[])
+            self.assertEqual(self.search(server,'重订'),[('5echm','5echm:topics/test.htm')])
+            entry='/api/reader-page?entry=5echm:ver_test&snapshot='
+            self.assertEqual(self.request(server,entry+before)[0],409)
+            self.assertEqual(self.request(server,entry+self.snapshot(server))[0],200)
     def test_half_published_rebuild_stays_409_without_a_false_failure(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);source,db=fixtures.LinkedBuildTests().fixture(root);book=root/'book'

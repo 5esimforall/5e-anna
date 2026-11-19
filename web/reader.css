@@ -12,6 +12,8 @@
 #book-menu[aria-expanded=true] { color: var(--anna-brand); }
 /* Marking links ends the bar: a view of the text like the theme at the end of the topbar. Its icon is a line of
    text with one highlighted phrase, filled more strongly while the marks are shown. */
+#book-texts { flex: none; padding: 2px; }
+#book-texts button { min-height: 24px; }
 #book-link-marks .link-marks-band { fill: currentColor; stroke: none; opacity: .2; }
 #book-link-marks[aria-pressed=true] { color: var(--anna-brand); background: var(--anna-selected); }
 #book-link-marks[aria-pressed=true] .link-marks-band { opacity: .4; }
@@ -89,6 +91,8 @@
 .toc-row a, .toc-label { min-width: 0; padding: 6px 6px 6px 0; color: inherit; text-decoration: none; overflow-wrap: anywhere; line-height: 1.45; flex: 1; }
 .toc-row.current a { font-weight: 600; }
 .toc-row.missing { color: var(--anna-muted); }
+/* Whose text a shared work shows, and which collection a later part of the shelf comes from. */
+.toc-collection { flex: none; margin-inline-end: 6px; padding: 1px 6px; border-radius: 4px; background: var(--anna-canvas); color: var(--anna-muted); font-size: var(--anna-type-small); white-space: nowrap; }
 .toc-row.current::after { content: ''; width: 4px; height: 18px; border-radius: 3px; background: var(--anna-brand); margin: 0 5px; }
 .book-sidebar-foot { flex-shrink: 0; margin: 0 16px; padding: 10px 0 8px; border-top: 1px solid var(--anna-line); color: var(--anna-muted); font-size: 12px; }
 .book-sidebar-foot p { margin: 4px 0 0; font-size: 13px; }

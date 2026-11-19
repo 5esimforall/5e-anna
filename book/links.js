@@ -29,10 +29,8 @@
   const extMatch = pathname.match(/^\/([a-z0-9-]+)-book\//);
   const contentBase = extMatch ? '/' + extMatch[1] + '-book/' : (data.reader?.content_base || '/book/');
   const definitionBase = data.reader?.definition_base || (contentBase + 'definition/');
-  const collection = data.reader?.collection || (extMatch ? extMatch[1] : '5echm');
-  const entryQueryPrefix = collection && collection !== '5echm'
-    ? '/?collection=' + encodeURIComponent(collection) + '&entry='
-    : '/?entry=';
+  // Anna finds an entry by its own id in the reader's library, whichever collection holds it.
+  const entryQueryPrefix = '/?entry=';
   // Retain text nodes, not live Ranges: source enhancements can move table nodes.
   const definitions = new Map((data.definitions || []).map(d => [d.id, {...d, body: bind(d.body, false), title: bind(d.title)}]));
   const references = (data.references || []).map(r => ({id:r.id, binding:bind(r.range), text:r.range.text}));

@@ -1,5 +1,6 @@
 /* Reader bridge. Source content keeps its layout; navigation uses the app protocol.
-   A versioned protocol coordinates the source document and application. */
+   A versioned protocol coordinates the source document and application. Stella reads several collections on one
+   shelf, so every address the bridge reports names its collection: `collection:path`, `collection:entry`. */
 (() => {
   'use strict';
   const context = JSON.parse(document.getElementById('anna-bindings').textContent).reader;
@@ -22,9 +23,10 @@
   const sizing = document.createElement('style');
   sizing.textContent = 'html,html body{min-height:0!important;height:auto!important}html{overflow-y:hidden!important}';
   document.head.append(sizing);
-  const path = decodeURIComponent(
+  const qualify = local => collection + ':' + local;
+  const path = qualify(decodeURIComponent(
     location.pathname.startsWith(contentBase) ? location.pathname.slice(contentBase.length) : location.pathname.slice(1)
-  );
+  ));
   const send = (type, detail = {}) => {
     parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, location.origin);
   };
@@ -43,21 +45,20 @@
     try { url = new URL(href, location.href); } catch { return null; }
     if (url.origin !== location.origin) return null;
     try {
-      if (url.pathname.startsWith(definitionBase)) return {entry: decodeURIComponent(url.pathname.slice(definitionBase.length))};
+      if (url.pathname.startsWith(definitionBase)) return {entry: qualify(decodeURIComponent(url.pathname.slice(definitionBase.length)))};
       if (url.pathname.startsWith(contentBase)) {
         const rel = decodeURIComponent(url.pathname.slice(contentBase.length));
         if (!pagePrefixes.some(prefix => rel.startsWith(prefix))) return null;
-        return {page: rel, anchor: decodeURIComponent(url.hash.slice(1))};
+        return {page: qualify(rel), anchor: decodeURIComponent(url.hash.slice(1))};
       }
+      // A Stella address already names its collection.
       if (url.pathname === '/read') {
-        const targetCollection = url.searchParams.get('collection') || '5echm';
-        if (targetCollection !== collection) return null;
         const entry = url.searchParams.get('entry');
         const page = url.searchParams.get('page');
         const root = url.searchParams.get('root') || '';
         const anchor = url.searchParams.get('anchor') || decodeURIComponent(url.hash.slice(1));
         if (entry) return {root, entry};
-        if (page && pagePrefixes.some(prefix => page.startsWith(prefix))) return {root, page, anchor};
+        if (page) return {root, page, anchor};
         if (root) return {root, anchor};
       }
       return null;
@@ -65,7 +66,6 @@
   }
   function readerURL(route) {
     const params = new URLSearchParams();
-    if (collection && collection !== '5echm') params.set('collection', collection);
     for (const [k, v] of Object.entries(route)) if (v) params.set(k, v);
     return location.origin + '/read' + (params.size ? '?' + params : '');
   }

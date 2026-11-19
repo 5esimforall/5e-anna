@@ -121,20 +121,14 @@ async function stepEntry(delta){
 }
 // An entry's book is its own collection's: the default book reads anna's extraction, the others their chapters.
 const nativeEntry=e=>(e?.collection||metadata.collection||'5echm')===(metadata.default_collection||'5echm');
-function bookReaderURL(){
-  const book=metadata.collections?.find(c=>c.id===(metadata.default_collection||'5echm'));
-  return book?(book.reader?'/read':null):metadata.reader_url;
-}
-function readerLocationHref(loc,collection=metadata?.collection){
-  if(!loc)return '';
-  const page=loc.page||loc.path||'';
-  if(!page)return '';
-  const q=new URLSearchParams();
-  if(collection&&collection!==(metadata.default_collection||'5echm'))q.set('collection',collection);
-  if(loc.root)q.set('root',loc.root);
-  q.set('page',page);
-  const frag=loc.fragment?'#'+encodeURIComponent(loc.fragment):'';
-  return '/read?'+q.toString()+frag;
+// Stella opens an entry where its collection's book defines it: every entry of the default book, another
+// collection's where it has a place in that collection's chapters.
+function bookHref(e){
+  const collection=e?.collection||metadata.collection;
+  if(!metadata.collections?.find(c=>c.id===collection)?.reader)return '';
+  const loc=e.reader_location||e.provenance?.reader_location;
+  if(!nativeEntry(e)&&!(loc&&loc.locatable!==false&&(loc.path||loc.page)))return '';
+  return '/read?'+new URLSearchParams({entry:collection+':'+e.id});
 }
 function safeExternalHref(raw){
   if(typeof raw!=='string')return '';
@@ -192,8 +186,7 @@ function renderProvenance(e){
     if(remoteCount)pills.push(`<span class="o5e-remote-media">${esc(ui.provMediaRemote.replace('{count}',fmt(remoteCount)))}</span>`);
     if(pills.length)rows.push([ui.provMedia,`<span class="o5e-prov-media">${pills.join(' ')}</span>`]);
   }
-  const loc=e.reader_location||p.reader_location;
-  const locHref=readerLocationHref(loc,e.collection);
+  const loc=e.reader_location||p.reader_location,locHref=loc?bookHref(e):'';
   if(locHref){
     rows.push([ui.provReadBook,`<a class="o5e-prov-link" target="_blank" rel="noopener" href="${esc(locHref)}">${esc(loc.title||ui.provReadBook)} ↗</a>`]);
   }
@@ -219,13 +212,8 @@ function renderDetail(tab='body') {
   // pinned while the text scrolls, and the toolbar takes over the name once the head has scrolled away.
   const badges=`${e.legacy&&e.legacy!=='unmarked'&&legacy[e.legacy]?badge(legacy[e.legacy]):''}${conflicts.length?badge(`${conflicts.length} 个字段冲突`,'amber'):''}`;
   const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}${relationMark(m)}</button>`).join('')}</div>`:'';
-  const native=nativeEntry(e),reader=bookReaderURL();
-  const extBookHref=!native?readerLocationHref(e.reader_location||e.provenance?.reader_location,e.collection):'';
-  const bookLink=native&&reader
-    ?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(reader+'?entry='+encodeURIComponent(e.id))}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(linkLabels.bookDefinition)} ↗</a>`
-    :extBookHref
-      ?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(extBookHref)}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(ui.provReadBook)} ↗</a>`
-      :'';
+  const native=nativeEntry(e),stella=bookHref(e);
+  const bookLink=stella?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(stella)}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(native?linkLabels.bookDefinition:ui.provReadBook)} ↗</a>`:'';
   const rangeLink=native&&metadata.source_text!==false?`<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a>`:'';
   const links=bookLink||rangeLink?`<div class="detail-links">${bookLink}${rangeLink}</div>`:'';
   const name=e.name_zh||e.name;
@@ -374,7 +362,7 @@ function closeEntry({update=true,restoreFocus=true}={}) {
     document.body.classList.remove('detail-open','detail-modal');
     if(readerFull)setReaderFull(false,{save:false});
   });
-  endTopic(currentReaderId,currentEntry?.collection);
+  endTopic(currentEntry);
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();
   updateReaderNavigation();

@@ -30,25 +30,24 @@ HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；�
 
 ## 接入资料库
 
-资料库标识内容来自哪套整理数据库；`source` 仍是该库中的书籍等文献，`ruleset` 仍是规则代际，`package` 标识所属内容包。各库保存自己的条目、证据与身份，条目 ID 只在本库内唯一，不同库的同名条目不合并身份、不按名称互相回退。导览与 Stella 每次只读一个资料库，由 `collection` 指定；Anna 的查询读取读者的资料库（见下节），带 `collection` 时只读这一库。
+资料库标识内容来自哪套整理数据库；`source` 仍是该库中的书籍等文献，`ruleset` 仍是规则代际，`package` 标识所属内容包。各库保存自己的条目、证据与身份，条目 ID 只在本库内唯一，不同库的同名条目不合并身份、不按名称互相回退。Anna 的查询、导览与 Stella 都读取读者的资料库（见下节）：查询合成一张表，导览与 Stella 合成一个书架。书架与导览中属于某个资料库的地址一律写成 `资料库:本地标识`（目录节点、页面路径、条目与导览段）。
 
-接入新的库时，实现 `CatalogProvider`（可选配合 `TourProvider` 与 `ReaderProvider`），返回既有的查询／筛选／详情消费结构，并提供资料库合表所需的 `works`、`ranked`、`rows`、`schema`、`capabilities` 与 `signature`。`works` 的每部作品另给出别的资料库可能用来称呼它的名字（`codes` 为 5etools 来源代码，`abbreviations`，`titles`）与打开它的 Stella 书根 `reader_root`；`ranked` 的每行给出所属作品 `work`，以及复制来源 `base`、`base_work`、`base_name_en`（没有时为 null）。`Capabilities.same_name_groups` 说明本库自己的版本组是否已经汇集不同作品的同名条目：不全书的同名候选组是，our5etools 只按记录的重印分组，不是；`entries`、`facets` 与 `export` 接受可选的 `Restriction`（规则版本与作品集合），范围不收窄时按原签名调用。若同时提供导览或整书阅读，可在 `Collection` 上挂载可选的 `reader_url`、`snapshot`、`tour`、`reader`、`book_base` 与 `media_base` 字段。提供者负责只读访问自己的数据和生成经安全处理的排版，不得在导入或请求阶段加载任何构建、审计或提取模块；没有可用排版时返回 `{"status":"empty"}`，正文仍来自详情的 `body`。使用 `create_server(..., additional_collections=(Collection(key, zh, en, provider, ...),))` 注册；`anna.server.app` 在存在 `--our5etools-data` 的 `manifest.json` 时按需懒加载 `load_our5etools_collection()` 注册 `our5etools`（`collection=our5etools`），在存在预留 `--5etools-data`（默认 `data/5etools/`）的 `manifest.json` 时加载 `load_fivetools_collection()` 注册独立的 `5etools`（`collection=5etools`），运行时仅消费各自自包含快照（含 `media/`）而不读取源镜像；未传入对应数据时，`our5etools` 与 `5etools` 均保持 `reserved` 占位。构建用的 `5ETOOLS_DIR` 仍只供应不全书对照，不会启用 `our5etools` 或 `5etools` 资料库。
+接入新的库时，实现 `CatalogProvider`（可选配合 `TourProvider` 与 `ReaderProvider`），返回既有的查询／筛选／详情消费结构，并提供资料库合表所需的 `works`、`ranked`、`rows`、`schema`、`capabilities` 与 `signature`。`works` 的每部作品另给出别的资料库可能用来称呼它的名字（`codes` 为 5etools 来源代码，`abbreviations`，`titles`）与打开它的 Stella 书根 `reader_root`；`ranked` 的每行给出所属作品 `work`，以及复制来源 `base`、`base_work`、`base_name_en`（没有时为 null）。`Capabilities.same_name_groups` 说明本库自己的版本组是否已经汇集不同作品的同名条目：不全书的同名候选组是，our5etools 只按记录的重印分组，不是；`entries`、`facets` 与 `export` 接受可选的 `Restriction`（规则版本与作品集合），范围不收窄时按原签名调用。若同时提供导览或整书阅读，可在 `Collection` 上挂载可选的 `snapshot`、`tour`、`reader`、`book_base` 与 `media_base` 字段：`ReaderProvider` 提供 `snapshot`、`navigation`、`page_data` 与 `search`（返回按统一评分规则排好的 `SearchHits`），`TourProvider` 提供本库各层的 `view`、`layout`、按标签路径的 `resolve` 与下级行数 `below`，列表型主题另提供 `listing_count`。不全书的阅读与导览随已校验的发布快照挂载（`CollectionRegistry(book_reader=…, book_tour=…)`）。提供者负责只读访问自己的数据和生成经安全处理的排版，不得在导入或请求阶段加载任何构建、审计或提取模块；没有可用排版时返回 `{"status":"empty"}`，正文仍来自详情的 `body`。使用 `create_server(..., additional_collections=(Collection(key, zh, en, provider, ...),))` 注册；`anna.server.app` 在存在 `--our5etools-data` 的 `manifest.json` 时按需懒加载 `load_our5etools_collection()` 注册 `our5etools`，在存在预留 `--5etools-data`（默认 `data/5etools/`）的 `manifest.json` 时加载 `load_fivetools_collection()` 注册独立的 `5etools`，运行时仅消费各自自包含快照（含 `media/`）而不读取源镜像；未传入对应数据时，`our5etools` 与 `5etools` 均保持 `reserved` 占位。构建用的 `5ETOOLS_DIR` 仍只供应不全书对照，不会启用 `our5etools` 或 `5etools` 资料库。
 
-`/api/meta` 返回首个资料库、默认库、各库状态（`ready`／`reserved`）与能力，以及首个资料库自身的 `reader_url`、`tour_url` 和 `snapshot`；未知、未启用、重复／空库参数以及不支持导览或阅读的资料库分别返回明确错误（404／409／400）。非不全书资料库不开放 `/source` 原文范围；`our5etools` 的导览（`/tour?collection=our5etools`，含书目／资料包范围继承与显式「放宽到全库」）与 Stella 阅读（`/read?collection=our5etools`，正文路由 `/our5etools-book/`、本地媒体路由 `/our5etools-media/` 从 `data/our5etools/media/` 提供服务，保持同源 `CSP img-src 'self' data:`，并在传入 `--lazy-media` 时按需校验并原子缓存远端配图）与预留 `5etools`（`/5etools-book/`、`/5etools-media/`）均绑定各自构建快照，不全书的导览、Stella 和原文证据继续沿用原有快照与锚点。
+`/api/meta` 返回首个资料库、默认库、各库状态（`ready`／`reserved`）、能力与构建快照，以及读者的资料库中有资料库提供时的 `reader_url`（`/read`）与 `tour_url`（`/tour`）。非不全书资料库不开放 `/source` 原文范围；`our5etools` 的章节（正文路由 `/our5etools-book/`、本地媒体路由 `/our5etools-media/` 从 `data/our5etools/media/` 提供服务，保持同源 `CSP img-src 'self' data:`，并在传入 `--lazy-media` 时按需校验并原子缓存远端配图）与预留 `5etools`（`/5etools-book/`、`/5etools-media/`）均绑定各自构建快照，不全书的正文和原文证据继续沿用原有快照与锚点。
 
 ## 读者的资料库
 
-读者在浏览器中选择要读的资料库及其顺序、同名条目是否合为一行与优先的规则版本、同一作品由谁的文本领头、要显示的规则版本，以及内容性质与逐部作品（`web/library.js`）。Anna 的每个请求带上这份选择；`library.parse_scope` 把它从查询参数中取出，其余参数仍是查询条件：
+读者在浏览器中选择要读的资料库及其顺序、同名条目是否合为一行与优先的规则版本、同一作品由谁的文本领头、要显示的规则版本，以及内容性质与逐部作品（`web/library.js`）。查询页、导览与 Stella 的每个请求带上这份选择；`library.parse_scope` 把它从查询参数中取出，其余参数仍是查询条件或阅读地址：
 
 | 参数 | 含义 |
 | --- | --- |
 | `libraries=5echm,our5etools` | 读者勾选的资料库，按优先级排列；服务当前无法打开的资料库跳过并列入 `unavailable`，全部无法打开时回到不全书并标出 `fallback` |
-| `collection=…` | 只读这一个资料库（来自该库的导览、Stella 或旧链接）；未知、未启用或空值分别返回 404／409／400 |
 | `versions=stacked`／`each`、`prefer=5r`／`5e` | 同名条目是否合为一行，以及行首优先的规则版本 |
 | `rulesets=5e,5r,待核` | 显示的规则版本；全部选中等同不限制 |
 | `content=official,partnered,unverified,curated,community` | 显示的内容性质，对应各库的来源性质（官方、合作、待核、本站精选、社区） |
 | `hide=<资料库>:<作品 ID>` | 逐部隐藏的作品，可重复 |
-| `lead=<资料库>:<作品 ID>` | 读者指定领头的作品：同一部作品在几个资料库中各有文本时，这部的文本领头，可重复 |
+| `lead=<资料库>:<作品 ID>` | 读者指定领头的作品：同一部作品在几个资料库中各有文本时，这部的文本领头（同名条目的行首与书架上打开的文本），可重复 |
 
 规则版本与作品范围构成每个资料库的 `Restriction`，限定查询、计数、`scope_total` 与导出读取的全集；它不是条件，计数不会放下它，`without` 也不会提议移除它。只读一个自己的版本组已汇集同名作品的资料库，或不去重时，提供者按原样回答，响应与单库时完全相同。读多个资料库，或只读一个自己只按重印分组的资料库并去重时，由资料库层回答：
 
@@ -59,7 +58,23 @@ HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；�
 - 版本关系：每个版本带 `relation`，由它与所示版本之间最短的证据链决定（`relations`）。直接证据有三种：同一资料库的同一版本组或同一作品，另一资料库中的同一出版物，以及复制关系（复制自对方，或复制自对方所在出版物中同名的条目）。经由自己的复制关系到达的版本为 `derived`，只经同一出版物到达的为 `translation`，其他证据链为 `version`，没有证据链的为 `candidate`；所示版本为 null。
 - 详情按 ID 在读者的资料库中依优先级寻找，再查其他已接入的资料库；`collection` 指出条目所属的库，版本对照并入读者各资料库中的同名版本（打开的版本及其所在版本组不受范围限制），按行首的顺序排列，`relation` 相对于打开的版本。导出每个版本一行，首列为资料库，文件名为 `5e-anna-library.csv`。
 
-`/api/library` 列出全部资料库及其能力（`tour`、`reader`、`snapshot`）；带 `works=1` 时附上各已接入资料库的作品、来源性质、内容性质、规则版本、条目数、Stella 书根，以及同一出版物在其他资料库中的作品（`counterparts`），供资料库设置与 Stella 的“在本页打开本书”使用。`/api/meta` 另返回 `library`，写明生效的资料库、是否只读一库、显示方式与范围是否收窄；`collection` 是排在最前的资料库，`source_text` 表示不全书在读取范围内、可打开 `/source` 原文范围。
+`/api/library` 列出全部资料库及其能力（`tour`、`reader`、`snapshot`）；带 `works=1` 时附上各已接入资料库的作品、来源性质、内容性质、规则版本、条目数、Stella 书根，以及同一出版物在其他资料库中的作品（`counterparts`），供资料库设置选择领头译本。`/api/meta` 另返回 `library`，写明生效的资料库、显示方式与范围是否收窄；`collection` 是排在最前的资料库，`source_text` 表示不全书在读取范围内、可打开 `/source` 原文范围。
+
+## 书架与统一导览
+
+Stella 与导览把读者资料库中有阅读器或导览的资料库读成一个整体（`shelf.py`、`library_tour.py`），请求同样带上资料库参数：
+
+| 接口 | 返回内容 |
+| --- | --- |
+| `/api/reader` | 书架：全部目录节点（`资料库:节点`，页面路径为 `资料库:路径`）、默认页、书架签名 `signature`，以及各库的构建快照、正文前缀、媒体选项与不全书发行版本 |
+| `/api/reader-page?path=…`／`?entry=…` | 一页及其条目；地址带资料库前缀，`snapshot` 核对该库的构建；资料库设置未勾选的资料库返回 404 `outside_library` |
+| `/api/book-search?keyword=…` | 各库按同一评分规则排好的命中合为一列；某库有全部词命中时，其他库的部分命中不列出；结果带 `collection` |
+| `/api/reader-counterpart?node=…&collection=…&scope=…` | 同一作品另一份文本中的对应节点与阅读范围 |
+| `/api/tour?at=…`、`/api/tour-layout?at=…` | 导览的一层与它自己的话；`at` 为主题键或 `资料库:段`，`snapshot` 为导览签名，另返回各库快照 `snapshots` |
+
+书架以排在最前的资料库为骨架，其后的资料库按目录顺序补上前面没有的作品；补上后只剩空分组或空分隔的节点不出现。作品对齐（`publications_of`）认定的同一出版物在书架上放在最早出现的位置，各库的文本都挂在那里：读者指定领头的文本在前，其余标 `alternate`，每份文本的根节点带 `texts` 列出全部文本。对应节点依次取自：从该节点到文本根之间最深的、在另一份文本中标题相同的节点（忽略章节编号写法，多处同名时取层级最接近者）；本页定义的条目（类型 + 英文名）多数所在的一页；另一份文本的根。
+
+统一导览的第一列来自 `tour/tour.json`：主题按资料库给出章节路径，在读者领头文本所在、且能唯一解析该路径的资料库中打开；查询类主题的计数、分面与条目列表由资料库层合表回答，计数为版本数；`dynamic` 主题交给拥有该列表的资料库。书架分组取自书架的顶层。其下各层由所属资料库的导览回答，库层把其中的节点、条目与阅读位置写成 `资料库:…`，并为各层提到的主题补上全库的计数与状态。
 
 ## 验证与后续修改
 

@@ -34,19 +34,21 @@ class LinkedBuildTests(unittest.TestCase):
         (source/'topics/style.css').write_text('h2 {color:red}')
         (source/'index.htm').write_text('<!doctype html><iframe id="content"></iframe>')
         d=Document('topics/test.htm',page.read_text());h=d.element_headings()[0]
-        e={'id':'ver_test','name':'甲 Alpha','name_zh':'甲','name_en':'Alpha','page_path':'topics/test.htm','anchors':['Spell'],'start':h.start,'title_end':h.end,'end':len(d.text),'type':'spell','is_primary':True}
+        e={'id':'ver_test','name':'甲 Alpha','name_zh':'甲','name_en':'Alpha','page_path':'topics/test.htm','anchors':['Spell'],'start':h.start,'title_end':h.end,'end':len(d.text),'type':'spell','is_primary':True,'fields':{}}
         db=root/'catalog.sqlite';conn=sqlite3.connect(db)
-        conn.executescript('CREATE TABLE metadata(key,value); CREATE TABLE pages(path,sha256,text); CREATE TABLE entries(data);')
+        # The same bundle serves Anna and participates in the shelf's work alignment.
+        schema=json.loads((Path(__file__).parent/'fixtures/presentation-catalog.json').read_text())['sql']
+        conn.executescript('\n'.join(sql for sql in schema if sql.startswith('CREATE TABLE ')))
         conn.execute('insert into metadata values(?,?)',('summary',json.dumps({'full_scan':True})))
-        conn.execute('insert into pages values(?,?,?)',('topics/test.htm',fingerprint(page),d.text))
-        conn.execute('insert into entries values(?)',(json.dumps(e),))
-        conn.execute('CREATE TABLE effective_references(id,page_path,start,signal,status,can_link,data)')
+        conn.execute('INSERT INTO pages(path,sha256,text,data) VALUES(?,?,?,?)',('topics/test.htm',fingerprint(page),d.text,'{}'))
+        conn.execute('INSERT INTO entries(id,name,name_zh,name_en,type,page_path,start,end,fields,data) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                     (*(e[k] for k in ('id','name','name_zh','name_en','type','page_path','start','end')), '{}',json.dumps(e)))
         for i,tag in enumerate(d.body.find_all('a',href=True)):
             a,b=d.span(tag);resolved=tag['href']=='#Spell'
             ref={'id':f'reference_{i}','path':'topics/test.htm','start':a,'end':b,'text':tag.get_text(),
                  'signal':'explicit','status':'resolved' if resolved else 'unresolved','can_link':resolved,
                  'target_id':'ver_test' if resolved else None,'reason':'explicit_locator','evidence':{'href':tag['href']}}
-            conn.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?)',
+            conn.execute('INSERT INTO effective_references(id,page_path,start,signal,status,can_link,data) VALUES(?,?,?,?,?,?,?)',
                          (ref['id'],ref['path'],a,'explicit',ref['status'],int(resolved),json.dumps(ref)))
         log=root/'annotations.jsonl'
         conn.execute('INSERT INTO metadata VALUES(?,?)',('annotation_snapshot',json.dumps({'path':str(log),'sha256':load_annotations(log)[1],'events':0,'bytes':0})))
@@ -174,7 +176,7 @@ class LinkedBuildTests(unittest.TestCase):
             conn=sqlite3.connect(db)
             entry=json.loads(conn.execute('SELECT data FROM entries').fetchone()[0])
             entry.update(id='ver_updated',start=heading.start,end=len(doc.text),title_end=heading.end,anchors=['New'])
-            conn.execute('UPDATE entries SET data=?',(json.dumps(entry),))
+            conn.execute('UPDATE entries SET id=?,start=?,end=?,data=?',(entry['id'],entry['start'],entry['end'],json.dumps(entry)))
             conn.execute('UPDATE pages SET text=?,sha256=?',(doc.text,fingerprint(page)))
             conn.execute('DELETE FROM effective_references');conn.commit();conn.close();doc.close()
             manifest,_=build_book(source,db,out)
@@ -196,7 +198,8 @@ class LinkedBuildTests(unittest.TestCase):
             conn.execute('INSERT INTO metadata VALUES(?,?)',('concept_coverage',json.dumps({'discovery_inputs':{'topics/style.css':fingerprint(css),'webhelpcontents.htm':None}})))
             ref={'id':'format_reference','path':'topics/test.htm','start':a,'end':b,'text':'格式引用','signal':'format',
                  'status':'resolved','target_id':'ver_test','can_link':True}
-            conn.execute('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?)',('format_reference','topics/test.htm',a,'format','resolved',1,json.dumps(ref)))
+            conn.execute('INSERT INTO effective_references(id,page_path,start,signal,status,can_link,data) VALUES(?,?,?,?,?,?,?)',
+                         ('format_reference','topics/test.htm',a,'format','resolved',1,json.dumps(ref)))
             conn.commit();conn.close();doc.close()
             _,report=build_book(source,db,out)
             self.assertEqual(report['linked_references'],2)  # one href + one resolved mark

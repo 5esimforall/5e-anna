@@ -1,5 +1,6 @@
 /* The companion switcher and the shared workspace behind it, on the real corpus. */
 const {test:base,expect}=require('@playwright/test');
+const {bookAddress,bookCollection}=require('./locations.cjs');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
 const anna=`http://127.0.0.1:${port}`;
 const test=base.extend({context:async({context},use)=>{
@@ -42,15 +43,15 @@ test('an entry open in Anna becomes the topic Stella turns to, and Anna resumes 
   await page.locator(`#results .entry-name[data-entry="${cases.spell.id}"]`).first().click();await entryReady(page);
   const name=(await page.locator('#entry-title').textContent()).trim();
   await expect(go(page)).toHaveAccessibleName(`5e Stella：翻到 ${name}`);
-  await expect(go(page)).toHaveAttribute('href','/read?entry='+encodeURIComponent(cases.spell.id));
-  expect((await workspace(page)).topic).toMatchObject({entry:cases.spell.id,name,from:'query'});
+  await expect(go(page)).toHaveAttribute('href','/read?entry='+encodeURIComponent(bookAddress(cases.spell.id)));
+  expect((await workspace(page)).topic).toMatchObject({entry:bookAddress(cases.spell.id),name,from:'query'});
   // Closing the entry ends the topic; reopening brings it back.
   await page.locator('#close-detail').click();
   await expect(go(page)).toHaveAccessibleName('5e Stella');
   expect((await workspace(page)).topic).toBeNull();
   await page.locator(`#results .entry-name[data-entry="${cases.spell.id}"]`).first().click();await entryReady(page);
   await go(page).click();await stellaReady(page);
-  expect(new URL(page.url()).searchParams.get('entry')).toBe(cases.spell.id);
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(bookAddress(cases.spell.id));
   // Stella answers about the same topic, so she offers Anna's place rather than a new topic.
   await expect(go(page)).toHaveAccessibleName(`5e Anna：回到 ${name}`);
   const back=new URL(await go(page).getAttribute('href'),anna);
@@ -72,7 +73,7 @@ test('an entry open in Anna becomes the topic Stella turns to, and Anna resumes 
 });
 
 test('the menu lists the current topic and recent places, and works from the keyboard',async({page})=>{
-  const first='topics/玩家手册2024/法术详述/1环.htm';
+  const first=bookAddress(cases.spell.path);
   const node=meta.nodes.find(n=>n.path===first && n.status==='present').id;
   await page.goto(anna+'/read?'+new URLSearchParams({page:first,node}));await stellaReady(page);
   await scrollBook(page,400);
@@ -122,16 +123,18 @@ test('refused storage leaves both switchers leading home',async({context})=>{
 test('another build keeps the query conditions and drops places named by the old one',async({page})=>{
   // A static asset of the same origin writes the record without either page saving over it.
   await page.goto(anna+'/anna-logo.png');
-  await page.evaluate(snapshot=>localStorage.setItem('anna.workspace',JSON.stringify({version:1,snapshot:'old',
-    topic:{entry:'gone',name:'旧条目',from:'query',at:5},
-    query:[{query:'q=%E6%8A%A4%E7%9B%BE%E6%9C%AF',entry:'gone',entryName:'旧条目',title:'护盾术',opened:true,ui:{loadedRows:900},at:5}],
-    book:[{version:2,snapshot:'old',root:'',page:'topics/玩家手册2024/法术详述/1环.htm',node:'',position:{x:0,y:300},label:'一环',at:5}]})),meta.snapshot);
+  await page.evaluate(({entry,path})=>localStorage.setItem('anna.workspace',JSON.stringify({version:2,
+    topic:{entry,snapshot:'old',name:'旧条目',from:'query',at:5},
+    query:[{query:'q=%E6%8A%A4%E7%9B%BE%E6%9C%AF',entry,snapshot:'old',entryName:'旧条目',title:'护盾术',opened:true,ui:{loadedRows:900},at:5}],
+    book:[{version:2,snapshot:'old',root:'',page:path,node:'',position:{x:0,y:300},label:'一环',at:5}]})),
+    {entry:bookAddress(cases.spell.id),path:bookAddress(cases.spell.path)});
   await page.goto(anna+'/read?'+new URLSearchParams({page:meta.default_page}));await stellaReady(page);
   await expect(go(page)).toHaveAccessibleName('5e Anna：回到 护盾术');
   await expect(go(page)).toHaveAttribute('href','/?q=%E6%8A%A4%E7%9B%BE%E6%9C%AF');
   const state=await workspace(page);
-  expect([state.snapshot,state.topic,state.book.length]).toEqual([meta.snapshot,null,1]);
-  expect(state.book[0].page).toBe(meta.default_page);
+  expect([state.version,state.topic,state.book.length]).toEqual([2,null,1]);
+  expect(state.query[0]).toMatchObject({entry:'',entryName:'',ui:null,title:'护盾术'});
+  expect(state.book[0]).toMatchObject({page:meta.default_page,snapshot:bookCollection(meta).snapshot});
 });
 
 test('narrow topbars keep both avatars on one line',async({page})=>{
@@ -148,14 +151,14 @@ test('narrow topbars keep both avatars on one line',async({page})=>{
 
 test('reading on in Stella makes the definition in view the topic Anna looks up',async({page,request})=>{
   const path=cases.spell.path;
-  const data=await (await request.get(anna+'/api/reader-page?'+new URLSearchParams({path}))).json();
+  const data=await (await request.get(anna+'/api/reader-page?'+new URLSearchParams({path:bookAddress(path)}))).json();
   const target=data.definitions.filter(d=>d.locatable)[3];
-  await page.goto(anna+'/read?'+new URLSearchParams({page:path}));await stellaReady(page);
+  await page.goto(anna+'/read?'+new URLSearchParams({page:bookAddress(path)}));await stellaReady(page);
   const frame=page.frames().find(f=>decodeURI(f.url()).includes(path));
   // definitionPosition leaves 20px above the title; scroll the title itself to the top of the view.
   const y=await frame.evaluate(id=>window.annaSourceLinks.definitionPosition(id).y+20,target.id);
   await scrollBook(page,y);
-  await expect.poll(async()=>(await workspace(page)).topic?.entry).toBe(target.id);
+  await expect.poll(async()=>(await workspace(page)).topic?.entry).toBe(bookAddress(target.id));
   expect((await workspace(page)).topic).toMatchObject({name:target.name,from:'book'});
   await expect(go(page)).toHaveAccessibleName(`5e Anna：查 ${target.name}`);
   expect(new URL(await go(page).getAttribute('href'),anna).searchParams.get('entry')).toBe(target.id);

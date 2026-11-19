@@ -1,6 +1,7 @@
 /* Anna's tour on the real corpus: levels opened beside each other, folding and widening, keyboard travel, history
    and narrow screens. */
 const {test:base,expect}=require('@playwright/test');
+const {bookAddress}=require('./locations.cjs');
 const port=Number(process.env.ANNA_E2E_PORT||18380);
 const anna=`http://127.0.0.1:${port}`;
 const test=base.extend({context:async({context},use)=>{
@@ -16,6 +17,8 @@ async function ready(page,depth){
   await expect(page.locator('.tour-column')).toHaveCount(depth+1);
 }
 const at=page=>new URL(page.url()).searchParams.get('at');
+const tourHref=at=>'/tour?'+new URLSearchParams({at});
+const firstStep='create/'+bookAddress('n924'), secondStep='create/'+bookAddress('n925');
 
 test('a newcomer walks from a purpose to the steps, a step’s checklist and the table it asks for',async({page})=>{
   await page.goto(anna+'/tour');await ready(page,0);
@@ -32,7 +35,7 @@ test('a newcomer walks from a purpose to the steps, a step’s checklist and the
   // The deepest level reads as a detail: its own words as the book sets them, in place of the quoted lead.
   await expect(level(page,1).locator('.tour-body')).toContainText('下面是创建角色的步骤');
   await expect(level(page,1).locator('.tour-lead')).toBeHidden();
-  await expect(level(page,1).locator('.tour-go').first()).toHaveAttribute('href',/^\/read\?root=\d+$/);
+  await expect(level(page,1).locator('.tour-go').first()).toHaveAttribute('href',/^\/read\?root=5echm%3A\d+$/);
   await steps.first().click();await ready(page,2);
   // Once a step opens, the detail narrows back to its lead and the step, an index, stays narrow beside it.
   await expect(level(page,1).locator('.tour-body')).toBeHidden();
@@ -63,7 +66,7 @@ test('a newcomer walks from a purpose to the steps, a step’s checklist and the
 
 test('three levels stay open; the ones above fold into spines that bring them back',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
-  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  await page.goto(anna+tourHref(firstStep));await ready(page,2);
   await row(page,2,'职业简介Class Overview').click();await ready(page,3);
   await expect(level(page,0)).toHaveAttribute('data-place','folded');
   await expect(level(page,0).locator('.tour-column-body')).toBeHidden();
@@ -78,7 +81,7 @@ test('three levels stay open; the ones above fold into spines that bring them ba
   // From the shallowest open level, ← unfolds the level above, closing just enough levels to show it again.
   await row(page,1,'第一步：选择职业').focus();
   await page.keyboard.press('ArrowLeft');await ready(page,2);
-  expect(at(page)).toBe('create.n924');
+  expect(at(page)).toBe(firstStep);
   await expect(level(page,0)).toHaveAttribute('data-place','open');
   await expect(row(page,0,'创建角色')).toBeFocused();
   await page.goBack();await ready(page,3);
@@ -87,7 +90,7 @@ test('three levels stay open; the ones above fold into spines that bring them ba
   await expect(level(page,1)).toHaveAttribute('data-place','folded');
   await expect(level(page,2)).toHaveAttribute('data-place','open');
   await level(page,1).locator('.tour-spine').click();await ready(page,2);
-  expect(at(page)).toBe('create.n924');
+  expect(at(page)).toBe(firstStep);
   await expect(level(page,1)).toHaveAttribute('data-place','open');
   await expect(level(page,0)).toHaveAttribute('data-place','folded');
 });
@@ -143,9 +146,12 @@ test('columns widen and narrow around text already set at the width they settle 
 
 test('a slow level keeps the levels it replaces until it shows that it is loading',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
-  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  await page.goto(anna+tourHref(firstStep));await ready(page,2);
   let release;const held=new Promise(resolve=>{release=resolve;});
-  await page.route(/\/api\/tour\?node=n925\b/,async route=>{await held;await route.continue();});
+  await page.route('**/api/tour?**',async route=>{
+    if(new URL(route.request().url()).searchParams.get('at')===bookAddress('n925'))await held;
+    await route.continue();
+  });
   await row(page,1,'第二步：确定起源').click();
   // The step it replaces stays at first, then gives way to a loading level.
   await expect(row(page,1,'第二步：确定起源')).toHaveAttribute('aria-current','true');
@@ -166,7 +172,7 @@ test('the keys move through the levels like a file manager’s columns: the focu
   await expect(level(page,1)).toBeFocused();
   await page.keyboard.press('ArrowRight');await ready(page,2);
   await expect(level(page,1).locator('.tour-item').first()).toBeFocused();
-  expect(at(page)).toBe('create.n924');
+  expect(at(page)).toBe(firstStep);
   // ↑ from the first row returns to the text, closing the level beside so the detail widens again.
   await page.keyboard.press('ArrowUp');await ready(page,1);
   await expect(level(page,1)).toBeFocused();
@@ -186,12 +192,12 @@ test('the keys move through the levels like a file manager’s columns: the focu
   await page.keyboard.press('ArrowLeft');
   await expect(row(page,1,'第二步：确定起源')).toBeFocused();
   await page.keyboard.press('ArrowLeft');await ready(page,2);
-  expect(at(page)).toBe('create.n925');
+  expect(at(page)).toBe(secondStep);
   await expect(first).toBeFocused();
   // Only one row per level waits in the Tab order.
   await expect(level(page,1).locator('.tour-item[tabindex="0"]')).toHaveCount(1);
   // Going back through history keeps the focus in the tour when the level that held it closes.
-  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  await page.goto(anna+tourHref(firstStep));await ready(page,2);
   await row(page,2,'职业简介Class Overview').focus();
   await page.keyboard.press('ArrowRight');await ready(page,3);
   await expect(level(page,3)).toBeFocused();
@@ -217,7 +223,7 @@ test('moving onto a row opens it beside, a held key opens where it rests, Space 
   expect(await page.evaluate(()=>history.length)).toBe(steps+1);
   // Holding ↓ passes over rows without opening them, and opens the row it rests on once released.
   const asked=[];
-  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/tour')asked.push(url.searchParams.get('node'));});
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/tour')asked.push(url.searchParams.get('at'));});
   const passed=await row(page,1,'德鲁伊').getAttribute('data-segment');
   for(let i=0;i<3;i++)await page.keyboard.down('ArrowDown');
   await expect(row(page,1,'战士')).toBeFocused();
@@ -274,7 +280,7 @@ test('h j k l move as the arrow keys do, and j k scroll a detail’s text',async
 });
 
 test('moving onto a row that leads to Anna closes the levels beside it',async({page})=>{
-  await page.goto(anna+'/tour?at=ver_46fd8d38c8840ad0d29b58ab');await ready(page,1);
+  await page.goto(anna+tourHref(bookAddress('ver_46fd8d38c8840ad0d29b58ab')));await ready(page,1);
   const subclasses=level(page,1).locator('[data-group=subclasses] .tour-item');
   await subclasses.first().focus();
   await page.keyboard.press('ArrowDown');await ready(page,2);
@@ -283,7 +289,7 @@ test('moving onto a row that leads to Anna closes the levels beside it',async({p
   const spells=level(page,1).locator('[data-group=spells] .tour-item');
   await page.keyboard.press('End');await ready(page,1);
   await expect(spells).toBeFocused();
-  expect(at(page)).toBe('ver_46fd8d38c8840ad0d29b58ab');
+  expect(at(page)).toBe(bookAddress('ver_46fd8d38c8840ad0d29b58ab'));
 });
 
 test('a class opens onto its subclasses and its spell list in Anna',async({page})=>{
@@ -300,17 +306,17 @@ test('a class opens onto its subclasses and its spell list in Anna',async({page}
 });
 
 test('a level missing from this snapshot returns to the level above it',async({page})=>{
-  await page.goto(anna+'/tour?at=create.n99999999');await ready(page,1);
+  await page.goto(anna+tourHref('create/'+bookAddress('n99999999')));await ready(page,1);
   expect(at(page)).toBe('create');
   await expect(page.locator('#tour-notice')).toHaveText('这一层已不在当前原文快照中，已回到上一层。');
 });
 
 test('Anna’s two pages each return to where the reader left them',async({page})=>{
-  await page.goto(anna+'/tour?at=create.n925');await ready(page,2);
+  await page.goto(anna+tourHref(secondStep));await ready(page,2);
   await page.goto(anna+'/?type=spell');
   await expect(page.locator('#results')).toHaveAttribute('aria-busy','false');
   const tour=page.locator('.page-switch a[data-page=tour]');
-  await expect(tour).toHaveAttribute('href','/tour?at=create.n925');
+  await expect(tour).toHaveAttribute('href',tourHref(secondStep));
   await expect(page.locator('.page-switch a[data-page=query]')).toHaveAttribute('aria-current','page');
   await tour.click();await ready(page,2);
   await expect(page.locator('.page-switch a[data-page=query]')).toHaveAttribute('href','/?type=spell');
@@ -318,7 +324,7 @@ test('Anna’s two pages each return to where the reader left them',async({page}
 
 test('a phone shows one level with the way back, in either theme',async({page})=>{
   await page.setViewportSize({width:375,height:812});
-  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  await page.goto(anna+tourHref(firstStep));await ready(page,2);
   await expect(level(page,2)).toBeVisible();
   await expect(level(page,1)).toBeHidden();
   const back=level(page,2).locator('.tour-back');
@@ -332,7 +338,7 @@ test('a phone shows one level with the way back, in either theme',async({page})=
   await page.emulateMedia({colorScheme:'dark'});
   await expect.poll(paper).not.toBe(light);
   // With one level showing, ← climbs back to the level above and lands on the row that opened this one.
-  await page.goto(anna+'/tour?at=create.n924');await ready(page,2);
+  await page.goto(anna+tourHref(firstStep));await ready(page,2);
   await level(page,2).locator('.tour-item').first().focus();
   await page.keyboard.press('ArrowLeft');await ready(page,1);
   expect(at(page)).toBe('create');
@@ -342,7 +348,7 @@ test('a phone shows one level with the way back, in either theme',async({page})=
   await page.waitForTimeout(400);
   await expect(page.locator('.tour-column')).toHaveCount(2);
   await page.keyboard.press('Enter');await ready(page,2);
-  expect(at(page)).toBe('create.n925');
+  expect(at(page)).toBe(secondStep);
   await expect(level(page,2).locator('.tour-item').first()).toBeFocused();
   await expect(page.locator('.tour-column')).toHaveCount(3);
 });

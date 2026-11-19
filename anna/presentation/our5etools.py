@@ -20,13 +20,14 @@ import sqlite3
 import threading
 import time
 from typing import Any
-from urllib.parse import quote, unquote, urlencode, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 import urllib.request
 
 import anna.our5etools.types as otypes
 import anna.paths as paths
-from anna.presentation.collections import Collection
+from anna.presentation.collections import Collection, SearchHits
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
+from anna.presentation import tour as tour_curation
 from anna.presentation.tour import DIVIDER, TourError, clip, divider, first_sentence
 
 COLLECTION_KEY = 'our5etools'
@@ -364,33 +365,6 @@ def _sniff_bytes_valid_media(chunk: bytes, content_type: str) -> bool:
     if low.startswith((b'<svg', b'<?xml')) and b'<svg' in low:
         return True
     return False
-
-
-def _query_href(query: dict[str, list[str]], collection: str = COLLECTION_KEY) -> str:
-    pairs: list[tuple[str, str]] = [('collection', collection)]
-    for k, vals in query.items():
-        if k == 'collection':
-            continue
-        for v in vals:
-            pairs.append((k, str(v)))
-    return '/?' + urlencode(pairs)
-
-
-def _tour_href(
-    at: str = '',
-    *,
-    scope_source: str | None = None,
-    scope_package: str | None = None,
-    collection: str = COLLECTION_KEY,
-) -> str:
-    pairs: list[tuple[str, str]] = [('collection', collection)]
-    if at:
-        pairs.append(('at', at))
-    if scope_source:
-        pairs.append(('scope_source', scope_source))
-    if scope_package:
-        pairs.append(('scope_package', scope_package))
-    return '/tour?' + urlencode(pairs)
 
 
 def _connect_ro(db_path: Path) -> sqlite3.Connection:
@@ -1612,24 +1586,25 @@ class Our5etoolsCatalog:
 # ---------------------------------------------------------------------------
 
 class Our5etoolsTour:
-    """Guided tour combining tour/our5etools.json with live books, packages, and scoped navigation."""
+    """The levels of the tour in one our5etools snapshot: its contents, books, packages and entries.
+
+    The library tour keeps the curated first column, the shelf and the topics, and asks this one for the levels
+    below them, named by this collection's own segments (`n…`, `book.…`, `pack.…`, `o5e_…`) and for the package
+    listings its dynamic topics name."""
 
     def __init__(
         self,
         data_dir: Path | str,
-        tour_path: Path | str | None = None,
+        curation_path: Path | str | None = None,
         *,
         lazy_media: bool = False,
         collection_key: str = COLLECTION_KEY,
     ):
         self.data_dir = Path(data_dir).resolve()
         self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
-        self.reader_url = f'/read?collection={self.collection_key}'
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
-        self.tour_path = (
-            Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / f'{self.collection_key}.json')
-        )
+        self.curation_path = Path(curation_path).resolve() if curation_path else tour_curation.CURATION
         self.lazy_media = bool(lazy_media)
         self.catalog = Our5etoolsCatalog(
             self.data_dir,
@@ -1639,20 +1614,20 @@ class Our5etoolsTour:
         self._lock = threading.Lock()
         self._loaded_sig: tuple[Any, ...] | None = None
         self._snapshot: str = ''
-        self._curation: dict[str, Any] = {}
+        self._topics: dict[str, Any] = {}
         self._nodes: dict[str, dict[str, Any]] = {}
         self._children: dict[str, list[str]] = defaultdict(list)
         self._label_path: dict[str, str] = {}
         self._by_label_path: dict[str, list[str]] = defaultdict(list)
         self._entry_locations: dict[str, dict[str, Any]] = {}
         self._books_by_slug: dict[str, dict[str, Any]] = {}
+        self._books_by_node: dict[str, str] = {}
         self._books_order: list[str] = []
         self._packs_by_slug: dict[str, dict[str, Any]] = {}
         self._packs_by_id: dict[str, str] = {}
         self._packs_order: list[str] = []
         self._sources_by_id: dict[str, dict[str, Any]] = {}
         self._choices_by_node: dict[str, list[str]] = defaultdict(list)
-        self._topic_nodes: dict[str, tuple[str, str | None]] = {}
 
     @property
     def snapshot(self) -> str:
@@ -1660,7 +1635,7 @@ class Our5etoolsTour:
         return self._snapshot
 
     def _ensure_loaded(self) -> None:
-        sig = (_file_sig(self.db_path), _file_sig(self.reader_path), _file_sig(self.tour_path))
+        sig = (_file_sig(self.db_path), _file_sig(self.reader_path), _file_sig(self.curation_path))
         with self._lock:
             if sig == self._loaded_sig and self._loaded_sig is not None:
                 return
@@ -1668,32 +1643,9 @@ class Our5etoolsTour:
             self._loaded_sig = sig
 
     def _reload_locked(self) -> None:
-        # 1. Load curation JSON
-        try:
-            curation = json.loads(self.tour_path.read_text('utf-8'))
-        except (OSError, ValueError) as exc:
-            raise TourError('curation_invalid', 500, f'{self.collection_key} 导览配置无法读取：{exc}') from exc
-        if curation.get('schema') != 1:
-            raise TourError('curation_invalid', 500, f'{self.collection_key} 导览配置 schema 无效')
-        curation_col = str(curation.get('collection') or '').strip()
-        if curation_col and curation_col != self.collection_key:
-            raise TourError('curation_invalid', 500, f'{self.collection_key} 导览配置 collection 不匹配：{curation_col}')
-
-        topics_map: dict[str, dict[str, Any]] = {}
-        sections: list[dict[str, Any]] = []
-        for sec in curation.get('sections') or []:
-            tkeys = []
-            for t in sec.get('topics') or []:
-                if isinstance(t, dict) and t.get('key'):
-                    topics_map[t['key']] = t
-                    tkeys.append(t['key'])
-            sections.append({'key': sec['key'], 'label': sec['label'], 'topics': tkeys})
-
-        self._curation = {
-            'sections': sections,
-            'topics': topics_map,
-            'choices': curation.get('choices') or {},
-        }
+        # 1. The curated topics this collection's levels name: choices at its contents nodes, dynamic listings.
+        curation = tour_curation.load(self.curation_path)
+        self._topics = curation['topics']
 
         # 2. Load reader navigation tree
         reader = json.loads(self.reader_path.read_text('utf-8')) if self.reader_path.is_file() else {}
@@ -1712,20 +1664,8 @@ class Our5etoolsTour:
             self._label_path[n['id']] = lp
             self._by_label_path[lp].append(n['id'])
 
-        # Resolve curated topic contents & choices
-        self._topic_nodes = {}
-        for key, t in topics_map.items():
-            if t.get('contents'):
-                hits = self._by_label_path.get(t['contents'], [])
-                if len(hits) == 1:
-                    self._topic_nodes[key] = ('ok', hits[0])
-                elif not hits:
-                    self._topic_nodes[key] = ('missing', None)
-                else:
-                    self._topic_nodes[key] = ('ambiguous', hits[0])
-
         self._choices_by_node = defaultdict(list)
-        for where, keys in (curation.get('choices') or {}).items():
+        for where, keys in curation['choices'].get(self.collection_key, {}).items():
             hits = self._by_label_path.get(where, [])
             if len(hits) == 1:
                 self._choices_by_node[hits[0]].extend(keys)
@@ -1736,6 +1676,7 @@ class Our5etoolsTour:
         self._packs_by_id = {}
         self._packs_order = []
         self._books_by_slug = {}
+        self._books_by_node = {}
         self._books_order = []
 
         with closing(_connect_ro(self.db_path)) as db:
@@ -1843,61 +1784,24 @@ class Our5etoolsTour:
                     'first_page': (self._nodes[chapter_ids[0]]['path'] if chapter_ids else node.get('path') or ''),
                 }
                 self._books_by_slug[slug] = brec
+                self._books_by_node[nid] = slug
                 self._books_order.append(slug)
                 pslug = self._packs_by_id.get(pkg_id)
                 if pslug:
                     self._packs_by_slug[pslug]['book_slugs'].append(slug)
 
-    # --- Scope helpers ---
+    # --- What the library tour asks of a collection ---
 
-    def _apply_scope_to_query(
-        self,
-        query: dict[str, list[str]],
-        scope_source: str | None,
-        scope_package: str | None,
-    ) -> dict[str, list[str]]:
-        out = {k: list(v) for k, v in query.items()}
-        if scope_source and 'source' not in out:
-            out['source'] = [scope_source]
-        elif scope_package and 'package' not in out:
-            out['package'] = [scope_package]
-        return out
+    def resolve(self, label_path: str) -> tuple[str, str | None]:
+        """A curated contents path names exactly one node, or reports why it does not."""
+        self._ensure_loaded()
+        hits = self._by_label_path.get(label_path, [])
+        return ('ok', hits[0]) if len(hits) == 1 else ('missing' if not hits else 'ambiguous', None)
 
-    def _build_scope_context(
-        self,
-        at: str,
-        scope_source: str | None,
-        scope_package: str | None,
-        base_query: dict[str, list[str]] | None = None,
-    ) -> dict[str, Any] | None:
-        if not scope_source and not scope_package:
-            return None
-        unscoped_q = {k: list(v) for k, v in (base_query or {}).items() if k not in {'source', 'package'}}
-        scoped_q = self._apply_scope_to_query(unscoped_q, scope_source, scope_package)
-        scoped_count = self._query_count(scoped_q)
-        unscoped_count = self._query_count(unscoped_q)
-
-        if scope_source:
-            srec = self._sources_by_id.get(scope_source)
-            label = srec['name'] if srec else scope_source
-            kind = 'source'
-            sid = scope_source
-        else:
-            pslug = self._packs_by_id.get(scope_package or '')
-            prec = self._packs_by_slug.get(pslug) if pslug else None
-            label = prec['name'] if prec else (scope_package or '')
-            kind = 'package'
-            sid = scope_package or ''
-
-        return {
-            'kind': kind,
-            'id': sid,
-            'label': label,
-            'scoped_count': scoped_count,
-            'unscoped_count': unscoped_count,
-            'widen_tour_href': _tour_href(at, collection=self.collection_key),
-            'widen_query_href': _query_href(unscoped_q, collection=self.collection_key),
-        }
+    def below(self, nid: str) -> int | None:
+        """How many contents rows a node opens onto."""
+        self._ensure_loaded()
+        return sum(divider(self._nodes[c]) is None for c in self._children.get(nid, [])) or None
 
     def _query_count(self, query: dict[str, list[str]]) -> int:
         with closing(_connect_ro(self.db_path)) as db:
@@ -1905,57 +1809,18 @@ class Our5etoolsTour:
             where, vals = self.catalog._where_from(conds)
             return int(db.execute('SELECT count(*) FROM entries e' + where, vals).fetchone()[0])
 
-    def _scoped_type_items(
-        self,
-        base_query: dict[str, list[str]],
-        scope_source: str | None = None,
-        scope_package: str | None = None,
-    ) -> list[dict[str, Any]]:
-        q = self._apply_scope_to_query(base_query, scope_source, scope_package)
+    @staticmethod
+    def _scope_query(source: str | None, package: str | None) -> dict[str, list[str]]:
+        """A book's entries by its source, a package's by the package."""
+        return {'source': [source]} if source else {'package': [package]} if package else {}
+
+    def _type_items(self, scope: dict[str, list[str]]) -> list[dict[str, Any]]:
         with closing(_connect_ro(self.db_path)) as db:
-            conds = self.catalog._conditions(q)
+            conds = self.catalog._conditions(scope)
             where, vals = self.catalog._where_from(conds)
             counts = dict(db.execute('SELECT e.type, count(*) FROM entries e' + where + ' GROUP BY e.type', vals))
-        items = []
-        for t in otypes.TYPE_ORDER:
-            cnt = int(counts.get(t, 0))
-            if cnt > 0:
-                items.append({
-                    'id': None,
-                    'kind': 'query',
-                    'title': otypes.TYPES[t],
-                    'type': t,
-                    'count': cnt,
-                    'query': {**q, 'type': [t]},
-                })
-        return items
-
-    def _facet_group(
-        self,
-        query: dict[str, list[str]],
-        facet: str,
-        scope_source: str | None = None,
-        scope_package: str | None = None,
-    ) -> dict[str, Any]:
-        q = self._apply_scope_to_query(query, scope_source, scope_package)
-        key = facet if facet == 'type' else 'f_' + facet
-        res = self.catalog.facets(q)
-        found = next((g for g in res['groups'] if g['key'] == key), None)
-        options = [o for o in (found or {}).get('options', []) if o['count'] and not o['value'].startswith('__')]
-        if facet == 'type':
-            chosen = set(q.get('type', []))
-            options = [o for o in options if not chosen or o['value'] in chosen]
-        items = [
-            {
-                'id': None,
-                'kind': 'query',
-                'title': o['label'],
-                'count': o['count'],
-                'query': {**q, key: [o['value']]},
-            }
-            for o in options
-        ]
-        return self._group('facet', items, label=found['label'] if found else None)
+        return [{'id': None, 'kind': 'query', 'title': otypes.TYPES[t], 'type': t, 'count': int(counts[t]),
+                 'query': {**scope, 'type': [t]}} for t in otypes.TYPE_ORDER if int(counts.get(t, 0)) > 0]
 
     @staticmethod
     def _group(key: str, items: list[dict[str, Any]], *, label: Any = None, ordered: bool = False) -> dict[str, Any]:
@@ -2004,109 +1869,38 @@ class Our5etoolsTour:
             'kind': 'contents',
             'title': node['label'],
             'status': node.get('status', 'present'),
-            'path': node.get('path') or '',
             'count': child_cnt or None,
         }
 
-    def _topic_item(self, key: str, scope_source: str | None = None, scope_package: str | None = None) -> dict[str, Any]:
-        t = self._curation['topics'][key]
-        item: dict[str, Any] = {
-            'id': key,
-            'kind': 'topic',
-            'label': t['label'],
-            'status': 'ok',
-            'ruleset': t.get('ruleset'),
-            'count': None,
-        }
-        dyn = t.get('dynamic')
-        if dyn in {'books_official', 'adventures_official', 'books_brew', 'adventures_brew', 'books_site'}:
-            item['count'] = sum(1 for s in self._books_order if self._books_by_slug[s]['shelf'] == dyn)
-        elif dyn == 'packs_ours':
-            item['count'] = sum(1 for s in self._packs_order if self._packs_by_slug[s]['ours'])
-        elif dyn == 'packs_community':
-            item['count'] = sum(1 for s in self._packs_order if self._packs_by_slug[s]['id'] != 'official' and not self._packs_by_slug[s]['ours'])
-        elif dyn == 'packs_official':
-            item['count'] = self._packs_by_slug.get(self._packs_by_id.get('official', ''), {}).get('entry_count')
-        elif t.get('query'):
-            q = self._apply_scope_to_query(t['query'], scope_source, scope_package)
-            item['count'] = self._query_count(q)
-        elif key in self._topic_nodes:
-            status, nid = self._topic_nodes[key]
-            item['status'] = status
-            if nid:
-                item['count'] = sum(divider(self._nodes[c]) is None for c in self._children.get(nid, [])) or None
-        return item
-
     # --- Public view & layout ---
 
-    def view(
-        self,
-        at: str | None = None,
-        *,
-        node: str | None = None,
-        scope_source: str | None = None,
-        scope_package: str | None = None,
-    ) -> dict[str, Any]:
+    def view(self, at: str = '') -> dict[str, Any]:
         self._ensure_loaded()
-        segment = (at if at is not None else (node or '')).strip()
-        scope_source = (scope_source or '').strip() or None
-        scope_package = (scope_package or '').strip() or None
-
-        if not segment:
-            v = self._root_view(scope_source, scope_package)
-        elif m := BOOK_SEGMENT_RE.fullmatch(segment):
-            v = self._book_view(m.group(1), scope_source, scope_package)
+        segment = (at or '').strip()
+        if m := BOOK_SEGMENT_RE.fullmatch(segment):
+            v = self._book_view(m.group(1))
         elif m := PACK_SEGMENT_RE.fullmatch(segment):
-            v = self._pack_view(m.group(1), scope_source, scope_package)
+            v = self._pack_view(m.group(1))
         elif ENTRY_SEGMENT_RE.fullmatch(segment):
-            v = self._entry_view(segment, scope_source, scope_package)
-        elif segment in self._curation['topics']:
-            v = self._topic_view(segment, scope_source, scope_package)
+            v = self._entry_view(segment)
+        elif segment in self._topics and self._topics[segment].dynamic_in(self.collection_key):
+            v = self._listing_view(self._topics[segment])
         elif m := CONTENTS_SEGMENT_RE.fullmatch(segment):
             nid = m.group(1)
             if nid not in self._nodes:
                 raise TourError('node_missing', 404)
-            v = self._contents_view(nid, scope_source, scope_package)
+            # A book's root reads as the book: its chapters and the entries it holds.
+            v = self._book_view(self._books_by_node[nid], 'n' + nid) if nid in self._books_by_node else self._contents_view(nid)
         else:
             raise TourError('node_missing', 404)
-
-        v.setdefault('scope_context', self._build_scope_context(segment, scope_source, scope_package))
-        v['tour'] = self.collection_key
-        v['collection'] = self.collection_key
-        v['snapshot'] = self._snapshot
-        v['reader_url'] = self.reader_url
-        v['lazy_media'] = self.lazy_media
         return self._shaped(v)
 
-    def _root_view(self, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
-        groups = [
-            {
-                'key': 'section',
-                'section': s['key'],
-                'label': s['label'],
-                'ordered': False,
-                'items': [self._topic_item(k, scope_source, scope_package) for k in s['topics']],
-            }
-            for s in self._curation['sections']
-        ]
-        return {
-            'id': '',
-            'kind': 'root',
-            'groups': groups,
-            'scope_context': self._build_scope_context('', scope_source, scope_package),
-        }
-
-    def _book_view(self, slug: str, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
+    def _book_view(self, slug: str, segment: str | None = None) -> dict[str, Any]:
         b = self._books_by_slug.get(slug)
         if b is None:
             raise TourError('node_missing', 404)
-
-        # Inherit book scope automatically
-        eff_source = scope_source or (b['source_id'] or None)
-        eff_pkg = scope_package or (None if eff_source else (b['package_id'] or None))
-        scoped_query = self._apply_scope_to_query({}, eff_source, eff_pkg)
-        scoped_total = self._query_count(scoped_query) if scoped_query else 0
-
+        scope = self._scope_query(b['source_id'] or None, None if b['source_id'] else (b['package_id'] or None))
+        scoped_total = self._query_count(scope) if scope else 0
         srec = self._sources_by_id.get(b['source_id']) if b['source_id'] else None
         pslug = self._packs_by_id.get(b['package_id'])
         prec = self._packs_by_slug.get(pslug) if pslug else None
@@ -2120,37 +1914,27 @@ class Our5etoolsTour:
                 label={'zh': '章节目录', 'en': 'Chapters'},
                 ordered=True,
             ))
-
-        type_items = self._scoped_type_items({}, eff_source, eff_pkg)
+        type_items = self._type_items(scope) if scope else []
         if type_items:
-            groups.append(self._group(
-                'facet',
-                type_items,
-                label={'zh': '本书条目分类', 'en': 'Entries in this book'},
-            ))
-
+            groups.append(self._group('facet', type_items, label={'zh': '本书条目分类', 'en': 'Entries in this book'}))
         return {
-            'id': 'book.' + slug,
+            'id': segment or 'book.' + slug,
             'kind': 'book',
-            'trail': ['书架', b['title']],
+            'trail': [],
             'title': b['title'],
             'ruleset': b['ruleset'] if b['ruleset'] in {'5e', '5r'} else None,
             'sources': sources_labels,
             'status': 'ok',
             'lead': None,
             'read': {'root': b['node_id'], 'page': b['first_page']} if b['first_page'] else {'root': b['node_id']},
-            'anna': {'query': scoped_query, 'count': scoped_total} if scoped_total > 0 else None,
+            'anna': {'query': scope, 'count': scoped_total} if scoped_total > 0 else None,
             'groups': groups,
-            'scope_context': self._build_scope_context('book.' + slug, eff_source, eff_pkg, {}),
         }
 
-    def _pack_view(self, slug: str, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
+    def _pack_view(self, slug: str) -> dict[str, Any]:
         p = self._packs_by_slug.get(slug)
         if p is None:
             raise TourError('node_missing', 404)
-
-        eff_pkg = scope_package or p['id']
-        eff_source = scope_source
         pdata = p['data']
         lead_parts = [f"来源性质：{p['origin']}"]
         if pdata.get('authors'):
@@ -2160,34 +1944,24 @@ class Our5etoolsTour:
         if pdata.get('version'):
             lead_parts.append(f"版本：{pdata['version']}")
         lead_text = '；'.join(lead_parts)
-
+        scope = self._scope_query(None, p['id'])
         groups: list[dict[str, Any]] = []
         if p['book_slugs']:
-            groups.append(self._group(
-                'contents',
-                [self._book_item(bs) for bs in p['book_slugs']],
-                label={'zh': '包内书目', 'en': 'Books in pack'},
-            ))
-
-        type_items = self._scoped_type_items({}, eff_source, eff_pkg)
+            groups.append(self._group('contents', [self._book_item(bs) for bs in p['book_slugs']],
+                                      label={'zh': '包内书目', 'en': 'Books in pack'}))
+        type_items = self._type_items(scope)
         if type_items:
-            groups.append(self._group(
-                'facet',
-                type_items,
-                label={'zh': '包内条目分类', 'en': 'Entries in pack'},
-            ))
-
-        scoped_q = self._apply_scope_to_query({}, eff_source, eff_pkg)
+            groups.append(self._group('facet', type_items, label={'zh': '包内条目分类', 'en': 'Entries in pack'}))
         return {
             'id': 'pack.' + slug,
             'kind': 'package',
-            'trail': ['资料包', p['origin'], p['name']],
+            'trail': ['资料包', p['origin']],
             'title': p['name'],
             'sources': [p['name']],
             'status': 'ok',
             'lead': {'text': lead_text, 'truncated': False} if lead_text else None,
             'read': None,
-            'anna': {'query': scoped_q, 'count': p['entry_count']},
+            'anna': {'query': scope, 'count': p['entry_count']},
             'groups': groups,
             'provenance': {
                 'package_id': p['id'],
@@ -2198,10 +1972,9 @@ class Our5etoolsTour:
                 'url': pdata.get('url'),
                 'version': pdata.get('version'),
             },
-            'scope_context': self._build_scope_context('pack.' + slug, eff_source, eff_pkg, {}),
         }
 
-    def _contents_view(self, nid: str, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
+    def _contents_view(self, nid: str) -> dict[str, Any]:
         node = self._nodes[nid]
         div_name = divider(node)
         ancestors: list[str] = []
@@ -2209,18 +1982,13 @@ class Our5etoolsTour:
         while parent and parent in self._nodes:
             ancestors.append(self._nodes[parent]['label'])
             parent = self._nodes[parent].get('parent_id') or ''
-
         groups: list[dict[str, Any]] = []
         if self._choices_by_node.get(nid):
-            groups.append(self._group(
-                'choices',
-                [self._topic_item(k, scope_source, scope_package) for k in self._choices_by_node[nid]],
-            ))
-
+            # The library tour answers each topic for the whole library; here it is only named.
+            groups.append(self._group('choices', [{'id': k, 'kind': 'topic'} for k in self._choices_by_node[nid]]))
         children = [c for c in self._children.get(nid, []) if divider(self._nodes[c]) is None]
         if children:
             groups.append(self._group('contents', [self._contents_item(c) for c in children]))
-
         return {
             'id': 'n' + nid,
             'kind': 'contents',
@@ -2232,15 +2000,13 @@ class Our5etoolsTour:
             'read': {'root': nid, 'page': node['path']} if node.get('path') else {'root': nid},
             'anna': None,
             'groups': groups,
-            'scope_context': self._build_scope_context('n' + nid, scope_source, scope_package),
         }
 
-    def _entry_view(self, entry_id: str, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
+    def _entry_view(self, entry_id: str) -> dict[str, Any]:
         try:
             d = self.catalog.detail(entry_id)
         except LookupError as exc:
             raise TourError('node_missing', 404) from exc
-
         shown, truncated = clip(d['body'], LEAD_LIMIT) if d.get('body') else ('', False)
         groups: list[dict[str, Any]] = []
         rel_items = [
@@ -2256,12 +2022,11 @@ class Our5etoolsTour:
         ]
         if rel_items:
             groups.append(self._group('relations', rel_items, label={'zh': '关联条目', 'en': 'Related entries'}))
-
         loc = d.get('reader_location')
         return {
             'id': entry_id,
             'kind': 'entry',
-            'trail': [d['type_label'], d['name']],
+            'trail': [d['type_label']],
             'title': d['name'],
             'ruleset': d['ruleset'],
             'type': d['type'],
@@ -2272,105 +2037,45 @@ class Our5etoolsTour:
             'read': {'entry': entry_id} if loc and loc.get('locatable') else None,
             'anna': {'entry': entry_id, 'type': d['type']},
             'groups': groups,
-            'scope_context': self._build_scope_context(entry_id, scope_source, scope_package),
         }
 
-    def _topic_view(self, key: str, scope_source: str | None, scope_package: str | None) -> dict[str, Any]:
-        t = self._curation['topics'][key]
-        base_query = dict(t.get('query') or {})
-        scoped_query = self._apply_scope_to_query(base_query, scope_source, scope_package) if base_query else None
-        view: dict[str, Any] = {
-            'id': key,
-            'kind': 'topic',
-            'trail': [],
-            'label': t['label'],
-            'title': t['label']['zh'],
-            'ruleset': t.get('ruleset'),
-            'sources': [],
-            'status': 'ok',
-            'lead': None,
-            'read': None,
-            'anna': None,
-            'groups': [],
-        }
-
-        dyn = t.get('dynamic')
-        if dyn in {'books_official', 'adventures_official', 'books_brew', 'adventures_brew', 'books_site'}:
-            items = [self._book_item(s) for s in self._books_order if self._books_by_slug[s]['shelf'] == dyn]
-            view['groups'].append(self._group('books', items, label=t['label']))
-            if scoped_query:
-                view['anna'] = {'query': scoped_query, 'count': self._query_count(scoped_query)}
-            view['scope_context'] = self._build_scope_context(key, scope_source, scope_package, base_query)
-            return view
-
-        if dyn == 'packs_ours':
-            items = [self._pack_item(s) for s in self._packs_order if self._packs_by_slug[s]['ours']]
-            view['groups'].append(self._group('packages', items, label=t['label']))
-            if scoped_query:
-                view['anna'] = {'query': scoped_query, 'count': self._query_count(scoped_query)}
-            view['scope_context'] = self._build_scope_context(key, scope_source, scope_package, base_query)
-            return view
-
-        if dyn == 'packs_community':
-            items = [
-                self._pack_item(s) for s in self._packs_order
-                if self._packs_by_slug[s]['id'] != 'official' and not self._packs_by_slug[s]['ours']
-            ]
-            view['groups'].append(self._group('packages', items, label=t['label']))
-            if scoped_query:
-                view['anna'] = {'query': scoped_query, 'count': self._query_count(scoped_query)}
-            view['scope_context'] = self._build_scope_context(key, scope_source, scope_package, base_query)
-            return view
-
+    def _listing_view(self, topic: Any) -> dict[str, Any]:
+        """The package listing a dynamic topic names, in this collection's own order."""
+        dyn = topic.dynamic_in(self.collection_key)
         if dyn == 'packs_official':
             pslug = self._packs_by_id.get('official')
             if pslug:
-                return self._pack_view(pslug, scope_source, scope_package)
+                return self._pack_view(pslug)
+        packs = {
+            'packs_ours': [s for s in self._packs_order if self._packs_by_slug[s]['ours']],
+            'packs_community': [s for s in self._packs_order
+                                if self._packs_by_slug[s]['id'] != 'official' and not self._packs_by_slug[s]['ours']],
+        }.get(dyn)
+        if packs is None:
+            raise TourError('node_missing', 404)
+        return {
+            'id': topic.key, 'kind': 'topic', 'trail': [], 'label': topic.label, 'title': topic.label['zh'],
+            'ruleset': topic.ruleset, 'sources': [], 'status': 'ok', 'lead': None, 'read': None, 'anna': None,
+            'groups': [self._group('packages', [self._pack_item(s) for s in packs], label=topic.label)],
+        }
 
-        if key in self._topic_nodes:
-            status, nid = self._topic_nodes[key]
-            view['status'] = status
-            if nid:
-                shown = self._contents_view(nid, scope_source, scope_package)
-                view['trail'] = shown['trail'] + [shown['title']]
-                view['read'] = shown['read']
-                view['groups'].extend(shown['groups'])
-                if t.get('sequence'):
-                    for g in view['groups']:
-                        if g['key'] == 'contents':
-                            g['ordered'] = True
-
-        if scoped_query:
-            view['anna'] = {'query': scoped_query, 'count': self._query_count(scoped_query)}
-            if t.get('facet'):
-                view['groups'].append(self._facet_group(base_query, t['facet'], scope_source, scope_package))
-            elif not t.get('contents'):
-                res = self.catalog.entries({**scoped_query, 'limit': [str(ENTRY_LIST_LIMIT)]})
-                items = [
-                    {
-                        'id': r['id'],
-                        'kind': 'entry',
-                        'title': r['name'],
-                        'type': r['type'],
-                        'type_label': r['type_label'],
-                        'ruleset': r['ruleset'],
-                        'hint': first_sentence(r.get('name_en') or '') or None,
-                    }
-                    for r in res['rows']
-                ]
-                grp = self._group('entries', items)
-                if res['total'] > len(items):
-                    grp['more'] = res['total'] - len(items)
-                view['groups'].append(grp)
-
-        view['scope_context'] = self._build_scope_context(key, scope_source, scope_package, base_query)
-        return view
-
-    def layout(self, entry_id: str, source_root: Path | None = None) -> dict[str, Any]:
+    def listing_count(self, topic: Any) -> int | None:
+        """How many rows a dynamic topic lists."""
         self._ensure_loaded()
-        if not entry_id or not ENTRY_SEGMENT_RE.fullmatch(entry_id):
+        dyn = topic.dynamic_in(self.collection_key)
+        if dyn == 'packs_ours':
+            return sum(1 for s in self._packs_order if self._packs_by_slug[s]['ours'])
+        if dyn == 'packs_community':
+            return sum(1 for s in self._packs_order if self._packs_by_slug[s]['id'] != 'official' and not self._packs_by_slug[s]['ours'])
+        if dyn == 'packs_official':
+            return self._packs_by_slug.get(self._packs_by_id.get('official', ''), {}).get('entry_count')
+        return None
+
+    def layout(self, segment: str) -> dict[str, Any]:
+        self._ensure_loaded()
+        if not segment or not ENTRY_SEGMENT_RE.fullmatch(segment):
             return {'status': 'empty'}
-        return self.catalog.layout(entry_id)
+        return self.catalog.layout(segment)
 
 
 # ---------------------------------------------------------------------------
@@ -2515,55 +2220,17 @@ class Our5etoolsReader:
             raise ReaderError('page_missing', 404)
         return {'snapshot': data['snapshot'], 'path': path, 'fragment': fragment, **page}
 
-    def book_search(
-        self,
-        query: str = '',
-        root: str | None = None,
-        *,
-        params: dict[str, list[str]] | None = None,
-    ) -> dict[str, Any]:
-        if params is not None:
-            keyword = (_first(params, 'keyword') or _first(params, 'q') or query).strip()
-            root = (_first(params, 'root') or root or '').strip() or None
-            title_only = _first(params, 'titleOnly', 'false').lower() in {'true', '1'}
-            try:
-                page = max(1, int(_first(params, 'page', '1') or 1))
-            except ValueError:
-                page = 1
-            try:
-                page_size = min(200, max(1, int(_first(params, 'pageSize', '30') or 30)))
-            except ValueError:
-                page_size = 30
-        else:
-            keyword = (query or '').strip()
-            root = (root or '').strip() or None
-            title_only = False
-            page = 1
-            page_size = 30
-
+    def search(self, keyword: str, *, title_only: bool = False) -> SearchHits:
+        """Chapter sections matching every term, best first, or any term when none matches all; ranked by the
+        same rule as the book's own search, so a library can interleave both."""
+        keyword = (keyword or '').strip()
         if len(keyword) > 2000:
             raise ReaderError('invalid_search', 400)
-
         terms = _parse_search_terms(keyword)
         if not terms:
-            return {
-                'query': keyword,
-                'results': [],
-                'groups': [],
-                'match': 'all',
-                'total': 0,
-                'page': 1,
-                'totalPages': 0,
-                'pageSize': page_size,
-            }
+            return SearchHits('all', [], lambda key, score: {})
 
         with closing(_connect_ro(self.db_path)) as db:
-            base_where: list[str] = []
-            base_vals: list[Any] = []
-            if root:
-                base_where.append('root_id = ?')
-                base_vals.append(root)
-
             def _fetch_hits(require_all: bool) -> list[sqlite3.Row]:
                 term_clauses: list[str] = []
                 term_vals: list[Any] = []
@@ -2575,12 +2242,11 @@ class Our5etoolsReader:
                         term_clauses.append('(instr(lower(title), ?) > 0 OR instr(lower(snippet_text), ?) > 0)')
                         term_vals.extend([t, t])
                 joiner = ' AND ' if require_all else ' OR '
-                clauses = [*base_where, '(' + joiner.join(term_clauses) + ')']
                 sql = (
                     'SELECT id, root_id, page_path, node_id, title, scope_label, snippet_text '
-                    'FROM book_search WHERE ' + ' AND '.join(clauses)
+                    'FROM book_search WHERE (' + joiner.join(term_clauses) + ')'
                 )
-                return db.execute(sql, [*base_vals, *term_vals]).fetchall()
+                return db.execute(sql, term_vals).fetchall()
 
             rows = _fetch_hits(require_all=True)
             match_mode = 'all'
@@ -2588,7 +2254,8 @@ class Our5etoolsReader:
                 rows = _fetch_hits(require_all=False)
                 match_mode = 'any'
 
-        scored: list[tuple[int, int, dict[str, Any]]] = []
+        found: dict[int, dict[str, Any]] = {}
+        scored: list[tuple[int, int]] = []
         for r in rows:
             title = r['title'] or ''
             tl = title.lower()
@@ -2602,46 +2269,19 @@ class Our5etoolsReader:
                 score = sum(t_counts[i] * 1000 + min(b_counts[i], 200) for i in range(len(terms)))
                 if match_mode == 'all' and all(c > 0 for c in t_counts):
                     score += 500
-            scored.append((
-                score,
-                int(r['id']),
-                {
-                    'index': int(r['id']),
-                    'root_id': r['root_id'] or '',
-                    'node_id': r['node_id'] or '',
-                    'title': title,
-                    'rawTitle': title,
-                    'path': r['page_path'],
-                    'sourcePath': r['page_path'],
-                    'rank': score,
-                    'preview': _make_preview(text, body_l, terms),
-                    'category': r['scope_label'] or r['root_id'] or '',
-                },
-            ))
-
+            index = int(r['id'])
+            scored.append((score, index))
+            found[index] = {
+                'index': index,
+                'title': title,
+                'rawTitle': title,
+                'path': r['page_path'],
+                'sourcePath': r['page_path'],
+                'preview': _make_preview(text, body_l, terms),
+                'category': r['scope_label'] or r['root_id'] or '',
+            }
         scored.sort(key=lambda item: (-item[0], item[1]))
-        total = len(scored)
-        start = (page - 1) * page_size
-        page_items = [item[2] for item in scored[start:start + page_size]]
-
-        grouped_map: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-        for it in page_items:
-            grouped_map[(it['root_id'], it['category'])].append(it)
-        groups = [
-            {'root_id': rid, 'label': lbl, 'count': len(items), 'items': items}
-            for (rid, lbl), items in grouped_map.items()
-        ]
-
-        return {
-            'query': keyword,
-            'total': total,
-            'match': match_mode,
-            'page': page,
-            'totalPages': math.ceil(total / page_size) if total else 0,
-            'pageSize': page_size,
-            'results': page_items,
-            'groups': groups,
-        }
+        return SearchHits(match_mode, scored, lambda key, score: {**found[key], 'rank': score})
 
     def resolve_book_asset(self, relpath: str) -> tuple[Path, str] | None:
         posix = _safe_relpath(relpath)
@@ -2794,12 +2434,11 @@ class Our5etoolsReader:
 def _load_5etools_family_collection(
     data_dir: Path | str,
     source_dir: Path | str | None = None,
-    tour_path: Path | str | None = None,
+    curation_path: Path | str | None = None,
     *,
     collection_key: str,
     zh: str,
     en: str,
-    default_tour_name: str,
     lazy_media: bool = False,
 ) -> Collection | None:
     """Load one 5etools-family collection when its published artifacts match ``collection_key``."""
@@ -2820,79 +2459,46 @@ def _load_5etools_family_collection(
         return None
 
     snapshot = str(reader_json.get('snapshot') or manifest.get('snapshot') or '')
-    tpath = Path(tour_path).resolve() if tour_path else (paths.PROJECT / 'tour' / default_tour_name)
     raw_book = str(reader_json.get('page_base') or f'/{collection_key}-book/')
     book_base = raw_book if raw_book.endswith('/') else (raw_book + '/')
     raw_media = str(reader_json.get('media_base') or f'/{collection_key}-media/')
     media_base = raw_media if raw_media.endswith('/') else (raw_media + '/')
-
-    provider = Our5etoolsCatalog(root, lazy_media=lazy_media, collection_key=collection_key)
-    tour = (
-        Our5etoolsTour(root, tpath, lazy_media=lazy_media, collection_key=collection_key)
-        if tpath.is_file()
-        else None
-    )
-    reader = Our5etoolsReader(
-        root,
-        source_dir,
-        lazy_media=lazy_media,
-        collection_key=collection_key,
+    return Collection(
+        collection_key, zh, en,
+        provider=Our5etoolsCatalog(root, lazy_media=lazy_media, collection_key=collection_key),
+        snapshot=snapshot,
+        tour=Our5etoolsTour(root, curation_path, lazy_media=lazy_media, collection_key=collection_key),
+        reader=Our5etoolsReader(root, source_dir, lazy_media=lazy_media, collection_key=collection_key,
+                                book_base=book_base, media_base=media_base),
         book_base=book_base,
         media_base=media_base,
     )
-
-    field_names = {f.name for f in dataclasses.fields(Collection)}
-    extra: dict[str, Any] = {}
-    if 'reader_url' in field_names:
-        extra['reader_url'] = f'/read?collection={collection_key}'
-    if 'snapshot' in field_names:
-        extra['snapshot'] = snapshot
-    if 'tour' in field_names:
-        extra['tour'] = tour
-    if 'reader' in field_names:
-        extra['reader'] = reader
-    if 'book_base' in field_names:
-        extra['book_base'] = book_base
-    if 'media_base' in field_names:
-        extra['media_base'] = media_base
-    return Collection(collection_key, zh, en, provider=provider, **extra)
 
 
 def load_our5etools_collection(
     data_dir: Path | str = paths.OUR5ETOOLS_DATA,
     source_dir: Path | str | None = None,
-    tour_path: Path | str | None = None,
+    curation_path: Path | str | None = None,
     *,
     lazy_media: bool = False,
 ) -> Collection | None:
     """Load the read-only our5etools Collection when built artifacts are complete; else return None."""
     return _load_5etools_family_collection(
-        data_dir,
-        source_dir,
-        tour_path,
-        collection_key=COLLECTION_KEY,
-        zh=COLLECTION_ZH,
-        en=COLLECTION_EN,
-        default_tour_name='our5etools.json',
-        lazy_media=lazy_media,
+        data_dir, source_dir, curation_path,
+        collection_key=COLLECTION_KEY, zh=COLLECTION_ZH, en=COLLECTION_EN, lazy_media=lazy_media,
     )
 
 
 def load_fivetools_collection(
     data_dir: Path | str = paths.FIVETOOLS_DATA,
     source_dir: Path | str | None = None,
-    tour_path: Path | str | None = None,
+    curation_path: Path | str | None = None,
     *,
     lazy_media: bool = False,
 ) -> Collection | None:
     """Load the reserved standalone 5etools Collection when built separately; else return None."""
     return _load_5etools_family_collection(
-        data_dir,
-        source_dir,
-        tour_path,
-        collection_key=FIVETOOLS_COLLECTION_KEY,
-        zh=FIVETOOLS_COLLECTION_KEY,
-        en=FIVETOOLS_COLLECTION_KEY,
-        default_tour_name='5etools.json',
+        data_dir, source_dir, curation_path,
+        collection_key=FIVETOOLS_COLLECTION_KEY, zh=FIVETOOLS_COLLECTION_KEY, en=FIVETOOLS_COLLECTION_KEY,
         lazy_media=lazy_media,
     )

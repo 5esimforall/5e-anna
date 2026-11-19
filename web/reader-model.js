@@ -39,11 +39,15 @@ const annaReaderModel = (() => {
   function validPosition(value) {
     return value && Number.isFinite(value.x) && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0;
   }
+  // A remembered page is `collection:path`; the path names a document under the collection's book.
   const VALID_PAGE_PREFIXES = ['topics/', 'books/', 'adventures/', 'brew-books/', 'brew-adventures/'];
-  function remembered(value, snapshot, model) {
-    if (value?.version !== 2 || value.snapshot !== snapshot || typeof value.page !== 'string' ||
-        !VALID_PAGE_PREFIXES.some(prefix => value.page.startsWith(prefix)) ||
-        value.page.split('/').some(p => p === '..' || p === '.') ||
+  const PAGE = /^[a-z0-9]+(?:-[a-z0-9]+)*:(.+)$/;
+  // `snapshotOf` gives the build snapshot of a collection on the shelf.
+  function remembered(value, snapshotOf, model) {
+    const local = typeof value?.page === 'string' ? PAGE.exec(value.page)?.[1] : null;
+    if (value?.version !== 2 || !local || value.snapshot !== snapshotOf(value.page.slice(0, value.page.indexOf(':'))) ||
+        !VALID_PAGE_PREFIXES.some(prefix => local.startsWith(prefix)) ||
+        local.split('/').some(p => p === '..' || p === '.') ||
         typeof value.root !== 'string' || typeof value.node !== 'string' || !validPosition(value.position)) return null;
     try {
       const scope = model.scope(value.root,value.page);

@@ -85,3 +85,8 @@ class ReaderModelTests(unittest.TestCase):
         import subprocess
         result = subprocess.run(['node', str(Path(__file__).with_name('workspace.cjs'))], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_difference_runs_between_two_texts(self):
+        import subprocess
+        result = subprocess.run(['node', str(Path(__file__).with_name('differences.cjs'))], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

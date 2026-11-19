@@ -11,9 +11,11 @@ import sqlite3
 import tempfile
 import unittest
 
+import anna.catalog.views as browse
 from anna.presentation import catalog
-from anna.presentation.collections import BookCatalog, Collection, CollectionError, CollectionRegistry, DEFAULT
-from anna.presentation.library import Library, Scope, localize, merge_order, parse_scope, describe_works
+from anna.presentation.alignment import align, title_key
+from anna.presentation.collections import BookCatalog, Capabilities, Collection, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.library import Library, Scope, localize, merge_order, parse_scope, describe_works, relations
 
 from test_presentation_contracts import endpoint, fixture
 
@@ -204,6 +206,183 @@ class LibraryTests(unittest.TestCase):
         works = {w['id']: w for w in book['works']}
         self.assertEqual(works[PHB14]['content'], 'official')
         self.assertEqual((works[PHB14]['count'], works[PHB24]['count']), (1, 1))
+
+
+class HomebrewCatalog:
+    """An in-memory catalog shaped like our5etools: official and homebrew works, copies that name the entry they
+    were copied from, and own groups that hold recorded reprints only."""
+
+    def __init__(self, name, works, entries):
+        self.name, self.works_, self.entries_ = name, works, entries
+        self.origin = {w['id']: w['origin'] for w in works}
+
+    def works(self):
+        return [{'label': w['id'], 'name': w['id'], 'ruleset': '5e', 'group': '', 'count': 1, 'codes': [], 'titles': [],
+                 'abbreviations': []} | w for w in self.works_]
+
+    def _row(self, e):
+        return {'id': e['id'], 'type': e['type'], 'name': e['name_en'], 'name_zh': e['name_en'], 'name_en': e['name_en'],
+                'ruleset': e.get('ruleset', '5e'), 'source_ids': [e['work']], 'source_names': [e['work']], 'fields': {},
+                'field_conflicts': [], 'quickref': {}, 'legacy': 'unmarked', 'origin': self.origin[e['work']]}
+
+    def ranked(self, params, restrict=None, sort_field=None):
+        types = params.get('type')
+        out = []
+        for e in self.entries_:
+            if types and e['type'] not in types:
+                continue
+            if restrict and restrict.sources is not None and e['work'] not in restrict.sources:
+                continue
+            base = next((b for b in self.entries_ if b['id'] == e.get('base')), None)
+            out.append({'id': e['id'], 'type': e['type'], 'name': e['name_en'], 'name_zh': e['name_en'], 'name_en': e['name_en'],
+                        'ruleset': e.get('ruleset', '5e'), 'stack': e.get('group'), 'value': None, 'source_key': (e['work'],),
+                        'origin': self.origin[e['work']], 'work': e['work'], 'base': e.get('base'),
+                        'base_work': base and base['work'], 'base_name_en': base and base['name_en']})
+        return out
+
+    def rows(self, ids):
+        return {e['id']: self._row(e) for e in self.entries_ if e['id'] in ids}
+
+    def detail(self, entry_id):
+        return next(self._row(e) | {'versions': None, 'body': ''} for e in self.entries_ if e['id'] == entry_id)
+
+    def schema(self, types):
+        return browse.schema_for(types)
+
+    def meta(self):
+        return {'type_order': ['spell', 'magic_item'], 'types': {}, 'fields': {}, 'sources': [], 'packages': []}
+
+    def capabilities(self):
+        return Capabilities(conditions=frozenset({'type'}), facets=frozenset(), types=frozenset({'spell', 'magic_item'}),
+                            sources=frozenset(self.origin), stackable=frozenset({'spell', 'magic_item'}), same_name_groups=False)
+
+    def signature(self):
+        return ('homebrew', self.name, id(self))
+
+
+class LibraryRelationTests(unittest.TestCase):
+    """Same-name versions share a row whatever their kind of content; each names the evidence relating it to the
+    version shown: the same publication elsewhere, a copy, or the name alone."""
+
+    def setUp(self):
+        data = fixture('catalog')
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        book = catalog_copy(self.tmp.name, 'book', data)
+        # A book that publishes the Saddlebag as a partnered work, and a homebrew site that keeps it as community
+        # content beside its own copy of the Player's Handbook and two homebrew works.
+        tavern = HomebrewCatalog('tavern', [{'id': 'saddle', 'origin': '合作', 'abbreviations': ['TGS2']}],
+                                 [{'id': 'tavern-cloak', 'type': 'magic_item', 'name_en': 'Mimicloak', 'work': 'saddle'}])
+        brew = HomebrewCatalog('brew', [
+            {'id': 'src:PHB', 'origin': '官方', 'abbreviations': ['PHB']},
+            {'id': 'src:TGS2', 'origin': '社区', 'abbreviations': ['TGS2']},
+            {'id': 'src:Alt', 'origin': '社区', 'abbreviations': ['ALTW']},
+        ], [
+            {'id': 'brew-shield', 'type': 'spell', 'name_en': 'Shield', 'work': 'src:PHB'},
+            {'id': 'alt-shield', 'type': 'spell', 'name_en': 'Shield', 'work': 'src:Alt', 'base': 'brew-shield'},
+            {'id': 'brew-cloak', 'type': 'magic_item', 'name_en': 'Mimicloak', 'work': 'src:TGS2'},
+            {'id': 'alt-cloak', 'type': 'magic_item', 'name_en': 'Mimicloak', 'work': 'src:Alt'},
+        ])
+        self.registry = CollectionRegistry(book, (Collection('tavern', '酒馆', 'Tavern', tavern), Collection('brew', '家酿站', 'Brew', brew)))
+
+    def library(self, **params):
+        params = {k: v if isinstance(v, list) else [v] for k, v in params.items()}
+        return Library(self.registry, parse_scope(params, self.registry)), params
+
+    def row(self, name, **params):
+        library, params = self.library(**params)
+        return next(r for r in library.entries(params)['rows'] if r['name_en'] == name)
+
+    @staticmethod
+    def related(row):
+        return [(v['collection'], v['id'], v['relation']) for v in row['versions']]
+
+    def test_homebrew_shares_the_row_and_names_its_evidence(self):
+        shield = self.row('Shield', libraries='5echm,brew')
+        self.assertEqual(self.related(shield), [(DEFAULT, SHIELD, None), ('brew', 'brew-shield', 'translation'), ('brew', 'alt-shield', 'derived')])
+        cloak = self.row('Mimicloak', libraries='tavern,brew')
+        self.assertEqual(self.related(cloak), [('tavern', 'tavern-cloak', None), ('brew', 'brew-cloak', 'translation'), ('brew', 'alt-cloak', 'candidate')])
+        # Without deduplication every version keeps its own row.
+        library, params = self.library(libraries='tavern,brew', versions='each')
+        self.assertEqual(library.entries({**params, 'type': ['magic_item']})['total'], 3)
+
+    def test_one_publication_ranks_as_its_most_published_work_and_the_reader_chooses_whose_text_leads(self):
+        # The homebrew site's copy of a partnered work leads when its collection comes first; homebrew of the same
+        # name with no evidence never leads a published work.
+        cloak = self.row('Mimicloak', libraries='brew,tavern')
+        self.assertEqual(self.related(cloak), [('brew', 'brew-cloak', None), ('tavern', 'tavern-cloak', 'translation'), ('brew', 'alt-cloak', 'candidate')])
+        cloak = self.row('Mimicloak', libraries='tavern,brew', lead='brew:src:TGS2')
+        self.assertEqual(cloak['versions'][0]['id'], 'brew-cloak')
+        # Leading a work does not lift homebrew above a published version of another work.
+        shield = self.row('Shield', libraries='5echm,brew', lead='brew:src:Alt')
+        self.assertEqual(shield['versions'][0]['id'], SHIELD)
+        # Filters decide which versions exist: a homebrew version left alone heads its own row.
+        library, params = self.library(libraries='5echm,brew', hide='brew:src:PHB')
+        self.assertEqual(self.related(next(r for r in library.entries(params)['rows'] if r['name_en'] == 'Shield')),
+                         [(DEFAULT, SHIELD, None), ('brew', 'alt-shield', 'derived')])
+        for bad in ('brew', 'Bad:src', 'brew:'):
+            with self.subTest(lead=bad), self.assertRaises(ValueError):
+                parse_scope({'lead': [bad]}, self.registry)
+
+    def test_a_collection_whose_groups_hold_only_reprints_is_stacked_by_the_library_when_read_alone(self):
+        library, params = self.library(libraries='brew')
+        self.assertTrue(library.stacking and not library.alone)
+        shield = next(r for r in library.entries(params)['rows'] if r['name_en'] == 'Shield')
+        self.assertEqual(self.related(shield), [('brew', 'brew-shield', None), ('brew', 'alt-shield', 'derived')])
+        self.assertTrue(self.library(libraries='brew', versions='each')[0].alone)
+        # The book's own groups already gather its same-name works; read alone it answers as before.
+        self.assertTrue(self.library()[0].alone)
+
+    def test_detail_relates_every_version_to_the_one_opened(self):
+        library, _ = self.library(libraries='5echm,brew')
+        entry = library.detail('alt-shield')
+        self.assertEqual(entry['collection'], 'brew')
+        self.assertEqual([(m['collection'], m['id'], m['relation']) for m in entry['versions']['members']],
+                         [(DEFAULT, SHIELD, 'version'), ('brew', 'brew-shield', 'version'), ('brew', 'alt-shield', None)])
+        self.assertEqual(entry['versions']['status'], 'library_candidate')
+        entry = library.detail(SHIELD)
+        self.assertEqual([m['relation'] for m in entry['versions']['members']], [None, 'translation', 'derived'])
+
+    def test_settings_list_the_same_publication_in_other_collections(self):
+        books = {c['id']: {w['id']: w for w in c['works']} for c in describe_works(self.registry, [DEFAULT, 'tavern', 'brew'])}
+        self.assertEqual(books['brew']['src:TGS2']['counterparts'], [{'collection': 'tavern', 'id': 'saddle'}])
+        self.assertEqual(books['brew']['src:PHB']['counterparts'], [{'collection': DEFAULT, 'id': PHB14}])
+        self.assertNotIn('counterparts', books['brew']['src:Alt'])
+        self.assertFalse({'codes', 'abbreviations', 'titles'} & set(books['brew']['src:PHB']))
+
+    def test_relations_follow_the_shortest_chain_of_evidence(self):
+        a = {'collection': 'x', 'id': 'a', 'work': 'w1', 'publication': 'p1', 'name_en': 'Orb'}
+        b = {'collection': 'y', 'id': 'b', 'work': 'w2', 'publication': 'p1', 'name_en': 'Orb'}
+        c = {'collection': 'y', 'id': 'c', 'work': 'w3', 'publication': 'p3', 'name_en': 'Orb', 'base': 'b', 'base_publication': 'p1', 'base_name_en': 'Orb'}
+        d = {'collection': 'y', 'id': 'd', 'work': 'w2', 'publication': 'p1', 'name_en': 'Orb'}
+        e = {'collection': 'z', 'id': 'e', 'work': 'w9', 'publication': 'p9', 'name_en': 'Orb'}
+        self.assertEqual(relations([a, b, c, d, e]), [None, 'translation', 'derived', 'translation', 'candidate'])
+        # Seen from the copy, the work it came from and that work's other texts are versions, not copies.
+        self.assertEqual(relations([a, b, c, d, e], anchor=2), ['version', 'version', None, 'version', 'candidate'])
+        # A copy of a differently named entry in the same publication is not a copy of this one.
+        self.assertEqual(relations([a, {**c, 'base_name_en': 'Lesser Orb', 'base': 'x'}]), [None, 'candidate'])
+
+
+class AlignmentTests(unittest.TestCase):
+    def test_titles_drop_editions_years_and_filler(self):
+        self.assertEqual(title_key("The Griffon's Saddlebag Book 2"), title_key('GriffonsSaddlebag2'))
+        self.assertEqual(title_key('歪曲之月(2024)'), title_key('歪曲之月'))
+        self.assertEqual(title_key('鬼魅幽谷 / 艾弗瑞斯巢穴集'), title_key('鬼魅幽谷：艾弗瑞斯巢穴集'))
+
+    def test_shared_entries_settle_several_candidates_and_a_tie_aligns_nothing(self):
+        book = [{'id': 'moon', 'titles': ['歪曲之月']}]
+        site = [{'id': 'moon14', 'titles': ['歪曲之月(2014)']}, {'id': 'moon24', 'titles': ['歪曲之月(2024)']}]
+        names = {'moon': {('spell', 'a'), ('spell', 'b')}}
+        found = align([('book', book, names), ('site', site, {'moon24': {('spell', 'a'), ('spell', 'b')}, 'moon14': {('spell', 'a')}})])
+        self.assertEqual(found.counterparts('book', 'moon'), [('site', 'moon24')])
+        self.assertEqual(found.link(('book', 'moon'), ('site', 'moon24')).votes, 2)
+        tie = align([('book', book, names), ('site', site, {'moon24': {('spell', 'a')}, 'moon14': {('spell', 'b')}})])
+        self.assertEqual(tie.counterparts('book', 'moon'), [])
+        self.assertEqual(tie.cluster('book', 'moon'), 'book:moon')
+        # A code outranks a title, however many entries the title's candidate shares.
+        coded = align([('book', [{'id': 'p', 'codes': ['PHB'], 'titles': ['手册']}], {'p': {('spell', 'a')}}),
+                       ('site', [{'id': 'phb', 'codes': ['PHB']}, {'id': 'other', 'titles': ['手册']}], {'other': {('spell', 'a')}})])
+        self.assertEqual(coded.counterparts('book', 'p'), [('site', 'phb')])
 
 
 class LibraryRouteTests(unittest.TestCase):

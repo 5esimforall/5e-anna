@@ -257,7 +257,9 @@ kbd { font: var(--anna-type-small) ui-monospace, monospace; border: 1px solid va
 .theme-button[data-preference=system] .theme-icon-system,
 .theme-button[data-preference=light] .theme-icon-light,
 .theme-button[data-preference=dark] .theme-icon-dark { display: block; }
-.workspace { position: relative; display: grid; grid-template-columns: minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; }
+/* What moves past the workspace's sides on its way in or out (the reader column, the results' edge) is clipped there,
+   so it never widens the page or lets focus scroll it sideways. */
+.workspace { position: relative; display: grid; grid-template-columns: minmax(0,1fr); height: calc(100dvh - 56px); min-height: 500px; overflow-x: clip; }
 .workspace>main { container: query / inline-size; display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: auto; padding: 22px 24px 14px; background: var(--anna-surface); }
 .workspace>main>* { flex-shrink: 0; }
 /* Every line above the table keeps one height at any width: text that does not fit is cut, never wrapped,
@@ -577,7 +579,9 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   /* The reader's share of the workspace is the reader's own preference (detail.js);
      the track keeps the minimum widths for the reader and the results whatever the stored share. */
   body.detail-open .workspace { grid-template-columns: minmax(0,1fr) clamp(var(--anna-reader-min), calc(100% * var(--anna-reader-share,.6)), calc(100% - var(--anna-list-min))); }
-  #detail { position: relative; inset: auto; grid-column: 2; grid-row: 1; width: auto; height: 100%; max-width: none; max-height: none; min-width: 0; border-left: 1px solid var(--anna-line-strong); }
+  /* The reader stays above the results' pinned header and name column wherever it passes over them; its edge is a
+     shadow rather than a border, so full-width reading moves no line of its text by the border's width. */
+  #detail { position: relative; z-index: 4; inset: auto; grid-column: 2; grid-row: 1; width: auto; height: 100%; max-width: none; max-height: none; min-width: 0; box-shadow: -1px 0 0 var(--anna-line-strong); }
   #reader-resizer { display: block; position: absolute; z-index: 6; top: 0; bottom: 0; left: 0; width: 7px; cursor: col-resize; touch-action: none; }
   #reader-resizer::after { content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: transparent; transition: background var(--anna-fast); }
   #reader-resizer:hover::after, body.reader-resizing #reader-resizer::after { background: var(--anna-brand); }
@@ -587,7 +591,7 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   /* Full-width reading lays the reader over the results, which keep their layout and scroll position. */
   body.detail-open .workspace>main { grid-row: 1; grid-column: 1; }
   body.detail-open.reader-full .workspace>main { visibility: hidden; }
-  body.reader-full #detail { grid-column: 1 / -1; border-left: 0; }
+  body.reader-full #detail { grid-column: 1 / -1; }
   body.reader-full #reader-resizer { display: none; }
 }
 @media(max-width:1199px) {
@@ -595,11 +599,11 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   body.reader-full #detail { inset: 0; width: 100%; height: 100dvh; border-radius: 0; }
   body.detail-modal { overflow: hidden; }
 }
-/* Full-width reading centres one column; the pinned tabs still span the reader. */
-@media(min-width:761px) {
-  body.reader-full #detail-content>:not(.detail-tabs) { max-width: var(--anna-reader-column); margin-inline: auto; }
-  body.reader-full .detail-tabs { padding-inline: max(22px, calc((100% + 48px - var(--anna-reader-column)) / 2)); }
-}
+/* The reader sets its text in one column, centred once the reader is wider than that, as in full-width reading; the
+   pinned tabs still span the reader. The column follows the reader's width rather than its mode, so the text stays
+   in place while the reader widens or narrows on the way into or out of full-width reading. */
+#detail-content>:not(.detail-tabs) { max-width: var(--anna-reader-column); margin-inline: auto; }
+.detail-tabs { padding-inline: max(22px, calc((100% + 48px - var(--anna-reader-column)) / 2)); }
 /* Compact rows: the English name and version pills join the Chinese name on one line, in a wider name column. */
 :root[data-density=compact] { --anna-name-column: 340px; }
 :root[data-density=compact] td { padding-top: 4px; padding-bottom: 4px; }
@@ -789,8 +793,9 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   opacity: 0; translate: 0 -4px; pointer-events: none; transition-duration: var(--anna-exit); transition-timing-function: var(--anna-ease-exit);
 }
 @starting-style { [data-motion] :is(.popup-menu, .menu-panel, #suggestions):not([hidden]) { opacity: 0; translate: 0 -4px; } }
-/* Layers: a modal rises over a backdrop that dims in; Anna's reader column comes in from the right edge it takes its
-   width from. Leaving goes back the same way, faster, and no longer takes the pointer. */
+/* Layers: a modal rises over a backdrop that dims in, and leaves the same way, faster, no longer taking the pointer.
+   Anna's reader column comes in from the right edge it takes its width from and leaves the same way, at the pace
+   of the results' edge, which moves with it (detail.js). */
 [data-motion] :is(#detail, .library-dialog), [data-motion] :is(#detail, .library-dialog)::backdrop {
   transition: opacity var(--anna-enter) var(--anna-ease), translate var(--anna-enter) var(--anna-ease),
     overlay var(--anna-enter) allow-discrete, display var(--anna-enter) allow-discrete;
@@ -802,9 +807,16 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
 [data-motion] .library-dialog:not([open]) { translate: 0 8px; }
 @starting-style { [data-motion] .library-dialog[open] { translate: 0 8px; } }
 @media(min-width:1200px) {
-  /* Leaving, the reader keeps the width it had (detail.js) over the results, which take their width back at once. */
-  [data-motion] #detail:not([open]) { position: absolute; inset: 0 0 0 auto; width: var(--anna-leaving-width, 60%); height: auto; translate: 24px 0; }
-  @starting-style { [data-motion] #detail[open] { translate: 24px 0; } }
+  /* Leaving, the reader keeps the width it had (detail.js) and moves out whole, uncovering nothing the results'
+     edge has not reached. */
+  [data-motion] #detail { transition: translate var(--anna-move) var(--anna-ease), overlay var(--anna-move) allow-discrete, display var(--anna-move) allow-discrete; }
+  [data-motion] #detail:not([open]) {
+    position: absolute; inset: 0 0 0 auto; width: var(--anna-leaving-width, 60%); height: auto; opacity: 1; translate: 100% 0;
+    transition-duration: var(--anna-move); transition-timing-function: var(--anna-ease);
+  }
+  @starting-style { [data-motion] #detail[open] { opacity: 1; translate: 100% 0; } }
+  /* Full-width reading covers the results as the reader's edge moves over them; they leave the view once covered. */
+  [data-motion] body.detail-open.reader-full .workspace>main { transition: visibility 0s var(--anna-move); }
 }
 @media(max-width:1199px) {
   [data-motion] #detail:not([open]) { translate: 0 12px; }

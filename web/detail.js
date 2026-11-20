@@ -68,14 +68,12 @@ function setReaderShare(share,save=true){
   const [min,max]=readerShareBounds();readerShare=Math.min(max,Math.max(min,share));applyReaderLayout();
   if(save)annaKit.stored.set(READER_SHARE_KEY,Math.abs(readerShare-DEFAULT_READER_SHARE)<.005?null:readerShare.toFixed(3));
 }
-// Widening, the reader's edges move out over the results; narrowing, the results come back beside it. Either way the
-// text is set again for its new column.
+// Widening, the reader's edges move out over the results; narrowing, they move back and uncover the results where
+// they were. Either way the text is set again at every width on the way.
 function setReaderFull(on,{save=true}={}){
   const reader=$('#detail'),shown=reader.open,before=reader.getBoundingClientRect();
   readerFull=on;applyReaderLayout();markTableFrames();if(save)saveUiState();
-  if(!shown)return;
-  if(on)annaMotion.grow(reader,before);else if(wideReader.matches)annaMotion.arrive($('#query-main'),'left',{distance:24});
-  annaMotion.arrive($('#detail-content'));
+  if(shown)annaMotion.reshape(reader,before);
 }
 // Runs from app.js once the shared helpers and labels exist.
 function initReaderLayout(){
@@ -250,7 +248,8 @@ async function openEntry(id,update=true,tab='body',fromResult=false,from=null) {
   if(fromResult)lastResultEntry=id;
   const wasOpen=$('#detail').open;
   currentReaderId=id;currentEntry=null;detailTab=tab;updatePageChrome();
-  if(!wasOpen)placeReader();
+  // A wide reader comes in from the right edge and the results' edge moves aside with it (style.css, Motion).
+  if(!wasOpen){const list=$('#query-main'),before=list.getBoundingClientRect();placeReader();annaMotion.reshape(list,before);}
   $('#detail').setAttribute('aria-labelledby','reader-title');$('#detail').classList.remove('title-away');readerTitleObserver?.disconnect();
   content.setAttribute('aria-busy','true');
   // Stepping keeps the current entry in place until the next one is ready, instead of flashing a loading line;
@@ -263,7 +262,8 @@ async function openEntry(id,update=true,tab='body',fromResult=false,from=null) {
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
     currentEntry=e;renderDetail(tab);content.scrollTop=0;
-    if(wasOpen)annaMotion.arrive(content,from);
+    // The next entry comes from its side; the first one fades in where the reader waited for it.
+    annaMotion.arrive(content,wasOpen?from:null);
   } catch(e) {
     if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
@@ -375,13 +375,15 @@ function renderVersions(e){
 function closeEntry({update=true,restoreFocus=true}={}) {
   detailGeneration++;
   if(restoreFocus)lastResultEntry=lastResultEntry||currentReaderId;
-  // A wide reader leaves at the width it had, over the results that take their width back (style.css, Motion).
+  // A wide reader leaves to the right at the width it had, and the results' edge follows it (style.css, Motion).
+  const list=$('#query-main'),before=list.getBoundingClientRect();
   if($('#detail').open)$('#detail').style.setProperty('--anna-leaving-width',$('#detail').getBoundingClientRect().width+'px');
   holdResultRow(currentReaderId,()=>{
     if($('#detail').open)$('#detail').close();
     document.body.classList.remove('detail-open','detail-modal');
     if(readerFull)setReaderFull(false,{save:false});
   });
+  annaMotion.reshape(list,before);
   endTopic(currentEntry);
   currentReaderId=null;currentEntry=null;detailTab='body';updatePageChrome();readerTitleObserver?.disconnect();$('#detail').classList.remove('title-away');
   if(restoreFocus)focusResult();

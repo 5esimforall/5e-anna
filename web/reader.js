@@ -149,11 +149,13 @@
   function setSidebar(open, focus = false) {
     sidebarOpen = open;
     const modal = sidebar.matches(':modal'), main = $('#book-main'), before = main.getBoundingClientRect();
+    const line = narrow.matches ? null : flow?.readingLine();
     if (sidebar.open && (!open || modal !== narrow.matches)) sidebar.close();
     if (open && !sidebar.open) narrow.matches ? sidebar.showModal() : sidebar.show();
     $('.book-workspace').classList.toggle('sidebar-closed', !open || narrow.matches);
-    // Beside the text, the contents push it aside and it moves with them instead of jumping (reader.css, Motion).
-    if (!narrow.matches) annaMotion.slide(main, before);
+    /* Beside the text, the contents push it aside: its edge moves with theirs and the text is set again at every
+       width on the way, while the line being read stays where it was (reader.css, Motion). */
+    if (!narrow.matches) { annaMotion.reshape(main, before); flow?.keepReadingLine(line); }
     $('#book-menu').setAttribute('aria-expanded', String(open));
     if (focus) {
       if (!open) $('#book-menu').focus();
@@ -399,9 +401,16 @@
       target?.focus({preventScroll:true});
     }
   }
-  // A branch opens and closes in place: its rows fade in or go, and the rows below slide to make or take the room.
+  /* A branch opens and closes in place: the rows below slide to make or take the room. An opening branch is
+     uncovered from its row down, at the pace of the rows below, so they never pass over its rows on the way. */
   function redrawTree(focusId = '') {
-    annaMotion.rearrange($('#book-tree'), '.toc-row', row => row.parentElement.dataset.node, () => renderTree(focusId));
+    const tree = $('#book-tree'), opened = new Set([...tree.querySelectorAll('li[aria-expanded=true]')].map(li => li.dataset.node));
+    annaMotion.rearrange(tree, '.toc-row', row => row.parentElement.dataset.node, () => renderTree(focusId));
+    for (const group of tree.querySelectorAll('li[aria-expanded=true] > ul')) {
+      if (opened.has(group.parentElement.dataset.node)) continue;
+      const box = group.getBoundingClientRect();
+      if (box.bottom > 0 && box.top < innerHeight) annaMotion.grow(group, {top:box.top, right:box.right, bottom:box.top, left:box.left});
+    }
   }
   function toggleBranch(id, open = !expanded.has(id)) {
     open ? expanded.add(id) : expanded.delete(id);

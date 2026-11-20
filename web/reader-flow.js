@@ -8,6 +8,8 @@ class AnnaReaderFlow {
     this.collections = new Map(collections.map(c => [c.id, c]));
     this.records = new Map(); this.documentSequence = 0; this.locationSequence = 0; this.scope = null; this.active = null;
     this.windowRadius = 2; this.maxDocuments = 5; this.linkMarks = false;
+    // While a line is held (keepReadingLine): puts it back at the top, and ends the hold.
+    this.placeReadingLine = null; this.releaseReadingLine = null;
     new ResizeObserver(() => this.scheduleMaintenance()).observe(this.scroll);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.scheduleMaintenance(); });
     this.scroll.addEventListener('scroll', () => this.schedulePosition(), {passive:true});
@@ -106,6 +108,61 @@ class AnnaReaderFlow {
   keepLocation(location) {
     const record = location && this.records.get(location.path);
     if (record) this.scroll.scrollTop = this.top(record)+location.position.y;
+  }
+  /* The line being read: the words at the top of the view and how far above that edge they start. A change of width
+     sets every page again, and the same distance in pixels then points at other words; `keepReadingLine` keeps these
+     words at the top instead while the pages settle. Pages are documents of this origin; one that cannot be read
+     keeps the distance in pixels. */
+  readingLine() {
+    const record = this.visibleRecord();
+    if (this.locating || record?.status !== 'ready' || !record.frame) return null;
+    try {
+      const doc = record.frame.contentDocument, frame = record.frame.getBoundingClientRect();
+      const y = this.scroll.getBoundingClientRect().top - frame.top + 1;
+      for (const x of [.5, .3, .7, .15].map(part => frame.width * part)) {
+        const caret = doc.caretPositionFromPoint?.(x, y), range = caret ? null : doc.caretRangeFromPoint?.(x, y);
+        const node = caret?.offsetNode || range?.startContainer, offset = caret?.offset ?? range?.startOffset ?? 0;
+        if (node?.nodeType !== Node.TEXT_NODE) continue;
+        const line = {record, node, offset:Math.min(offset, Math.max(0, node.length - 1))};
+        const top = this.readingTop(line);
+        // A caret snapped to words far from the edge would keep the wrong line.
+        if (top !== null && Math.abs(top - y) < 80) return {...line, shift:top - y};
+      }
+      const element = doc.elementFromPoint(frame.width / 2, y);
+      if (!element || element === doc.body || element === doc.documentElement) return null;
+      const line = {record, element};
+      return {...line, shift:this.readingTop(line) - y};
+    } catch { return null; }
+  }
+  readingTop(line) {
+    if (!line.record.frame || !line.record.frame.contentDocument?.contains(line.node || line.element)) return null;
+    if (line.element) return line.element.getBoundingClientRect().top;
+    const range = line.node.ownerDocument.createRange();
+    range.setStart(line.node, line.offset); range.setEnd(line.node, Math.min(line.node.length, line.offset + 1));
+    const box = range.getClientRects()[0] || range.getBoundingClientRect();
+    return box ? box.top : null;
+  }
+  /* Holds `line` at the top of the view until the pages have settled. The view is the reader's again as soon as
+     anything else moves it: a wheel or key over a page reaches only that page's document, so the hold watches the
+     view itself rather than the reader's input. */
+  keepReadingLine(line) {
+    this.releaseReadingLine?.();
+    if (!line) return;
+    const sequence = this.locationSequence, until = performance.now() + 600;
+    let held = this.scroll.scrollTop, frame = 0;
+    const place = () => {
+      if (Math.abs(this.scroll.scrollTop - held) > 1) return false;
+      if (sequence !== this.locationSequence || this.locating || this.records.get(line.record.item.path) !== line.record) return false;
+      let top = null;
+      try { top = this.readingTop(line); } catch { top = null; }
+      if (top === null) return false;
+      this.scroll.scrollTop = this.top(line.record) + top - line.shift; held = this.scroll.scrollTop;
+      return true;
+    };
+    const stop = () => { cancelAnimationFrame(frame); this.placeReadingLine = null; this.releaseReadingLine = null; };
+    const step = () => { if (place() && performance.now() < until) frame = requestAnimationFrame(step); else stop(); };
+    this.placeReadingLine = place; this.releaseReadingLine = stop;
+    step();
   }
   schedulePosition() {
     if (this.positionTimer) return;
@@ -209,7 +266,7 @@ class AnnaReaderFlow {
     if (!this.locating) this.capture();
     const location = this.viewport();
     record.height = Math.ceil(height); record.frame.style.height = record.height+'px';
-    if (!this.locating) this.keepLocation(location);
+    if (!this.locating && !this.placeReadingLine?.()) this.keepLocation(location);
     this.scheduleMaintenance();
   }
   async ensure(path, data) {

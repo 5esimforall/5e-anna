@@ -160,9 +160,9 @@ html[data-theme=dark] .book-app { --anna-source-bg: #111315; --anna-source-surfa
 #book-error { position: absolute; inset: var(--book-bar-height) 0 0; z-index: 2; color: var(--anna-secondary); background: var(--anna-paper); padding: 32px; line-height: 1.8; }
 #book-error p { max-width: 42em; }
 #book-error a { margin-left: 16px; }
-/* Motion (style.css, Motion). On wide screens the contents push the text aside and the text moves with them
-   (reader.js); on narrow screens the drawer slides over a backdrop that dims in. Both move the whole way, at the pace
-   of the text beside them, and a leaving sidebar keeps its column's place. */
+/* Motion (style.css, Motion). On wide screens the contents push the text aside: the text's edge moves with them and
+   the text is set again on the way (reader.js); on narrow screens the drawer slides over a backdrop that dims in.
+   Both move the whole way, at the pace of the text's edge, and a leaving sidebar keeps its column's place. */
 [data-motion] #book-sidebar, [data-motion] #book-sidebar::backdrop {
   transition: translate var(--anna-move) var(--anna-ease), opacity var(--anna-move) var(--anna-ease),
     overlay var(--anna-move) allow-discrete, display var(--anna-move) allow-discrete;

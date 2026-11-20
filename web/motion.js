@@ -4,7 +4,8 @@
    in a fraction of a second, and never makes the reader wait for it:
    - content that takes another's place settles in from the side it comes from, or fades in where it has no side;
    - siblings drawn again keep their identity and slide from where they stood; new ones fade in;
-   - content pushed aside by a panel moves with the panel instead of jumping;
+   - a box that a panel resizes moves its edges with the panel, and what it holds is set again at every size on the
+     way, so nothing inside jumps to its final place first;
    - a box that grows uncovers its new area from the edges it had;
    - a restyled page (theme, row density) fades from its old look into the new one.
    Layers, popups and panels that appear or leave are styled in style.css under `[data-motion]` with the same
@@ -37,6 +38,9 @@ const annaMotion = (() => {
   const offset = (from, to) => [from.left - to.left, from.top - to.top];
   const moved = ([x, y]) => Math.abs(x) >= 1 || Math.abs(y) >= 1;
   const glide = ([x, y]) => ({translate:[`${x}px ${y}px`, '0 0']});
+  // How far each edge of `now` lies inside the box it had (`before`): top, right, bottom, left.
+  const insets = (before, now) => [before.top - now.top, now.right - before.right, now.bottom - before.bottom, before.left - now.left];
+  const SIDES_CSS = ['Top', 'Right', 'Bottom', 'Left'];
 
   // Content that takes another's place settles in: from `from` (below, above, left or right), else in place.
   function arrive(element, from = null, {distance = 8, opacity = 0} = {}) {
@@ -44,11 +48,28 @@ const annaMotion = (() => {
     const [x, y] = SIDES[from] || [0, 0];
     play(element, {opacity:[opacity, 1], translate:[`${x * distance}px ${y * distance}px`, '0 0']}, timing('enter'));
   }
-  // Content pushed aside moves from the box it had (`before`) to its new place.
-  function slide(element, before) {
+  /* A box that a layout change resized takes its edges from the box it had (`before`) to its new one. Its real size
+     changes on the way, so a centred title, a control on its far edge or a wrapped line moves continuously with the
+     edge. A box sized by its area (a stretched grid item) moves its edges through its margins; a fixed box through
+     its position and size. */
+  function reshape(element, before) {
     if (!element || !before || !moving()) return;
-    const shift = offset(before, element.getBoundingClientRect());
-    if (moved(shift)) play(element, glide(shift), timing('move'));
+    const now = element.getBoundingClientRect(), edges = insets(before, now);
+    if (!edges.some(edge => Math.abs(edge) >= 1)) return;
+    const style = getComputedStyle(element);
+    if (style.position === 'fixed') {
+      const boxes = [before, now];
+      play(element, {inset:boxes.map(box => `${box.top}px auto auto ${box.left}px`), width:boxes.map(box => `${box.width}px`),
+        height:boxes.map(box => `${box.height}px`), margin:['0px', '0px'], boxSizing:['border-box', 'border-box']}, timing('move'));
+      return;
+    }
+    const keyframes = {};
+    SIDES_CSS.forEach((side, i) => {
+      if (Math.abs(edges[i]) < 1) return;
+      const margin = parseFloat(style['margin' + side]) || 0;
+      keyframes['margin' + side] = [`${margin + edges[i]}px`, `${margin}px`];
+    });
+    play(element, keyframes, timing('move'));
   }
   /* `change` draws the items matching `selector` again; `key` names each item across the two drawings. Items that
      stay slide from where they stood, new ones fade in, and items out of sight are left alone. */
@@ -70,9 +91,7 @@ const annaMotion = (() => {
   // A box that grew uncovers its new area from the edges it had (`before`); a box that shrank has nothing to show.
   function grow(element, before) {
     if (!element || !before || !moving()) return;
-    const now = element.getBoundingClientRect();
-    const inset = [before.top - now.top, now.right - before.right, now.bottom - before.bottom, before.left - now.left]
-      .map(edge => Math.max(0, Math.round(edge)));
+    const inset = insets(before, element.getBoundingClientRect()).map(edge => Math.max(0, Math.round(edge)));
     if (inset.some(edge => edge >= 1)) play(element, {clipPath:[`inset(${inset.join('px ')}px)`, 'inset(0px)']}, timing('move'));
   }
   /* A restyled page fades from its old look into the new one. Controls skip their own colour transitions meanwhile,
@@ -83,5 +102,5 @@ const annaMotion = (() => {
     if (moving() && document.startViewTransition) document.startViewTransition(change).finished.finally(done);
     else { change(); requestAnimationFrame(() => requestAnimationFrame(done)); }
   }
-  return {settle, arrive, slide, rearrange, grow, restyle, get moving() { return moving(); }};
+  return {settle, arrive, reshape, rearrange, grow, restyle, get moving() { return moving(); }};
 })();

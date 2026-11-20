@@ -30,9 +30,22 @@
   const send = (type, detail = {}) => {
     parent.postMessage({channel, version, type, documentId, snapshot, path, navigationId, ...detail}, location.origin);
   };
+  // Quirks mode stretches html and body to the frame's viewport, so neither the body box nor scrollHeight reports less
+  // than the current frame. The content's own boxes measure the document in either mode: each child's margin box, every
+  // descendant and loose text, then the body's bottom edge.
   function height() {
-    const body = document.body, rect = body.getBoundingClientRect(), style = getComputedStyle(body);
-    return Math.max(1,Math.ceil(rect.top+scrollY+Math.max(rect.height,body.scrollHeight)+(parseFloat(style.marginBottom)||0)));
+    const body = document.body, style = getComputedStyle(body), px = value => parseFloat(value) || 0;
+    const inset = px(style.paddingBottom) + px(style.borderBottomWidth), margin = px(style.marginBottom);
+    const contents = document.createRange(); contents.selectNodeContents(body);
+    let bottom = contents.getBoundingClientRect().bottom + inset + margin;
+    for (const child of body.children) {
+      const box = child.getBoundingClientRect();
+      if (!box.width && !box.height) continue;
+      const below = px(getComputedStyle(child).marginBottom);
+      // Without bottom padding or border, a child's bottom margin collapses with the body's own.
+      bottom = Math.max(bottom, box.bottom + (inset ? below + inset + margin : Math.max(below, margin)));
+    }
+    return Math.max(1, Math.ceil(bottom + scrollY));
   }
   // Size reports carry where each definition starts, so the reader knows which one is in view.
   const definitions = () => window.annaSourceLinks?.definitionPositions() || [];

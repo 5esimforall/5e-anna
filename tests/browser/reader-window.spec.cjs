@@ -202,3 +202,36 @@ test('manual loading cannot reclaim an unfinished foreground pagination target',
     await mounted(page,9);expect(await page.evaluate(()=>window.maxMountedDocuments)).toBeLessThanOrEqual(5);
   }finally{release();}
 });
+
+/* Most source pages have no doctype. Quirks mode stretches html and body to the frame, so a frame that measured its
+   body would only ever grow; the page measures its text instead, whichever mode it renders in. */
+const prose=(doctype,snapshot)=>`${doctype}<html><head><meta charset="utf-8"><style>html,body{margin:0}body{padding:0 0 40px}p{margin:0 0 16px}#end{height:1px}</style></head><body>${
+  Array.from({length:24},(_,i)=>`<p>${i+1}. ${'重新排版的段落随栏宽换行。'.repeat(36)}</p>`).join('')
+}<div id="end"></div><script type="application/json" id="anna-bindings">${JSON.stringify({reader:{snapshot,collection:'5echm',presentation_resources:[]}})}</script><script src="/book/anna-assets/topic.js"></script></body></html>`;
+for(const [mode,doctype] of [['BackCompat',''],['CSS1Compat','<!doctype html>']])
+test(`a ${mode} page’s frame shrinks and grows with its text as the contents close and open`,async({page,request})=>{
+  await page.setViewportSize({width:1200,height:800});
+  const {snapshot}=bookCollection(await (await request.get(anna+'/api/reader')).json());
+  await fixture(page,request);
+  await page.route('**/book/topics/window-0.htm',route=>route.fulfill({contentType:'text/html',body:prose(doctype,snapshot)}));
+  await visit(page);await mounted(page,0);
+  const frame=section(page,0).locator('iframe');
+  const measure=()=>frame.evaluate(frame=>{
+    const doc=frame.contentDocument,end=doc.getElementById('end').getBoundingClientRect().bottom;
+    return {mode:doc.compatMode,width:frame.clientWidth,frame:frame.offsetHeight,text:Math.ceil(end+40)};
+  });
+  // The frame settles on its text at the column's new width.
+  const fitted=async width=>{
+    await expect.poll(async()=>{const m=await measure();return m.width===width&&Math.abs(m.frame-m.text)<=2;}).toBe(true);
+    return measure();
+  };
+  await expect(page.locator('#book-sidebar')).toBeVisible();
+  const narrow=await measure();expect(narrow.mode).toBe(mode);await fitted(narrow.width);
+  await page.locator('#book-menu').click();await expect(page.locator('#book-sidebar')).toBeHidden();
+  await expect.poll(async()=>(await measure()).width).toBeGreaterThan(narrow.width+200);
+  const wide=await fitted((await measure()).width);
+  expect(wide.frame).toBeLessThan(narrow.frame-200);
+  await page.locator('#book-menu').click();await expect(page.locator('#book-sidebar')).toBeVisible();
+  const again=await fitted(narrow.width);
+  expect(Math.abs(again.frame-narrow.frame)).toBeLessThanOrEqual(2);
+});

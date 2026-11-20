@@ -124,17 +124,17 @@ def write(root, curation):
 class Provider:
     """The parts of a catalog the library tour asks: entries, facets and their vocabulary."""
 
-    ENTRIES = [('ver_e1', '护盾术 Shield', 'spell'), ('ver_b1', '法师 Wizard', 'class')]
+    ENTRIES = [('ver_e1', '护盾术 Shield', 'spell'), ('ver_b1', '法师 Wizard', 'class'), ('ver_c1', '防护学派 Abjurer', 'subclass')]
 
     def matching(self, params):
         types = params.get('type')
         return [e for e in self.ENTRIES if not types or e[2] in types]
 
     def meta(self):
-        return {'types': {'spell': '法术', 'class': '职业'}, 'type_order': ['class', 'spell'], 'fields': {}}
+        return {'types': {'spell': '法术', 'class': '职业', 'subclass': '子职'}, 'type_order': ['class', 'subclass', 'spell'], 'fields': {}}
 
     def capabilities(self):
-        return Capabilities(conditions=frozenset({'type'}), facets=frozenset(), types=frozenset({'spell', 'class'}), sources=frozenset())
+        return Capabilities(conditions=frozenset({'type'}), facets=frozenset(), types=frozenset({'spell', 'class', 'subclass'}), sources=frozenset())
 
     def signature(self):
         return ('tour-fixture', id(self))
@@ -195,6 +195,8 @@ class CurationTests(unittest.TestCase):
         self.rejected(lambda c: topics(c)[0].update(ruleset='2024'), "'create' ruleset")
         self.rejected(lambda c: topics(c)[0].update(facet='spell_level'), "'create' facet")
         self.rejected(lambda c: topics(c)[4].update(query={'type': 'spell'}), "'spells' query")
+        self.rejected(lambda c: topics(c)[4].update(browse='unknown'), "'spells' browse")
+        self.rejected(lambda c: topics(c)[4].update(facet='spell_level', browse='subclasses'), "'spells' browse")
         self.rejected(lambda c: topics(c)[1].pop('contents'), "'wizard' leads nowhere")
         # A chapter is named once per collection, by that collection's own contents.
         self.rejected(lambda c: topics(c)[1].update(contents='本书速查 / 职业速查 / 法师'), "'wizard' contents")
@@ -205,6 +207,15 @@ class CurationTests(unittest.TestCase):
         (self.root / 'broken.json').write_text('{')
         with self.assertRaises(TourError):
             load(self.root / 'broken.json')
+
+    def test_browse_topic_loads_without_contents_or_facet(self):
+        curation = deepcopy(CURATION)
+        curation['sections'][0]['topics'].append({
+            'key': 'subclasses', 'label': {'zh': '子职', 'en': 'Subclasses'},
+            'query': {'type': ['subclass']}, 'browse': 'subclasses',
+        })
+        loaded = load(write(self.root, curation))
+        self.assertEqual(loaded['topics']['subclasses'].browse, 'subclasses')
 
     def test_quoted_text_is_clipped_at_sentences(self):
         self.assertEqual(clip('短句。', 10), ('短句。', False))
@@ -296,6 +307,35 @@ class TourTests(unittest.TestCase):
         self.assertEqual(self.tour.layout(''), {'status': 'empty'})
         self.assertEqual(self.tour.layout('ver_a3'), {'status': 'missing', 'path': 'topics/step1.htm'})
 
+    def test_subclass_records_resolve_owners_and_disambiguate_shared_headings(self):
+        # Add an unowned subclass and two generic-headed PHB-style subclasses sharing one heading in the same source.
+        with closing(sqlite3.connect(self.catalog.db)) as conn:
+            conn.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?,?)',
+                         ('topics/evoc.htm', '', 'document', 'ok', '', ' \n奥术传承\n塑能说明。\n', '["src_phb"]', '{}'))
+            conn.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?,?)',
+                         ('topics/trans.htm', '', 'document', 'ok', '', ' \n奥术传承\n变化说明。\n', '["src_phb"]', '{}'))
+            conn.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?,?)',
+                         ('topics/misc.htm', '', 'document', 'ok', '', ' \n子职更新\n总述。\n', '["src_phb"]', '{}'))
+            self.catalog.entry(conn, 'ver_c2', '奥术传承 Arcane Traditions', 'subclass', 'topics/evoc.htm', (2, 12), 6, primary=True, name_zh='奥术传承')
+            self.catalog.entry(conn, 'ver_c3', '奥术传承 Arcane Traditions', 'subclass', 'topics/trans.htm', (2, 12), 6, primary=True, name_zh='奥术传承')
+            self.catalog.entry(conn, 'ver_c4', '子职更新 Subclasses Update', 'subclass', 'topics/misc.htm', (2, 10), 6, primary=True, name_zh='子职更新')
+            conn.execute("UPDATE entries SET name_en='Arcane Traditions' WHERE id IN ('ver_c2', 'ver_c3')")
+            conn.commit()
+        extra_nodes = [
+            *NODES,
+            node('18', '16', '塑能学派', 'topics/evoc.htm'),
+            node('19', '16', '变化学派', 'topics/trans.htm'),
+            node('24', '3', '塑能学派', 'topics/evoc.htm'),
+            node('25', '3', '变化学派', 'topics/trans.htm'),
+        ]
+        tour = Tour(self.catalog.db, extra_nodes, {'ver_b1'}, load(write(Path(self.tmp.name), CURATION)), Path(self.tmp.name) / 'source')
+        records = {r['id']: r for r in tour.subclass_records()}
+        self.assertEqual(records['ver_c1']['owner_class'], '法师')
+        self.assertEqual((records['ver_c2']['owner_class'], records['ver_c2']['title'], records['ver_c2']['name_en']), ('法师', '塑能学派', ''))
+        self.assertEqual((records['ver_c3']['owner_class'], records['ver_c3']['title'], records['ver_c3']['name_en']), ('法师', '变化学派', ''))
+        self.assertIsNone(records['ver_c4']['owner_class'])
+        self.assertEqual(tour.view('ver_c2')['title'], '塑能学派')
+
     def test_unknown_and_malformed_nodes_are_explicit(self):
         # Topics belong to the library tour; the book names only its contents and entries.
         for segment, code, status in [('bad.seg', 'invalid_node', 400), ('N13', 'invalid_node', 400), ('create', 'invalid_node', 400),
@@ -369,16 +409,62 @@ class LibraryTourTests(unittest.TestCase):
             with self.subTest(segment=segment):
                 self.assertEqual(self.tour.layout(segment), {'status': 'empty'})
 
+    def test_subclasses_browse_drills_through_classes_to_subclass_entries(self):
+        curation = deepcopy(CURATION)
+        curation['sections'][0]['topics'].append({
+            'key': 'subclasses', 'label': {'zh': '子职', 'en': 'Subclasses'},
+            'query': {'type': ['subclass']}, 'browse': 'subclasses',
+        })
+        curation_path = write(Path(self.tmp.name), curation)
+        registry = CollectionRegistry(Provider(), book_tour=self.book, book_reader=Reader(), book_snapshot='s-book')
+        tour = LibraryTour(registry, parse_scope({}, registry), curation_path)
+
+        # Column 1: owning classes are drillable levels, never query jump links.
+        level1 = tour.view('subclasses')
+        classes = self.items(level1, 'classes')
+        self.assertEqual([(i['id'], i['kind'], i['title'], i['count']) for i in classes],
+                         [('subclasses.wizard', 'class', '法师', 1)])
+
+        # Column 2: wizard's subclasses are clickable entry levels that open directly in the tour.
+        level2 = tour.view('subclasses.wizard')
+        self.assertEqual((level2['id'], level2['kind'], level2['title']), ('subclasses.wizard', 'class', '法师'))
+        subs = self.items(level2, 'subclasses')
+        self.assertEqual([(i['id'], i['kind'], i['title'], i['ruleset']) for i in subs],
+                         [('5echm:ver_c1', 'entry', '防护学派', '5r')])
+        self.assertEqual(tour.layout('subclasses.wizard'), {'status': 'empty'})
+
+        # Column 3: clicking a subclass opens its entry directly.
+        level3 = tour.view(subs[0]['id'])
+        self.assertEqual((level3['id'], level3['type']), ('5echm:ver_c1', 'subclass'))
+        self.assertEqual([i['id'] for i in self.items(level3, 'class')], ['5echm:ver_b1'])
+
+        # Library ruleset restriction filters the subclass index.
+        only_5e = LibraryTour(registry, parse_scope({'rulesets': ['5e']}, registry), curation_path)
+        with self.assertRaises(TourError) as missing:
+            only_5e.view('subclasses.wizard')
+        self.assertEqual((missing.exception.code, missing.exception.status), ('node_missing', 404))
+
     def test_unknown_and_malformed_levels_are_explicit(self):
         for segment, code, status in [('bad.seg', 'invalid_node', 400), ('5echm:bad.seg', 'invalid_node', 400), ('Bad:n1', 'invalid_node', 400),
+                                      ('subclasses.', 'invalid_node', 400), ('subclasses.BAD!', 'invalid_node', 400),
+                                      ('subclasses.nope', 'node_missing', 404),
                                       ('5echm:n999', 'node_missing', 404), ('brew:n1', 'node_missing', 404), ('nope', 'node_missing', 404),
                                       ('packs', 'node_missing', 404)]:
             with self.subTest(segment=segment), self.assertRaises(TourError) as caught:
                 self.tour.view(segment)
             self.assertEqual((caught.exception.code, caught.exception.status), (code, status))
         with self.assertRaises(TourError) as caught:
+            self.tour.layout('subclasses.nope')
+        self.assertEqual((caught.exception.code, caught.exception.status), ('node_missing', 404))
+        with self.assertRaises(TourError) as caught:
             self.tour.check('old')
         self.assertEqual((caught.exception.code, caught.exception.status), ('snapshot_changed', 409))
+
+    def test_relations_only_entries_still_read_as_detail(self):
+        leaf = {'lead': {'text': '简短特性正文。', 'truncated': False}, 'groups': [{'key': 'relations', 'items': [{'id': 'x'}]}]}
+        parent = {'lead': {'text': '简短子职导语。', 'truncated': False}, 'groups': [{'key': 'parts', 'items': [{'id': 'y'}]}]}
+        self.assertEqual(library_tour._shaped(leaf)['shape'], 'detail')
+        self.assertEqual(library_tour._shaped(parent)['shape'], 'index')
 
 
 class RouteTests(unittest.TestCase):
@@ -561,6 +647,63 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(led.view('create')['collection'], 'our5etools')
         packs = both.view('packs-ours')
         self.assertTrue(all(i['id'].startswith('our5etools:pack.') for i in self.items(packs, 'packages')))
+
+    def test_subclasses_drill_down_in_the_tour_across_collections(self):
+        # 5echm alone: classes are drillable and wizard subclasses open directly in the tour.
+        sub_root = self.tour.view('subclasses')
+        classes = self.items(sub_root, 'classes')
+        self.assertTrue(all(c['kind'] == 'class' and c['id'].startswith('subclasses.') for c in classes))
+        self.assertIn('subclasses.wizard', [c['id'] for c in classes])
+        wiz = self.tour.view('subclasses.wizard')
+        wiz_items = self.items(wiz, 'subclasses')
+        self.assertTrue(all(i['kind'] == 'entry' and i['id'].startswith('5echm:') for i in wiz_items))
+        titles = [i['title'] for i in wiz_items]
+        self.assertIn('塑能师', titles)
+        self.assertIn('塑能学派', titles)
+        self.assertNotIn('奥术传承', titles)
+        evoker = next(i for i in wiz_items if i['title'] == '塑能师')
+        evoker_view = self.tour.view(evoker['id'])
+        self.assertGreaterEqual(len(self.items(evoker_view, 'parts')), 4)
+
+        if not paths.OUR5ETOOLS_DATA.joinpath('manifest.json').exists():
+            return
+        # our5etools alone: subclass entries show real intro lead, level parts, and deduplicated parent class.
+        only_o5e = LibraryTour(self.registry, parse_scope({'libraries': ['our5etools']}, self.registry))
+        o5e_wiz = only_o5e.view('subclasses.wizard')
+        self.assertIsNotNone(o5e_wiz['anna'])
+        self.assertEqual(o5e_wiz['anna']['query'], {'type': ['subclass'], 'f_owner_class': ['法师']})
+        o5e_evoker = next(i for i in self.items(o5e_wiz, 'subclasses') if i['title'] == '塑能师')
+        o5e_ev_view = only_o5e.view(o5e_evoker['id'])
+        self.assertIn('元素力量', o5e_ev_view['lead']['text'])
+        self.assertGreaterEqual(len(self.items(o5e_ev_view, 'parts')), 5)
+        self.assertEqual(len(self.items(o5e_ev_view, 'class')), 1)
+        self.assertEqual(only_o5e.layout(o5e_evoker['id'])['status'], 'ok')
+        # A short subclass feature reads as a detail (no circular parent links in relations) with its owner trail.
+        sculpt = next(p for p in self.items(o5e_ev_view, 'parts') if '法术塑形' in p['title'])
+        sculpt_view = only_o5e.view(sculpt['id'])
+        self.assertEqual(sculpt_view['shape'], 'detail')
+        self.assertEqual(sculpt_view['trail'], ['职业能力', '法师', '塑能师'])
+        self.assertEqual(self.items(sculpt_view, 'relations'), [])
+        self.assertEqual(only_o5e.layout(sculpt['id'])['status'], 'ok')
+        # Navigating from a subclass up to its parent class in our5etools exposes its parts, subclasses and spells.
+        o5e_class = only_o5e.view(self.items(o5e_ev_view, 'class')[0]['id'])
+        self.assertGreaterEqual(len(self.items(o5e_class, 'parts')), 10)
+        self.assertGreaterEqual(len(self.items(o5e_class, 'subclasses')), 4)
+        self.assertEqual(len(self.items(o5e_class, 'spells')), 1)
+
+        # Combined library merges both collections and stacks same-name subclasses with version links.
+        both = LibraryTour(self.registry, parse_scope({'libraries': ['5echm,our5etools']}, self.registry))
+        both_wiz = both.view('subclasses.wizard')
+        both_items = self.items(both_wiz, 'subclasses')
+        combined_evoker = next(i for i in both_items if i['title'] == '塑能师')
+        self.assertTrue(combined_evoker['id'].startswith('5echm:'))
+        self.assertTrue(any(v['id'].startswith('our5etools:') for v in combined_evoker['versions']))
+        # Disabling stacking lists each version as its own row.
+        unstacked = LibraryTour(self.registry, parse_scope({'libraries': ['5echm,our5etools'], 'versions': ['each']}, self.registry))
+        self.assertGreater(len(self.items(unstacked.view('subclasses.wizard'), 'subclasses')), len(both_items))
+        # Official-only content scope excludes community subclasses.
+        official = LibraryTour(self.registry, parse_scope({'libraries': ['5echm,our5etools'], 'content': ['official']}, self.registry))
+        self.assertEqual([g['label']['zh'] for g in official.view('subclasses.wizard')['groups']], ['官方'])
 
 
 if __name__ == '__main__':

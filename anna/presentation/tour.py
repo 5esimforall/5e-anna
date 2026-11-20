@@ -33,6 +33,11 @@ COLLECTION_KEY = re.compile(r'[a-z0-9]+(?:-[a-z0-9]+)*')
 DIVIDER = re.compile(r'[—–-]{2,}(.*?)[—–-]{2,}')
 LANGUAGES = ('zh', 'en')
 RULESETS = ('5e', '5r')
+BROWSE_KINDS = ('subclasses',)
+ORIGIN_RANK = {'官方': 0, '合作': 1, '待核': 2}
+CLASS_PREFIX = re.compile(r'^([^\s：:·\-]+)[：:]')
+LEAF_CLASS_PREFIX = re.compile(r'^([^\s：:·\-]+)[-·：:]')
+TRAILING_NOTE = re.compile(r'[（(][^）)]*[）)]$')
 LEAD_LIMIT = 220
 HINT_LIMIT = 60
 # Groups this short carry a hint per item; longer ones list names only.
@@ -53,6 +58,7 @@ class Entry:
     id: str
     name: str
     name_zh: str
+    name_en: str
     type: str
     ruleset: str
     path: str
@@ -67,7 +73,7 @@ class Entry:
 @dataclass(frozen=True)
 class Topic:
     """A curated starting point. Its chapter is named once per collection by the collection's own contents path;
-    its query and facet are asked of the whole library; a dynamic list is one collection's own listing."""
+    its query, facet and browse view are asked of the whole library; a dynamic list is one collection's own listing."""
 
     key: str
     label: dict
@@ -77,6 +83,7 @@ class Topic:
     facet: str | None
     sequence: bool
     dynamic: dict
+    browse: str | None = None
 
     def contents_in(self, collection):
         return self.contents.get(collection)
@@ -159,22 +166,25 @@ def topic_of(raw, problems):
     if not isinstance(key, str) or not TOPIC_KEY.fullmatch(key) or CONTENTS_SEGMENT.fullmatch(key) or key.startswith('ver_'):
         problems.append(f'topic {key!r}')
         return None
-    query, facet = raw.get('query'), raw.get('facet')
+    query, facet, browse_kind = raw.get('query'), raw.get('facet'), raw.get('browse')
     if query is not None and (not isinstance(query, dict) or not all(
             isinstance(v, list) and v and all(isinstance(x, str) for x in v) for v in query.values())):
         problems.append(f'topic {key!r} query')
         query = None
     if facet is not None and (not isinstance(facet, str) or not re.fullmatch(r'[a-z_]+', facet) or query is None):
         problems.append(f'topic {key!r} facet')
+    if browse_kind is not None and (browse_kind not in BROWSE_KINDS or facet is not None):
+        problems.append(f'topic {key!r} browse')
+        browse_kind = None
     if raw.get('ruleset') not in (None, *RULESETS):
         problems.append(f'topic {key!r} ruleset')
     if not label_ok(raw.get('label')):
         problems.append(f'topic {key!r} label')
     contents = per_collection(raw, key, 'contents', problems)
     dynamic = per_collection(raw, key, 'dynamic', problems)
-    if not contents and query is None and not dynamic:
+    if not contents and query is None and not dynamic and browse_kind is None:
         problems.append(f'topic {key!r} leads nowhere')
-    return Topic(key, raw.get('label'), raw.get('ruleset'), contents, query, facet, raw.get('sequence') is True, dynamic)
+    return Topic(key, raw.get('label'), raw.get('ruleset'), contents, query, facet, raw.get('sequence') is True, dynamic, browse_kind)
 
 
 def divider(node):
@@ -227,11 +237,11 @@ class Tour:
         self.entries, self.on_page = {}, defaultdict(list)
         self.parts, self.roots = defaultdict(list), {}
         with closing(catalog.connect(self.db_path)) as db:
-            for row in db.execute("SELECT id, name, COALESCE(name_zh, ''), type, ruleset, page_path, start, end, "
+            for row in db.execute("SELECT id, name, COALESCE(name_zh, ''), COALESCE(name_en, ''), type, ruleset, page_path, start, end, "
                                   "json_extract(data, '$.title_end'), COALESCE(json_extract(data, '$.parent_id'), ''), "
                                   "COALESCE(json_extract(data, '$.is_primary'), 0), json_extract(data, '$.table_span') IS NOT NULL "
                                   "FROM entries"):
-                entry = Entry(*row[:9], row[9], bool(row[10]), bool(row[11]))
+                entry = Entry(*row[:10], row[10], bool(row[11]), bool(row[12]))
                 self.entries[entry.id] = entry
                 self.on_page[entry.path].append(entry)
             self.parent_class, self.subclasses, self.feats = {}, defaultdict(list), defaultdict(list)
@@ -246,16 +256,28 @@ class Tour:
                 self.parent_class[subject] = target
                 if self.entries[subject].type == 'subclass':
                     self.subclasses[target].append(subject)
-            self.source_names = {sid: name for sid, name in db.execute('SELECT id, name FROM sources')}
+            self.source_names, self.source_meta = {}, {}
+            for sid, name, origin, label in db.execute(
+                    "SELECT id, name, COALESCE(origin, '待核'), COALESCE(json_extract(data, '$.label'), name) FROM sources"):
+                self.source_names[sid] = name
+                self.source_meta[sid] = {'name': name, 'origin': origin or '待核', 'label': label or name}
             self.entry_sources = defaultdict(list)
             for eid, sid in db.execute('SELECT entry_id, source_id FROM entry_sources ORDER BY source_id'):
                 self.entry_sources[eid].append(sid)
+            self.entry_stacks = {}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='identity_candidates'").fetchone():
+                for gid, raw_data in db.execute("SELECT group_id, data FROM identity_candidates WHERE type='subclass'"):
+                    for eid in json.loads(raw_data or '{}').get('entry_ids') or ():
+                        self.entry_stacks[eid] = gid
             self.page_sources = {path: json.loads(ids or '[]') for path, ids in db.execute('SELECT path, source_ids FROM pages')}
         for path, entries in self.on_page.items():
             entries.sort(key=lambda e: (e.start, -e.end, e.id))
             self.roots[path] = self.nest(entries)
         for key in self.subclasses:
             self.subclasses[key].sort(key=self.reading_order)
+        # Several PHB 2014 subclass pages share a category heading ("奥术传承", "神圣领域"); use the TOC label to tell them apart.
+        self._generic_subclass_titles = self._find_generic_subclass_titles()
+        self._subclass_records = self._build_subclass_records()
         # Page texts and query counts are read on demand and shared by every request on this snapshot.
         self.texts, self.counts, self.cache_lock = {}, {}, threading.Lock()
         self.choices = defaultdict(list)
@@ -276,6 +298,109 @@ class Tour:
         nodes = self.page_nodes.get(path, [])
         owned = [n for n in nodes if not self.label_path[n].startswith(QUICK_REFERENCE)]
         return (owned or nodes or [None])[0]
+
+    def _chain_nodes(self, nid):
+        chain = []
+        while nid and nid in self.nodes:
+            chain.append(self.nodes[nid])
+            nid = self.nodes[nid]['parent_id']
+        return chain[::-1]
+
+    def _find_generic_subclass_titles(self):
+        grouped = defaultdict(list)
+        for e in self.entries.values():
+            if e.type == 'subclass' and e.name_zh:
+                grouped[(tuple(self.entry_sources.get(e.id, [])), e.name_zh)].append(e)
+        titles = {}
+        for (_, name_zh), items in grouped.items():
+            if len(items) < 2:
+                continue
+            for e in items:
+                nid = self.owning_node(e.path)
+                label = self.nodes[nid]['label'].strip() if nid else ''
+                if label and label != name_zh:
+                    titles[e.id] = label
+        return titles
+
+    def entry_title(self, e):
+        return self._generic_subclass_titles.get(e.id) or e.name
+
+    def _build_subclass_records(self):
+        """Subclasses in this snapshot with traceable owning-class evidence, for the library tour's subclass index."""
+        class_names = {e.name_zh for e in self.entries.values() if e.type == 'class' and e.name_zh}
+        class_pages = defaultdict(set)
+        for e in self.entries.values():
+            if e.type == 'class' and e.name_zh:
+                class_pages[e.path].add(e.name_zh)
+        class_by_path = {path: next(iter(names)) for path, names in class_pages.items() if len(names) == 1}
+
+        def norm_class(label):
+            cleaned = TRAILING_NOTE.sub('', label or '').strip()
+            if cleaned == '邪术师' and '魔契师' in class_names:
+                cleaned = '魔契师'
+            return cleaned if cleaned in class_names else None
+
+        def owner_of(e):
+            if e.id in self.parent_class:
+                parent = self.entries[self.parent_class[e.id]]
+                if parent.name_zh:
+                    return parent.name_zh
+            nodes = self.page_nodes.get(e.path, [])
+            for nid in nodes:
+                chain = self._chain_nodes(nid)
+                if len(chain) >= 3 and chain[0]['label'] == QUICK_REFERENCE and chain[1]['label'] == '职业速查':
+                    found = class_by_path.get(chain[2]['path']) or norm_class(chain[2]['label'])
+                    if found:
+                        return found
+            for nid in nodes:
+                for anc in reversed(self._chain_nodes(nid)[:-1]):
+                    if found := norm_class(anc['label']):
+                        return found
+            if m := CLASS_PREFIX.match(e.name):
+                if found := norm_class(m.group(1)):
+                    return found
+            for nid in nodes:
+                if m := LEAF_CLASS_PREFIX.match(self.nodes[nid]['label']):
+                    if found := norm_class(m.group(1)):
+                        return found
+            nid = self.owning_node(e.path)
+            if nid and (parent_id := self.nodes[nid]['parent_id']):
+                sibs = {class_by_path[self.nodes[s]['path']] for s in self.children.get(parent_id, [])
+                        if self.nodes[s]['path'] in class_by_path}
+                if len(sibs) == 1:
+                    return next(iter(sibs))
+            if not nodes and e.path:
+                stem = Path(e.path).stem
+                if m := LEAF_CLASS_PREFIX.match(stem):
+                    if found := norm_class(m.group(1)):
+                        return found
+            return None
+
+        records = []
+        for e in sorted((x for x in self.entries.values() if x.type == 'subclass'), key=lambda e: (e.path, e.start, e.id)):
+            generic = e.id in self._generic_subclass_titles
+            sids = list(self.entry_sources.get(e.id, []))
+            metas = [self.source_meta[s] for s in sids if s in self.source_meta]
+            primary = metas[0] if metas else None
+            origin = min((m['origin'] for m in metas), key=lambda o: ORIGIN_RANK.get(o, 9), default='待核')
+            records.append({
+                'id': e.id,
+                'title': self._generic_subclass_titles[e.id] if generic else (e.name_zh or e.name),
+                'name_en': '' if generic else e.name_en,
+                'owner_class': owner_of(e),
+                'ruleset': e.ruleset,
+                'source_ids': sids,
+                'source_name': primary['name'] if primary else '',
+                'source_short': primary['label'] if primary else '',
+                'origin': origin,
+                'parts_count': len(self.parts.get(e.id, [])),
+                'stack': None if generic else self.entry_stacks.get(e.id),
+                'is_copy': False,
+            })
+        return records
+
+    def subclass_records(self):
+        return self._subclass_records
 
     def reading_order(self, eid):
         e = self.entries[eid]
@@ -403,7 +528,7 @@ class Tour:
 
     def entry_item(self, eid, hint=False):
         e = self.entries[eid]
-        item = {'id': eid, 'kind': 'entry', 'title': e.name}
+        item = {'id': eid, 'kind': 'entry', 'title': self.entry_title(e)}
         # A table's text is its cells; only prose has a first sentence worth quoting.
         if hint and not e.table:
             item['hint'] = first_sentence(self.entry_lead(e)) or None
@@ -530,7 +655,7 @@ class Tour:
 
     def entry_view(self, e):
         node = self.owning_node(e.path)
-        view = {'id': e.id, 'kind': 'entry', 'trail': self.label_path[node].split(' / ') if node else [], 'title': e.name,
+        view = {'id': e.id, 'kind': 'entry', 'trail': self.label_path[node].split(' / ') if node else [], 'title': self.entry_title(e),
                 'ruleset': e.ruleset, 'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type),
                 'sources': self.sources_of(self.entry_sources.get(e.id, [])), 'status': 'ok', 'lead': self.lead(self.entry_lead(e)),
                 'read': {'entry': e.id} if e.id in self.locatable else None,

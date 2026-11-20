@@ -28,7 +28,7 @@ import anna.paths as paths
 from anna.presentation.collections import Collection, SearchHits
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
 from anna.presentation import tour as tour_curation
-from anna.presentation.tour import DIVIDER, TourError, clip, divider, first_sentence
+from anna.presentation.tour import DIVIDER, HINTED_GROUP, TourError, clip, divider, first_sentence
 
 COLLECTION_KEY = 'our5etools'
 COLLECTION_ZH = 'our5etools'
@@ -91,6 +91,8 @@ BOOK_SEGMENT_RE = re.compile(r'^book\.([A-Za-z0-9._-]+)$')
 PACK_SEGMENT_RE = re.compile(r'^pack\.([A-Za-z0-9._-]+)$')
 CONTENTS_SEGMENT_RE = re.compile(r'^n(.+)$')
 ENTRY_SEGMENT_RE = re.compile(r'^o5e_[0-9a-f]{16}$')
+FLUFF_SECTION_RE = re.compile(r'<section class="o5e-fluff">.*?</section>', re.DOTALL)
+ORIGIN_RANK: dict[str, int] = {'官方': 0, '合作': 1, '本站精选': 2, '社区': 3, '待核': 4}
 
 MIME_OVERRIDES: dict[str, str] = {
     '.opus': 'audio/ogg; codecs=opus',
@@ -1628,6 +1630,7 @@ class Our5etoolsTour:
         self._packs_order: list[str] = []
         self._sources_by_id: dict[str, dict[str, Any]] = {}
         self._choices_by_node: dict[str, list[str]] = defaultdict(list)
+        self._subclass_records: list[dict[str, Any]] = []
 
     @property
     def snapshot(self) -> str:
@@ -1790,7 +1793,41 @@ class Our5etoolsTour:
                 if pslug:
                     self._packs_by_slug[pslug]['book_slugs'].append(slug)
 
+            # Subclass records for the unified library tour's subclass index.
+            parts_counts = dict(db.execute(
+                "SELECT r.target_id, count(*) FROM relations r JOIN entries f ON f.id = r.source_id "
+                "WHERE r.type = 'part_of' AND f.type = 'class_feature' GROUP BY r.target_id"
+            ))
+            stacks = dict(db.execute('SELECT entry_id, group_id FROM identity_members'))
+            copies = {r[0] for r in db.execute("SELECT DISTINCT source_id FROM relations WHERE type = 'copied_from'")}
+            subclass_records: list[dict[str, Any]] = []
+            for r in db.execute(
+                "SELECT id, name, name_zh, name_en, owner_class, ruleset, source_id, source_code "
+                "FROM entries WHERE type = 'subclass' ORDER BY sort_name, id"
+            ):
+                sid = r['source_id'] or ''
+                srec = self._sources_by_id.get(sid)
+                subclass_records.append({
+                    'id': r['id'],
+                    'title': r['name_zh'] or r['name'],
+                    'name_en': r['name_en'] or '',
+                    'owner_class': (r['owner_class'] or '').strip() or None,
+                    'ruleset': r['ruleset'] or '待核',
+                    'source_ids': [sid] if sid else [],
+                    'source_name': (srec['name'] if srec else '') or r['source_code'] or '',
+                    'source_short': (srec['short_name'] if srec else '') or r['source_code'] or '',
+                    'origin': (srec['origin'] if srec else '') or '社区',
+                    'parts_count': int(parts_counts.get(r['id'], 0)),
+                    'stack': stacks.get(r['id']),
+                    'is_copy': r['id'] in copies,
+                })
+            self._subclass_records = subclass_records
+
     # --- What the library tour asks of a collection ---
+
+    def subclass_records(self) -> list[dict[str, Any]]:
+        self._ensure_loaded()
+        return self._subclass_records
 
     def resolve(self, label_path: str) -> tuple[str, str | None]:
         """A curated contents path names exactly one node, or reports why it does not."""
@@ -1832,7 +1869,8 @@ class Our5etoolsTour:
     @staticmethod
     def _shaped(view: dict[str, Any]) -> dict[str, Any]:
         lead = view.get('lead')
-        view['shape'] = 'detail' if lead and (lead.get('truncated') or not view.get('groups')) else 'index'
+        has_children = any(g.get('key') != 'relations' for g in view.get('groups') or ())
+        view['shape'] = 'detail' if lead and (lead.get('truncated') or not has_children) else 'index'
         return view
 
     def _book_item(self, slug: str) -> dict[str, Any]:
@@ -2002,31 +2040,177 @@ class Our5etoolsTour:
             'groups': groups,
         }
 
+    @staticmethod
+    def _feature_title(name: str, level: int | None) -> str:
+        if level is None:
+            return name
+        prefix = f'{level}级'
+        if name.startswith(prefix) or name.endswith((f'（{prefix}）', f'({prefix})')):
+            return name
+        return f'{prefix}：{name}'
+
+    @staticmethod
+    def _root_prose(body_text: str, sibling_names: set[str]) -> str:
+        lines = [line.strip() for line in (body_text or '').splitlines() if line.strip()]
+        while lines and lines[-1] in sibling_names:
+            lines.pop()
+        return ' '.join(lines)
+
+    def _subclass_parts(self, db: sqlite3.Connection, entry_id: str) -> list[sqlite3.Row]:
+        return db.execute(
+            'SELECT e.id, e.name, e.name_zh, e.ruleset, e.owner_level, e.body_text '
+            'FROM relations r JOIN entries e ON e.id = r.source_id '
+            "WHERE r.target_id = ? AND r.type = 'part_of' AND e.type = 'class_feature' "
+            'ORDER BY COALESCE(e.owner_level, 999), e.rowid',
+            (entry_id,),
+        ).fetchall()
+
+    @staticmethod
+    def _subclass_root_feature(feats: list[sqlite3.Row], name: str, name_zh: str) -> sqlite3.Row | None:
+        if not feats:
+            return None
+        min_level = feats[0]['owner_level']
+        wanted = {x for x in (name, name_zh) if x}
+        return next((f for f in feats if f['owner_level'] == min_level and (f['name'] in wanted or f['name_zh'] in wanted)), None)
+
     def _entry_view(self, entry_id: str) -> dict[str, Any]:
         try:
             d = self.catalog.detail(entry_id)
         except LookupError as exc:
             raise TourError('node_missing', 404) from exc
-        shown, truncated = clip(d['body'], LEAD_LIMIT) if d.get('body') else ('', False)
+        lead_source = d.get('body') or ''
         groups: list[dict[str, Any]] = []
-        rel_items = [
-            {
-                'id': r['target_id'],
+        trail = [d['type_label']]
+        seen_rel_targets: set[str] = set()
+
+        if d['type'] == 'subclass':
+            if d.get('owner_class'):
+                trail.append(d['owner_class'])
+            with closing(_connect_ro(self.db_path)) as db:
+                feats = self._subclass_parts(db, entry_id)
+            root = self._subclass_root_feature(feats, d['name'], d.get('name_zh') or '')
+            if root is not None:
+                siblings = {x for f in feats if f['id'] != root['id'] for x in (f['name'], f['name_zh']) if x}
+                prose = self._root_prose(root['body_text'] or '', siblings)
+                if prose:
+                    lead_source = prose
+            if feats:
+                hinted = len(feats) <= HINTED_GROUP
+                part_items = []
+                for f in feats:
+                    item: dict[str, Any] = {
+                        'id': f['id'],
+                        'kind': 'entry',
+                        'title': self._feature_title(f['name'], f['owner_level']),
+                        'type': 'class_feature',
+                        'type_label': otypes.TYPES['class_feature'],
+                        'ruleset': f['ruleset'],
+                    }
+                    if hinted:
+                        item['hint'] = first_sentence(' '.join((f['body_text'] or '').split())) or None
+                    part_items.append(item)
+                groups.append(self._group('parts', part_items))
+            class_items = []
+            for r in d.get('relations') or []:
+                tid = r.get('target_id')
+                if tid and r.get('target_type') == 'class' and r.get('type') in {'belongs_to_class', 'part_of'} and tid not in seen_rel_targets:
+                    seen_rel_targets.add(tid)
+                    class_items.append({
+                        'id': tid,
+                        'kind': 'entry',
+                        'title': r['name'],
+                        'type': 'class',
+                        'type_label': otypes.TYPES['class'],
+                    })
+            if class_items:
+                groups.append(self._group('class', class_items))
+        elif d['type'] == 'class':
+            with closing(_connect_ro(self.db_path)) as db:
+                cfeats = db.execute(
+                    'SELECT e.id, e.name, e.ruleset, e.owner_level, e.body_text '
+                    'FROM relations r JOIN entries e ON e.id = r.source_id '
+                    "WHERE r.target_id = ? AND r.type = 'part_of' AND e.type = 'class_feature' AND e.owner_subclass = '' "
+                    'ORDER BY COALESCE(e.owner_level, 999), e.rowid',
+                    (entry_id,),
+                ).fetchall()
+                csubs = db.execute(
+                    'SELECT DISTINCT e.id, e.name, e.name_zh, e.ruleset, e.source_id, e.source_code, e.sort_name '
+                    'FROM relations r JOIN entries e ON e.id = r.source_id '
+                    "WHERE r.target_id = ? AND r.type = 'belongs_to_class' AND e.type = 'subclass'",
+                    (entry_id,),
+                ).fetchall()
+            if cfeats:
+                hinted = len(cfeats) <= HINTED_GROUP
+                part_items = []
+                for f in cfeats:
+                    item = {
+                        'id': f['id'],
+                        'kind': 'entry',
+                        'title': self._feature_title(f['name'], f['owner_level']),
+                        'type': 'class_feature',
+                        'type_label': otypes.TYPES['class_feature'],
+                        'ruleset': f['ruleset'],
+                    }
+                    if hinted:
+                        item['hint'] = first_sentence(' '.join((f['body_text'] or '').split())) or None
+                    part_items.append(item)
+                groups.append(self._group('parts', part_items))
+            if csubs:
+                def _sub_key(row: sqlite3.Row) -> tuple[Any, ...]:
+                    srec = self._sources_by_id.get(row['source_id'] or '')
+                    origin = srec['origin'] if srec else '社区'
+                    rs_rank = 0 if row['ruleset'] == '5r' else (1 if row['ruleset'] == '5e' else 2)
+                    return (ORIGIN_RANK.get(origin, 9), rs_rank, row['sort_name'] or '', row['id'])
+                sub_items = []
+                for s in sorted(csubs, key=_sub_key):
+                    srec = self._sources_by_id.get(s['source_id'] or '')
+                    sub_items.append({
+                        'id': s['id'],
+                        'kind': 'entry',
+                        'title': s['name_zh'] or s['name'],
+                        'type': 'subclass',
+                        'type_label': otypes.TYPES['subclass'],
+                        'ruleset': s['ruleset'],
+                        'hint': (srec['name'] if srec else '') or s['source_code'] or None,
+                    })
+                groups.append(self._group('subclasses', sub_items))
+            if d.get('name_zh'):
+                spell_q = {'type': ['spell'], 'f_spell_classes': [d['name_zh']],
+                           **({'ruleset': [d['ruleset']]} if d.get('ruleset') in {'5e', '5r'} else {})}
+                spell_count = self._query_count(spell_q)
+                if spell_count:
+                    groups.append(self._group('spells', [{'id': None, 'kind': 'query', 'query': spell_q,
+                                                          'count': spell_count, 'title': None, 'role': 'spells'}]))
+
+        elif d['type'] == 'class_feature':
+            for owner in (d.get('owner_class'), d.get('owner_subclass')):
+                if owner and owner not in trail:
+                    trail.append(owner)
+
+        rel_items = []
+        for r in d.get('relations') or []:
+            tid = r.get('target_id')
+            if not tid or tid in seen_rel_targets:
+                continue
+            if d['type'] == 'class_feature' and r.get('type') in {'part_of', 'belongs_to_class'}:
+                continue
+            seen_rel_targets.add(tid)
+            rel_items.append({
+                'id': tid,
                 'kind': 'entry',
                 'title': r['name'],
                 'type': r['target_type'],
                 'type_label': r['target_type_label'],
                 'status': r['status'],
-            }
-            for r in d.get('relations') or [] if r.get('target_id')
-        ]
+            })
         if rel_items:
             groups.append(self._group('relations', rel_items, label={'zh': '关联条目', 'en': 'Related entries'}))
+        shown, truncated = clip(lead_source, LEAD_LIMIT) if lead_source else ('', False)
         loc = d.get('reader_location')
         return {
             'id': entry_id,
             'kind': 'entry',
-            'trail': [d['type_label']],
+            'trail': trail,
             'title': d['name'],
             'ruleset': d['ruleset'],
             'type': d['type'],
@@ -2075,6 +2259,18 @@ class Our5etoolsTour:
         self._ensure_loaded()
         if not segment or not ENTRY_SEGMENT_RE.fullmatch(segment):
             return {'status': 'empty'}
+        with closing(_connect_ro(self.db_path)) as db:
+            row = db.execute('SELECT type, name, name_zh FROM entries WHERE id = ?', (segment,)).fetchone()
+            if row is not None and row['type'] == 'subclass':
+                feats = self._subclass_parts(db, segment)
+                root = self._subclass_root_feature(feats, row['name'], row['name_zh'] or '')
+                if root is not None:
+                    root_layout = self.catalog.layout(root['id'])
+                    if root_layout.get('status') == 'ok' and root_layout.get('html'):
+                        own_layout = self.catalog.layout(segment)
+                        fluff = FLUFF_SECTION_RE.search(own_layout.get('html') or '') if own_layout.get('status') == 'ok' else None
+                        html = root_layout['html'] + (fluff.group(0) if fluff else '')
+                        return {**root_layout, 'html': html}
         return self.catalog.layout(segment)
 
 

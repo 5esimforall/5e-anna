@@ -33,7 +33,7 @@
          "contents": {"5echm": "本书速查 / 职业速查", "our5etools": "玩家手册（2024） / 第 3 章：角色职业"},
          "query": {"type": ["class"]}},
         {"key": "subclasses", "label": {"zh": "子职", "en": "Subclasses"},
-         "query": {"type": ["subclass"]}, "facet": "owner_class"},
+         "query": {"type": ["subclass"]}, "browse": "subclasses"},
         {"key": "class-features", "label": {"zh": "职业能力与可选特性", "en": "Class & optional features"},
          "query": {"type": ["class_feature"]}, "facet": "feature_kind"},
         {"key": "backgrounds", "label": {"zh": "背景", "en": "Backgrounds"}, "ruleset": "5r",

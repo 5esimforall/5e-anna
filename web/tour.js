@@ -8,7 +8,7 @@
 const annaTourLabels = {
   zh:{title:'导览', skip:'跳到导览', intro:'从想做的事出发，逐层走进原书的章节、步骤与条目。',
     groups:{shelf:'书架', outline:'本页', choices:'这一步要选择', contents:'目录', entries:'条目',
-      parts:'包含', class:'所属职业', subclasses:'子职', feats:'授予专长', spells:'法术',
+      parts:'包含', class:'所属职业', classes:'职业', subclasses:'子职', feats:'授予专长', spells:'法术',
       books:'书目', packages:'资料包', relations:'关联条目'},
     facet:'按{field}', readBook:'在 Stella 中阅读', openEntry:'在 Anna 中查看', openQuery:'在 Anna 中查看 {count} 条',
     spellList:'可用法术', more:'另有 {count} 项', moreInAnna:'另有 {count} 项，在 Anna 中查看全部',
@@ -21,7 +21,7 @@ const annaTourLabels = {
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']}},
   en:{title:'Tour', skip:'Skip to the tour', intro:'Start from what you want to do, then go down through the book\'s chapters, steps and entries.',
     groups:{shelf:'Bookshelf', outline:'On this page', choices:'Choose in this step', contents:'Contents', entries:'Entries',
-      parts:'Contains', class:'Class', subclasses:'Subclasses', feats:'Granted feats', spells:'Spells',
+      parts:'Contains', class:'Class', classes:'Classes', subclasses:'Subclasses', feats:'Granted feats', spells:'Spells',
       books:'Books', packages:'Packages', relations:'Related entries'},
     facet:'By {field}', readBook:'Read in Stella', openEntry:'Open in Anna', openQuery:'Open {count} in Anna',
     spellList:'Spell list', more:'{count} more', moreInAnna:'{count} more; open them all in Anna',
@@ -97,6 +97,15 @@ const annaTour = (() => {
   }
   const fetchView = segment => load('/api/tour', views, segment);
 
+  function versionLabel(v) {
+    const rs = ui.rulesets[v.ruleset]?.[0] || v.ruleset || '?';
+    const col = v.collection ? annaLibrary.nameOf(v.collection) : '';
+    const src = v.source || '';
+    return {
+      text:[col, src, rs].filter(Boolean).join(' · '),
+      title:[col, src, ui.rulesets[v.ruleset]?.[1] || v.ruleset || ''].filter(Boolean).join(' · ')
+    };
+  }
   // One row. Rows that open a level carry the path they lead to; rows that leave for Anna's table do not.
   function item(row, group, index, depth, view) {
     const title = row.kind === 'query' && !row.title ? ui.spellList : nameOf(row);
@@ -109,14 +118,17 @@ const annaTour = (() => {
     const main = `<span class="tour-item-main"><span class="tour-item-title">${esc(title)}</span>${hint ? `<span class="tour-item-hint">${esc(hint)}</span>` : ''}</span>` +
       (tags.length ? `<span class="tour-item-tags">${tags.join('')}</span>` : '') +
       (row.count ? `<span class="tour-item-count">${fmt(row.count)}</span>` : '');
+    const search = row.search ? ` data-search="${esc(row.search)}"` : '';
     if (row.kind === 'query')
-      return `<li><a class="tour-item" href="${esc(queryHref(row.query))}">${main}<img class="tour-item-out" src="/anna-logo.png" alt="" width="18" height="18"></a></li>`;
+      return `<li${search}><a class="tour-item" href="${esc(queryHref(row.query))}">${main}<img class="tour-item-out" src="/anna-logo.png" alt="" width="18" height="18"></a></li>`;
     const at = [...path.slice(0, depth), row.id];
     const disabled = row.kind === 'topic' && row.status !== 'ok';
     const step = group.ordered ? `<span class="tour-step">${index + 1}</span>` : '';
-    const versions = row.versions?.length ? `<div class="tour-versions"><span>${esc(ui.versions)}</span>${row.versions.map(v =>
-      `<a href="${esc(tourHref([...path.slice(0, depth), v.id]))}" data-at data-segment="${esc(v.id)}" title="${esc(ui.rulesets[v.ruleset]?.[1] || v.ruleset || '')}">${esc(ui.rulesets[v.ruleset]?.[0] || v.ruleset || '?')}</a>`).join('')}</div>` : '';
-    return `<li><a class="tour-item" href="${esc(tourHref(at))}" data-at data-segment="${esc(row.id)}" tabindex="-1"${disabled ? ' aria-disabled="true"' : ''}>${step}${main}${icon}</a>${versions}</li>`;
+    const versions = row.versions?.length ? `<div class="tour-versions"><span>${esc(ui.versions)}</span>${row.versions.map(v => {
+      const label = versionLabel(v);
+      return `<a href="${esc(tourHref([...path.slice(0, depth), v.id]))}" data-at data-segment="${esc(v.id)}" title="${esc(label.title)}">${esc(label.text)}</a>`;
+    }).join('')}</div>` : '';
+    return `<li${search}><a class="tour-item" href="${esc(tourHref(at))}" data-at data-segment="${esc(row.id)}" tabindex="-1"${disabled ? ' aria-disabled="true"' : ''}>${step}${main}${icon}</a>${versions}</li>`;
   }
   function groupHeading(group, index, groups) {
     if (group.key === 'section') return nameOf(group);
@@ -125,12 +137,13 @@ const annaTour = (() => {
     if (group.key === 'contents') return label || (groups.findIndex(g => g.key === 'contents') === index ? ui.groups.contents : '');
     return label || ui.groups[group.key] || '';
   }
+  function filterBox(total, name, scope) {
+    return `<div class="tour-filter" data-filter-scope="${esc(scope)}"><input type="search" class="tour-filter-input" placeholder="${esc(ui.filterPlaceholder)}" aria-label="${esc(fill(ui.filterLabel, {name:name || ui.title}))}"><span class="tour-filter-count" aria-live="polite">${esc(fmt(total))}</span></div>`;
+  }
   // Steps number on across the groups a bare divider splits them into, so the path reads as one sequence.
-  function groupHtml(group, index, view, depth, first = 0) {
+  function groupHtml(group, index, view, depth, first = 0, columnFiltered = false) {
     const heading = groupHeading(group, index, view.groups);
-    const filter = group.items.length > FILTER_THRESHOLD
-      ? `<div class="tour-filter"><input type="search" class="tour-filter-input" placeholder="${esc(ui.filterPlaceholder)}" aria-label="${esc(fill(ui.filterLabel, {name:heading || ui.title}))}"><span class="tour-filter-count" aria-live="polite">${esc(fmt(group.items.length))}</span></div>`
-      : '';
+    const filter = !columnFiltered && group.items.length > FILTER_THRESHOLD ? filterBox(group.items.length, heading, 'group') : '';
     const empty = filter ? `<p class="tour-filter-empty" hidden>${esc(ui.filterEmpty)}</p>` : '';
     const more = group.more ? `<p class="tour-more">${view.anna?.query ?
       `<a href="${esc(queryHref(view.anna.query))}">${esc(fill(ui.moreInAnna, {count:fmt(group.more)}))}</a>` : esc(fill(ui.more, {count:fmt(group.more)}))}</p>` : '';
@@ -142,18 +155,24 @@ const annaTour = (() => {
     const title = view.kind === 'root' ? ui.title : nameOf(view);
     const parent = depth > 0 ? views.get(['', ...path][depth - 1]) : null;
     const back = parent ? `<a class="tour-back" href="${esc(tourHref(path.slice(0, depth - 1)))}" data-at>${esc(fill(ui.back, {name:parent.kind === 'root' ? ui.title : nameOf(parent)}))}</a>` : '';
-    const trail = view.trail?.length ? `<p class="tour-trail" title="${esc(view.trail.join(' › '))}">${esc(view.trail.join(' › '))}</p>` : '';
+    const trailParts = (view.trail || []).map(labelText).filter(Boolean);
+    const trail = trailParts.length ? `<p class="tour-trail" title="${esc(trailParts.join(' › '))}">${esc(trailParts.join(' › '))}</p>` : '';
     const meta = [rulesetTag(view.ruleset), view.type_label && view.type !== 'section' ? esc(view.type_label) : '', esc((view.sources || []).join('；'))].filter(Boolean);
     return `<header>${back}${trail}<h2 id="tour-title-${depth}">${esc(title)}</h2>${meta.length ? `<p class="tour-meta">${meta.join('<span aria-hidden="true">·</span>')}</p>` : ''}` +
       (view.kind === 'root' ? `<p class="tour-intro">${esc(ui.intro)}</p>` : '') + '</header>';
   }
   function steps(view, depth) {
+    const total = view.groups.reduce((n, g) => n + g.items.length, 0);
+    const homogeneous = view.groups.length > 1 && new Set(view.groups.map(g => g.key)).size === 1 && !view.groups.some(g => g.ordered);
+    const columnFiltered = homogeneous && total > FILTER_THRESHOLD;
     let first = 0;
-    return view.groups.map((group, i) => {
-      const html = groupHtml(group, i, view, depth, first);
+    const html = view.groups.map((group, i) => {
+      const part = groupHtml(group, i, view, depth, first, columnFiltered);
       if (group.ordered) first += group.items.length;
-      return html;
+      return part;
     }).join('');
+    if (!columnFiltered) return html;
+    return filterBox(total, view.kind === 'root' ? ui.title : nameOf(view), 'column') + html + `<p class="tour-filter-empty" hidden>${esc(ui.filterEmpty)}</p>`;
   }
   function body(view, depth) {
     const lead = view.lead ? `<blockquote class="tour-lead" lang="zh-CN">${esc(view.lead.text)}${view.lead.truncated && !view.lead.text.endsWith('…') ? '<span class="tour-ellipsis"> …</span>' : ''}</blockquote>` : '';
@@ -270,7 +289,7 @@ const annaTour = (() => {
     section.scrollLeft = 0;
   }
 
-  const visibleItems = section => [...section.querySelectorAll('.tour-item')].filter(link => !link.closest('li')?.hidden);
+  const visibleItems = section => [...section.querySelectorAll('.tour-item')].filter(link => !link.closest('li')?.hidden && !link.closest('.tour-group')?.hidden);
   // The row each level opened is marked in the level above; each level keeps one row in the Tab order.
   function markCurrent() {
     const wanted = ['', ...path];
@@ -282,8 +301,12 @@ const annaTour = (() => {
         if (here) { link.setAttribute('aria-current', 'true'); current = link; }
         else link.removeAttribute('aria-current');
       }
+      for (const link of section.querySelectorAll('.tour-versions a[data-segment]')) {
+        if (next !== undefined && link.dataset.segment === next) link.setAttribute('aria-current', 'true');
+        else link.removeAttribute('aria-current');
+      }
       const items = visibleItems(section);
-      const visibleCurrent = current && !current.closest('li')?.hidden ? current : null;
+      const visibleCurrent = current && !current.closest('li')?.hidden && !current.closest('.tour-group')?.hidden ? current : null;
       const keep = items.find(link => link.tabIndex === 0) || visibleCurrent || items[0];
       section.querySelectorAll('.tour-item').forEach(link => { link.tabIndex = link === (visibleCurrent || keep) ? 0 : -1; });
     }
@@ -352,21 +375,29 @@ const annaTour = (() => {
   }
 
   function applyGroupFilter(input) {
-    const group = input.closest('.tour-group');
-    if (!group) return;
+    const box = input.closest('.tour-filter');
+    const columnScope = box?.dataset.filterScope === 'column';
+    const container = columnScope ? input.closest('.tour-rail') : input.closest('.tour-group');
+    if (!container) return;
     const term = input.value.trim().toLocaleLowerCase();
-    const list = group.querySelector('ul,ol');
-    if (!list) return;
-    const rows = [...list.children];
-    let visible = 0;
-    for (const li of rows) {
-      const match = !term || li.textContent.toLocaleLowerCase().includes(term);
-      li.hidden = !match;
-      if (match) visible++;
+    const groups = columnScope ? [...container.querySelectorAll('.tour-group')] : [container];
+    let visible = 0, total = 0;
+    for (const group of groups) {
+      const list = group.querySelector('ul,ol');
+      if (!list) continue;
+      let groupVisible = 0;
+      for (const li of list.children) {
+        total++;
+        const hay = (li.textContent + ' ' + (li.dataset.search || '')).toLocaleLowerCase();
+        const match = !term || hay.includes(term);
+        li.hidden = !match;
+        if (match) { visible++; groupVisible++; }
+      }
+      if (columnScope) group.hidden = groupVisible === 0;
     }
-    const counter = group.querySelector('.tour-filter-count');
-    if (counter) counter.textContent = term ? fill(ui.filterCount, {shown:fmt(visible), total:fmt(rows.length)}) : fmt(rows.length);
-    const empty = group.querySelector('.tour-filter-empty');
+    const counter = box.querySelector('.tour-filter-count');
+    if (counter) counter.textContent = term ? fill(ui.filterCount, {shown:fmt(visible), total:fmt(total)}) : fmt(total);
+    const empty = container.querySelector(':scope > .tour-filter-empty');
     if (empty) empty.hidden = visible > 0;
     markCurrent();
   }
@@ -441,8 +472,8 @@ const annaTour = (() => {
     if (!mounted && typeof annaCompanions !== 'undefined') { annaCompanions.mount({page:'tour', snapshots}); mounted = true; }
     const latest = annaWorkspace.read(snapshots).query[0];
     annaTopbar.pointSwitch('query', latest ? '/?' + latest.query : '/');
-    // An entry shown here is the topic Stella can turn to: named by its collection, bound to that collection's build.
-    const shownEntry = last?.kind === 'entry' && last.type !== 'section' && collectionOf(last.id) ? last : null;
+    // An entry shown here is the topic Stella can turn to when it has a place in its book.
+    const shownEntry = last?.kind === 'entry' && last.type !== 'section' && last.read && collectionOf(last.id) ? last : null;
     if (topic && topic !== shownEntry?.id) annaWorkspace.update(snapshots, state => annaWorkspace.clearTopic(state, topic));
     if (shownEntry && topic !== shownEntry.id) {
       const nextTopic = {entry:shownEntry.id, name:shownEntry.title, from:'query', snapshot:snapshots[collectionOf(shownEntry.id)], at:Date.now()};
@@ -553,7 +584,8 @@ const annaTour = (() => {
         filterInput.value = '';
         applyGroupFilter(filterInput);
       } else if (event.key === 'ArrowDown') {
-        const first = visibleItems(filterInput.closest('.tour-group'))[0];
+        const scope = filterInput.closest('.tour-group') || section;
+        const first = visibleItems(scope)[0];
         if (first) {
           event.preventDefault();
           section.querySelectorAll('.tour-item').forEach(each => { each.tabIndex = each === first ? 0 : -1; });

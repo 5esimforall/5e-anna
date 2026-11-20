@@ -294,6 +294,34 @@ test('the unified tour lists extra books and packages, and its chapter follows t
   await page.setViewportSize({width:1280,height:800});
 });
 
+test('subclasses in the unified tour open directly, switch versions, and show our5etools features',async({page})=>{
+  await chooseLibraries(page,both);
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(anna+tourURL('subclasses'));await tourReady(page,1);
+  const classFilter=tourLevel(page,1).locator('.tour-filter-input');
+  await expect(classFilter).toBeVisible();
+  await tourRow(page,1,'法师').click();await tourReady(page,2);
+  expect(new URL(page.url()).pathname).toBe('/tour');
+  expect(new URL(page.url()).searchParams.get('at')).toBe('subclasses/subclasses.wizard');
+  await expect(tourLevel(page,2).locator('.tour-go')).toHaveAttribute('href',/^\S*type=subclass.*f_owner_class=/);
+  // Filter across origin groups by English name, then open the our5etools version pill directly in the tour.
+  const subFilter=tourLevel(page,2).locator('.tour-filter-input');
+  await subFilter.fill('Evoker');
+  const evokerLi=tourLevel(page,2).locator('li:not([hidden])').filter({has:page.locator('.tour-item-title',{hasText:/^塑能师$/})}).first();
+  const o5eVersion=evokerLi.locator('.tour-versions a[data-segment^="our5etools:"]').first();
+  await expect(o5eVersion).toBeVisible();
+  await o5eVersion.click();await tourReady(page,3);
+  await expect(o5eVersion).toHaveAttribute('aria-current','true');
+  await expect(tourLevel(page,3).locator('.tour-lead')).toContainText('元素力量');
+  await expect(tourLevel(page,3).locator('[data-group=class] .tour-item')).toHaveCount(1);
+  // Data-only our5etools subclasses without a book page do not advertise a broken Stella link.
+  await expect(page.locator('.companion-go')).not.toHaveAttribute('href',/entry=our5etools/);
+  await tourRow(page,3,'6级：法术塑形').click();await tourReady(page,4);
+  await expect(tourLevel(page,4)).toHaveAttribute('data-shape','detail');
+  await expect(tourLevel(page,4).locator('.tour-body')).toContainText('塑能学派法术');
+  await expect(page.locator('.companion-go')).not.toHaveAttribute('href',/entry=our5etools/);
+});
+
 test('Stella opens our5etools chapters on the shared shelf and restores paging after reload',async({page})=>{
   await chooseLibraries(page,both);
   const initial={root:ourAddress('n_book_phb'),page:ourAddress('books/phb/0.html')};

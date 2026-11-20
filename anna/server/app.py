@@ -127,6 +127,9 @@ class BookTour:
     def below(self, node_id):
         return self.bundle.tour().below(node_id)
 
+    def subclass_records(self):
+        return self.bundle.tour().subclass_records()
+
 
 def load_bundle(source, db, book, quiet=True):
     """Validate the published files and load what requests read; called again to reload after a rebuild."""

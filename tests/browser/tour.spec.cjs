@@ -305,6 +305,38 @@ test('a class opens onto its subclasses and its spell list in Anna',async({page}
   expect(await cantrips.getAttribute('data-at')).toBeNull();
 });
 
+test('subclasses drill down by class directly in the tour without jumping to query',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(anna+'/tour');await ready(page,0);
+  await row(page,0,'子职').click();await ready(page,1);
+  expect(at(page)).toBe('subclasses');
+  await expect(level(page,1).locator('.tour-go')).toHaveAttribute('href','/?type=subclass');
+  const wizard=row(page,1,'法师');
+  await expect(wizard).toHaveAttribute('data-at','');
+  await wizard.click();await ready(page,2);
+  expect(new URL(page.url()).pathname).toBe('/tour');
+  expect(at(page)).toBe('subclasses/subclasses.wizard');
+  await expect(level(page,2).locator('h2')).toHaveText('法师');
+  await expect(level(page,2).locator('.tour-group h3').first()).toHaveText('官方');
+  // Column-level filter searches across all origin groups by Chinese and English names.
+  const filter=level(page,2).locator('.tour-filter-input');
+  await expect(filter).toBeVisible();
+  await filter.fill('Evoker');
+  await expect(row(page,2,'塑能师')).toBeVisible();
+  await expect(level(page,2).locator('.tour-group:not([hidden])')).toHaveCount(1);
+  await filter.press('Escape');
+  await expect(filter).toHaveValue('');
+  // Clicking a subclass opens it in the tour, and clicking a feature expands its full detail.
+  await row(page,2,'塑能师').click();await ready(page,3);
+  await expect(level(page,3).locator('h2')).toContainText('塑能师');
+  await expect(level(page,3).locator('[data-group=class] .tour-item-title')).toContainText(['法师']);
+  await row(page,3,'6级：法术塑形').click();await ready(page,4);
+  await expect(level(page,4)).toHaveAttribute('data-shape','detail');
+  await expect(level(page,4).locator('.tour-body')).toContainText('塑能学派法术');
+  await page.reload();await ready(page,4);
+  await expect(level(page,4).locator('h2')).toContainText('法术塑形');
+});
+
 test('a level missing from this snapshot returns to the level above it',async({page})=>{
   await page.goto(anna+tourHref('create/'+bookAddress('n99999999')));await ready(page,1);
   expect(at(page)).toBe('create');

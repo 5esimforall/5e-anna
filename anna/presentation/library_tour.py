@@ -9,18 +9,50 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 
-from anna.presentation.library import Library
+import anna.catalog.views as browse
+from anna.presentation.library import CONTENT_RANK, Library, PREFERENCES, capabilities_of, content_of, name_fold
 from anna.presentation.reader import ReaderError
 from anna.presentation.shelf import SEPARATOR, Shelf, qualify, split
 from anna.presentation.tour import CURATION, ENTRY_LIST, GROUP_LIMIT, TOPIC_KEY, TourError, curation_revision, divider, load
 
 _curations: dict[tuple[str, int, int, int], dict] = {}
 _views: OrderedDict = OrderedDict()
+_subclass_indexes: OrderedDict = OrderedDict()
 _lock = threading.Lock()
 VIEW_CACHE = 256
+INDEX_CACHE = 32
+
+SUBCLASS_SEGMENT = re.compile(r'subclasses\.([a-z0-9_-]+)')
+CORE_CLASSES = (
+    ('野蛮人', 'barbarian'), ('吟游诗人', 'bard'), ('牧师', 'cleric'), ('德鲁伊', 'druid'),
+    ('战士', 'fighter'), ('武僧', 'monk'), ('圣武士', 'paladin'), ('游侠', 'ranger'),
+    ('游荡者', 'rogue'), ('术士', 'sorcerer'), ('魔契师', 'warlock'), ('法师', 'wizard'),
+    ('奇械师', 'artificer'),
+)
+CORE_SLUGS = dict(CORE_CLASSES)
+CORE_ORDER = {name: i for i, (name, _) in enumerate(CORE_CLASSES)}
+UNASSIGNED_SLUG = 'unassigned'
+UNASSIGNED_LABEL = {'zh': '未归属职业', 'en': 'Unassigned'}
+ORIGIN_ORDER = ('官方', '合作', '本站精选', '社区', '待核')
+ORIGIN_LABELS = {
+    '官方': {'zh': '官方', 'en': 'Official'},
+    '合作': {'zh': '合作内容', 'en': 'Partnered'},
+    '本站精选': {'zh': '本站精选', 'en': 'Site curated'},
+    '社区': {'zh': '社区扩展', 'en': 'Community'},
+    '待核': {'zh': '待核来源', 'en': 'Unverified'},
+}
+
+
+def _subclass_slug(owner_class: str | None) -> str:
+    if not owner_class:
+        return UNASSIGNED_SLUG
+    if owner_class in CORE_SLUGS:
+        return CORE_SLUGS[owner_class]
+    return 'c_' + hashlib.sha256(owner_class.encode('utf-8')).hexdigest()[:12]
 
 
 def curation(path=CURATION):
@@ -46,7 +78,8 @@ def _group(key, items, *, label=None, ordered=False):
 
 def _shaped(view):
     lead = view.get('lead')
-    view['shape'] = 'detail' if lead and (lead['truncated'] or not view['groups']) else 'index'
+    has_children = any(g.get('key') != 'relations' for g in view.get('groups') or ())
+    view['shape'] = 'detail' if lead and (lead['truncated'] or not has_children) else 'index'
     return view
 
 
@@ -111,6 +144,8 @@ class LibraryTour:
             if shelved is not None:
                 return self.divider_view(at, shelved)
             return self.qualified(collection.tour.view(local), key)
+        if m := SUBCLASS_SEGMENT.fullmatch(at):
+            return self.subclass_class_view(m.group(1))
         if TOPIC_KEY.fullmatch(at):
             if at not in self.topics or not self.available(self.topics[at]):
                 raise TourError('node_missing', 404)
@@ -127,6 +162,10 @@ class LibraryTour:
             return self.member(key).tour.layout(local)
         if not at:
             return {'status': 'empty'}
+        if m := SUBCLASS_SEGMENT.fullmatch(at):
+            if m.group(1) not in self._subclasses_index():
+                raise TourError('node_missing', 404)
+            return {'status': 'empty'}
         topic = self.topics.get(at)
         if topic is None:
             raise TourError('node_missing', 404) if TOPIC_KEY.fullmatch(at) else TourError('invalid_node', 400)
@@ -136,8 +175,8 @@ class LibraryTour:
     # --- Topics ---
 
     def available(self, topic) -> bool:
-        """A topic shows when the library can answer it: its query, or a chapter or listing of a collection in it."""
-        return topic.query is not None or any(topic.contents_in(k) or topic.dynamic_in(k) for k in self.by_key)
+        """A topic shows when the library can answer it: its query, browse view, or a chapter or listing of a collection."""
+        return topic.query is not None or topic.browse is not None or any(topic.contents_in(k) or topic.dynamic_in(k) for k in self.by_key)
 
     def place(self, topic):
         """Where a topic's chapter opens: in the collection whose text of the work the reader leads with, among
@@ -175,6 +214,8 @@ class LibraryTour:
         owner = self._listing_owner(topic)
         if topic.query:
             item['count'] = self.count(topic.query)
+        elif topic.browse == 'subclasses':
+            item['count'] = sum(len(stacks) for _, stacks in self._subclasses_index().values())
         elif owner:
             item['count'] = owner.tour.listing_count(topic)
         elif place := self.place(topic):
@@ -202,10 +243,219 @@ class LibraryTour:
                     group['ordered'] = group['key'] == 'contents'
         if topic.query:
             view['anna'] = {'query': topic.query, 'count': self.count(topic.query)}
+        if topic.browse == 'subclasses':
+            groups = self.subclasses_root_groups()
+            if groups:
+                view['groups'].extend(groups)
+            elif topic.query:
+                view['groups'].append(self.entry_list(topic.query))
+            return view
+        if topic.query:
             if topic.facet:
                 view['groups'].append(self.facet_group(topic.query, topic.facet))
             elif not place:
                 view['groups'].append(self.entry_list(topic.query))
+        return view
+
+    # --- Subclasses grouped by owning class across the reader's library ---
+
+    def _subclasses_index(self) -> dict[str, tuple[str | None, list[list[dict]]]]:
+        """Scoped, stacked subclasses across every member collection, grouped by owning class."""
+        cache_key = (tuple((c.key, c.snapshot, c.provider.signature()) for c in self.members), self.library.scope)
+        with _lock:
+            if cache_key in _subclass_indexes:
+                _subclass_indexes.move_to_end(cache_key)
+                return _subclass_indexes[cache_key]
+
+        pubs = self.library.publications
+        preference = PREFERENCES[self.scope.prefer]
+        raw_by_slug: dict[str, list[dict]] = defaultdict(list)
+        owner_by_slug: dict[str, str | None] = {}
+
+        for c in self.members:
+            getter = getattr(c.tour, 'subclass_records', None)
+            if getter is None:
+                continue
+            restrict = self.library.restrict(c)
+            lib_rank = self.library.rank.get(c.key, len(self.library.rank))
+            for r in getter():
+                if restrict is not None:
+                    if restrict.rulesets is not None and r['ruleset'] not in restrict.rulesets:
+                        continue
+                    if restrict.sources is not None:
+                        sids = r.get('source_ids') or ()
+                        if not sids or not any(sid in restrict.sources for sid in sids):
+                            continue
+                owner = r.get('owner_class') or None
+                slug = _subclass_slug(owner)
+                owner_by_slug.setdefault(slug, owner)
+                sids = r.get('source_ids') or ()
+                origin = r.get('origin') or '待核'
+                content_rank = min((pubs.rank(c.key, sid, origin) for sid in sids),
+                                   default=CONTENT_RANK[content_of(origin)])
+                lead_rank = 0 if any((c.key, sid) in self.scope.lead for sid in sids) else 1
+                ruleset_rank = preference.index(r['ruleset']) if r['ruleset'] in preference else 2
+                raw_by_slug[slug].append({
+                    **r,
+                    'collection': c.key,
+                    'lib': lib_rank,
+                    'origin': origin,
+                    'content_rank': content_rank,
+                    'lead': lead_rank,
+                    'ruleset_rank': ruleset_rank,
+                })
+
+        index: dict[str, tuple[str | None, list[list[dict]]]] = {}
+        for slug, records in raw_by_slug.items():
+            stacks = self._stack_subclasses(records)
+            index[slug] = (owner_by_slug[slug], stacks)
+
+        with _lock:
+            _subclass_indexes[cache_key] = index
+            while len(_subclass_indexes) > INDEX_CACHE:
+                _subclass_indexes.popitem(last=False)
+        return index
+
+    def _stack_subclasses(self, records: list[dict]) -> list[list[dict]]:
+        def member_key(r):
+            return (r['content_rank'], r['ruleset_rank'], r['lead'], r['lib'],
+                    1 if r.get('is_copy') else 0, -(r.get('parts_count') or 0),
+                    browse.name_key(r['title']) or '', r['id'])
+
+        if self.scope.versions == 'each':
+            stacks = [[r] for r in records]
+        else:
+            parent: dict = {}
+
+            def find(x):
+                parent.setdefault(x, x)
+                while parent[x] != x:
+                    parent[x] = parent[parent[x]]
+                    x = parent[x]
+                return x
+
+            def union(a, b):
+                parent[find(a)] = find(b)
+
+            for r in records:
+                node = ('row', r['collection'], r['id'])
+                find(node)
+                if r.get('stack'):
+                    union(node, ('local', r['collection'], r['stack']))
+                if folded := name_fold(r.get('name_en') or ''):
+                    union(node, ('name', folded))
+
+            grouped: dict = {}
+            for r in records:
+                grouped.setdefault(find(('row', r['collection'], r['id'])), []).append(r)
+            stacks = [sorted(members, key=member_key) for members in grouped.values()]
+
+        stacks.sort(key=lambda s: (s[0]['ruleset_rank'], browse.name_key(s[0]['title']) or '', s[0]['lib'], s[0]['id']))
+        return stacks
+
+    def subclasses_root_groups(self) -> list[dict]:
+        index = self._subclasses_index()
+        if not index:
+            return []
+        core = [(slug, owner, stacks) for slug, (owner, stacks) in index.items() if owner in CORE_ORDER]
+        core.sort(key=lambda x: CORE_ORDER[x[1]])
+        other = [(slug, owner, stacks) for slug, (owner, stacks) in index.items() if owner is not None and owner not in CORE_ORDER]
+        other.sort(key=lambda x: (min(s[0]['content_rank'] for s in x[2]), -len(x[2]), browse.name_key(x[1]) or ''))
+        unassigned = index.get(UNASSIGNED_SLUG)
+
+        def class_item(slug, owner, stacks):
+            if owner is None:
+                return {'id': 'subclasses.' + slug, 'kind': 'class', 'label': UNASSIGNED_LABEL, 'count': len(stacks)}
+            return {'id': 'subclasses.' + slug, 'kind': 'class', 'title': owner, 'count': len(stacks)}
+
+        groups = []
+        has_tail = bool(other or unassigned)
+        if core:
+            label = {'zh': '核心职业', 'en': 'Core classes'} if has_tail else {'zh': '按所属职业', 'en': 'By class'}
+            groups.append(_group('classes', [class_item(*x) for x in core], label=label))
+        if has_tail:
+            tail = [class_item(*x) for x in other]
+            if unassigned:
+                tail.append(class_item(UNASSIGNED_SLUG, None, unassigned[1]))
+            label = {'zh': '其他职业', 'en': 'Other classes'} if core else {'zh': '按所属职业', 'en': 'By class'}
+            groups.append(_group('classes', tail, label=label))
+        return groups
+
+    def subclass_class_view(self, slug: str) -> dict:
+        index = self._subclasses_index()
+        if slug not in index:
+            raise TourError('node_missing', 404)
+        owner, stacks = index[slug]
+        by_origin: dict[str, list[list[dict]]] = defaultdict(list)
+        for stack in stacks:
+            origin = stack[0]['origin']
+            by_origin[origin if origin in ORIGIN_LABELS else '待核'].append(stack)
+
+        multi = len(self.members) > 1
+        primary_key = self.members[0].key
+        groups = []
+        for origin in ORIGIN_ORDER:
+            origin_stacks = by_origin.get(origin)
+            if not origin_stacks:
+                continue
+            items = []
+            for stack in origin_stacks:
+                head, others = stack[0], stack[1:]
+                hint = head.get('source_name') or head.get('source_short') or ''
+                if multi and head['collection'] != primary_key:
+                    col_name = self.by_key[head['collection']].zh
+                    hint = f'{hint} · {col_name}' if hint else col_name
+                versions = []
+                for v in others:
+                    v_item = {
+                        'id': qualify(v['collection'], v['id']),
+                        'ruleset': v['ruleset'],
+                        'source': v.get('source_short') or v.get('source_name') or '',
+                    }
+                    if multi and v['collection'] != head['collection']:
+                        v_item['collection'] = v['collection']
+                    versions.append(v_item)
+                item = {
+                    'id': qualify(head['collection'], head['id']),
+                    'kind': 'entry',
+                    'title': head['title'],
+                    'type': 'subclass',
+                    'type_label': '子职',
+                    'ruleset': head['ruleset'],
+                    'hint': hint or None,
+                    'count': head.get('parts_count') or None,
+                    'versions': versions,
+                }
+                if head.get('name_en'):
+                    item['search'] = head['name_en']
+                items.append(item)
+            groups.append(_group('subclasses', items, label=ORIGIN_LABELS[origin]))
+
+        anna = None
+        if owner and any('owner_class' in capabilities_of(c).facets for c in self.members):
+            query = {'type': ['subclass'], 'f_owner_class': [owner]}
+            qcount = self.count(query)
+            if qcount > 0:
+                anna = {'query': query, 'count': qcount}
+
+        topic = self.topics.get('subclasses')
+        trail = [topic.label if topic else {'zh': '子职', 'en': 'Subclasses'}]
+        view = {
+            'id': 'subclasses.' + slug,
+            'kind': 'class',
+            'trail': trail,
+            'ruleset': None,
+            'sources': [],
+            'status': 'ok',
+            'lead': None,
+            'read': None,
+            'anna': anna,
+            'groups': groups,
+        }
+        if owner is None:
+            view['label'] = UNASSIGNED_LABEL
+        else:
+            view['title'] = owner
         return view
 
     # --- Answers from the whole library, as Anna's table gives them ---

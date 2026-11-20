@@ -8,20 +8,22 @@
 #tour-columns { --tour-column: 360px; --tour-spine: 40px; --tour-detail: 440px; display: flex; flex: 1; min-height: 0; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-padding-inline: 0; }
 #tour-columns:focus { outline: 0; }
 .tour-column { flex: 0 0 var(--tour-column); min-width: 0; overflow-y: auto; overscroll-behavior: contain; border-right: 1px solid var(--anna-line); background: var(--anna-paper); }
-/* A level's sheet holds its text; the sheet's width decides how the text is set. */
-.tour-sheet { container-type: inline-size; }
+/* A level's sheet holds its text; the sheet's width decides how the text is set. The sheet also fixes the
+   reading measure at the size the book's words are set in, so what surrounds them can end where they end. */
+@property --tour-measure { syntax: '<length>'; inherits: true; initial-value: 0px; }
+.tour-sheet { container-type: inline-size; font-size: var(--anna-type-reading); --tour-measure: var(--anna-measure); }
 .tour-column[data-depth="0"] { --tour-column: 320px; background: var(--anna-surface); }
 /* The deepest level is where the reader is reading: a detail takes the room the levels above leave, an index
    stays narrow and the room beside it waits for the next choice. */
 .tour-column[data-place=last][data-shape=detail] { flex: 1 1 var(--tour-detail); }
 .tour-column[data-place=last][data-shape=detail] .tour-column-body { padding-inline: 28px; }
-/* A level reads top to bottom: its way out, its own words, then where it leads. Under a wide detail, rows that
-   are choices rather than steps share the width in as many tracks as fit; steps keep their line. */
+/* A level reads top to bottom: its way out, its own words, then where it leads, all within the words' measure.
+   Under a wide detail, rows that are choices rather than steps sit two to a line; steps keep their line. */
 @container (min-width: 600px) {
-  .tour-column[data-place=last][data-shape=detail] .tour-group:not(.ordered) > ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 8px; }
-  .tour-column[data-place=last][data-shape=detail] .tour-item-hint { -webkit-line-clamp: 3; }
+  .tour-column[data-place=last][data-shape=detail] .tour-group:not(.ordered) > ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 8px; }
 }
-.tour-column-body { padding: 20px 18px 28px; }
+.tour-column-body { padding: 20px 18px 28px; font-size: var(--anna-type-ui); }
+.tour-column-body > :is(.tour-actions, .tour-onward, .tour-sequence) { max-width: var(--tour-measure); }
 /* A detail being read holds the focus itself, so the arrow keys scroll its text. */
 .tour-column:focus-visible { outline-offset: -3px; }
 #tour-columns[data-rest]::after { content: attr(data-rest); flex: 1 0 200px; align-self: center; padding: 0 32px; color: var(--anna-muted); font-size: var(--anna-type-ui); text-align: center; animation: tour-in var(--anna-fast) var(--anna-ease); }

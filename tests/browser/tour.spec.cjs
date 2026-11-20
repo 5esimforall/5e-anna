@@ -104,10 +104,13 @@ test('a wide detail sets where it leads below its words, across the width',async
   await expect(column.locator('.tour-actions .tour-go')).toHaveCount(1);
   await expect(onward.locator('.tour-group.ordered .tour-item')).toHaveCount(5);
   await expect(column.locator('.tour-onward-title')).toHaveText('由此继续');
-  // Below the words and as wide as them.
+  // Below the words, ending where their measure ends rather than at the column's edge.
   const box=await onward.boundingBox(), text=await column.locator('.tour-main').boundingBox();
+  const prose=await column.evaluate(c=>Math.max(...[...c.querySelectorAll('.tour-body p')].map(p=>p.getBoundingClientRect().right)));
+  const edge=await column.evaluate(c=>c.getBoundingClientRect().right);
   expect(box.y).toBeGreaterThanOrEqual(text.y+text.height);
-  expect(box.width).toBeGreaterThan(800);
+  expect(Math.abs(box.x+box.width-prose)).toBeLessThan(2);
+  expect(box.x+box.width).toBeLessThan(edge-100);
   // While the rows lie below what the column shows, a link above the words leads to them and to the focus on them.
   const jump=column.locator('.tour-jump');
   await page.setViewportSize({width:1440,height:480});

@@ -95,18 +95,30 @@ test('three levels stay open; the ones above fold into spines that bring them ba
   await expect(level(page,0)).toHaveAttribute('data-place','folded');
 });
 
-test('a wide detail keeps its reading measure and sets where it leads in a rail out to the right edge',async({page})=>{
+test('a wide detail sets where it leads below its words, across the width',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await page.goto(anna+'/tour?at=create');await ready(page,1);
-  await expect(level(page,1).locator('.tour-body')).toBeVisible();
-  await expect(level(page,1).locator('.tour-column-body')).toHaveCSS('display','grid');
-  const rail=level(page,1).locator('.tour-rail');
-  await expect(rail.locator('.tour-go')).toHaveCount(1);
-  await expect(rail.locator('.tour-group.ordered .tour-item')).toHaveCount(5);
-  await expect.poll(()=>rail.evaluate(e=>e.getBoundingClientRect().right)).toBeGreaterThan(1440-40);
-  // Narrowed beside a deeper level, the same column stacks its lead above its rows.
+  const column=level(page,1), onward=column.locator('.tour-onward');
+  await expect(column.locator('.tour-body')).toBeVisible();
+  await expect(column.locator('.tour-column-body')).toHaveCSS('display','block');
+  await expect(column.locator('.tour-actions .tour-go')).toHaveCount(1);
+  await expect(onward.locator('.tour-group.ordered .tour-item')).toHaveCount(5);
+  await expect(column.locator('.tour-onward-title')).toHaveText('由此继续');
+  // Below the words and as wide as them.
+  const box=await onward.boundingBox(), text=await column.locator('.tour-main').boundingBox();
+  expect(box.y).toBeGreaterThanOrEqual(text.y+text.height);
+  expect(box.width).toBeGreaterThan(800);
+  // While the rows lie below what the column shows, a link above the words leads to them and to the focus on them.
+  const jump=column.locator('.tour-jump');
+  await page.setViewportSize({width:1440,height:480});
+  await expect(jump).toBeVisible();await expect(jump).toHaveText('由此继续 · 5 项 ↓');
+  await jump.click();
+  await expect(row(page,1,'第一步：选择职业')).toBeFocused();
+  await expect(jump).toBeHidden();
+  await page.setViewportSize({width:1440,height:900});
+  // Narrowed beside a deeper level, the same column keeps the same order.
   await row(page,1,'第一步：选择职业').click();await ready(page,2);
-  await expect(level(page,1).locator('.tour-column-body')).toHaveCSS('display','block');
+  await expect(column.locator('.tour-body')).toBeHidden();
   // The index column keeps its width.
   await expect.poll(()=>level(page,2).evaluate(e=>e.getBoundingClientRect().width)).toBe(360);
 });

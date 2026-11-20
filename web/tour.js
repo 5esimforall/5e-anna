@@ -13,7 +13,7 @@ const annaTourLabels = {
     facet:'按{field}', readBook:'在 Stella 中阅读', openEntry:'在 Anna 中查看', openQuery:'在 Anna 中查看 {count} 条',
     spellList:'可用法术', more:'另有 {count} 项', moreInAnna:'另有 {count} 项，在 Anna 中查看全部',
     previous:'上一项：{name}', next:'下一项：{name}', back:'‹ {name}', table:'表', versions:'其他版本',
-    rest:'选择一项，它会在这里展开', unfold:'展开「{name}」',
+    rest:'选择一项，它会在这里展开', onward:'由此继续', onwardJump:'由此继续 · {count} 项 ↓', unfold:'展开「{name}」',
     filterPlaceholder:'筛选此列表…', filterLabel:'筛选 {name}', filterCount:'{shown} / {total}', filterEmpty:'没有匹配项。',
     loading:'正在读取…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
     bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。',
@@ -26,7 +26,7 @@ const annaTourLabels = {
     facet:'By {field}', readBook:'Read in Stella', openEntry:'Open in Anna', openQuery:'Open {count} in Anna',
     spellList:'Spell list', more:'{count} more', moreInAnna:'{count} more; open them all in Anna',
     previous:'Previous: {name}', next:'Next: {name}', back:'‹ {name}', table:'Table', versions:'Other versions',
-    rest:'Choose an item to open it here', unfold:'Show {name}',
+    rest:'Choose an item to open it here', onward:'Where this leads', onwardJump:'Where this leads · {count} ↓', unfold:'Show {name}',
     filterPlaceholder:'Filter this list…', filterLabel:'Filter {name}', filterCount:'{shown} / {total}', filterEmpty:'No matching items.',
     loading:'Loading…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
     bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.',
@@ -185,9 +185,13 @@ const annaTour = (() => {
       const sibling = view.sequence[key];
       return sibling ? `<a rel="${rel}" href="${esc(tourHref([...path.slice(0, depth - 1), sibling.id]))}" data-at title="${esc(sibling.title)}">${esc(fill(ui[key], {name:sibling.title}))}</a>` : '';
     }).join('')}</nav>` : '';
-    // The level's own words, then where it leads; a wide detail sets the second beside the first.
-    const rail = (actions.length ? `<div class="tour-actions">${actions.join('')}</div>` : '') + steps(view, depth) + sequence;
-    return head(view, depth) + `<div class="tour-main">${status}${lead}</div>` + (rail ? `<div class="tour-rail">${rail}</div>` : '');
+    /* The way out to Stella and Anna, the level's own words, then where it leads, each across the whole width. A
+       detail names where it leads, and a link above its words says how many rows wait there while they lie below. */
+    const rows = steps(view, depth), detail = view.shape === 'detail' && rows;
+    if (detail) actions.push(`<button type="button" class="tour-jump" hidden>${esc(fill(ui.onwardJump, {count:fmt(view.groups.reduce((n, g) => n + g.items.length, 0))}))}</button>`);
+    const title = detail ? `<h3 class="tour-onward-title" id="tour-onward-${depth}" tabindex="-1">${esc(ui.onward)}</h3>` : '';
+    return head(view, depth) + (actions.length ? `<div class="tour-actions">${actions.join('')}</div>` : '') +
+      `<div class="tour-main">${status}${lead}</div>` + (rows ? `<div class="tour-onward">${title}${rows}</div>` : '') + sequence;
   }
 
   // A folded level keeps a spine that names it; the spine brings it back into view.
@@ -205,6 +209,20 @@ const annaTour = (() => {
     spine.querySelector('span').textContent = name; spine.title = name;
     spine.setAttribute('aria-label', fill(ui.unfold, {name}));
     section.querySelector('.tour-column-body').innerHTML = body(view, depth);
+    watchOnward(section);
+  }
+  // The link to where a detail leads shows only while that part lies below what the column shows.
+  function watchOnward(section) {
+    const jump = section.querySelector('.tour-jump'), title = section.querySelector('.tour-onward-title');
+    if (!jump || !title) return;
+    new IntersectionObserver(([seen]) => {
+      jump.hidden = seen.isIntersecting || seen.boundingClientRect.top < (seen.rootBounds?.top ?? 0);
+    }, {root:section}).observe(title);
+  }
+  // Scrolls where a detail leads to the top of its column and puts the focus on its rows.
+  function onward(section) {
+    section.querySelector('.tour-onward-title').scrollIntoView({block:'start', behavior:reduced.matches ? 'auto' : 'smooth'});
+    focusRows(section, false, false);
   }
   // A detail shows its own words as the book sets them while it is the deepest level; its lead stands in for them
   // while they load, when they cannot be laid out, and once a deeper level opens. Words that arrive after the level
@@ -327,7 +345,7 @@ const annaTour = (() => {
   const detailReady = section => section.dataset.shape === 'detail' && section.dataset.state === 'ready';
   const readable = section => section === deepest() && detailReady(section);
   const opens = link => link.hasAttribute('data-at') && link.getAttribute('aria-disabled') !== 'true';
-  function focusRows(section, open = false) {
+  function focusRows(section, open = false, scroll = true) {
     if (!section) return;
     if (section.dataset.place === 'folded') { section.querySelector('.tour-spine').focus(); return; }
     const items = visibleItems(section);
@@ -337,7 +355,7 @@ const annaTour = (() => {
     if (target.matches('h2')) { target.tabIndex = -1; }
     else section.querySelectorAll('.tour-item').forEach(link => { link.tabIndex = link === target ? 0 : -1; });
     target.focus({preventScroll:true});
-    target.scrollIntoView({block:'nearest'});
+    if (scroll) target.scrollIntoView({block:'nearest'});
     if (open && target.matches('.tour-item')) follow(target);
   }
   function focusReading(section) {
@@ -377,7 +395,7 @@ const annaTour = (() => {
   function applyGroupFilter(input) {
     const box = input.closest('.tour-filter');
     const columnScope = box?.dataset.filterScope === 'column';
-    const container = columnScope ? input.closest('.tour-rail') : input.closest('.tour-group');
+    const container = columnScope ? input.closest('.tour-onward') : input.closest('.tour-group');
     if (!container) return;
     const term = input.value.trim().toLocaleLowerCase();
     const groups = columnScope ? [...container.querySelectorAll('.tour-group')] : [container];
@@ -506,6 +524,8 @@ const annaTour = (() => {
     if (retry) { show(path); return; }
     const spine = event.target.closest('.tour-spine');
     if (spine) { unfold(spine.closest('.tour-column')); return; }
+    const jump = event.target.closest('.tour-jump');
+    if (jump) { onward(jump.closest('.tour-column')); return; }
     // A reference inside a detail's own words opens its definition as the next level.
     const ref = event.target.closest('button.ref[data-entry]');
     if (ref) {

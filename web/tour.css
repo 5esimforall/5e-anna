@@ -15,13 +15,11 @@
    stays narrow and the room beside it waits for the next choice. */
 .tour-column[data-place=last][data-shape=detail] { flex: 1 1 var(--tour-detail); }
 .tour-column[data-place=last][data-shape=detail] .tour-column-body { padding-inline: 28px; }
-/* Prose keeps its reading measure, so a wide detail sets where it leads in a rail beside its own words and
-   reaches the right edge; tables in the text take the rest of the main track. */
-@container (min-width: 880px) {
-  .tour-column[data-place=last][data-shape=detail] .tour-column-body:has(> .tour-rail) { display: grid; grid-template-columns: minmax(0, 1fr) clamp(260px, 30%, 380px); align-items: start; column-gap: 32px; }
-  .tour-column[data-place=last][data-shape=detail] .tour-column-body > :is(header, .tour-scope) { grid-column: 1 / -1; }
-  .tour-column[data-place=last][data-shape=detail] .tour-rail { margin-top: 14px; padding-left: 24px; border-left: 1px solid var(--anna-line); }
-  .tour-column[data-place=last][data-shape=detail] .tour-rail > :first-child { margin-top: 0; }
+/* A level reads top to bottom: its way out, its own words, then where it leads. Under a wide detail, rows that
+   are choices rather than steps share the width in as many tracks as fit; steps keep their line. */
+@container (min-width: 600px) {
+  .tour-column[data-place=last][data-shape=detail] .tour-group:not(.ordered) > ul { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); column-gap: 8px; }
+  .tour-column[data-place=last][data-shape=detail] .tour-item-hint { -webkit-line-clamp: 3; }
 }
 .tour-column-body { padding: 20px 18px 28px; }
 /* A detail being read holds the focus itself, so the arrow keys scroll its text. */
@@ -67,6 +65,14 @@
 .tour-go { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px 0 4px; border: 1px solid var(--anna-line); border-radius: 16px; color: var(--anna-secondary); font-size: var(--anna-type-ui); text-decoration: none; white-space: nowrap; }
 .tour-go:hover { background: var(--anna-hover); color: var(--anna-ink); }
 .tour-go img { width: 24px; height: 24px; object-fit: contain; }
+.tour-jump { margin-left: auto; height: 32px; padding: 0 10px; border: 0; border-radius: 16px; background: none; color: var(--anna-secondary); font: inherit; font-size: var(--anna-type-ui); cursor: pointer; white-space: nowrap; }
+.tour-jump:hover { background: var(--anna-hover); color: var(--anna-ink); }
+.tour-jump[hidden] { display: none; }
+
+/* Where a detail leads, named and set off below its words. */
+.tour-onward-title { margin: 28px 0 0; padding: 14px 10px 0; border-top: 1px solid var(--anna-line); color: var(--anna-ink); font-size: var(--anna-type-ui); font-weight: 600; scroll-margin-top: 8px; }
+.tour-onward-title:focus { outline: 0; }
+.tour-onward-title + :is(.tour-group, .tour-filter) { margin-top: 10px; }
 
 .tour-group { margin-top: 20px; }
 .tour-group h3 { margin: 0 0 6px; padding: 0 10px; color: var(--anna-muted); font-size: var(--anna-type-ui); font-weight: 600; }
@@ -117,8 +123,8 @@
 
 /* Inline quick-filter for long lists (> 24 items). */
 .tour-filter { display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; }
-.tour-rail > .tour-filter { margin: 14px 10px 0; }
-.tour-rail > .tour-filter + .tour-group { margin-top: 14px; }
+.tour-onward > .tour-filter { margin: 14px 10px 0; }
+.tour-onward > .tour-filter + .tour-group { margin-top: 14px; }
 .tour-filter-input { box-sizing: border-box; flex: 1 1 auto; width: 100%; min-width: 0; height: 32px; padding: 4px 10px; border: 1px solid var(--anna-line-strong); border-radius: var(--anna-radius-sm); background: var(--anna-paper); color: var(--anna-ink); font: inherit; font-size: var(--anna-type-ui); }
 .tour-filter-input::placeholder { color: var(--anna-muted); }
 .tour-filter-input:focus-visible { outline: 2px solid var(--anna-brand); outline-offset: 1px; }

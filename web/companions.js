@@ -110,12 +110,7 @@ const annaCompanions = (() => {
     ({page, snapshots} = options);
     labels = annaCompanionLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
     slot = document.querySelector('.topbar .companion');
-    const companion = other[page];
-    go = document.createElement('a'); go.className = 'companion-go';
-    const avatar = document.createElement('img'); avatar.className = 'companion-avatar'; avatar.src = annaKit.href(annaTopbar.pages[companion].logo);
-    avatar.width = avatar.height = 26; avatar.alt = ''; avatar.dataset.guide = annaTopbar.pages[companion].guide;
-    const label = document.createElement('span'); label.className = 'companion-label';
-    go.append(avatar, label);
+    go = slot.querySelector('.companion-go') || annaTopbar.companionHome(page);
     more = document.createElement('button'); more.type = 'button'; more.className = 'companion-more'; more.id = 'companion-more';
     more.setAttribute('aria-label', labels.more); more.title = labels.more;
     more.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';

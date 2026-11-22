@@ -42,6 +42,17 @@ const annaTopbar = (() => {
     }
     return nav;
   }
+  function companionHome(page) {
+    const key = page === 'book' ? 'query' : 'book';
+    const {home, logo, guide} = pages[key], name = annaBrands[key];
+    const link = document.createElement('a'); link.className = 'companion-go'; link.href = href(home);
+    link.setAttribute('aria-label', name); link.title = name;
+    const avatar = document.createElement('img'); avatar.className = 'companion-avatar'; avatar.src = href(logo);
+    avatar.width = avatar.height = 26; avatar.alt = ''; avatar.dataset.guide = guide;
+    const label = document.createElement('span'); label.className = 'companion-label'; label.textContent = name;
+    link.append(avatar, label);
+    return link;
+  }
   function render(header) {
     const page = header.dataset.page, {home, logo, guide} = pages[page];
     const brand = document.createElement('a'); brand.className = 'brand'; brand.href = href(home);
@@ -58,7 +69,10 @@ const annaTopbar = (() => {
     const books = document.createElement('button'); books.type = 'button'; books.className = 'library-button'; books.hidden = !library;
     books.setAttribute('aria-haspopup', 'dialog');
     books.innerHTML = `${libraryIcon}<span class="library-word"></span><span class="library-summary"></span>`;
-    const companion = document.createElement('div'); companion.className = 'companion'; companion.hidden = true;
+    const companion = document.createElement('div'); companion.className = 'companion single';
+    // Both Pages homes exist as static URLs, even while their data worker is getting ready.
+    companion.hidden = !annaKit.pages;
+    if (annaKit.pages) companion.append(companionHome(page));
     const theme = document.createElement('button'); theme.className = 'icon-button theme-button'; theme.id = 'theme';
     theme.type = 'button'; theme.hidden = true; theme.innerHTML = themeIcons;
     actions.append(books, companion, theme);
@@ -70,5 +84,5 @@ const annaTopbar = (() => {
     const link = document.querySelector(`.page-switch a[data-page="${page}"]`);
     if (link && target) link.href = href(target);
   }
-  return {pages, pointSwitch};
+  return {pages, pointSwitch, companionHome};
 })();

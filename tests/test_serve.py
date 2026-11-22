@@ -302,10 +302,14 @@ class WebTests(unittest.TestCase):
         school={o['value']:o['count'] for o in groups['f_school']['options']}
         for value in ['塑能','咒法','防护']:
             self.assertEqual(school[value],query(self.db,{**params,'f_school':[value],'versions':['each']})['total'])
-        # A type counts what switching to it matches: conditions that type cannot answer drop out.
+        # A type counts what choosing it matches with every other condition kept as written: magic items have
+        # no school, so “学派：塑能” leaves none of them.
         types={o['value']:o['count'] for o in groups['type']['options']}
         self.assertEqual(types['spell'],data['total'])
-        self.assertEqual(types['magic_item'],query(self.db,{'type':['magic_item'],'q':['火'],'versions':['each']})['total'])
+        self.assertEqual(types['magic_item'],query(self.db,{'type':['magic_item'],'q':['火'],'f_school':['塑能'],'versions':['each']})['total'])
+        self.assertEqual(types['magic_item'],0)
+        fire={o['value']:o['count'] for o in facets(self.db,{'type':['spell'],'q':['火']})['groups'][0]['options']}
+        self.assertEqual(fire['magic_item'],query(self.db,{'type':['magic_item'],'q':['火'],'versions':['each']})['total'])
         self.assertNotIn('section',types)
         # Removing one condition: each search term and field is its own condition.
         self.assertEqual(data['without']['q0'],query(self.db,{'type':['spell'],'f_school':['塑能'],'versions':['each']})['total']-data['total'])

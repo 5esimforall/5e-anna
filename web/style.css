@@ -328,13 +328,16 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .source-search-row>.muted { font-size: var(--anna-type-ui); }
 #source-filters .choices { max-height: 180px; overflow: auto; padding: 3px; }
 #source-filters .facet, #common-filters .facet:last-child { border: 0; }
-/* Active filters stay one line that scrolls sideways, like the narrow view rail. */
-/* The condition bar holds every condition as a chip before the text field. Chips scroll sideways inside it, so
-   the bar stays one line at any width; the field keeps room to type. */
-.condition-bar { position: relative; gap: 7px; padding-left: 10px; }
-.active-filters { display: flex; flex: 0 1 auto; align-items: center; gap: 5px; min-width: 0; max-width: 72%; padding: 2px; }
-.active-filters:empty { display: none; }
-.condition-bar>input { min-width: 120px; }
+/* The condition bar is one line of cards with the text field as its caret. On wide screens the line scrolls
+   sideways, so the bar stays one row; at the end the field takes the rest of the line, between two cards it is
+   only as wide as its words. */
+.condition-bar { position: relative; gap: 7px; padding-left: 10px; cursor: text; }
+.active-filters { display: flex; flex: 1 1 auto; align-items: center; gap: 5px; min-width: 0; padding: 2px; }
+.searchbox .active-filters>input { flex: 1 0 120px; width: auto; min-width: 120px; }
+.searchbox .active-filters.caret-inside>input { flex: none; min-width: 2px; }
+/* Beside the caret a ∧ shows only while words are typed there, so the line always reads card ∧ card. */
+.active-filters>.and.slot-after, .active-filters>.and.slot-before:not(.joins) { display: none; }
+.active-filters.drafting>.and.slot-after, .active-filters.drafting>.and.slot-before { display: inline; }
 /* A chip's text flips it between “is” and “is not”; its × removes it. An excluded condition reads as an outline. */
 .condition { display: inline-flex; flex-shrink: 0; align-items: center; border: 1px solid var(--anna-selected-line); border-radius: var(--anna-radius-sm); background: var(--anna-selected); color: var(--anna-brand); font-size: var(--anna-type-ui); white-space: nowrap; }
 .condition>button { min-height: 24px; border: 0; background: transparent; color: inherit; }
@@ -343,6 +346,19 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .condition>.condition-remove { padding: 2px 6px 2px 3px; font-size: 14px; }
 .condition>button:hover { background: var(--anna-hover); }
 .condition.negated { border-style: dashed; background: transparent; }
+/* A card a note below the bar speaks about is underlined like a misspelled word. */
+.condition[data-tone]>.condition-text { text-decoration: underline wavy var(--anna-warning); text-decoration-thickness: 1px; text-underline-offset: 4px; }
+.condition[data-tone=error]>.condition-text { text-decoration-color: var(--anna-error); }
+/* Notes about the query sit under the bar: what cannot hold, and the edits that would resolve it. */
+#query-problems { display: grid; gap: 6px; margin: -6px 0 14px; }
+#query-problems[hidden] { display: none; }
+.query-problem { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 7px 10px; border: 1px solid var(--anna-line); border-left: 3px solid var(--anna-warning); border-radius: var(--anna-radius-sm); background: var(--anna-warning-bg); color: var(--anna-ink); font-size: var(--anna-type-ui); }
+.query-problem[data-tone=error] { border-color: var(--anna-error-line); border-left-color: var(--anna-error); background: var(--anna-error-bg); }
+.query-problem>.problem-mark { display: inline-grid; place-items: center; flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%; background: var(--anna-warning); color: var(--anna-paper); font-size: 11px; font-weight: 700; line-height: 1; }
+.query-problem[data-tone=error]>.problem-mark { background: var(--anna-error); }
+.query-problem>p { flex: 1 1 18em; min-width: 0; margin: 0; }
+.problem-fixes { display: flex; flex-wrap: wrap; gap: 6px; }
+.problem-fixes>button { min-height: 28px; padding: 2px 9px; background: var(--anna-paper); font-size: var(--anna-type-ui); }
 /* Chips always combine with ∧: each condition, each kept search included, stands on its own. */
 .active-filters>.and { flex-shrink: 0; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 15px; font-weight: 600; line-height: 1; }
 #suggestions { position: absolute; z-index: 9; top: calc(100% + 6px); left: 0; right: 0; max-height: min(60dvh,420px); overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); box-shadow: var(--anna-shadow); }
@@ -666,11 +682,10 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   .topbar-lead { gap: 10px; }
   .topbar-lead:has(.page-switch) .brand { font-size: 0; gap: 0; }
   .page-switch a { padding-inline: 10px; }
-  /* Phones give the condition bar its own row: typing on the first line, the chips scrolling on the second. */
+  /* Phones give the condition bar its own row, and its cards wrap onto more lines like text. */
   .toolbar { flex-wrap: wrap; }
-  .condition-bar { flex: 1 1 100%; flex-wrap: wrap; height: auto; min-height: 40px; padding-block: 4px; row-gap: 3px; }
-  .condition-bar>input { flex: 1; }
-  .active-filters { order: 3; flex: 1 1 100%; max-width: none; }
+  .condition-bar { flex: 1 1 100%; height: auto; min-height: 40px; padding-block: 4px; }
+  .active-filters { flex-wrap: wrap; row-gap: 4px; overflow: visible; }
   .workspace { display: block; height: auto; min-height: 0; }
   .workspace>main { overflow: visible; padding: 18px 14px; }
   .heading-row { margin-bottom: 12px; }

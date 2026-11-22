@@ -151,8 +151,6 @@ def facets(db, params, restrict=None):
     config = browse.schema_for(types)
     conds = conditions(params)
     fields_of = [field_of(key) for key,_,_ in conds]
-    type_bound = {i:f[2:] if f.startswith('f_') else f for i,f in enumerate(fields_of) if f=='cr' or f.startswith('f_')}
-    answers = {t:set(browse.type_conditions(t)) for t in TYPES}
     columns = ''.join(f', ({sql}) AS c{i}' for i,(_,sql,_) in enumerate(conds))
     origin_of = dict(db.execute('SELECT id, origin FROM sources'))
     domain = [*config['facets'],*config['flags']]
@@ -169,9 +167,8 @@ def facets(db, params, restrict=None):
     for row in rows:
         failed = [i for i in range(len(conds)) if not row[f'c{i}']]
         in_scope = all(fields_of[i]!='type' for i in failed)
-        # Choosing a type drops the type-specific conditions it cannot answer, so its count ignores those too.
-        answerable = answers[row['type']]
-        counts_type = all(fields_of[i]=='type' or (i in type_bound and type_bound[i] not in answerable) for i in failed)
+        # A type counts what choosing it matches: every other condition stays as written.
+        counts_type = all(fields_of[i]=='type' for i in failed)
         if not in_scope and not counts_type: continue
         fields = json.loads(row['fields']) if in_scope and domain else None
         source_ids = row['sources'].split('\x1f') if row['sources'] else []

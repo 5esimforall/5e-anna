@@ -219,9 +219,13 @@ test('changing filters or classification closes a stale reader without losing fi
   await page.getByRole('checkbox',{name:'环阶：戏法',exact:true}).check();await ready(page);
   await expect(page.locator('#detail')).toBeHidden();expect(new URL(page.url()).searchParams.has('entry')).toBeFalsy();
   await page.locator('#results .entry-name').first().click();await read(page,await entry(page));
-  // Choosing other types closes the reader and drops the conditions the new table cannot answer.
+  // Choosing other types closes the reader; a condition the new types cannot answer stays, with a note to remove it.
   await chooseOnly(page,'creature');await ready(page);
   await expect(page.locator('#detail')).toBeHidden();await expect(page.locator('#cr_min')).toBeVisible();
+  expect(new URL(page.url()).searchParams.getAll('f_spell_level')).toEqual(['0']);
+  await expect(page.locator('#query-problems')).toContainText('生物数据卡没有“环阶”');
+  await page.locator('#query-problems').getByRole('button',{name:'移除“环阶：戏法”'}).click();await ready(page);
+  await expect(page.locator('#query-problems')).toBeHidden();
   await page.locator('#cr_min').selectOption('1/2');await page.locator('#cr_max').selectOption('2');
   const data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
   expect(new URL(page.url()).searchParams.has('f_spell_level')).toBeFalsy();
@@ -266,14 +270,22 @@ test('type is an ordinary field: counts, include on click, invert, removable chi
   expect(await group.locator('input').evaluateAll(els=>els.map(e=>e.value))).toEqual(meta.type_order);
   await expect(group.locator('legend')).toHaveText('类型');
   await expect(page.getByRole('checkbox',{name:'类型：法术',exact:true})).toBeChecked();
-  // Adding a type keeps only the conditions every chosen type can answer, so the new type's entries appear.
+  // Adding a type keeps every other condition as written: spells have no role, so the type counts none of
+  // them and the note below the bar says so, offering the edits that would bring them in.
   await visit(page,'/?type=creature&f_role='+encodeURIComponent('坐骑'));await page.locator('#toggle-filters').click();
   expect((await queryMatchesAPI(page)).versions_total).toBe(20);
+  await expect(page.locator('[data-group="type"] input[value="spell"] + span .chip-count')).toHaveText('0');
   await page.getByRole('checkbox',{name:'类型：法术',exact:true}).check({force:true});await ready(page);
   expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['spell','creature']);
-  expect(new URL(page.url()).searchParams.has('f_role')).toBeFalsy();
+  expect(new URL(page.url()).searchParams.getAll('f_role')).toEqual(['坐骑']);
+  expect((await queryMatchesAPI(page)).versions_total).toBe(20);
   await expect(page.locator('#title')).toHaveText('法术、生物数据卡');
   await expect(page.getByRole('checkbox',{name:'类型：法术',exact:true})).toBeFocused();
+  await expect(page.locator('#query-problems')).toContainText('法术没有“使用角色”，不会出现在结果中。');
+  await expect(page.locator('#active-filters [data-card="f_role"]')).toHaveAttribute('data-tone','warning');
+  await page.locator('#query-problems').getByRole('button',{name:'移除“使用角色：坐骑”'}).click();await ready(page);
+  expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['spell','creature']);
+  await expect(page.locator('#query-problems')).toBeHidden();
   // Invert chooses every other type; the chip removes the field and returns to all entries.
   await page.getByRole('button',{name:'类型反选',exact:true}).click();await ready(page);
   expect(new URL(page.url()).searchParams.getAll('type')).not.toContain('spell');
@@ -287,10 +299,13 @@ test('type is an ordinary field: counts, include on click, invert, removable chi
 
 test('counts say what choosing each option would match, and an empty result offers conditions to drop',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
+  // A type counts what choosing it matches with every other condition kept: no other type has a school.
   await visit(page,spells+'&q='+encodeURIComponent('火')+'&f_school='+encodeURIComponent('塑能'));
+  await expect(page.locator('#elsewhere')).toBeHidden();
+  await visit(page,spells+'&q='+encodeURIComponent('火'));
   const facets=await (await page.request.get(anna+'/api/facets'+new URL(page.url()).search)).json();
   const types=Object.fromEntries(facets.groups[0].options.map(o=>[o.value,o.count]));
-  const others=Object.entries(types).filter(([t])=>t!=='spell').reduce((sum,[,n])=>sum+n,0);
+  const others=Object.entries(types).filter(([t])=>t!=='spell').reduce((sum,[,n])=>sum+n,0);expect(others).toBeGreaterThan(0);
   await expect(page.locator('#elsewhere')).toHaveText(`其他类型另有 ${fmt(others)} 条`);
   await page.locator('#elsewhere').click();await expect(page.locator('#filter-panel')).toBeVisible();
   await expect(page.locator('[data-group="type"] input').first()).toBeFocused();
@@ -485,7 +500,7 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await q.press('Enter');
   // Every condition is its own chip; chips always join with ∧.
   await expect(chips.locator('.condition-text')).toHaveText(['类型：法术','名称：火','名称：球']);
-  await expect(chips.locator('.and')).toHaveText(['∧','∧']);
+  await expect(chips.locator('.and:visible')).toHaveText(['∧','∧']);
   const both=await queryMatchesAPI(page);
   expect(both.rows.every(r=>r.name.includes('火')&&r.name.includes('球'))).toBeTruthy();
   await expect(page.locator('#filter-count')).toHaveText('3');
@@ -505,7 +520,7 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await chips.locator('[data-remove="body0"]').click();await ready(page);
   expect(new URL(page.url()).searchParams.has('body')).toBeFalsy();
   // Types and presets are found the same way.
-  await q.fill('坐骑');await page.getByRole('option',{name:/预设\s*坐骑/}).click();await ready(page);
+  await visit(page,'/');await q.fill('坐骑');await page.getByRole('option',{name:/预设\s*坐骑/}).click();await ready(page);
   expect(new URL(page.url()).searchParams.getAll('type')).toEqual(['creature']);
   expect(new URL(page.url()).searchParams.getAll('f_role')).toEqual(['坐骑']);
   await expect(page.locator('#title')).toHaveText('坐骑');
@@ -525,6 +540,101 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   await expect(q).toHaveValue('');await expect(chips.locator('[data-remove^="q"]')).toHaveCount(2);
   await chips.locator('[data-remove="q0"]').click();await ready(page);
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['球']);
+});
+
+// The bar as a reader sees it: cards, the ∧ shown between them, and the field as [words|] at the caret.
+const line=page=>page.locator('#active-filters').evaluate(strip=>[...strip.children].map(e=>e.id==='q'?`[${e.value}|]`:
+  e.classList.contains('and')?(getComputedStyle(e).display==='none'?'':'∧'):e.querySelector('.condition-text').textContent).filter(Boolean).join(' '));
+
+test('the condition bar edits like a line of text: cards keep their places and the caret moves between them',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,spells+'&q='+encodeURIComponent('火')+'&f_school='+encodeURIComponent('塑能'));
+  const q=page.locator('#q'),url=()=>new URL(page.url()).searchParams;
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 名称：火 ∧ 学派：塑能 [|]');
+  // ← at the field's start steps over one card; words typed there join the line with a ∧ on each side.
+  await q.focus();await q.press('ArrowLeft');await q.press('ArrowLeft');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ [|] 名称：火 ∧ 学派：塑能');
+  await q.pressSequentially('冰');await expect.poll(()=>line(page)).toBe('类型：法术 ∧ [冰|] ∧ 名称：火 ∧ 学派：塑能');
+  // Enter keeps them as a card right there; the address lists the cards in the bar's order.
+  await q.press('Enter');await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 名称：冰 ∧ [|] 名称：火 ∧ 学派：塑能');
+  expect([...url().keys()]).toEqual(['type','q','q','f_school']);expect(url().getAll('q')).toEqual(['冰','火']);
+  await expect(q).toBeFocused();
+  // Delete removes the card after the caret, Backspace the one before; nothing else moves or leaves.
+  await q.press('Delete');await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 名称：冰 ∧ [|] 学派：塑能');
+  await q.press('Home');await q.press('Delete');await ready(page);
+  await expect.poll(()=>line(page)).toBe('[|] 名称：冰 ∧ 学派：塑能');
+  expect(url().has('type')).toBeFalsy();expect(url().getAll('f_school')).toEqual(['塑能']);
+  await q.press('ArrowRight');await q.press('Backspace');await ready(page);
+  await expect.poll(()=>line(page)).toBe('[|] 学派：塑能');
+  // Moving off typed words leaves them where they were typed, kept as a search.
+  await q.pressSequentially('球');await expect(page).toHaveURL(/typing=/);await ready(page);
+  await q.press('ArrowRight');await ready(page);
+  await expect.poll(()=>line(page)).toBe('名称：球 ∧ 学派：塑能 [|]');
+  // A type chosen from the suggestions lands at the caret instead of leading the line.
+  await q.press('ArrowLeft');await q.press('ArrowLeft');
+  await q.fill('法术');await page.getByRole('option',{name:/^类型\s*法术\s*[\d,]*$/}).click();await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ [|] 名称：球 ∧ 学派：塑能');
+  // A press on a ∧ puts the caret in that gap; turning a card over keeps its place.
+  await page.locator('#active-filters .and:visible').last().click();
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 名称：球 ∧ [|] 学派：塑能');await expect(q).toBeFocused();
+  await page.locator('#active-filters [data-flip="q0"]').click();await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 名称不含：球 ∧ [|] 学派：塑能');
+  await expect(page.locator('#active-filters [data-flip="not_q0"]')).toBeFocused();
+  // The panel edits a card where it stands; a reload or Back shows the cards where they were.
+  await page.locator('#toggle-filters').click();
+  await page.getByRole('checkbox',{name:'学派：咒法',exact:true}).check({force:true});await ready(page);
+  await page.reload();await ready(page);
+  await expect(page.locator('#active-filters .condition-text')).toHaveText(['类型：法术','名称不含：球','学派：塑能、咒法']);
+  await page.goBack();await ready(page);
+  await expect(page.locator('#active-filters .condition-text')).toHaveText(['类型：法术','名称不含：球','学派：塑能']);
+  // Choosing every value keeps the card: it holds for entries with any of them, until the reader removes it.
+  await visit(page,spells+'&f_school='+encodeURIComponent('塑能'));await page.locator('#toggle-filters').click();
+  const schools=await page.locator('[data-group="f_school"] input').count();
+  await page.locator('[data-group="f_school"] input:not(:checked)').evaluateAll(els=>els.forEach(e=>e.click()));await ready(page);
+  expect(url().getAll('f_school')).toHaveLength(schools);await expect(page.locator('#active-filters [data-card="f_school"]')).toHaveCount(1);
+});
+
+test('conditions stay as written; a note below the bar says what cannot hold and offers the fixes',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  const q=page.locator('#q'),url=()=>new URL(page.url()).searchParams,notes=page.locator('#query-problems');
+  await visit(page,spells+'&f_spell_level=1');await expect(notes).toBeHidden();
+  // Adding magic items keeps 环阶：一环; magic items have no spell level, which the note says.
+  await q.fill('魔法物品');await expect(page.getByRole('option',{name:/类型\s*魔法物品\s*0/})).toBeVisible();
+  await page.getByRole('option',{name:/类型\s*魔法物品/}).click();await ready(page);
+  expect(url().getAll('type')).toEqual(['spell','magic_item']);expect(url().getAll('f_spell_level')).toEqual(['1']);
+  await expect(notes).toContainText('魔法物品没有“环阶”，不会出现在结果中。');
+  await expect(page.locator('#active-filters [data-card="f_spell_level"]')).toHaveAttribute('data-tone','warning');
+  await expect(page.locator('#active-filters [data-flip="f_spell_level"]')).toHaveAttribute('aria-describedby','query-problem-0');
+  const data=await queryMatchesAPI(page);expect(data.rows.every(r=>r.type==='spell')).toBeTruthy();
+  await notes.getByRole('button',{name:'类型只保留法术'}).click();await ready(page);
+  expect(url().getAll('type')).toEqual(['spell']);await expect(notes).toBeHidden();
+  // Removing the type leaves the spell level as written.
+  await page.locator('#active-filters [data-remove="type"]').click();await ready(page);
+  await expect(page.locator('#active-filters .condition-text')).toHaveText(['环阶：一环']);expect(url().getAll('f_spell_level')).toEqual(['1']);
+  // Only magic items and a spell level: nothing can match, so the note reads as an error.
+  await visit(page,'/?type=magic_item&f_spell_level=1');
+  await expect(notes.locator('[data-tone="error"]')).toContainText('魔法物品没有“环阶”，没有条目满足“环阶：一环”。');
+  await expect(page.locator('#empty')).toBeVisible();
+  // An inverted range stays as chosen; the note swaps its ends.
+  await visit(page,'/?type=creature&cr_min=5&cr_max=1');
+  await expect(notes).toContainText('最低 CR 5 高于最高 CR 1，两者不能同时成立。');await expect(page.locator('#empty')).toBeVisible();
+  await page.locator('#toggle-filters').click();await page.locator('#cr_max').selectOption('3');await ready(page);
+  expect([url().get('cr_min'),url().get('cr_max')]).toEqual(['5','3']);
+  await notes.getByRole('button',{name:'改为 CR 3–5'}).click();await ready(page);
+  expect([url().get('cr_min'),url().get('cr_max')]).toEqual(['3','5']);await expect(notes).toBeHidden();
+  expect((await queryMatchesAPI(page)).total).toBeGreaterThan(0);
+  // A query the server cannot run keeps its cards; the results wait for the fix instead of failing.
+  await page.goto(anna+'/?type=creature&cr_min=abc&q='+encodeURIComponent('龙'));
+  await expect(notes).toContainText('CR “abc”不是数字或分数。');await expect(page.locator('#error')).toBeHidden();
+  await expect(page.locator('#result-count')).toHaveText('条件需要修改');
+  await notes.getByRole('button',{name:'移除“最低 CR：abc”'}).click();await ready(page);
+  await expect(page.locator('#active-filters .condition-text')).toHaveText(['类型：生物数据卡','名称：龙']);await expect(notes).toBeHidden();
+  await page.goto(anna+'/?q='+'x'.repeat(201));
+  await expect(notes).toContainText('这个查询无法执行');await expect(page.locator('#active-filters .condition')).toHaveCount(1);
+  await notes.getByRole('button',{name:'清空条件'}).click();await ready(page);
+  expect(new URL(page.url()).search).toBe('');await expect(notes).toBeHidden();
 });
 
 test('any chip or field flips between is and is not; excluded values keep entries without them',async({page})=>{

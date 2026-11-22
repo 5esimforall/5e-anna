@@ -17,6 +17,9 @@ const annaUiLabels = {
     collectionErrors:{invalid_collection:'资料库地址无效。',unknown_collection:'未找到这个资料库。',collection_unavailable:'这个资料库尚未接入。'},
     moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
+    problems:'查询提示',unknownField:'anna 不认识“{condition}”这个条件，它不影响结果。',lacksSome:'{types}没有{fields}，不会出现在结果中。',lacksAll:'{types}没有{fields}，没有条目满足{conditions}。',
+    crInverted:'最低 CR {min} 高于最高 CR {max}，两者不能同时成立。',crUnreadable:'CR “{value}”不是数字或分数。',queryRejected:'这个查询无法执行：{message}',queryHeld:'条件需要修改',
+    fixRemove:'移除“{condition}”',fixKeepTypes:'类型只保留{types}',fixSwapCr:'改为 CR {min}–{max}',fixClearAll:'清空条件',listJoin:'、',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
     stackVersions:'合并同名版本',compactRows:'紧凑行',sortMatch:'匹配度',preferRuleset:'优先显示',sortLabel:'排序',displayOptions:'显示',
@@ -45,6 +48,9 @@ const annaUiLabels = {
     collectionErrors:{invalid_collection:'Invalid collection address.',unknown_collection:'Collection not found.',collection_unavailable:'This collection is not connected yet.'},
     moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
+    problems:'Query notes',unknownField:'anna does not know the condition “{condition}”; it does not affect the results.',lacksSome:'{types} have no {fields}, so they do not appear in the results.',lacksAll:'{types} have no {fields}, so nothing meets {conditions}.',
+    crInverted:'Minimum CR {min} is above maximum CR {max}; both cannot hold.',crUnreadable:'CR “{value}” is not a number or fraction.',queryRejected:'This query cannot run: {message}',queryHeld:'Conditions need a fix',
+    fixRemove:'Remove “{condition}”',fixKeepTypes:'Keep only {types}',fixSwapCr:'Use CR {min}–{max}',fixClearAll:'Clear conditions',listJoin:', ',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
     stackVersions:'Stack same-name versions',compactRows:'Compact rows',sortMatch:'Best match',preferRuleset:'Show first',sortLabel:'Sort',displayOptions:'Display',
@@ -66,6 +72,7 @@ const ui = annaUiLabels[locale];
 const rulesetShort=r=>ui.rulesets[r]?.[0]||r, rulesetFull=r=>ui.rulesets[r]?.[1]||r;
 for(const el of document.querySelectorAll('[data-ui]'))el.textContent=ui[el.dataset.ui];
 for(const el of document.querySelectorAll('[data-ui-label]')){el.setAttribute('aria-label',ui[el.dataset.uiLabel]);el.title=ui[el.dataset.uiLabel];}
+$('#q').dataset.placeholder=$('#q').placeholder;$('#query-problems').setAttribute('aria-label',ui.problems);
 const fmt = n => Number(n).toLocaleString('zh-CN');
 const pretty = v => typeof v==='boolean'?ui.flags[v]:typeof v==='object'?JSON.stringify(v,null,2):String(v??'');
 const legacy = {entry_marked:'条目标旧',source_archived:'整书归档',unmarked:'未见标记'};
@@ -111,7 +118,9 @@ function fieldText(entry,field,short=false){
   return Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
 }
 // Every request carries the reader's library (annaLibrary).
-async function api(path,signal){const r=await fetch(annaLibrary.withScope(path),{signal});const d=await r.json();if(!r.ok)throw new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败');return d;}
+// A failed request keeps its HTTP status: 400 means the server cannot run the query as written.
+async function api(path,signal){const r=await fetch(annaLibrary.withScope(path),{signal});const d=await r.json();
+  if(!r.ok)throw Object.assign(new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败'),{status:r.status,code:d.code||null});return d;}
 const collectionName=id=>metadata?.collections?.find(c=>c.id===id)?.label?.[locale]||annaLibrary.nameOf(id);
 function showLibrary(){
   // The note qualifies anna's own extraction from the book; it shows while the book is among the collections read.
@@ -188,6 +197,8 @@ function endTopic(entry){
   if(sharing()&&entry)annaWorkspace.update(snapshots(),state=>annaWorkspace.clearTopic(state,qualifiedEntry(entry)));
 }
 function historyUpdate(replace=false){
+  // The address lists the conditions in the bar's order, so a reload or Back shows them where they were.
+  placeCards();params=orderedParams();
   if(!replace)saveUiState();
   const search=params.toString();history[replace?'replaceState':'pushState'](history.state,'',location.pathname+(search?'?'+search:''));
 }
@@ -222,18 +233,16 @@ function renderSortOptions(){
   $('#sort').value=effectiveSort();
 }
 // Every field reads the same way: nothing chosen sets no condition, choosing a value includes it, and values
-// chosen in one field are alternatives. Choosing every value is the same as choosing none. A field's values
-// can instead be excluded (`not_<key>`): the field then holds for entries with none of them. The panel edits
-// whichever list the field uses; a field holding only excluded values is in exclude mode.
+// chosen in one field are alternatives. A field's values can instead be excluded (`not_<key>`): the field then
+// holds for entries with none of them. The panel edits whichever list the field uses; a field holding only
+// excluded values is in exclude mode. A condition stays as chosen, every value included, until the reader removes it.
 const NOT='not_';
 const baseKey=key=>key.replace(/^not_/,'');
 const excluding=g=>params.has(NOT+g.key)&&!params.has(g.key);
 const modeKey=g=>excluding(g)?NOT+g.key:g.key;
 function selected(g){return new Set(params.getAll(modeKey(g)).filter(v=>v!==NONE));}
 function setSelection(g,values,key=modeKey(g)){
-  params.delete(key);
-  if(!values.length||key===g.key&&g.options.every(o=>values.includes(o.value)))return;
-  values.forEach(v=>params.append(key,v));
+  params.delete(key);values.forEach(v=>params.append(key,v));
 }
 function clearField(key){params.delete(key);params.delete(NOT+key);}
 // Flipping a field moves its values between included and excluded, merging with any already on the other side.
@@ -244,7 +253,10 @@ function flipField(key){
   changed();
 }
 function changed(replace=false){
-  clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});sync();$('.table-wrap').scrollTop=0;load();refreshFacets();
+  clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});
+  // A table the server could not read is read again once the reader edits the query.
+  if(tableRejected){changeTable();return;}
+  sync();$('.table-wrap').scrollTop=0;load();refreshFacets();
 }
 // Each option counts what choosing it would match under every other condition (serve.facets).
 const optionTitle=(o,g)=>`${o.title||o.label} · ${(g&&excluding(g)?ui.excludeCount:ui.optionCount).replace('{count}',fmt(o.count||0))}`;
@@ -263,19 +275,178 @@ function rangeGroup(){
   for(const key of ['cr_min','cr_max'])if(params.has(key)&&!values.includes(params.get(key)))values.push(params.get(key));
   return `<fieldset class="facet cr-range"><legend>挑战等级</legend><div class="range-controls">${['cr_min','cr_max'].map((key,i)=>`<label>${i?'最高':'最低'} <select id="${key}" aria-label="${i?'最高':'最低'} CR"><option value="">不限</option>${values.map(v=>`<option value="${v}" ${params.get(key)===v?'selected':''}>${v}</option>`).join('')}</select></label>`).join('<span>—</span>')}<span class="muted">含边界；未提取与冲突值不进入范围结果</span></div></fieldset>`;
 }
-// A chip is the same chip while it names the same field or search, whether it includes or excludes; a kept search
-// is known by its words, since removing one renumbers the rest. A ∧ belongs to the chip after it.
+// The condition bar reads like a line of text. Each card is one condition and keeps the place it was given; the
+// text field is the caret and can sit between any two cards. A field's card is named by its URL key (`type`,
+// `not_f_school`, `cr_min`), a kept search by its list and words (`q:火`, `not_body:专注`), since removing one
+// search renumbers the rest. Including or excluding the same field or words is the same card turned over.
+const TERM_LISTS=['q','not_q','body','not_body'];
+const fieldKey=k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k);
+const isFieldCard=k=>fieldKey(k)||k.startsWith(NOT)&&fieldKey(baseKey(k))&&!['cr_min','cr_max'].includes(baseKey(k));
+const isCardParam=k=>isFieldCard(k)||TERM_LISTS.includes(k);
+function cardParts(id){const i=id.indexOf(':');return i<0?{key:id}:{key:id.slice(0,i),term:id.slice(i+1)};}
+// `caret` counts the cards before the field. `cardsAt` says where the next new cards go: 'caret' when the
+// reader adds them from the bar, otherwise after the others.
+let cardOrder=[],caret=0,cardsAt=null;
+// The cards a query holds in its address's order, as a link or a history entry lists them.
+function naturalCards(){
+  const out=new Set();
+  for(const [k,v] of params){if(isFieldCard(k))out.add(k);else if(TERM_LISTS.includes(k)&&v.trim())out.add(k+':'+v.trim());}
+  return [...out];
+}
+function resetCards(){cardOrder=naturalCards();caret=cardOrder.length;cardsAt=null;}
+// Cards that remain keep their order and the caret keeps its place among them. A card turned over takes the
+// place of the one it replaces; a new one lands at the caret, or after the others. Nothing is resorted or merged.
+const CARET=Symbol('caret');
+function placeCards(){
+  const present=naturalCards(),held=new Set(present),known=new Set(cardOrder);
+  const line=[...cardOrder.slice(0,caret),CARET,...cardOrder.slice(caret)],fresh=[];
+  for(const id of present){
+    if(known.has(id))continue;
+    const i=line.findIndex(x=>x!==CARET&&!held.has(x)&&baseKey(x)===baseKey(id));
+    if(i>=0)line[i]=id;else fresh.push(id);
+  }
+  const kept=line.filter(x=>x===CARET||held.has(x));
+  kept.splice(cardsAt==='caret'||kept.at(-1)===CARET?kept.indexOf(CARET):kept.length,0,...fresh);
+  cardsAt=null;caret=kept.indexOf(CARET);cardOrder=kept.filter(x=>x!==CARET);
+  committed=cardOrder.filter(id=>id.startsWith('q:')).map(id=>id.slice(2));
+}
+function orderedParams(){
+  const out=new URLSearchParams();
+  for(const id of cardOrder){const {key,term}=cardParts(id);if(term!==undefined)out.append(key,term);else for(const v of params.getAll(key))out.append(key,v);}
+  for(const [k,v] of params)if(!isCardParam(k))out.append(k,v);
+  return out;
+}
+// Counts and the server name a kept search by its list and position in the bar (`q0`, `not_body1`).
+function serverKey(id){const {key,term}=cardParts(id);return term===undefined?key:key+cardOrder.filter(c=>cardParts(c).key===key).indexOf(id);}
+function cardOf(key){const m=/^((?:not_)?(?:q|body))(\d+)$/.exec(key);return m?cardOrder.filter(c=>cardParts(c).key===m[1])[Number(m[2])]||null:key;}
+const termsOf=list=>list==='q'?committed:termList(list);
+const AND=extra=>`<span class="and${extra}" role="img" aria-label="${esc(ui.and)}">∧</span>`;
+function cardHTML(id,note){
+  const {key}=cardParts(id),server=serverKey(id),text=conditionText(id),negated=key.startsWith(NOT);
+  const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
+  const described=note?` aria-describedby="${note.id}"`:'';
+  return `<span class="condition${negated?' negated':''}"${note?` data-tone="${note.tone}"`:''} data-card="${esc(id)}">`+
+    (flippable?`<button type="button" class="condition-text" data-flip="${esc(server)}" aria-label="${esc(text)}，${esc(flip)}" title="${esc(flip)}"${described}>${esc(text)}</button>`:`<span class="condition-text"${described}>${esc(text)}</span>`)+
+    `<button type="button" class="condition-remove" data-remove="${esc(server)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">×</button></span>`;
+}
+// A card and its ∧ stay the same while they name the same condition, whether it includes or excludes. The ∧
+// beside the caret belongs to no card: it may be hidden, and a hidden box has no place to slide from or to.
 function conditionKey(el){
-  if(el.matches('.and'))return el.nextElementSibling?conditionKey(el.nextElementSibling)+' ∧':null;
-  const key=baseKey(el.querySelector('[data-remove]').dataset.remove);
-  return /^(q|body)\d+$/.test(key)?key.replace(/\d+$/,'')+':'+el.querySelector('.condition-text').textContent:key;
+  if(el.matches('.and'))return !el.matches('.slot-before,.slot-after')&&el.nextElementSibling?.dataset.card?baseKey(el.nextElementSibling.dataset.card)+' ∧':null;
+  return baseKey(el.dataset.card);
+}
+// The cards are placed around the field, never the field among them: moving a focused field would blur it.
+// Beside the caret, a ∧ shows only while words are typed there, so the line always reads card ∧ card.
+let cardsShape='';
+function renderCards({animate=false}={}){
+  const strip=$('#active-filters'),input=$('#q'),notes=problemNotes();
+  const join=ids=>ids.map(id=>cardHTML(id,notes.get(id))).join(AND(''));
+  const before=cardOrder.slice(0,caret),after=cardOrder.slice(caret);
+  const html=[join(before)+(before.length?AND(' slot-before'+(after.length?' joins':'')):''),(after.length?AND(' slot-after'):'')+join(after)];
+  const shape=html.join('\n');
+  if(shape!==cardsShape){
+    cardsShape=shape;
+    const active=strip.contains(document.activeElement)&&document.activeElement.closest('.condition');
+    const keep=active&&{base:baseKey(active.dataset.card),remove:document.activeElement.matches('.condition-remove')};
+    // The field takes its new width inside the change, so cards are measured where they finally stand.
+    const place=()=>{for(const el of [...strip.children])if(el!==input)el.remove();input.insertAdjacentHTML('beforebegin',html[0]);input.insertAdjacentHTML('afterend',html[1]);fitCaret();};
+    animate?annaMotion.rearrange(strip,'.condition,.and',conditionKey,place):place();
+    if(keep)[...strip.querySelectorAll('.condition')].find(c=>baseKey(c.dataset.card)===keep.base)
+      ?.querySelector(keep.remove?'.condition-remove':'button.condition-text')?.focus({preventScroll:true});
+  }else fitCaret();
+}
+// At the end the field takes the rest of the line and shows its hint; between cards it is as wide as its words.
+let measure=null;
+function fitCaret(){
+  const strip=$('#active-filters'),input=$('#q'),inside=caret<cardOrder.length;
+  strip.classList.toggle('drafting',!!input.value);strip.classList.toggle('caret-inside',inside);
+  input.placeholder=inside?'':input.dataset.placeholder;
+  if(inside){
+    measure??=document.createElement('canvas').getContext('2d');
+    const s=getComputedStyle(input);measure.font=`${s.fontStyle} ${s.fontWeight} ${s.fontSize} ${s.fontFamily}`;
+    input.style.width=Math.ceil(measure.measureText(input.value).width)+4+'px';
+  }else input.style.width='';
+  if(document.activeElement===input){
+    const s=strip.getBoundingClientRect(),r=input.getBoundingClientRect();
+    if(r.left<s.left)strip.scrollLeft-=s.left-r.left+16;else if(r.right>s.right)strip.scrollLeft+=r.right-s.right+16;
+  }
+  markStripEdges(strip);
+}
+// Moving the caret off words being typed leaves them where they were typed, kept as a search.
+function moveCaret(to){
+  if(to===caret)return;
+  const from=caret;
+  if($('#q').value.trim()){keepDraft();if(to>from)to+=caret-from;}
+  caret=Math.max(0,Math.min(cardOrder.length,to));renderCards();
+}
+// The gap a point falls in: after every card that ends above it or whose middle lies before it on its line.
+function gapAt(x,y){
+  let gap=0;
+  for(const card of $('#active-filters').querySelectorAll('.condition')){const r=card.getBoundingClientRect();if(r.bottom<=y||r.top<=y&&(r.left+r.right)/2<x)gap++;else break;}
+  return gap;
+}
+// A query stays as the reader wrote it. Where conditions cannot all hold, a chosen type cannot answer one, or
+// the server cannot run the query, a note below the bar says so and offers the edits that would resolve it.
+let rejection=null,shownProblems=[],problemsShape='';
+const rejectionKey=()=>{const query=new URLSearchParams(params);query.delete('entry');query.delete('tab');return query.toString();};
+const crValue=s=>!s?null:s.includes('/')?s.split('/').map(Number).reduce((a,b)=>a/b):Number(s);
+function queryProblems(){
+  const out=[],list=xs=>xs.join(ui.listJoin),types=params.getAll('type').filter(t=>t!==NONE);
+  const rejected=rejection&&rejection.query===rejectionKey()?{tone:'error',cards:[],text:ui.queryRejected.replace('{message}',rejection.message),fixes:[{label:ui.fixClearAll,run:clearAll}]}:null;
+  if(rejected)out.push(rejected);
+  if(metadata){
+    // Conditions that leave out the same chosen types share one note, which offers each removal and one narrowing.
+    const answered=Object.values(metadata.type_conditions||{}).flat(),seen=new Set(),lacks=new Map(),quoted=xs=>list(xs.map(x=>`“${x}”`));
+    for(const id of cardOrder){
+      const condition=id.startsWith('f_')?id.slice(2):id==='cr_min'||id==='cr_max'?'cr':null;
+      if(!condition||seen.has(condition))continue;seen.add(condition);
+      const cards=condition==='cr'?cardOrder.filter(c=>c==='cr_min'||c==='cr_max'):[id],key=condition==='cr'?'cr':id,text=conditionText(key);
+      const remove={label:ui.fixRemove.replace('{condition}',text),run:()=>dropCondition(key)};
+      if(!answered.includes(condition)){out.push({tone:'warning',cards,text:ui.unknownField.replace('{condition}',text),fixes:[remove]});continue;}
+      const lacking=types.filter(t=>!(metadata.type_conditions[t]||[]).includes(condition));if(!lacking.length)continue;
+      const group=lacks.get(lacking.join())||{lacking,answering:types.filter(t=>!lacking.includes(t)),cards:[],fields:[],texts:[],fixes:[]};
+      group.cards.push(...cards);group.fields.push(condition==='cr'?'CR':fieldLabel(id));group.texts.push(text);group.fixes.push(remove);lacks.set(lacking.join(),group);
+    }
+    for(const {lacking,answering,cards,fields,texts,fixes} of lacks.values()){
+      const narrow=answering.length?{label:ui.fixKeepTypes.replace('{types}',list(answering.map(typeName))),run:()=>chooseTypes(answering)}
+        :{label:ui.fixRemove.replace('{condition}',conditionText('type')),run:()=>dropCard('type')};
+      out.push({tone:answering.length?'warning':'error',cards,fixes:[...fixes,narrow],
+        text:(answering.length?ui.lacksSome:ui.lacksAll).replace('{types}',list(lacking.map(typeName))).replace('{fields}',quoted(fields)).replace('{conditions}',quoted(texts))});
+    }
+  }
+  const min=params.get('cr_min'),max=params.get('cr_max');
+  // A bound that is not a number explains why the server cannot run the query; its note replaces the server's.
+  for(const key of ['cr_min','cr_max']){const value=params.get(key);if(value&&!Number.isFinite(crValue(value)))
+    out.push({tone:'error',cards:[key],explains:true,text:ui.crUnreadable.replace('{value}',value),fixes:[{label:ui.fixRemove.replace('{condition}',conditionText(key)),run:()=>dropCard(key)}]});}
+  if(out.some(p=>p.explains))return out.filter(p=>p!==rejected);
+  if(crValue(min)>crValue(max)&&max)out.push({tone:'error',cards:['cr_min','cr_max'],text:ui.crInverted.replace('{min}',min).replace('{max}',max),
+    fixes:[{label:ui.fixSwapCr.replace('{min}',max).replace('{max}',min),run:()=>{params.set('cr_min',max);params.set('cr_max',min);changed();}}]});
+  return out;
+}
+function renderProblems(){
+  shownProblems=queryProblems();
+  const shape=shownProblems.map((p,i)=>`<div class="query-problem" data-tone="${p.tone}" id="query-problem-${i}"><span class="problem-mark" aria-hidden="true">!</span>`+
+    `<p>${esc(p.text)}</p><div class="problem-fixes">${p.fixes.map((f,j)=>`<button type="button" data-fix="${i}:${j}">${esc(f.label)}</button>`).join('')}</div></div>`).join('');
+  if(shape===problemsShape)return;problemsShape=shape;
+  const box=$('#query-problems');box.hidden=!shownProblems.length;box.innerHTML=shape;
+}
+function problemNotes(){
+  const notes=new Map();
+  shownProblems.forEach((p,i)=>p.cards.forEach(id=>{if(!notes.has(id))notes.set(id,{id:'query-problem-'+i,tone:p.tone});}));
+  return notes;
+}
+// Cards and notes render even before a table is known, so a query the server rejects can still be edited.
+function renderQuery(){
+  placeCards();renderProblems();renderCards({animate:true});
+  $('#filter-count').textContent=cardOrder.length||'';
+  if(metadata){$('#title').textContent=typeTitle();updatePageChrome();}
 }
 function sync(){
+  renderQuery();
   if(!schema)return;
   renderSortOptions();
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
-  $('#title').textContent=typeTitle();updatePageChrome();
   for(const key of ['cr_min','cr_max'])if($('#'+key))$('#'+key).value=params.get(key)||'';
   for(const g of groups){
     const el=document.querySelector(`[data-group="${g.key}"]`);if(!el)continue;
@@ -285,29 +456,8 @@ function sync(){
     el.querySelector('[data-action=exclude]')?.setAttribute('aria-pressed',String(excluding(g)));
     for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
   }
-  // Every condition is its own chip, and chips always combine with ∧: the types lead, each kept name and body
-  // search follows, then the other fields. Clicking a chip's text flips it between “is” and “is not”; ×
-  // removes it. The text still being typed is not a chip yet.
-  const fieldKey=k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k);
-  const active=[...new Set(params.keys())].filter(k=>fieldKey(k)||k.startsWith(NOT)&&fieldKey(baseKey(k))&&!['cr_min','cr_max'].includes(baseKey(k)))
-    .sort((a,b)=>(baseKey(b)==='type')-(baseKey(a)==='type')||(b==='type')-(a==='type'));
-  const terms=committedTerms(),termKeys=[...terms.map((_,i)=>'q'+i),...termList('not_q').map((_,i)=>'not_q'+i),...bodyTerms().map((_,i)=>'body'+i),...termList('not_body').map((_,i)=>'not_body'+i)];
-  $('#filter-count').textContent=active.length+termKeys.length||'';
   const extraCount=groups.filter(g=>(params.has(g.key)||params.has(NOT+g.key))&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
-  const chip=key=>{
-    const text=key==='cr_min'||key==='cr_max'?`${fieldNames[key]}：${params.get(key)}`:conditionText(key),negated=key.startsWith(NOT);
-    const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
-    return `<span class="condition ${negated?'negated':''}">${flippable?`<button type="button" class="condition-text" data-flip="${esc(key)}" aria-label="${esc(text)}，${esc(flip)}" title="${esc(flip)}">${esc(text)}</button>`:`<span class="condition-text">${esc(text)}</span>`}`+
-      `<button type="button" class="condition-remove" data-remove="${esc(key)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">×</button></span>`;
-  };
-  const lead=active.filter(k=>baseKey(k)==='type').length;
-  const chips=[...active.slice(0,lead),...termKeys,...active.slice(lead)].map(chip);
-  // A chip that stays slides to its new place as others come and go; a new one appears where it lands.
-  annaMotion.rearrange($('#active-filters'),'.condition,.and',conditionKey,()=>{
-    $('#active-filters').innerHTML=chips.join(`<span class="and" role="img" aria-label="${esc(ui.and)}">∧</span>`);
-  });
-  markStripEdges($('#active-filters'));
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
 // header, rows and paging together; a failure clears them instead of leaving stale counts behind.
@@ -367,19 +517,28 @@ async function refreshFacets(){
   try{const data=await api(facetsURL());if(gen===facetGeneration)applyFacets(data);}catch{/* The results report query errors; counts keep their last values. */}
 }
 // New types change the table itself: its columns, fields and sorts arrive before the rows are read.
+// Conditions the new table cannot answer stay on the bar, with a note saying which types they leave out.
+let tableRejected=false;
 async function changeTable(){
-  const gen=++panelGeneration,fgen=++facetGeneration;request?.abort();generation++;ready=false;
-  awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;
+  const gen=++panelGeneration,fgen=++facetGeneration;request?.abort();generation++;ready=false;tableRejected=false;
+  awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;renderQuery();
   try{
     const data=await api(facetsURL());if(gen!==panelGeneration||fgen!==facetGeneration)return;
-    // A link may carry conditions the table cannot answer; they leave with the old types.
-    const answerable=new Set([...data.schema.facets,...data.schema.flags]);
-    const stale=[...params.keys()].filter(key=>baseKey(key).startsWith('f_')&&!answerable.has(baseKey(key).slice(2))||['cr_min','cr_max'].includes(key)&&!data.schema.range);
-    if(stale.length){stale.forEach(k=>params.delete(k));return changeTable();}
     applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     historyUpdate(true);sync();ready=true;await load();
-  }catch(e){if(gen===panelGeneration){failResults(e.message,'读取失败');$('#columns').replaceChildren();$('#results').setAttribute('aria-busy','false');}}
+  }catch(e){
+    if(gen!==panelGeneration)return;
+    if(e.status===400){tableRejected=true;rejectQuery(e.message);$('#columns').replaceChildren();}
+    else{failResults(e.message,'读取失败');$('#columns').replaceChildren();}
+    $('#results').setAttribute('aria-busy','false');
+  }
+}
+// A query the server cannot run shows why below the bar; the results wait, empty, for the fix.
+function rejectQuery(message){
+  rejection={query:rejectionKey(),message};
+  currentData=null;$('#error').hidden=true;$('#result-count').textContent=ui.queryHeld;$('#result-count').title='';
+  $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';$('#export').disabled=true;renderLoadState();renderQuery();
 }
 function renderColumns(){
   $('#columns').innerHTML='<tr>'+schema.columns.map(k=>{
@@ -513,7 +672,7 @@ async function load(){
     $('#empty').hidden=data.total!==0;$('#export').disabled=!data.total;
     $('#empty-library').hidden=!(data.total===0&&metadata.library?.narrowed);
     if(focusSections){focusSections=false;($('#results .entry-name')||$('.table-wrap')).focus();}
-  }catch(e){if(e.name==='AbortError'||gen!==generation)return;failResults(e.message,'查询失败');renderColumns();}
+  }catch(e){if(e.name==='AbortError'||gen!==generation)return;if(e.status===400)rejectQuery(e.message);else failResults(e.message,'查询失败');renderColumns();}
   finally{if(gen===generation){$('#results').setAttribute('aria-busy','false');renderLoadState();updateReaderNavigation();saveUiState();}}
 }
 function sortBy(key){if(effectiveSort()===key)setParam('dir',params.get('dir')==='desc'?'asc':'desc');else{params.set('sort',key);params.delete('dir');}changed();}
@@ -525,8 +684,8 @@ $('#filter-panel').addEventListener('change',e=>{
     if(g.key==='type'&&!excluding(g)){chooseTypes([...set]);return;}
     setSelection(g,[...set]);changed();
   }else if(['cr_min','cr_max'].includes(el.id)){
-    setParam(el.id,el.value);const val=s=>s.includes('/')?s.split('/').map(Number).reduce((a,b)=>a/b):Number(s);
-    if(params.has('cr_min')&&params.has('cr_max')&&val(params.get('cr_min'))>val(params.get('cr_max'))){const other=el.id==='cr_min'?'cr_max':'cr_min';params.set(other,el.value);$('#'+other).value=el.value;}changed();
+    // An inverted range stays as chosen; the note below the bar offers to swap its ends.
+    setParam(el.id,el.value);changed();
   }
 });
 $('#filter-panel').addEventListener('click',e=>{
@@ -548,15 +707,13 @@ const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boo
 const termList=key=>[...new Set(params.getAll(key).map(t=>t.trim()).filter(Boolean))];
 const bodyTerms=()=>termList('body');
 function setList(key,terms){params.delete(key);[...new Set(terms)].forEach(t=>params.append(key,t));}
-// A search chip's key names its list and position: q0, not_q1, body0, not_body2.
-function termAt(key){const [,list,i]=key.match(/^((?:not_)?(?:q|body))(\d+)$/);return {list,index:Number(i),terms:list==='q'?committed:termList(list)};}
 function writeList(list,terms){if(list==='q'){committed=terms;writeTerms();}else setList(list,terms);}
-function flipTerm(key){
-  const {list,index,terms}=termAt(key),term=terms[index],to=list.startsWith(NOT)?baseKey(list):NOT+list;
-  writeList(list,terms.filter((_,i)=>i!==index));writeList(to,[...(to==='q'?committed:termList(to)),term]);changed();
+// Turning a search card over moves its words to the other list; the card keeps its place in the bar.
+function flipTerm(id){
+  const {key:list,term}=cardParts(id),to=list.startsWith(NOT)?baseKey(list):NOT+list;
+  writeList(list,termsOf(list).filter(t=>t!==term));writeList(to,[...termsOf(to),term]);changed();
 }
 let committed=[],draft='';
-const committedTerms=()=>committed;
 const searching=()=>committed.length>0||!!draft;
 function writeTerms(){params.delete('q');[...new Set(committed)].forEach(t=>params.append('q',t));setParam('typing',draft);}
 function readTerms(){committed=searchTerms();draft=(params.get('typing')||'').trim();$('#q').value=draft;}
@@ -602,7 +759,7 @@ function renderSuggestions(){
   const text=$('#q').value.trim();suggestions=suggestionList(text);activeSuggestion=0;
   const list=$('#suggestions');
   if(!suggestions.length){closeSuggestions();return;}
-  list.innerHTML=suggestions.map((s,i)=>`<li role="option" id="suggestion-${i}" data-index="${i}" aria-selected="${i===activeSuggestion}"><span class="field">${esc(s.field)}</span><span class="value">${esc(s.label)}</span>${s.kind==='name'?'<kbd>Enter</kbd>':s.count!==null?`<span class="count">${fmt(s.count)}</span>`:''}</li>`).join('');
+  list.innerHTML=suggestions.map((s,i)=>`<li role="option" id="suggestion-${i}" data-index="${i}" aria-selected="${i===activeSuggestion}"><span class="field">${esc(s.field)}</span><span class="value">${esc(s.label)}</span>${s.kind==='name'?'<kbd>Enter</kbd>':s.count!=null?`<span class="count">${fmt(s.count)}</span>`:''}</li>`).join('');
   list.hidden=false;$('#q').setAttribute('aria-expanded','true');$('#q').setAttribute('aria-activedescendant','suggestion-0');
 }
 function closeSuggestions(){$('#suggestions').hidden=true;$('#q').setAttribute('aria-expanded','false');$('#q').removeAttribute('aria-activedescendant');}
@@ -613,54 +770,88 @@ function moveSuggestion(step){
   $('#q').setAttribute('aria-activedescendant','suggestion-'+activeSuggestion);
   $('#suggestion-'+activeSuggestion).scrollIntoView({block:'nearest'});
 }
+// Keep the draft as a search card at the caret; the field empties for the next search.
+function keepDraft(){
+  clearTimeout(timer);const text=$('#q').value.trim();clearDraft();if(!text)return;
+  cardsAt='caret';committed=[...new Set([...committed,text])];writeTerms();changed();
+}
+// A suggestion always includes its value; if the value was excluded, it leaves the excluded list.
+function includeValue(key,value){
+  const excluded=params.getAll(NOT+key).filter(x=>x!==value),included=[...params.getAll(key).filter(x=>x!==NONE&&x!==value),value];
+  params.delete(NOT+key);excluded.forEach(x=>params.append(NOT+key,x));params.delete(key);included.forEach(x=>params.append(key,x));
+}
+// What a suggestion adds lands at the caret. A value joins its field's card wherever that card is.
 function applySuggestion(item){
   clearTimeout(timer);
-  if(!item||item.kind==='name'){
-    // Keep the draft as a search chip; the field empties for the next search.
-    const text=$('#q').value.trim();clearDraft();if(!text)return;
-    committed=[...new Set([...committed,text])];writeTerms();changed();return;
-  }
-  if(item.kind==='body'){
-    const text=$('#q').value.trim();clearDraft();writeTerms();
-    if(!bodyTerms().includes(text)){params.append('body',text);}changed();return;
-  }
-  // The typed text found the value; it was not meant as a name search.
-  clearDraft();writeTerms();
-  if(item.kind==='preset'){chooseTypes([item.preset.type],item.preset);return;}
-  // A suggestion always includes its value; if the value was excluded, it leaves the excluded list.
-  const g=item.group,v=item.option.value,values=[...params.getAll(g.key).filter(x=>x!==NONE),v];
-  setSelection(g,params.getAll(NOT+g.key).filter(x=>x!==v),NOT+g.key);
-  if(g.key==='type'){chooseTypes(values);return;}
-  setSelection(g,values,g.key);changed();
+  if(!item||item.kind==='name'){keepDraft();return;}
+  const text=$('#q').value.trim();clearDraft();writeTerms();cardsAt='caret';
+  if(item.kind==='body'){if(!bodyTerms().includes(text))params.append('body',text);changed();return;}
+  // The typed text found the value; it was not meant as a name search. A preset adds its type, then its value.
+  if(item.kind==='preset'){includeValue('type',item.preset.type);placeCards();cardsAt='caret';includeValue('f_'+item.preset.field,item.preset.value);chooseTypes(params.getAll('type'));return;}
+  includeValue(item.group.key,item.option.value);
+  if(item.group.key==='type'){chooseTypes(params.getAll('type'));return;}
+  changed();
 }
+// The field edits the line like text. At the field's start, Backspace removes the card before the caret and ←
+// steps over it; at its end, Delete and → do the same for the card after it. Home and End, once the caret
+// reaches the end of the words, go to the ends of the line. Shift keeps selecting within the words.
 $('#q').addEventListener('keydown',e=>{
   // Safari reports the key that ends a composition after compositionend, with keyCode 229; it is not an Enter.
   if(e.isComposing||composingSearch||e.keyCode===229)return;
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){if(!$('#suggestions').hidden){e.preventDefault();moveSuggestion(e.key==='ArrowDown'?1:-1);}return;}
   if(e.key==='Enter'){e.preventDefault();applySuggestion($('#suggestions').hidden?null:suggestions[activeSuggestion]);return;}
   if(e.key==='Escape'&&!$('#suggestions').hidden){e.preventDefault();e.stopPropagation();closeSuggestions();return;}
-  // An empty field gives Backspace to the conditions: it removes the last chip.
-  if(e.key==='Backspace'&&!$('#q').value){const last=[...$('#active-filters').querySelectorAll('[data-remove]')].at(-1);if(last){e.preventDefault();dropCondition(last.dataset.remove);}}
+  if(e.shiftKey)return;
+  const q=$('#q'),collapsed=q.selectionStart===q.selectionEnd,atStart=collapsed&&q.selectionStart===0,atEnd=collapsed&&q.selectionEnd===q.value.length;
+  const home=e.key==='Home'||e.metaKey&&e.key==='ArrowLeft',end=e.key==='End'||e.metaKey&&e.key==='ArrowRight';
+  let act=null;
+  if(e.key==='Backspace'&&atStart&&caret>0)act=()=>{dropCard(cardOrder[caret-1]);};
+  else if(e.key==='Delete'&&atEnd&&caret<cardOrder.length)act=()=>{dropCard(cardOrder[caret]);};
+  else if(home&&atStart&&caret>0)act=()=>moveCaret(0);
+  else if(end&&atEnd&&caret<cardOrder.length)act=()=>moveCaret(cardOrder.length);
+  else if(e.key==='ArrowLeft'&&!e.metaKey&&atStart&&caret>0)act=()=>moveCaret(caret-1);
+  else if(e.key==='ArrowRight'&&!e.metaKey&&atEnd&&caret<cardOrder.length)act=()=>moveCaret(caret+1);
+  if(act){e.preventDefault();act();}
 });
+// A press between cards, or on the bar around them, puts the caret there.
+$('.condition-bar').addEventListener('mousedown',e=>{
+  if(e.button||composingSearch||e.target.closest('button,#suggestions')||e.target===$('#q'))return;
+  e.preventDefault();if($('#active-filters').contains(e.target))moveCaret(gapAt(e.clientX,e.clientY));$('#q').focus();
+});
+$('#q').addEventListener('input',fitCaret);
+$('#q').addEventListener('focus',fitCaret);
 $('#suggestions').addEventListener('pointerdown',e=>{const li=e.target.closest('[data-index]');if(!li)return;e.preventDefault();applySuggestion(suggestions[Number(li.dataset.index)]);});
 $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#filter-panel').hidden=hidden;$('#toggle-filters').setAttribute('aria-expanded',!hidden);saveUiState();};
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
-$('#reset').onclick=()=>{
-  clearDraft();committed=[];
+function clearAll(){
+  clearDraft();committed=[];rejection=null;
   for(const key of [...params.keys()])if(!['sort','dir'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
-};
-function dropCondition(key){
+}
+$('#reset').onclick=clearAll;
+// Removing a card removes only its condition; whatever is being typed stays in the field.
+function dropCard(id){
+  if(!id)return;
+  const {key,term}=cardParts(id);
+  if(term!==undefined){writeList(key,termsOf(key).filter(t=>t!==term));changed();return;}
+  params.delete(key);
   if(key==='type'){chooseTypes([]);return;}
-  // A chip's key indexes the kept searches; whatever is being typed stays in the field.
-  if(/^(not_)?(q|body)\d+$/.test(key)){const {list,index,terms}=termAt(key);writeList(list,terms.filter((_,i)=>i!==index));changed();return;}
-  if(key==='cr'){params.delete('cr_min');params.delete('cr_max');}else params.delete(key);
   changed();
 }
+// Counts name a condition the way the server does: `q0`, `f_school`, or `cr` for both ends of the range.
+function dropCondition(key){
+  if(key==='cr'){params.delete('cr_min');params.delete('cr_max');changed();return;}
+  dropCard(cardOf(key));
+}
+// × removes its card and leaves the caret where the card was, unless words typed elsewhere hold the caret.
 $('#active-filters').addEventListener('click',e=>{
-  const remove=e.target.closest('[data-remove]');if(remove){dropCondition(remove.dataset.remove);return;}
+  const remove=e.target.closest('[data-remove]');
+  if(remove){const id=cardOf(remove.dataset.remove),at=cardOrder.indexOf(id);if(at>=0&&!$('#q').value.trim())caret=at;dropCard(id);$('#q').focus({preventScroll:true});return;}
   const flip=e.target.closest('[data-flip]');if(!flip)return;
-  const key=flip.dataset.flip;/^(not_)?(q|body)\d+$/.test(key)?flipTerm(key):flipField(key);
+  const id=cardOf(flip.dataset.flip);cardParts(id).term!==undefined?flipTerm(id):flipField(id);
+});
+$('#query-problems').addEventListener('click',e=>{
+  const b=e.target.closest('[data-fix]');if(!b)return;const [i,j]=b.dataset.fix.split(':').map(Number);shownProblems[i]?.fixes[j]?.run();
 });
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
@@ -725,7 +916,7 @@ let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
   const gen=++navigationGeneration,state=e.state?.anna,oldTypes=chosenTypes().join();
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
-  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;clearDraft();readTerms();
+  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;clearDraft();readTerms();resetCards();rejection=null;
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
   if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
@@ -789,17 +980,12 @@ function typeTitle(){
   const preset=activePreset();if(preset)return preset.name;
   return types.length<=2?types.map(typeName).join('、'):ui.moreTypes.replace('{first}',typeName(types[0])).replace('{count}',types.length);
 }
-// Changing the types keeps a type-specific condition only when every chosen type can answer it: adding 法术 to
-// 魔法武器 lists the spells too instead of filtering them all out by item category.
-function chooseTypes(types,preset=null){
+// Changing the types changes the table, never the other conditions. One the chosen types cannot all answer
+// stays on the bar: adding 法术 to 魔法武器 keeps its item-category condition, and the note below the bar says
+// the spells are left out and offers to remove it.
+function chooseTypes(types){
   types=[...new Set(types)].sort((a,b)=>typeRank(a)-typeRank(b));
   params.delete('type');types.forEach(t=>params.append('type',t));
-  const shared=types.length?types.map(t=>new Set(metadata.type_conditions[t])).reduce((a,b)=>new Set([...a].filter(x=>b.has(x)))):new Set();
-  for(const key of [...params.keys()]){
-    const base=baseKey(key),condition=base.startsWith('f_')?base.slice(2):['cr_min','cr_max'].includes(key)?'cr':null;
-    if(condition&&(preset||!shared.has(condition)))params.delete(key);
-  }
-  if(preset)params.set('f_'+preset.field,preset.value);
   params.delete('entry');historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 }
 // An empty name search can still have matches among the untyped sections. The server counts them
@@ -815,15 +1001,23 @@ function renderElsewhere(){
   const drops=Object.entries(facetData?.without||{}).filter(([,n])=>n).map(([key,n])=>({key,n,text:conditionText(key)})).filter(d=>d.text);
   $('#empty-elsewhere').innerHTML=drops.map(d=>`<button type="button" data-drop="${esc(d.key)}">${esc(ui.dropCondition.replace('{condition}',d.text))} <span class="muted">→ ${fmt(d.n)}</span></button>`).join('');
 }
+// A field the current table lacks still reads by its own name and values, so a card it left out stays legible.
+const fieldLabel=base=>groups.find(g=>g.key===base)?.label||(base==='type'?'类型':fieldNames[base.replace(/^f_/,'')])||base;
+function valueLabel(base,v){
+  const option=groups.find(g=>g.key===base)?.options.find(o=>o.value===v);if(option)return option.label;
+  return base==='package'?packageName(v):base==='source'?sourceName(v):base==='type'?typeName(v):base==='ruleset'?rulesetShort(v):base.startsWith('f_')?tokenText(base.slice(2),v):v;
+}
+// Reads a card (`q:火`, `f_school`) or a condition as counts name it (`q0`, `cr`, `typing`).
 function conditionText(key){
-  if(key==='cr')return `${fieldNames.cr_min.replace('最低 ','')}：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
+  if(key==='cr')return `CR：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
   if(key==='conflict')return fieldNames.conflict;
   if(key==='typing')return `${ui.nameField}：${draft}`;
-  const negated=key.startsWith(NOT);
-  if(/^(not_)?(q|body)\d+$/.test(key)){const {list,index,terms}=termAt(key);return `${baseKey(list)==='q'?ui.nameField:ui.bodyField}${negated?ui.lacks:''}：${terms[index]}`;}
-  const base=baseKey(key),g=groups.find(g=>g.key===base);
-  const labels=params.getAll(key).map(v=>g?.options.find(o=>o.value===v)?.label||(base==='package'?packageName(v):base==='source'?sourceName(v):v));
-  return labels.length?`${g?.label||fieldNames[base]||key}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
+  key=cardOf(key);if(!key)return '';
+  const {key:list,term}=cardParts(key),negated=list.startsWith(NOT);
+  if(term!==undefined)return `${baseKey(list)==='q'?ui.nameField:ui.bodyField}${negated?ui.lacks:''}：${term}`;
+  if(key==='cr_min'||key==='cr_max')return `${fieldNames[key]}：${params.get(key)}`;
+  const base=baseKey(key),labels=params.getAll(key).map(v=>valueLabel(base,v));
+  return labels.length?`${fieldLabel(base)}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
 }
 $('#elsewhere').addEventListener('click',()=>{
   $('#filter-panel').hidden=false;$('#toggle-filters').setAttribute('aria-expanded','true');
@@ -873,6 +1067,7 @@ async function init(){
     // Category views became type filters; an old view link opens on all entries with its other conditions.
     readTerms();
     if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
+    resetCards();
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);

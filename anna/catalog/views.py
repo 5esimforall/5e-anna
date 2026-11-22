@@ -234,7 +234,6 @@ def facet_conditions(params):
             value=number(params[name][0])
             if value is None:raise ValueError('CR 必须是非负数字或分数')
             bounds[name]=value
-    if bounds.get('cr_min',0)>bounds.get('cr_max',math.inf):raise ValueError('最低 CR 不能大于最高 CR')
     if bounds:
         sql=' AND '.join("browse_rank(e.fields,'cr')"+('>=?' if name=='cr_min' else '<=?') for name in bounds)
         out.append(('cr',sql,list(bounds.values())))

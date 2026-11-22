@@ -600,8 +600,6 @@ class Our5etoolsCatalog:
         cr_max_raw = _first(params, 'cr_max').strip()
         cr_min = _parse_cr(cr_min_raw) if cr_min_raw else None
         cr_max = _parse_cr(cr_max_raw) if cr_max_raw else None
-        if cr_min is not None and cr_max is not None and cr_min > cr_max:
-            raise ValueError('CR 下限不能大于上限')
         if cr_min is not None:
             out.append(('cr_min', 'e.cr_num IS NOT NULL AND e.cr_num >= ?', [cr_min]))
         if cr_max is not None:
@@ -1108,37 +1106,14 @@ class Our5etoolsCatalog:
                             out[fk][fv] += int(cnt)
                 return out
 
-            # 3. Type counts (reuse matched_rows when type & type-bound filters are inactive!)
-            type_bound_indices = [
-                (i, f[2:] if f.startswith('f_') else 'cr')
-                for i, f in enumerate(fields_of)
-                if f.startswith('f_') or f in {'cr_min', 'cr_max'}
-            ]
-            non_type_non_bound = [
-                c for c, f in zip(conds, fields_of)
-                if f != 'type' and not (f.startswith('f_') or f in {'cr_min', 'cr_max'})
-            ]
+            # 3. Type counts: what choosing each type matches with every other condition kept as written.
             type_counts: Counter[str] = Counter()
-            if 'type' not in active_fields and not type_bound_indices:
+            if 'type' not in active_fields:
                 type_counts = Counter(r[4] for r in matched_rows)
-            elif not type_bound_indices:
-                w_t, v_t = self._where_from(non_type_non_bound)
+            else:
+                w_t, v_t = _conds_without_field('type')
                 for r in db.execute('SELECT e.type, count(*) FROM entries e' + w_t + ' GROUP BY e.type', v_t):
                     type_counts[r[0]] = int(r[1])
-            else:
-                answers = {t: set(otypes.type_conditions(t)) for t in self._held_types}
-                by_subset: dict[tuple[int, ...], list[str]] = defaultdict(list)
-                for t in self._held_types:
-                    applicable = tuple(i for i, fname in type_bound_indices if fname in answers[t])
-                    by_subset[applicable].append(t)
-                for applicable, t_list in by_subset.items():
-                    ph = ','.join('?' for _ in t_list)
-                    sub = [('type_bucket', f'e.type IN ({ph})', t_list), *non_type_non_bound]
-                    for idx in applicable:
-                        sub.append(conds[idx])
-                    w_sub, v_sub = self._where_from(sub)
-                    for r in db.execute('SELECT e.type, count(*) FROM entries e' + w_sub + ' GROUP BY e.type', v_sub):
-                        type_counts[r[0]] = int(r[1])
 
             # 4. `without`: additional results gained when removing one condition
             without: dict[str, int] = {}
@@ -1147,7 +1122,7 @@ class Our5etoolsCatalog:
                 if ckey == SCOPE_KEY:
                     continue
                 f_i = fields_of[i]
-                if f_i == 'type' and field_counts_once['type'] == 1 and not type_bound_indices:
+                if f_i == 'type' and field_counts_once['type'] == 1:
                     diff = sum(type_counts.values()) - total
                     if diff > 0:
                         without[ckey] = diff

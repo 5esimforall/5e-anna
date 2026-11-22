@@ -123,7 +123,9 @@ class BrowseCorpusTests(unittest.TestCase):
         rows=query(self.db,{'type':['creature'],'cr_min':['1/8'],'cr_max':['1/2'],'sort':['cr']},export=True)['rows']
         ranks=[browse.sort_value(json.dumps(e['fields']),'cr') for e in rows]
         self.assertTrue(ranks);self.assertEqual(ranks,sorted(ranks));self.assertTrue(all(.125<=x<=.5 for x in ranks))
-        for p in [{'cr_min':['2'],'cr_max':['1']},{'cr_min':['nan']},{'cr_max':['1/0']},{'dir':['DROP']},{'limit':['-1']}]:
+        # An inverted range is a query no entry meets, not a malformed one: the page points it out.
+        self.assertEqual(query(self.db,{'type':['creature'],'cr_min':['2'],'cr_max':['1']})['total'],0)
+        for p in [{'cr_min':['nan']},{'cr_max':['1/0']},{'dir':['DROP']},{'limit':['-1']}]:
             with self.assertRaises(ValueError):query(self.db,p)
     def test_special_material_false_requires_material(self):
         rows=query(self.db,{'type':['spell'],'f_special_material':['false']})['rows']

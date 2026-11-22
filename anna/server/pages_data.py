@@ -13,9 +13,10 @@ from urllib.parse import urlsplit
 
 from anna.paths import PROJECT
 from anna.presentation.catalog import TYPES
-from anna.presentation.collections import DEFAULT
-from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS
+from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
+from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS, load_our5etools_collection
 from anna.presentation.tour import load as load_curation
+from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
 
 
 CHUNK_SIZE = 1024 * 1024
@@ -452,6 +453,14 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
             companion = Path(our5etools_data).resolve()
             companion_source = Path(our5etools_source).resolve() if our5etools_source is not None else None
             files.update(_our_bundle(stage, work, companion, companion_source, rewrite_html))
+            collection = load_our5etools_collection(companion, curation_path=public_curation)
+            if collection is None:
+                raise ValueError('Could not read the validated our5etools collection for work alignment')
+            registry = CollectionRegistry(BookCatalog(default_projection, source), (collection,),
+                                          book_snapshot=_read_json(default_reader)['snapshot'])
+            relationships = work / 'publications.json'
+            build_publications(relationships, registry)
+            files[PUBLICATIONS] = relationships
         files[CURATION] = public_curation
         _shard(stage / 'pages-data', files, chunk_size, gzip_shards)
         bytes_written = sum(file.stat().st_size for file in stage.rglob('*') if file.is_file())

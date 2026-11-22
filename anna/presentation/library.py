@@ -253,7 +253,9 @@ _publications: dict[tuple, Publications] = {}
 
 
 def publications_of(registry) -> Publications:
-    """Align the works of every ready collection once per set of snapshots."""
+    """Use published relationships or align the ready collections once per set of local snapshots."""
+    if registry.published_publications is not None:
+        return registry.published_publications
     ready = [registry.get(k) for k in registry.ready()]
     key = tuple((c.key, c.provider.signature()) for c in ready)
     with _cache_lock:

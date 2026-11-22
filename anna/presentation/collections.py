@@ -199,8 +199,10 @@ class CollectionRegistry:
     """The collections the server knows. The default book's tour and reader come with its validated bundle, so a
     query-only server registers the book without them."""
 
-    def __init__(self, book: BookCatalog, additional=(), *, book_tour=None, book_reader=None, book_snapshot=None):
+    def __init__(self, book: BookCatalog, additional=(), *, book_tour=None, book_reader=None, book_snapshot=None,
+                 published_publications=None):
         self.book = book
+        self.published_publications = published_publications
         self._items = {DEFAULT: Collection(DEFAULT, '不全书', 'D&D 5e Incomplete Book', book, snapshot=book_snapshot,
                                            tour=book_tour, reader=book_reader, book_base='/book/')}
         for collection in additional:

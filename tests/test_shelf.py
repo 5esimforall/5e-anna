@@ -1,10 +1,14 @@
 """One shelf over the reader's collections: layout, addresses, pages, search and the other texts of a work."""
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from anna.presentation.collections import Capabilities, Collection, CollectionRegistry, SearchHits
-from anna.presentation.library import parse_scope
+from anna.presentation.library import parse_scope, publications_of
 from anna.presentation.reader import ReaderError
 from anna.presentation.shelf import Shelf, heading_key, qualify, split
+from anna.server.pages_publications import build_publications, load_publications
 
 
 def node(id, parent, label, path=''):
@@ -100,6 +104,24 @@ def registry(book_hits=('all', []), brew_hits=('all', [])):
 def shelf(reg, libraries='5echm,brew', **scope):
     params = {'libraries': [libraries], **{k: [v] if isinstance(v, str) else v for k, v in scope.items()}}
     return Shelf(reg, parse_scope(params, reg))
+
+
+class PublishedRelationshipsTests(unittest.TestCase):
+    def test_round_trip_preserves_evidence_without_reranking_entries(self):
+        reg = registry()
+        snapshots = {'5echm': 's-book', 'brew': 's-brew'}
+        expected = publications_of(reg)
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / 'publications.json'
+            build_publications(path, reg)
+            reg.published_publications = load_publications(path, snapshots)
+            for key in snapshots:
+                with self.subTest(collection=key), self.assertRaisesRegex(ValueError, 'library snapshots'):
+                    load_publications(path, snapshots | {key: 'rebuilt'})
+        with patch.object(Provider, 'ranked', side_effect=AssertionError('Pages should use published relationships')):
+            self.assertEqual(publications_of(reg), expected)
+            self.assertEqual(publications_of(reg).alignment.counterparts('5echm', 'src_phb'), [('brew', 'src:XPHB')])
+            self.assertEqual(publications_of(reg).alignment.link(('5echm', 'src_phb'), ('brew', 'src:XPHB')).rule, 'code')
 
 
 class AddressTests(unittest.TestCase):

@@ -121,17 +121,18 @@ class Shelf:
             for row in rows:
                 children[row.get('parent_id') or ''].append(row['id'])
             trees[c.key] = ({row['id']: row for row in rows}, children)
-        publications = publications_of(self.registry) if len(self.registry.ready()) > 1 else None
         texts: dict[str, list[Text]] = defaultdict(list)
         root_text: dict[tuple[str, str], str] = {}
         # Texts of one publication meet only where several collections share the shelf.
-        for c in self.members if len(self.members) > 1 else ():
+        members = self.members if len(self.members) > 1 else ()
+        publications = publications_of(self.registry) if members else None
+        for c in members:
             nodes = trees[c.key][0]
             for work in works_of(c):
                 root = work.get('reader_root')
                 if not root or root not in nodes or (c.key, root) in root_text:
                     continue
-                publication = publications.of(c.key, work['id']) if publications else c.key + SEPARATOR + work['id']
+                publication = publications.of(c.key, work['id'])
                 if any(t.collection == c.key for t in texts[publication]):
                     continue
                 texts[publication].append(Text(c.key, root, work['id']))

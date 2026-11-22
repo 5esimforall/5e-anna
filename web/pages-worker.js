@@ -1,7 +1,5 @@
-/* Classic dedicated worker. Initialize with {type: 'init', baseUrl}, then send {id, path}.
+/* Dedicated module worker. Initialize with {type: 'init', baseUrl}, then send {id, path}.
    The adapter receives the logical site path and returns (status, headers, body: bytes). */
-const PYODIDE_URL = 'https://cdn.jsdelivr.net/pyodide/v314.0.8/full/';
-const FFLATE_URL = 'https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js';
 const PROJECT = '/anna-pages';
 const CACHE_BYTES = 128 * 1024 * 1024;
 const CACHE_ENTRIES = 256;
@@ -25,7 +23,7 @@ async function fetchAsset(url) {
     return response;
 }
 
-function chunkReader() {
+function chunkReader(gunzip) {
     const cache = new Map();
     let cachedBytes = 0;
     return (url, length, encoding) => {
@@ -47,7 +45,7 @@ function chunkReader() {
             if (bytes.length < 18 || trailer.getUint32(bytes.length - 4, true) !== length) {
                 throw new Error(`Invalid gzip length for Pages shard ${url}`);
             }
-            bytes = self.fflate.gunzipSync(bytes);
+            bytes = gunzip(bytes);
         }
         if (bytes.length !== length) throw new Error(`Invalid Pages shard ${url} (expected ${length} bytes)`);
         if (length <= CACHE_BYTES) {
@@ -63,14 +61,12 @@ function chunkReader() {
     };
 }
 
-function mountFiles(fs, manifest, dataURL) {
+function mountFiles(fs, manifest, dataURL, gunzip) {
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
         throw new Error('Invalid Pages data manifest');
     }
-    const files = Object.entries(manifest);
-    if (files.some(([, file]) => file?.encoding === 'gzip')) importScripts(FFLATE_URL);
-    const readChunk = chunkReader();
-    for (const [path, file] of files) {
+    const readChunk = chunkReader(gunzip);
+    for (const [path, file] of Object.entries(manifest)) {
         const parts = path.split('/');
         const {size, chunkSize, encoding} = file ?? {};
         if (parts.some(part => !part || part === '.' || part === '..' || /[\\\0]/.test(part)) ||
@@ -118,44 +114,20 @@ function mountFiles(fs, manifest, dataURL) {
     }
 }
 
-async function loadDependencies(pyodide, requirements) {
-    const wheelDir = `${PROJECT}/wheels`;
-    const wheels = pyodide.FS.analyzePath(wheelDir).exists
-        ? pyodide.FS.readdir(wheelDir).filter(name => name.endsWith('.whl')).sort()
-        : [];
-    if (!wheels.length) await pyodide.loadPackage(['beautifulsoup4', 'html5lib']);
-    if (!wheels.length && !requirements.length) return;
-
-    await pyodide.loadPackage('micropip');
-    const micropip = pyodide.pyimport('micropip');
-    try {
-        if (wheels.length) {
-            // Ship the full dependency closure together when bundling wheels.
-            const localWheels = wheels.map(name => `emfs:${wheelDir}/${name}`);
-            await micropip.install.callKwargs(localWheels, {deps: false});
-        }
-        if (requirements.length) await micropip.install(requirements);
-    } finally {
-        micropip.destroy();
-    }
-}
-
-async function initialize({baseUrl, runtimeUrl = 'pages-runtime.zip', manifestUrl = 'pages-data/index.json', requirements = []}) {
-    if (typeof baseUrl !== 'string' || !baseUrl || !Array.isArray(requirements) ||
-        requirements.some(requirement => typeof requirement !== 'string')) {
-        throw new Error('Invalid Pages worker initialization');
-    }
+async function initialize({baseUrl}) {
+    if (typeof baseUrl !== 'string' || !baseUrl) throw new Error('Invalid Pages worker initialization');
     const base = projectURL(baseUrl);
-    const manifestURL = new URL(manifestUrl, base);
-    importScripts(new URL('pyodide.js', PYODIDE_URL).href);
-    const [pyodide, archive, manifest] = await Promise.all([
-        self.loadPyodide({indexURL: PYODIDE_URL}),
-        fetchAsset(new URL(runtimeUrl, base)).then(response => response.arrayBuffer()),
+    const engineURL = new URL('pages-engine/', base);
+    const manifestURL = new URL('pages-data/index.json', base);
+    const [pyodide, {gunzipSync}, archive, manifest] = await Promise.all([
+        import(new URL('pyodide.mjs', engineURL).href).then(({loadPyodide}) => loadPyodide({indexURL: engineURL.href})),
+        import(new URL('fflate.mjs', engineURL).href),
+        fetchAsset(new URL('pages-runtime.zip', base)).then(response => response.arrayBuffer()),
         fetchAsset(manifestURL).then(response => response.json()),
     ]);
     pyodide.unpackArchive(archive, 'zip', {extractDir: PROJECT});
-    mountFiles(pyodide.FS, manifest, new URL('./', manifestURL));
-    await loadDependencies(pyodide, requirements);
+    mountFiles(pyodide.FS, manifest, new URL('./', manifestURL), gunzipSync);
+    await pyodide.loadPackage(['beautifulsoup4', 'html5lib']);
     return pyodide.runPython(`
         import sys
         sys.path.insert(0, ${JSON.stringify(PROJECT)})

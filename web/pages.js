@@ -5,7 +5,7 @@ const pending = new Map();
 
 function connect() {
   if (worker) return worker;
-  const current = new Worker(new URL('pages-worker.js', siteBase));
+  const current = new Worker(new URL('pages-worker.js', siteBase), {type:'module'});
   worker = current;
   function fail(message) {
     if (worker !== current) return;

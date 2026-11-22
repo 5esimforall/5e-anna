@@ -10,6 +10,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from anna.paths import PROJECT, WEB
 from anna.presentation.catalog import DB
 from anna.server.linked_book import BOOK
+from anna.server.pages_assets import stage_browser_runtime
 from anna.server.pages_data import export_pages_data
 
 DOCUMENTS = {
@@ -81,6 +82,7 @@ def build(output, source, db, book, base):
     with tempfile.TemporaryDirectory(prefix='.pages-', dir=output.parent) as staging:
         stage = Path(staging) / 'site'
         stage.mkdir()
+        stage_browser_runtime(stage / 'pages-engine')
         for file in sorted((PROJECT / 'web').iterdir()):
             if file.suffix in WEB_SUFFIXES:
                 shutil.copyfile(file, stage / file.name)

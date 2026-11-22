@@ -347,7 +347,7 @@ make up [LAZY_MEDIA=1]
 | `manifest.json`、`summary.json` | 本次快照摘要、分类／来源／包统计与相对上一快照的 `delta` |
 | `inventory.json` | 源镜像全部 2,048 个文件的分类处置（导入位置或排除原因）与分片完整性校验 |
 | `reconciliation.json` | 与 `__api/stats.json` 和 `__api/books.json` 的输入输出对账、`_copy`／变体／子种族／孤立背景文本诊断、`{@...}` 链接解析与未解析样例、未知标签／结构块及本地与远端媒体统计 |
-| `attribution.json` | 全部资料包与来源署名，以及不可随包二次分发资源清单 |
+| `attribution.json` | 全部资料包与来源署名、许可注记及媒体说明 |
 | `audit.md` | `make our5etools-audit` 输出的中文审计报告，校验 19 项数据、自包含媒体包、来源标识与阅读器不变量（全部通过退出 0，任一失败退出 1） |
 
 ### 导览与 Stella 整书阅读
@@ -365,7 +365,11 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 
 ## GitHub Pages 发布
 
-[GitHub Pages 工作流](.github/workflows/pages.yml)发布不全书和 our5etools。工作流从固定的原文镜像提交构建查询库与链接版，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。5etools-cn 镜像用于构建时的来源对照。
+不全书和 our5etools 是当前两套可查阅的资料库，两套均完整发布。Anna 可查询全部条目，导览与 Stella 可查阅全部已构建章节。our5etools 包含官方、合作及社区内容，随站提供已打包的音频、字体、图片、署名和许可注记。远端配图的加载方式见[来源署名与媒体](#来源署名与媒体)。
+
+5etools-cn 镜像用于构建时对照来源，独立中文版 5etools 资料库仍为预留接口。公开站点包含查询、导览与阅读所需产物。构建审计和原文输入镜像用于维护流程。
+
+[GitHub Pages 工作流](.github/workflows/pages.yml)从固定的原文镜像提交构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。
 
 已有 `make build` 产物时，可生成静态预览包。`--base` 对应托管路径，`--output` 指定尚不存在的目录。
 

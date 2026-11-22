@@ -27,7 +27,7 @@ NO_COUNTERPARTS ?= 0
 PAGES ?= 0
 PAGES_BASE ?= /5e-anna/
 PAGES_OUTPUT ?= output/pages
-HOME_CACHE ?= 0
+HOME_CACHE ?= 1
 REUSE ?= 0
 PAGES_ENABLED := $(filter $(TRUE_VALUES),$(PAGES))
 REUSE_ENABLED := $(filter $(TRUE_VALUES),$(REUSE))
@@ -41,8 +41,6 @@ BUILD_ERROR := COLLECTION must be all, 5echm, our5etools, or linked
 else ifeq ($(PAGES_ENABLED),)
 ifneq ($(REUSE_ENABLED),)
 BUILD_ERROR := REUSE requires PAGES=1
-else ifneq ($(HOME_CACHE_FLAG),)
-BUILD_ERROR := HOME_CACHE requires PAGES=1
 endif
 endif
 
@@ -152,6 +150,11 @@ ifneq ($(BUILD_COMPANION),)
 	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
 else ifeq ($(COLLECTION),all)
 	@echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"
+endif
+endif
+ifneq ($(HOME_CACHE_FLAG),)
+ifeq ($(REUSE_ENABLED),)
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.home --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 endif
 endif
 ifneq ($(PAGES_ENABLED),)

@@ -35,7 +35,7 @@
 | `NO_COUNTERPARTS=1` | 跳过 5etools-cn 来源对照 |
 | `PAGES=1` | 同时输出静态站点。用 `PAGES_BASE` 设置托管路径，`PAGES_OUTPUT` 指定尚不存在的输出目录（默认 `output/pages`） |
 | `REUSE=1` | 与 `PAGES=1` 一起使用，打包现有产物并校验快照 |
-| `HOME_CACHE=1` | 与 `PAGES=1` 一起使用，生成默认首页的资料库摘要、元数据、筛选计数和首批 150 行 |
+| `HOME_CACHE=1` | 默认生成首页缓存，本地和 Pages 都使用。缓存包含资料库摘要、元数据、筛选计数和首批 150 行。用 `HOME_CACHE=0` 跳过生成 |
 
 Pages 以不全书为基础。`COLLECTION=all` 同时打包已选用的 our5etools。用 `COLLECTION=our5etools PAGES=1` 只重建 our5etools 并复用已有的不全书产物。
 
@@ -390,7 +390,7 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 make build PAGES=1 REUSE=1 HOME_CACHE=1 PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages
 ```
 
-默认首页直接读取首屏缓存，搜索、分页和打开条目等需要查询的操作再启动工作线程。带查询条件、条目链接或非默认资料库设置的访问按需查询。
+本地和 Pages 的默认首页使用同一套代码读取首屏缓存。缓存与当前资料库不匹配时，本地服务回到实时查询。搜索、分页、条目链接和资料库设置等按各自的请求参数查询。本地通过 HTTP API 查询，Pages 按需启动工作线程。
 
 不全书原文来自 [DND5eChm/DND5e_chm](https://github.com/DND5eChm/DND5e_chm) 与 [5echm_web](https://github.com/DND5eChm/5echm_web)，发布包包含上游许可证。链接版在原文上添加引用和定位层，供 Anna 与 Stella 互通。
 

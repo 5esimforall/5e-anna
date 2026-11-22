@@ -53,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
         static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
         static['/favicon.ico']=('favicon.ico','image/x-icon')
         static['/anna-logo.png']=('anna-logo.png','image/png')
-        static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','motion','menu','topbar','workspace','companions','library','differences')})
+        static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','motion','menu','topbar','workspace','companions','library','differences','home')})
         static['/read']=('reader.html','text/html; charset=utf-8')
         static['/tour']=('tour.html','text/html; charset=utf-8')
         static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
@@ -142,3 +142,31 @@ class Handler(BaseHTTPRequestHandler):
         start=max(0,min(len(text),int(catalog.first(p,'start','0')))); end=max(start,min(len(text),int(catalog.first(p,'end',str(start)))))
         body='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>页面文本 · 5e Anna</title><script src="/kit.js"></script><script src="/theme.js"></script><link rel="icon" href="/favicon.ico"><link rel="stylesheet" href="/style.css"><main class="source-page"><a href="/">← 条目查询</a><h1>页面文本</h1><p>提取后的文本；高亮为所选证据范围。</p><p>'+html.escape(path)+'</p><pre>'+html.escape(text[:start])+'<mark id="evidence">'+html.escape(text[start:end])+'</mark>'+html.escape(text[end:])+'</pre></main></html>'
         self.send(body.encode(),'text/html; charset=utf-8')
+
+
+class CapturedResponse:
+    """Run the regular handlers against a fixed registry without an HTTP socket."""
+
+    def __init__(self, registry):
+        self.registry = registry
+
+    def collection_registry(self):
+        return self.registry
+
+    def collection_conflict(self, key):
+        return None
+
+    def send(self, body, kind='application/json; charset=utf-8', status=200, download=False):
+        if not isinstance(body, bytes):
+            body = json.dumps(body, ensure_ascii=False).encode()
+        headers = {'Content-Type': kind}
+        if download:
+            filename = download if isinstance(download, str) else '5e-anna.csv'
+            headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        self.response = status, headers, body
+
+
+class QueryRequest(CapturedResponse, Handler):
+    def handle_path(self, path):
+        self.serve_query(urlsplit(path))
+        return self.response

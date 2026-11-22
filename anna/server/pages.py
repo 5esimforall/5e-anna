@@ -13,6 +13,7 @@ from anna.presentation.reader import BookReader
 from anna.presentation.tour import Tour
 from anna.server.app import AnnaHandler, READER_ROUTES
 from anna.server.pages_publications import PATH as PUBLICATIONS, load_publications
+from anna.server.query import CapturedResponse
 from anna.source import search
 
 ROOT = Path('/anna-pages')
@@ -102,26 +103,8 @@ class PublishedSite:
         return request.response
 
 
-class WorkerRequest(AnnaHandler):
-    """Reuse the HTTP handler's request parameters and responses without a socket."""
-
-    def __init__(self, registry):
-        self.registry = registry
-
-    def collection_registry(self):
-        return self.registry
-
-    def collection_conflict(self, key):
-        return None  # Each worker reads a single published snapshot.
-
-    def send(self, body, kind='application/json; charset=utf-8', status=200, download=False):
-        if not isinstance(body, bytes):
-            body = json.dumps(body, ensure_ascii=False).encode()
-        headers = {'Content-Type': kind}
-        if download:
-            filename = download if isinstance(download, str) else '5e-anna.csv'
-            headers['Content-Disposition'] = f'attachment; filename="{filename}"'
-        self.response = status, headers, body
+class WorkerRequest(CapturedResponse, AnnaHandler):
+    """Use the same query and reader handlers as the HTTP server."""
 
 
 @lru_cache(maxsize=1)

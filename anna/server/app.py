@@ -13,6 +13,7 @@ import sys
 import threading
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
+from anna.server import home
 from anna.server.linked_book import BOOK, fingerprint
 from anna.paths import FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
 from anna.presentation.reader import SCHEMA, BookReader, ReaderError
@@ -102,6 +103,10 @@ class Bundle:
     @property
     def snapshot(self):
         return self.reader['snapshot']
+
+    def registry(self, additional):
+        return CollectionRegistry(BookCatalog(self.db, self.source), additional, book_tour=self.book_tour,
+                                  book_reader=self.book_reader, book_snapshot=self.snapshot)
 
     def tour(self):
         """The tour over this snapshot, read on first use; a changed curation file is read again."""
@@ -305,9 +310,7 @@ class AnnaHandler(serve.Handler):
 
     def collection_registry(self):
         """Every collection, the book with the reader and tour of the bundle this request reads."""
-        bundle = self.current
-        return CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections,
-                                  book_tour=bundle.book_tour, book_reader=bundle.book_reader, book_snapshot=bundle.snapshot)
+        return self.current.registry(self.additional_collections)
 
     def reads_books(self):
         return True
@@ -518,6 +521,17 @@ class AnnaHandler(serve.Handler):
             self.send({'code': 'invalid_host'}, status=403)
             return
         url = urlsplit(self.path)
+        if url.path == '/' or url.path.startswith('/home.') and url.path.endswith('.json'):
+            cache = home.local_cache(self.collection_registry()) if self.server.bundle_intact(self.current) else None
+            if url.path != '/':
+                if cache and url.path == '/' + cache[0]:
+                    self.send(cache[1])
+                else:
+                    self.send_error(404)
+                return
+            if cache:
+                self.send(home.mark_home((serve.WEB / 'index.html').read_bytes(), cache[0]), 'text/html; charset=utf-8')
+                return
         if url.path.startswith('/book/'):
             self.serve_book(url.path[len('/book'):])
             return

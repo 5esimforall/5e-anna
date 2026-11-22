@@ -9,6 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from anna.paths import PROJECT, WEB
 from anna.presentation.catalog import DB
+from anna.server.home import mark_home
 from anna.server.linked_book import BOOK
 from anna.server.pages_assets import stage_browser_runtime
 from anna.server.pages_data import PAGES_LIMIT, export_pages_data
@@ -92,14 +93,13 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
         (stage / '.nojekyll').touch()
         total = export_pages_data(stage, source=source, db=db, book=book, our5etools_data=our5etools_data,
                                   rewrite_html=lambda raw, path: rebase_book(raw, path, base), home_cache=home_cache)
-        home = next(stage.glob('pages-home.*.json')).name if home_cache else None
+        home = next(stage.glob('home.*.json')).name if home_cache else None
         for source_name, target_name in DOCUMENTS.values():
             target = stage / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
-            attrs = b'<html data-anna-pages'
+            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', b'<html data-anna-pages', 1)
             if home and source_name == 'index.html':
-                attrs += f' data-anna-home="{home}"'.encode('ascii')
-            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', attrs, 1)
+                html = mark_home(html, home)
             target.write_bytes(rebase_links(html, lambda url: mount_url(url, base)))
         with ZipFile(stage / 'pages-runtime.zip', 'w', ZIP_DEFLATED) as runtime:
             for module in sorted((PROJECT / 'anna').rglob('*.py')):

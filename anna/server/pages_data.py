@@ -16,6 +16,7 @@ from anna.presentation.catalog import TYPES
 from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
 from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS, load_our5etools_collection
 from anna.presentation.tour import load as load_curation
+from anna.server import home
 from anna.server.pages import PublishedSite
 from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
 
@@ -425,16 +426,8 @@ def _write_home_cache(stage, work, files):
         mounted = root / name
         mounted.parent.mkdir(parents=True, exist_ok=True)
         mounted.symlink_to(file)
-    site = PublishedSite(root)
-    responses = {}
-    for route in ('/api/library', '/api/meta', '/api/facets', '/api/entries?offset=0&limit=150'):
-        status, _, body = site.handle(route)
-        if status != 200:
-            raise ValueError(f'Could not cache {route} (HTTP {status})')
-        responses[route] = json.loads(body)
-    payload = _json(responses)
-    filename = f'pages-home.{sha256(payload).hexdigest()[:16]}.json'
-    (stage / filename).write_bytes(payload)
+    payload = home.encode_home(PublishedSite(root).handle)
+    (stage / home.filename(payload)).write_bytes(payload)
 
 
 def export_pages_data(output, *, db, book, source, our5etools_data=None, our5etools_source=None,

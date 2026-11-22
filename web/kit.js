@@ -15,11 +15,12 @@ const annaKit = (() => {
       window.addEventListener('storage', event => { if (event.key === key || event.key === null) listener(); });
     }
   };
-  // The exported HTML marks Pages mode, and kit.js lives at the root of either deployment.
-  const pages = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-anna-pages');
-  const base = pages ? new URL('.', document.currentScript.src) : null;
-  // Keep deep links on the worker even if app.js later rewrites their address.
-  const home = pages && !location.search && !location.hash && document.documentElement.getAttribute('data-anna-home');
+  // Both hosts mark cached homepages, and only Pages marks its worker transport.
+  const root = typeof document === 'undefined' ? null : document.documentElement;
+  const pages = root?.hasAttribute('data-anna-pages') ?? false;
+  // Keep deep links on the normal transport even if app.js later rewrites their address.
+  const home = root?.hasAttribute('data-anna-home') && !location.search && !location.hash && root.getAttribute('data-anna-home');
+  const base = pages || home ? new URL('.', document.currentScript.src) : null;
   function href(path) {
     if (!pages || !/^\/(?!\/)/.test(path)) return path;
     const route = path.replace(/^\/(read|tour|source)(?=[?#]|$)/, '/$1/');
@@ -56,11 +57,18 @@ const annaKit = (() => {
       .catch(() => {});
   }
   async function request(path, options) {
+    const signal = options?.signal;
+    signal?.throwIfAborted();
+    if (home && !location.search && !location.hash && !annaLibrary.params().length &&
+        (options?.method === undefined || /^GET$/i.test(options.method))) {
+      const cache = await import(new URL('home.js', base).href).catch(() => null);
+      const response = await cache?.request(path, home, signal);
+      signal?.throwIfAborted();
+      if (response) return response;
+    }
     if (!pages) return fetch(path, options);
-    options?.signal?.throwIfAborted();
-    const homeCache = home && !location.search && !location.hash && !annaLibrary.params().length ? home : null;
     const transport = await import(new URL('pages.js', base).href);
-    return transport.request(path, {...options, homeCache});
+    return transport.request(path, options);
   }
   return {esc, stored, pages, href, rebaseLinks, hydrateImages, request};
 })();

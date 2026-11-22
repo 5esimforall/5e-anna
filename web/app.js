@@ -266,7 +266,7 @@ const orTurned=()=>line.some((t,i)=>t.or&&joined(i));
 const gapOr=()=>joined(caret)?line[caret].or:caretOr;
 function setGapOr(or){
   if(!ends(line[caret-1]))return;
-  if(joined(caret)){if(line[caret].or!==or){line[caret].or=or;commit();}}else{caretOr=or;renderCards();}
+  if(joined(caret)){if(line[caret].or!==or){line[caret].or=or;commit();}}else{caretOr=or;record();renderCards();}
 }
 // New tokens land at the caret and take its join on both sides: a card typed among alternatives joins them.
 function insert(tokens){
@@ -358,6 +358,7 @@ function readLine(search){
 // Every edit of the line ends here. A change of the chosen types reads a new table; any other reads the results.
 let tableTypes=null;
 function commit(replace=false){
+  record();
   if(tableKey()!==tableTypes){clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});changeTable();return;}
   changed(replace);
 }
@@ -367,6 +368,45 @@ function changed(replace=false){
   if(tableRejected){changeTable();return;}
   sync();$('.table-wrap').scrollTop=0;load();refreshFacets();
 }
+// Undo and redo step through the bar's revisions as in a text editor. A revision is what the bar shows: its tokens,
+// the join chosen for the next card, the words being typed and the sections scope. It keeps the caret where the
+// reader left it, but moving the caret alone makes no revision, and words typed in one run at one place make one.
+// Stepping back is an edit like any other: it writes the address, so Back returns to the revision undone.
+const REVISIONS=100;
+let revision=null,undoable=[],redoable=[],typingRun=false;
+const copyTokens=tokens=>tokens.map(t=>({...t,...t.values&&{values:[...t.values]}}));
+const barState=()=>({tokens:copyTokens(line),caret,caretOr,text:$('#q').value,sections:params.get('sections')||''});
+const shown=r=>JSON.stringify([r.tokens.map(({uid,...t})=>t),r.caretOr,r.text.trim(),r.sections]);
+function record({typing=false}={}){
+  const now=barState(),was=revision;revision=now;
+  if(!was)return;
+  if(shown(now)===shown(was)){if(now.caret!==was.caret)typingRun=false;return;}
+  if(!(typing&&typingRun)){undoable.push(was);if(undoable.length>REVISIONS)undoable.shift();}
+  redoable=[];typingRun=typing;
+}
+function travel(from,to){
+  const r=from.pop();if(!r)return;
+  clearTimeout(timer);to.push(barState());
+  line=copyTokens(r.tokens);caret=r.caret;caretOr=r.caretOr;setParam('sections',r.sections);
+  $('#q').value=r.text;draft=r.text.trim();suggestionGroups=null;suggestionGeneration++;closeSuggestions();
+  revision=barState();typingRun=false;commit();
+}
+const undo=()=>travel(undoable,redoable),redo=()=>travel(redoable,undoable);
+// ⌘Z and ⇧⌘Z (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y elsewhere) act on the bar from the field and from the query around
+// it; another text field and the reader keep their own.
+const apple=/Mac|iPhone|iPad/.test(navigator.platform);
+function revisionCommand(e){
+  if(e.altKey||e.isComposing||composingSearch||!(apple?e.metaKey&&!e.ctrlKey:e.ctrlKey&&!e.metaKey))return null;
+  const key=e.key.toLowerCase();
+  return key==='z'?(e.shiftKey?redo:undo):key==='y'&&!apple&&!e.shiftKey?redo:null;
+}
+const writesText=el=>el.isContentEditable||el.matches('textarea,input:not([type=checkbox],[type=radio],[type=button],[type=range])');
+const revisesBar=el=>el===$('#q')||el===document.body||$('#query-main').contains(el)&&!writesText(el);
+// The browser's own Undo (its Edit menu, a touch gesture) reaches the field as an input it has not made.
+$('#q').addEventListener('beforeinput',e=>{
+  const step=e.inputType==='historyUndo'?undo:e.inputType==='historyRedo'?redo:null;
+  if(step){e.preventDefault();step();}
+});
 // The panel edits a field's card: the last card written for the field, included or excluded. A field without one
 // gets a new card at the end of the line.
 const panelCard=key=>cardsOf(t=>baseKey(t.key)===key).at(-1)||null;
@@ -474,7 +514,7 @@ function moveCaret(to){
   if(to===caret)return;
   const from=caret;
   if($('#q').value.trim()){keepDraft();if(to>from)to+=caret-from;}
-  caret=Math.max(0,Math.min(line.length,to));caretOr=false;renderCards();
+  caret=Math.max(0,Math.min(line.length,to));caretOr=false;record();renderCards();
 }
 // The gap a point falls in: after every token that ends above it or whose middle lies before it on its line.
 function gapAt(x,y){
@@ -844,7 +884,7 @@ function takeSyntax(){
 function queueSearch(){
   clearTimeout(timer);if(composingSearch)return;
   if(takeSyntax())return;
-  draft=$('#q').value.trim();renderSuggestions();
+  draft=$('#q').value.trim();record({typing:true});renderSuggestions();
   timer=setTimeout(()=>{typedQuery=true;changed(true);refreshSuggestionCounts();},160);
 }
 // Suggestions count with the probe where the caret stands: each value says what placing it there would match.
@@ -953,7 +993,7 @@ $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#fi
 function clearAll(){
   clearDraft();line=[];caret=0;caretOr=false;rejection=null;
   for(const key of [...params.keys()])if(!['sort','dir'].includes(key))params.delete(key);
-  historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
+  record();historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 }
 $('#reset').onclick=clearAll;
 // × removes its card and leaves the caret where the card was, unless words typed elsewhere hold the caret; whatever
@@ -961,7 +1001,7 @@ $('#reset').onclick=clearAll;
 $('#active-filters').addEventListener('click',e=>{
   const remove=e.target.closest('[data-remove]');
   if(remove){const t=tokenOf(remove.dataset.remove),at=line.indexOf(t);if(at>=0&&!$('#q').value.trim()){caret=at;caretOr=false;}dropToken(t);$('#q').focus({preventScroll:true});return;}
-  if(e.target.closest('[data-remove-scope]')){params.delete('sections');changed();$('#q').focus({preventScroll:true});return;}
+  if(e.target.closest('[data-remove-scope]')){params.delete('sections');commit();$('#q').focus({preventScroll:true});return;}
   const join=e.target.closest('[data-join]');
   if(join){if(join.dataset.join==='caret')setGapOr(!gapOr());else{const t=tokenOf(join.dataset.join);if(t){t.or=!t.or;commit();}}return;}
   const flip=e.target.closest('[data-flip]');if(flip){const t=tokenOf(flip.dataset.flip);if(t)flipCard(t);}
@@ -1032,7 +1072,7 @@ let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
   const gen=++navigationGeneration,state=e.state?.anna,oldTable=tableKey();
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
-  restoreRows=state?.loadedRows||0;clearDraft();readLine(location.search);rejection=null;
+  restoreRows=state?.loadedRows||0;clearDraft();readLine(location.search);record();rejection=null;
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
   if(oldTable===tableKey()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
@@ -1047,6 +1087,13 @@ window.addEventListener('popstate',async e=>{
 });
 document.addEventListener('keydown',e=>{
   if(e.isComposing)return;
+  const step=revisionCommand(e);
+  if(step&&revisesBar(e.target)&&!$('#detail').matches(':modal')){
+    // A token that the step takes away hands the focus back to the field.
+    e.preventDefault();const inBar=$('.condition-bar').contains(e.target);step();
+    if(inBar&&!$('.condition-bar').contains(document.activeElement))$('#q').focus({preventScroll:true});
+    return;
+  }
   if(e.key==='Escape'&&!$('#display-panel').hidden){e.preventDefault();setDisplayMenu(false,{focus:true});return;}
   if(e.key==='Escape'&&$('#detail').open){e.preventDefault();closeEntry();return;}
   // F6 moves to the results, so full-width reading gives them their place back first.
@@ -1138,7 +1185,7 @@ $('#elsewhere').addEventListener('click',()=>{
 });
 $('#empty-elsewhere').addEventListener('click',e=>{
   const b=e.target.closest('[data-drop]');if(!b)return;const key=b.dataset.drop;
-  if(key==='typing'){clearDraft();changed();return;}
+  if(key==='typing'){clearDraft();commit();return;}
   const t=tokenOf(key);if(t)dropToken(t);
 });
 // Row density is a per-browser reading preference like the theme; shared links never carry it.
@@ -1184,6 +1231,7 @@ async function init(){
       const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));
       const end=caret===line.length;line.push(card('f_'+f,[v]));settleJoins();if(end)caret=line.length;params.delete('field');params.delete('value');
     }
+    record();
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);

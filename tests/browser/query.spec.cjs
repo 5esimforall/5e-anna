@@ -698,6 +698,55 @@ test('joins turn between ∧ and ∨, ∨ binds tighter, and parentheses typed i
   const open=await queryMatchesAPI(page);expect(open.rows.some(r=>r.type!=='spell')).toBeTruthy();
 });
 
+test('the bar undoes and redoes its edits like a line of text',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  await visit(page,spells+'&f_school='+encodeURIComponent('塑能'));
+  const q=page.locator('#q'),search=()=>decodeURIComponent(new URL(page.url()).search);
+  const undo=()=>page.keyboard.press('ControlOrMeta+z'),redo=()=>page.keyboard.press('ControlOrMeta+Shift+z');
+  // Words typed in one run are one revision. Undoing Enter returns them to the field, still searching.
+  await q.focus();await q.pressSequentially('火球');await ready(page);await q.press('Enter');await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+  await undo();await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ [火球|]');
+  expect(search()).toBe('?type=spell&f_school=塑能&typing=火球');await expect(q).toBeFocused();
+  await undo();await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 [|]');expect(search()).toBe('?type=spell&f_school=塑能');
+  // Redo walks forward again and stops at the latest revision.
+  await redo();await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ [火球|]');
+  await redo();await redo();await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+  // A turned join and a removed card come back with the caret where the reader left it.
+  await page.locator('#active-filters [data-join]:not([data-join="caret"])').nth(1).click();await ready(page);
+  await q.focus();await q.press('ArrowLeft');await q.press('Backspace');await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ [|] 名称：火球');
+  await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ [|] 名称：火球');
+  await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+  expect(search()).toBe('?type=spell&f_school=塑能&q=火球');
+  // Clearing is one revision too, undone from the button that cleared.
+  await page.locator('#reset').click();await ready(page);await expect.poll(()=>line(page)).toBe('[|]');
+  await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+  await expect(page.locator('#reset')).toBeFocused();
+  // The panel's edits are the bar's: undone from the panel, the checkbox follows the card.
+  await page.locator('#toggle-filters').click();
+  const conjuration=page.getByRole('checkbox',{name:'学派：咒法',exact:true});
+  await conjuration.check({force:true});await ready(page);await expect(page.locator('#active-filters')).toContainText('学派：塑能、咒法');
+  await conjuration.focus();await undo();await ready(page);
+  await expect(conjuration).not.toBeChecked();expect(search()).toBe('?type=spell&f_school=塑能&q=火球');
+  // A new edit takes the place of what was undone.
+  await redo();await ready(page);await expect(conjuration).toBeChecked();
+  await undo();await ready(page);await q.focus();await q.press('Backspace');await ready(page);
+  await redo();await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 [|]');
+  // Back replaces the line, and undo brings back what Back left.
+  await page.goBack();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+  await q.focus();await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 [|]');
+  // The browser's own Undo reaches the field as an input; another text field keeps its own history.
+  await q.evaluate(f=>f.dispatchEvent(new InputEvent('beforeinput',{inputType:'historyUndo',cancelable:true,bubbles:true})));await ready(page);
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+  await page.evaluate(()=>{const other=document.createElement('input');other.id='other-field';document.querySelector('#query-main').append(other);});
+  await page.locator('#other-field').fill('x');await undo();
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
+});
+
 test('any chip or field flips between is and is not; excluded values keep entries without them',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
   await visit(page,spells+'&q='+encodeURIComponent('火')+'&f_school='+encodeURIComponent('塑能'));

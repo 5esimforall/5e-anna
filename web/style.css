@@ -364,9 +364,14 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .active-filters>.join { display: inline-grid; place-items: center; flex-shrink: 0; min-width: 18px; min-height: 24px; padding: 0 2px; border: 0; border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 15px; font-weight: 600; line-height: 1; }
 .active-filters>button.join:hover { background: var(--anna-hover); color: var(--anna-ink); }
 .active-filters>.join[data-op=or] { color: var(--anna-brand); }
-/* Parentheses group tokens as in a line of text; one the line leaves unmatched shows faintly where it closes. */
-.active-filters>.paren { flex-shrink: 0; padding: 0 1px; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 19px; line-height: 1; }
+/* Parentheses group tokens as in a line of text; one the line leaves unmatched shows faintly where it closes. Where
+   ∨ binds tighter than the ∧ beside it, faint parentheses in the colour of ∨ show the group the line reads, though
+   its tokens stand level with their neighbours. The pair around the caret, and the pair of one under the pointer,
+   show at full strength. */
+.active-filters>.paren { flex-shrink: 0; padding: 0 1px; border-radius: var(--anna-radius-sm); color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 19px; line-height: 1; }
 .active-filters>.paren.ghost { opacity: .4; }
+.active-filters>.paren.implied { color: var(--anna-brand); opacity: .5; }
+.active-filters:focus-within>.paren.around-caret, .active-filters>.paren.pointed { opacity: 1; background: var(--anna-hover); }
 /* Untyped sections widen what the results read from; that card is not a condition, so it stands apart. */
 .condition.scope { border-style: dotted; background: transparent; }
 #suggestions { position: absolute; z-index: 9; top: calc(100% + 6px); left: 0; right: 0; max-height: min(60dvh,420px); overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); box-shadow: var(--anna-shadow); }

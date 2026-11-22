@@ -15,7 +15,7 @@ const annaUiLabels = {
     emptyLibrary:'资料库设置收窄了规则版本或作品范围，部分条目未列出。',filterLibraryHint:'资料库、规则版本与作品范围在顶栏「资料库」中设置。',
     libraryState:{narrowed:'已收窄',each:'不去重'},
     collectionErrors:{invalid_collection:'资料库地址无效。',unknown_collection:'未找到这个资料库。',collection_unavailable:'这个资料库尚未接入。'},
-    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',or:'或',joinAnd:'且，改为或',joinOr:'或，改为且',openParen:'左括号',closeParen:'右括号',ghostParen:'未配对的括号按行首或行尾补全',sectionsScope:'含未分类段落',mergeInto:'并入',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',or:'或',joinAnd:'且，改为或',joinOr:'或，改为且',openParen:'左括号',closeParen:'右括号',ghostParen:'未配对的括号按行首或行尾补全',impliedOpen:'“或”连起的一组开始',impliedClose:'“或”连起的一组结束',impliedGroup:'“或”比“且”结合得更紧，括起的几项读作一组',sectionsScope:'含未分类段落',mergeInto:'并入',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     problems:'查询提示',unknownField:'anna 不认识“{condition}”这个条件，它不影响结果。',lacksSome:'{types}没有{fields}，不会出现在结果中。',lacksAll:'{types}没有{fields}，没有条目满足{conditions}。',
     crInverted:'最低 CR {min} 高于最高 CR {max}，两者不能同时成立。',cannotBoth:'条目只有一个{field}，{a}与{b}不能同时成立。',fixUseOr:'改为“或”',fixMerge:'合并为一张卡片',crUnreadable:'CR “{value}”不是数字或分数。',queryRejected:'这个查询无法执行：{message}',queryHeld:'条件需要修改',
@@ -46,7 +46,7 @@ const annaUiLabels = {
     emptyLibrary:'Your library settings leave out some rules versions or works, so some entries are not listed.',filterLibraryHint:'Collections, rules versions and works are set under Library in the top bar.',
     libraryState:{narrowed:'narrowed',each:'not deduplicated'},
     collectionErrors:{invalid_collection:'Invalid collection address.',unknown_collection:'Collection not found.',collection_unavailable:'This collection is not connected yet.'},
-    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',or:'or',joinAnd:'and; switch to or',joinOr:'or; switch to and',openParen:'Opening parenthesis',closeParen:'Closing parenthesis',ghostParen:'An unmatched parenthesis is completed at the start or end of the line',sectionsScope:'Including untyped sections',mergeInto:'Add to',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',or:'or',joinAnd:'and; switch to or',joinOr:'or; switch to and',openParen:'Opening parenthesis',closeParen:'Closing parenthesis',ghostParen:'An unmatched parenthesis is completed at the start or end of the line',impliedOpen:'Start of a group joined by “or”',impliedClose:'End of a group joined by “or”',impliedGroup:'“or” binds tighter than “and”, so the bracketed items read as one group',sectionsScope:'Including untyped sections',mergeInto:'Add to',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     problems:'Query notes',unknownField:'anna does not know the condition “{condition}”; it does not affect the results.',lacksSome:'{types} have no {fields}, so they do not appear in the results.',lacksAll:'{types} have no {fields}, so nothing meets {conditions}.',
     crInverted:'Minimum CR {min} is above maximum CR {max}; both cannot hold.',cannotBoth:'An entry has one {field}, so {a} and {b} cannot both hold.',fixUseOr:'Use “or”',fixMerge:'Merge into one card',crUnreadable:'CR “{value}” is not a number or fraction.',queryRejected:'This query cannot run: {message}',queryHeld:'Conditions need a fix',
@@ -289,21 +289,29 @@ function removeAt(i){
   }
   settleJoins();
 }
-// A `(` the line leaves open closes at its end, and a stray `)` opens at its start.
-function ghosts(){
+// The tokens as the line reads: a `(` it leaves open closes at its end and a stray `)` opens at its start (`ghost`).
+// With `typed`, the words being typed stand at the caret as a card taking the caret's join, as the address writes them.
+function reading(typed=false){
+  const tokens=typed&&draft?[...line.slice(0,caret),{kind:'card',key:'typing',values:[draft],draft:true,or:gapOr()},...line.slice(caret)]:line;
   let depth=0,stray=0;
-  for(const t of line){if(t.kind==='open')depth++;else if(t.kind==='close'){if(depth)depth--;else stray++;}}
-  return {opens:stray,closes:depth};
+  for(const t of tokens){if(t.kind==='open')depth++;else if(t.kind==='close'){if(depth)depth--;else stray++;}}
+  const ghosts=(kind,n)=>Array.from({length:n},()=>({kind,ghost:true}));
+  return [...ghosts('open',stray),...tokens,...ghosts('close',depth)];
 }
 // The line as the server reads it: cards are leaves, `{op,parts}` their ∧ (`all`) or ∨ (`any`). An empty group
-// stands for nothing.
-function lineTree(){
-  const {opens,closes}=ghosts(),ts=[...Array(opens).fill({kind:'open'}),...line,...Array(closes).fill({kind:'close'})];
+// stands for nothing. `spans` collects the groups by the first and last index of their tokens: each pair of
+// parentheses, and each run of alternatives that ∨ binds among ∧-joined neighbours (`implied`), which reads as
+// though parenthesized while the line shows it level with its neighbours.
+function lineTree(ts=reading(),spans=null){
   let at=0;const more=()=>at<ts.length&&ts[at].kind!=='close';
   const join=(op,parts)=>{parts=parts.filter(Boolean).flatMap(p=>p.op===op?p.parts:[p]);return parts.length>1?{op,parts}:parts[0]||null;};
-  const atom=()=>{const t=ts[at++];if(t.kind!=='open')return t;const inner=all();at++;return inner;};
-  const any=()=>{const parts=[atom()];while(more()&&ts[at].or)parts.push(atom());return join('any',parts);};
-  const all=()=>{const parts=[];while(more())parts.push(any());return join('all',parts);};
+  const atom=()=>{const from=at,t=ts[at++];if(t.kind!=='open')return t;const inner=all(),to=at++;spans?.push({from,to});return inner;};
+  const any=()=>{const from=at,parts=[atom()];while(more()&&ts[at].or)parts.push(atom());return {from,to:at-1,alternatives:parts.filter(Boolean).length,node:join('any',parts)};};
+  const all=()=>{
+    const runs=[];while(more())runs.push(any());
+    if(runs.filter(r=>r.node).length>1)for(const {from,to,alternatives} of runs)if(alternatives>1)spans?.push({from,to,implied:true});
+    return join('all',runs.map(r=>r.node));
+  };
   return all()||{op:'all',parts:[]};
 }
 // Whether two cards must both hold: they stand side by side in one conjunction.
@@ -449,9 +457,13 @@ function cardHTML(t,note){
     (flippable?`<button type="button" class="condition-text" data-flip="${t.uid}" aria-label="${esc(text)}，${esc(flip)}" title="${esc(flip)}"${described}>${esc(text)}</button>`:`<span class="condition-text"${described}>${esc(text)}</span>`)+
     `<button type="button" class="condition-remove" data-remove="${t.uid}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">×</button></span>`;
 }
-function parenHTML(t,ghost=false){
-  const open=t.kind==='open',label=ghost?ui.ghostParen:open?ui.openParen:ui.closeParen;
-  return `<span class="paren${ghost?' ghost':''}"${ghost?' aria-hidden="true"':` data-uid="${t.uid}" role="img" aria-label="${esc(label)}"`} title="${esc(label)}">${open?'(':')'}</span>`;
+// A parenthesis is written by the reader, completed at an end of the line (`ghost`), or implied where ∨ binds tighter
+// than the ∧ beside it (`implied`, keyed by the token it stands beside). `pair` names the group it opens or closes.
+function parenHTML({kind,uid,ghost,implied},pair,around){
+  const open=kind==='open',label=implied?(open?ui.impliedOpen:ui.impliedClose):ghost?ui.ghostParen:open?ui.openParen:ui.closeParen;
+  return `<span class="paren${ghost?' ghost':''}${implied?' implied':''}${around?' around-caret':''}" data-pair="${pair}"`+
+    (uid?` data-uid="${uid}"`:'')+(implied?` data-implied="${esc(implied)}"`:'')+(ghost?' aria-hidden="true"':` role="img" aria-label="${esc(label)}"`)+
+    ` title="${esc(implied?ui.impliedGroup:label)}">${open?'(':')'}</span>`;
 }
 // A join reads ∧ or ∨ and turns over when pressed. `at` names the token after it, or the caret.
 function joinHTML(or,at,extra=''){
@@ -462,22 +474,36 @@ function joinHTML(or,at,extra=''){
 // A card and the join before it stay the same while they keep their uid, whichever way they are turned. The
 // joins beside the caret belong to no card: they may be hidden, and a hidden box has no place to slide from or to.
 function conditionKey(el){
+  if(el.dataset.implied)return 'i'+el.dataset.implied;
   if(el.matches('.join'))return el.dataset.join&&el.dataset.join!=='caret'?'j'+el.dataset.join:null;
   return el.dataset.uid?'t'+el.dataset.uid:null;
 }
 // The tokens are placed around the field, never the field among them: moving a focused field would blur it.
 // Beside the caret the join shows while words are typed there or while it joins two cards, so the line always
-// reads card ∧ card; a ∨ chosen for the next card shows at once.
+// reads card ∧ card; a ∨ chosen for the next card shows at once. The groups the line reads in show as
+// parentheses: the reader's, those completing the line, and those implied where ∨ binds tighter. The innermost
+// group around the caret, the words being typed counted at their place, is marked `around-caret`.
 let cardsShape='';
 function renderCards({animate=false}={}){
-  const strip=$('#active-filters'),input=$('#q'),notes=problemNotes(),{opens,closes}=ghosts();
+  const strip=$('#active-filters'),input=$('#q'),notes=problemNotes();
+  const ts=reading(true),spans=[];lineTree(ts,spans);
+  let opens=0;while(ts[opens]?.ghost&&ts[opens].kind==='open')opens++;
+  const at=opens+caret,typed=!!ts[at]?.draft,next=typed?at+1:at;
+  const inside=s=>typed?s.from<=at&&at<=s.to:s.from<at&&at<=s.to;
+  const around=spans.filter(inside).sort((a,b)=>(a.to-a.from)-(b.to-b.from))[0];
+  // Implied parentheses open outermost first and close innermost first.
+  const pairs=new Map(),opening=new Map(),closing=new Map(),add=(map,i,s)=>map.set(i,[...map.get(i)||[],s]);
+  for(const s of spans)if(s.implied){add(opening,s.from,s);add(closing,s.to,s);}else{pairs.set(s.from,s);pairs.set(s.to,s);}
+  const name=i=>ts[i].uid??(ts[i].draft?'typing':'g'+i);
+  const implied=(kind,i)=>((kind==='open'?opening.get(i)?.sort((a,b)=>b.to-a.to):closing.get(i)?.sort((a,b)=>b.from-a.from))||[])
+    .map((s,n)=>parenHTML({kind,implied:`${kind}${name(i)}.${n}`},spans.indexOf(s),s===around)).join('');
   // Each token with the join before it; the join at the caret stands beside the field instead.
-  const piece=(t,i)=>(joined(i)&&i!==caret?joinHTML(t.or,t.uid):'')+(t.kind==='card'?cardHTML(t,notes.get(t.uid)):parenHTML(t));
-  const left=line[caret-1],right=line[caret];
-  const before='<span class="paren ghost" aria-hidden="true">(</span>'.repeat(opens)+line.slice(0,caret).map((t,i)=>piece(t,i)).join('')+
-    (ends(left)?joinHTML(gapOr(),'caret',' slot-before'+(joined(caret)?' joins':'')+(caretOr?' pending':'')):'');
-  const after=(begins(right)?joinHTML(right.or,joined(caret)?'caret':null,' slot-after'):'')+line.slice(caret).map((t,i)=>piece(t,caret+i)).join('')+
-    '<span class="paren ghost" aria-hidden="true">)</span>'.repeat(closes)+
+  const piece=i=>{const t=ts[i];
+    return (i!==next&&ends(ts[i-1])&&begins(t)?joinHTML(t.or,t.uid):'')+implied('open',i)+
+      (t.kind==='card'?cardHTML(t,notes.get(t.uid)):parenHTML(t,spans.indexOf(pairs.get(i)),!!around&&pairs.get(i)===around))+implied('close',i);};
+  const left=line[caret-1],right=line[caret],range=(a,b)=>Array.from({length:b-a},(_,k)=>piece(a+k)).join('');
+  const before=range(0,at)+(ends(left)?joinHTML(gapOr(),'caret',' slot-before'+(joined(caret)?' joins':'')+(caretOr?' pending':'')):'')+(typed?implied('open',at):'');
+  const after=(typed?implied('close',at):'')+(begins(right)?joinHTML(right.or,joined(caret)?'caret':null,' slot-after'):'')+range(next,ts.length)+
     (params.get('sections')==='1'?`<span class="condition scope" data-scope="sections"><span class="condition-text">${esc(ui.sectionsScope)}</span><button type="button" class="condition-remove" data-remove-scope="sections" aria-label="移除 ${esc(ui.sectionsScope)}" title="移除 ${esc(ui.sectionsScope)}">×</button></span>`:'');
   const shape=before+'\n'+after;
   if(shape!==cardsShape){
@@ -495,7 +521,7 @@ function renderCards({animate=false}={}){
 // closes for the reader, it is as wide as its words.
 let measure=null;
 function fitCaret(){
-  const strip=$('#active-filters'),input=$('#q'),inside=caret<line.length||ghosts().closes>0;
+  const strip=$('#active-filters'),input=$('#q'),inside=caret<line.length||!!reading().at(-1)?.ghost;
   strip.classList.toggle('drafting',!!input.value);strip.classList.toggle('caret-inside',inside);
   input.placeholder=inside?'':input.dataset.placeholder;
   if(inside){
@@ -884,7 +910,7 @@ function takeSyntax(){
 function queueSearch(){
   clearTimeout(timer);if(composingSearch)return;
   if(takeSyntax())return;
-  draft=$('#q').value.trim();record({typing:true});renderSuggestions();
+  draft=$('#q').value.trim();record({typing:true});renderCards();renderSuggestions();
   timer=setTimeout(()=>{typedQuery=true;changed(true);refreshSuggestionCounts();},160);
 }
 // Suggestions count with the probe where the caret stands: each value says what placing it there would match.
@@ -1005,6 +1031,11 @@ $('#active-filters').addEventListener('click',e=>{
   const join=e.target.closest('[data-join]');
   if(join){if(join.dataset.join==='caret')setGapOr(!gapOr());else{const t=tokenOf(join.dataset.join);if(t){t.or=!t.or;commit();}}return;}
   const flip=e.target.closest('[data-flip]');if(flip){const t=tokenOf(flip.dataset.flip);if(t)flipCard(t);}
+});
+// A parenthesis under the pointer lights the one it pairs with.
+for(const [type,on] of [['mouseover',true],['mouseout',false]])$('#active-filters').addEventListener(type,e=>{
+  const paren=e.target.closest('.paren[data-pair]');if(!paren)return;
+  for(const el of $('#active-filters').querySelectorAll(`.paren[data-pair="${paren.dataset.pair}"]`))el.classList.toggle('pointed',on);
 });
 $('#query-problems').addEventListener('click',e=>{
   const b=e.target.closest('[data-fix]');if(!b)return;const [i,j]=b.dataset.fix.split(':').map(Number);shownProblems[i]?.fixes[j]?.run();

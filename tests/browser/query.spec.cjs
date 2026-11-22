@@ -21,9 +21,9 @@ async function entry(page,index=0){return page.locator('#results .entry-name').n
 async function read(page){await expect(page.locator('#detail-content')).toHaveAttribute('aria-busy','false');await expect(page.locator('#detail')).toBeVisible();}
 const fmt=n=>n.toLocaleString('zh-CN');
 async function shot(page,testInfo,name){await testInfo.attach(name,{body:await page.screenshot(),contentType:'image/png'});}
-async function queryMatchesAPI(page){
+async function queryMatchesAPI(page,query){
   await ready(page);
-  const data=await (await page.request.get(anna+'/api/entries'+new URL(page.url()).search)).json();
+  const data=await (await page.request.get(anna+'/api/entries'+(query??new URL(page.url()).search))).json();
   expect(await page.locator('#results .entry-name').evaluateAll(els=>els.map(e=>e.dataset.entry))).toEqual(data.rows.map(r=>r.id));
   return data;
 }
@@ -543,11 +543,11 @@ test('the condition bar keeps each search as its own ∧-joined chip and turns t
   expect(new URL(page.url()).searchParams.getAll('q')).toEqual(['球']);
 });
 
-// The bar as a reader sees it: cards, the joins shown between them, parentheses (·) for one the line completes),
-// and the field as [words|] at the caret. Stray text between them reads too.
+// The bar as a reader sees it: cards, the joins shown between them, parentheses (·) for one the line completes,
+// ~( for one ∨ implies), and the field as [words|] at the caret. Stray text between them reads too.
 const line=page=>page.locator('#active-filters').evaluate(strip=>[...strip.childNodes].map(e=>e.nodeType===Node.TEXT_NODE?e.textContent.trim():e.id==='q'?`[${e.value}|]`:
   e.classList.contains('join')?(getComputedStyle(e).display==='none'?'':e.textContent):
-  e.classList.contains('paren')?(e.classList.contains('ghost')?'·':'')+e.textContent:e.querySelector('.condition-text').textContent).filter(Boolean).join(' '));
+  e.classList.contains('paren')?(e.classList.contains('ghost')?'·':e.classList.contains('implied')?'~':'')+e.textContent:e.querySelector('.condition-text').textContent).filter(Boolean).join(' '));
 
 test('the condition bar edits like a line of text: cards keep their places and the caret moves between them',async({page})=>{
   await page.setViewportSize({width:1440,height:900});
@@ -651,24 +651,24 @@ test('joins turn between ∧ and ∨, ∨ binds tighter, and parentheses typed i
   const both=(await queryMatchesAPI(page)).versions_total;
   // Pressing a join turns it. ∨ binds tighter, so the type still holds for both alternatives.
   await page.locator('#active-filters [data-join]:not([data-join="caret"])').nth(1).click();await ready(page);
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ 名称：火 [|]');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ 名称：火 ~) [|]');
   expect(search()).toBe('?type=spell&f_school=塑能&or=&q=火');
   const either=await queryMatchesAPI(page);
   expect(either.versions_total).toBeGreaterThan(both);expect(either.rows.every(r=>r.type==='spell')).toBeTruthy();
   // `|` sets the join for the next card and `(` opens a group, which closes at the end of the line until `)` closes it.
   await q.focus();await q.pressSequentially('|(冰');
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ 名称：火 ∨ ( [冰|] ·)');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ 名称：火 ∨ ( [冰|] ·) ~)');
   await q.press('Enter');await q.pressSequentially('球）');await ready(page);
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ 名称：火 ∨ ( 名称：冰 ∧ 名称：球 ) [|]');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ 名称：火 ∨ ( 名称：冰 ∧ 名称：球 ) ~) [|]');
   expect(search()).toBe('?type=spell&f_school=塑能&or=&q=火&or=&open=&q=冰&q=球&close=');
   await queryMatchesAPI(page);
   await page.reload();await ready(page);
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ 名称：火 ∨ ( 名称：冰 ∧ 名称：球 ) [|]');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ 名称：火 ∨ ( 名称：冰 ∧ 名称：球 ) ~) [|]');
   // Backspace on a parenthesis removes its pair; × on an alternative leaves the rest of its alternatives joined.
   await q.focus();await q.press('Backspace');await ready(page);
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ 名称：火 ∨ 名称：冰 ∧ 名称：球 [|]');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ 名称：火 ∨ 名称：冰 ~) ∧ 名称：球 [|]');
   await page.locator('#active-filters [data-key="q"] .condition-remove').first().click();await ready(page);
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ [|] 名称：冰 ∧ 名称：球');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ [|] 名称：冰 ~) ∧ 名称：球');
   // A suggestion counts what placing its value at the caret would match, and can instead join the field's card.
   await visit(page,spells+'&f_school='+encodeURIComponent('塑能'));
   await q.focus();await q.pressSequentially('|咒法');
@@ -676,7 +676,7 @@ test('joins turn between ∧ and ∨, ∨ binds tighter, and parentheses typed i
   await expect(page.getByRole('option',{name:new RegExp(`^学派\\s*咒法\\s*${fmt(placed)}$`)})).toBeVisible();
   await expect(page.getByRole('option',{name:/并入\s*学派：塑能、咒法/})).toBeVisible();
   await page.getByRole('option',{name:/^学派\s*咒法/}).click();await ready(page);
-  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ 学派：咒法 [|]');
+  await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ 学派：咒法 ~) [|]');
   expect((await queryMatchesAPI(page)).versions_total).toBe(placed);
   // A preset among alternatives stands in parentheses as one of them; its role then binds only the creatures.
   await visit(page,spells);await q.focus();await q.pressSequentially('|坐骑');
@@ -696,6 +696,45 @@ test('joins turn between ∧ and ∨, ∨ binds tighter, and parentheses typed i
   await expect(page.locator('#columns th')).toContainText(['名称','类型','环阶','学派']);
   await expect(page.locator('#elsewhere')).toBeHidden();
   const open=await queryMatchesAPI(page);expect(open.rows.some(r=>r.type!=='spell')).toBeTruthy();
+});
+
+test('where ∨ binds tighter than the ∧ beside it, faint parentheses show the group and the caret lights its pair',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  const q=page.locator('#q'),strip=page.locator('#active-filters'),term=t=>'q='+encodeURIComponent(t);
+  const lit=()=>strip.locator('.paren.around-caret').evaluateAll(els=>els.map(e=>(e.classList.contains('implied')?'~':e.classList.contains('ghost')?'·':'')+e.textContent).join(' '));
+  // ∨ alone, or ∨ the reader already put in parentheses, reads one way and shows nothing more.
+  await visit(page,`/?${term('火')}&or=&${term('冰')}`);await expect.poll(()=>line(page)).toBe('名称：火 ∨ 名称：冰 [|]');
+  await visit(page,`/?open=&${term('火')}&or=&${term('冰')}&close=&${term('球')}`);
+  await expect.poll(()=>line(page)).toBe('( 名称：火 ∨ 名称：冰 ) ∧ 名称：球 [|]');
+  // Beside a ∧ the alternatives show the parentheses they read in; the server groups them the same way.
+  await visit(page,`/?${term('火')}&or=&${term('冰')}&${term('球')}`);
+  await expect.poll(()=>line(page)).toBe('~( 名称：火 ∨ 名称：冰 ~) ∧ 名称：球 [|]');
+  await expect(strip.locator('.paren.implied').first()).toHaveAttribute('aria-label','“或”连起的一组开始');
+  await expect(strip.locator('.paren.implied').first()).toHaveAttribute('title','“或”比“且”结合得更紧，括起的几项读作一组');
+  await queryMatchesAPI(page);await queryMatchesAPI(page,`?open=&${term('火')}&or=&${term('冰')}&close=&${term('球')}`);
+  // The caret steps over them: at the ∧ it stands outside the group, at the ∨ inside, where the pair lights up.
+  await q.focus();expect(await lit()).toBe('');
+  await q.press('ArrowLeft');await expect.poll(()=>line(page)).toBe('~( 名称：火 ∨ 名称：冰 ~) ∧ [|] 名称：球');expect(await lit()).toBe('');
+  await q.press('ArrowLeft');await expect.poll(()=>line(page)).toBe('~( 名称：火 ∨ [|] 名称：冰 ~) ∧ 名称：球');
+  await expect.poll(lit).toBe('~( ~)');
+  // Words typed there are one of the alternatives; words typed after a | join the group they make at once.
+  await q.pressSequentially('雷');await expect.poll(()=>line(page)).toBe('~( 名称：火 ∨ [雷|] ∨ 名称：冰 ~) ∧ 名称：球');
+  await q.press('Enter');await q.press('End');await q.pressSequentially('|风');
+  await expect.poll(()=>line(page)).toBe('~( 名称：火 ∨ 名称：雷 ∨ 名称：冰 ~) ∧ ~( 名称：球 ∨ [风|] ~)');await expect.poll(lit).toBe('~( ~)');
+  // Groups nest: within the reader's parentheses ∨ binds tighter again, and the caret lights the innermost pair.
+  await visit(page,`/?${term('火')}&open=&${term('冰')}&${term('球')}&or=&${term('雷')}&close=&or=&${term('风')}`);
+  await expect.poll(()=>line(page)).toBe('名称：火 ∧ ~( ( 名称：冰 ∧ ~( 名称：球 ∨ 名称：雷 ~) ) ∨ 名称：风 ~) [|]');
+  await queryMatchesAPI(page);
+  await q.focus();await q.press('ArrowLeft');await expect.poll(lit).toBe('~( ~)');
+  await q.press('ArrowLeft');await q.press('ArrowLeft');await expect.poll(lit).toBe('~( ~)');
+  await expect.poll(()=>line(page)).toBe('名称：火 ∧ ~( ( 名称：冰 ∧ ~( 名称：球 ∨ [|] 名称：雷 ~) ) ∨ 名称：风 ~)');
+  await q.press('ArrowLeft');await q.press('ArrowLeft');await expect.poll(lit).toBe('( )');
+  // A parenthesis the line completes pairs with the reader's; the pointer lights the partner of the one it rests on.
+  await visit(page,`/?${term('火')}&open=&${term('冰')}&or=&${term('球')}`);
+  await expect.poll(()=>line(page)).toBe('名称：火 ∧ ( 名称：冰 ∨ 名称：球 [|] ·)');
+  await q.focus();await expect.poll(lit).toBe('( ·)');
+  await strip.locator('.paren[data-uid]').hover();
+  await expect(strip.locator('.paren.pointed')).toHaveCount(2);await expect(strip.locator('.paren.ghost')).toHaveClass(/pointed/);
 });
 
 test('the bar undoes and redoes its edits like a line of text',async({page})=>{
@@ -719,7 +758,7 @@ test('the bar undoes and redoes its edits like a line of text',async({page})=>{
   await page.locator('#active-filters [data-join]:not([data-join="caret"])').nth(1).click();await ready(page);
   await q.focus();await q.press('ArrowLeft');await q.press('Backspace');await ready(page);
   await expect.poll(()=>line(page)).toBe('类型：法术 ∧ [|] 名称：火球');
-  await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∨ [|] 名称：火球');
+  await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ ~( 学派：塑能 ∨ [|] 名称：火球 ~)');
   await undo();await ready(page);await expect.poll(()=>line(page)).toBe('类型：法术 ∧ 学派：塑能 ∧ 名称：火球 [|]');
   expect(search()).toBe('?type=spell&f_school=塑能&q=火球');
   // Clearing is one revision too, undone from the button that cleared.

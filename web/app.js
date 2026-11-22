@@ -118,8 +118,10 @@ function fieldText(entry,field,short=false){
   return Array.isArray(raw)?raw.map(v=>displayValue(field,v)).join('、'):displayValue(field,raw);
 }
 // Every request carries the reader's library (annaLibrary).
+const apiRequest=(path,signal)=>annaKit.request(annaLibrary.withScope(path),{signal});
+async function api(path,signal){return readApi(await apiRequest(path,signal));}
 // A failed request keeps its HTTP status: 400 means the server cannot run the query as written.
-async function api(path,signal){const r=await annaKit.request(annaLibrary.withScope(path),{signal});const d=await r.json();
+async function readApi(r){const d=await r.json();
   if(!r.ok)throw Object.assign(new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败'),{status:r.status,code:d.code||null});return d;}
 const collectionName=id=>metadata?.collections?.find(c=>c.id===id)?.label?.[locale]||annaLibrary.nameOf(id);
 function showLibrary(){
@@ -796,7 +798,7 @@ function renderResults(){
 // near the end, the “load more” button, the reader's next arrow and ArrowDown on the last name append
 // the next batch without dimming what is already shown. History restores how many rows were loaded.
 const BATCH=150, RESTORE_LIMIT=1500;
-let appending=null, appendPromise=null, appendFailed=false, restoreRows=0;
+let appending=null, appendPromise=null, appendFailed=false, restoreRows=0, waitingForScroll=false;
 const NEAR_END=600;
 // Measured directly: after an append, the observer's last report still describes the old layout.
 function nearEnd(){
@@ -817,6 +819,7 @@ function renderLoadState(){
 function loadMore(){
   if(appending)return appendPromise;
   if(!hasMore()||awaitingResults())return Promise.resolve(false);
+  waitingForScroll=false;
   return appendPromise=appendBatch();
 }
 async function appendBatch(){
@@ -836,8 +839,14 @@ async function appendBatch(){
     if(appending===controller){appending=null;renderLoadState();if(!appendFailed&&nearEnd())setTimeout(loadMore);}
   }
 }
-new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&!appendFailed)loadMore();},
+new IntersectionObserver(entries=>{if(!waitingForScroll&&!appendFailed&&entries.some(e=>e.isIntersecting))loadMore();},
   {root:$('.table-wrap'),rootMargin:`0px 0px ${NEAR_END}px 0px`}).observe($('#load-more-row'));
+// The cached first batch can fill the welcome on its own, even if the viewport reaches the sentinel.
+$('.table-wrap').addEventListener('scroll',()=>{
+  if(!waitingForScroll||restoringUi||!$('.table-wrap').scrollTop)return;
+  waitingForScroll=false;
+  if(nearEnd())loadMore();
+},{passive:true});
 $('#load-more').onclick=()=>loadMore();
 async function load(){
   const typed=typedQuery;typedQuery=false;
@@ -846,7 +855,9 @@ async function load(){
   awaitResults('正在查询…');updateReaderNavigation();
   const limit=Math.min(RESTORE_LIMIT,Math.max(BATCH,Math.ceil(restoreRows/BATCH)*BATCH));restoreRows=0;
   try{
-    const data=await api(entriesURL(0,limit),request.signal);if(gen!==generation)return;
+    const response=await apiRequest(entriesURL(0,limit),request.signal);
+    const data=await readApi(response);if(gen!==generation)return;
+    waitingForScroll=response.headers.has('X-Anna-Home-Cache');
     currentData=data;
     $('#result-count').innerHTML=data.versions==='stacked'?ui.stackedCount.replace('{rows}',`<strong>${fmt(data.total)}</strong>`).replace('{versions}',fmt(data.versions_total)):`找到 <strong>${fmt(data.total)}</strong> 条`;
     // A narrow results area cuts the count short rather than wrapping it; the whole count stays on hover.

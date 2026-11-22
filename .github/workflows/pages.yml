@@ -16,6 +16,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      PAGES_OUTPUT: output/pages
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -24,8 +26,9 @@ jobs:
           cache: pip
       - id: pages
         uses: actions/configure-pages@v5
-      - name: Build the libraries
+      - name: Build and package Anna and Stella
         env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
           WEB_DIR: ${{ runner.temp }}/5echm-web
           OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
           COMPARISON_DIR: ${{ runner.temp }}/5etools-cn
@@ -39,20 +42,17 @@ jobs:
           git init "$OUR5ETOOLS_DIR"
           git -C "$OUR5ETOOLS_DIR" fetch --depth 1 https://github.com/KuroNeko233333/KuroNeko233333.github.io.git "$OUR5ETOOLS_REVISION"
           git -C "$OUR5ETOOLS_DIR" checkout --detach FETCH_HEAD
+          test -d "$OUR5ETOOLS_DIR/data"
+          test -f "$OUR5ETOOLS_DIR/__api/books.json"
           git clone --depth 1 --filter=blob:none --no-checkout https://github.com/tjliqy/5etools-cn.git "$COMPARISON_DIR"
           git -C "$COMPARISON_DIR" sparse-checkout set --cone data
           git -C "$COMPARISON_DIR" fetch --depth 1 --filter=blob:none origin "$COMPARISON_REVISION"
           git -C "$COMPARISON_DIR" checkout --detach FETCH_HEAD
           python -m pip install -r requirements.txt
-          make build "5ETOOLS_DIR=$COMPARISON_DIR"
-      - name: Package Anna and Stella
-        env:
-          WEB_DIR: ${{ runner.temp }}/5echm-web
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: python -m anna.server.pages_build --base "${BASE_PATH%/}/" --our5etools-data data/our5etools --output output/pages
+          make build PAGES=1 HOME_CACHE=1 "PAGES_BASE=${BASE_PATH%/}/" "5ETOOLS_DIR=$COMPARISON_DIR"
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: output/pages
+          path: ${{ env.PAGES_OUTPUT }}
 
   deploy:
     needs: build

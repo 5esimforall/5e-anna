@@ -16,24 +16,63 @@ OUR5ETOOLS_DATA ?= data/our5etools
 OUR5ETOOLS_PATH := $(shell python3 -c 'import os, sys; from anna.paths import OUR5ETOOLS; print(os.path.abspath(sys.argv[1]) if sys.argv[1] else OUR5ETOOLS)' "$(OUR5ETOOLS_DIR)")
 OUR5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(OUR5ETOOLS_DATA)")
 5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DATA)")
+TRUE_VALUES := 1 true yes on
 LAZY_MEDIA ?= 0
-LAZY_MEDIA_FLAG := $(if $(filter 1 true yes on,$(LAZY_MEDIA)),--lazy-media,)
+LAZY_MEDIA_FLAG := $(if $(filter $(TRUE_VALUES),$(LAZY_MEDIA)),--lazy-media,)
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
+COLLECTION ?= all
+NO_COUNTERPARTS ?= 0
+PAGES ?= 0
+PAGES_BASE ?= /5e-anna/
+PAGES_OUTPUT ?= output/pages
+HOME_CACHE ?= 0
+REUSE ?= 0
+PAGES_ENABLED := $(filter $(TRUE_VALUES),$(PAGES))
+REUSE_ENABLED := $(filter $(TRUE_VALUES),$(REUSE))
+HOME_CACHE_FLAG := $(if $(filter $(TRUE_VALUES),$(HOME_CACHE)),--home-cache,)
+COUNTERPARTS_ENABLED := $(if $(filter $(TRUE_VALUES),$(NO_COUNTERPARTS)),,yes)
+COUNTERPART_ARGS := $(if $(COUNTERPARTS_ENABLED),--5etools "$(5ETOOLS_PATH)",--no-counterparts)
+BUILD_CATALOG := $(filter all 5echm,$(COLLECTION))
+
+ifeq ($(and $(filter 1,$(words $(COLLECTION))),$(filter all 5echm our5etools linked,$(COLLECTION))),)
+BUILD_ERROR := COLLECTION must be all, 5echm, our5etools, or linked
+else ifeq ($(PAGES_ENABLED),)
+ifneq ($(REUSE_ENABLED),)
+BUILD_ERROR := REUSE requires PAGES=1
+else ifneq ($(HOME_CACHE_FLAG),)
+BUILD_ERROR := HOME_CACHE requires PAGES=1
+endif
+endif
+
+ifeq ($(COLLECTION),our5etools)
+BUILD_COMPANION := yes
+else ifeq ($(COLLECTION),all)
+ifeq ($(REUSE_ENABLED),)
+BUILD_COMPANION := $(shell test -d "$(OUR5ETOOLS_PATH)/data" && test -f "$(OUR5ETOOLS_PATH)/__api/books.json" && printf yes)
+else
+BUILD_COMPANION := $(shell test -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" && printf yes)
+endif
+endif
+
 .DEFAULT_GOAL := usage
-.PHONY: usage clone update status clean build test audit audit-links check up upper linked our5etools-build our5etools-audit test-unit test-browser browser-setup icons
+.PHONY: usage clone _clone-web _clone-counterparts update status clean build test audit audit-links check up upper our5etools-audit test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
 	@echo "Commands and variables are documented in $(CURDIR)/USAGE.md"
 
-clone:
+clone: _clone-web _clone-counterparts
+
+_clone-web:
 	@if [ ! -e "$(WEB_PATH)" ]; then \
 		git clone --depth 1 --branch "$(BRANCH)" "$(REPO)" "$(WEB_PATH)"; \
 	elif [ ! -d "$(WEB_PATH)/topics" ]; then \
 		echo "Source has no topics directory; refusing to overwrite: $(WEB_PATH)" >&2; exit 1; \
 	fi
+
+_clone-counterparts:
 	@if [ ! -e "$(5ETOOLS_PATH)" ]; then \
 		git clone --depth 1 --filter=blob:none --sparse --branch "$(5ETOOLS_BRANCH)" "$(5ETOOLS_REPO)" "$(5ETOOLS_PATH)" && \
 		git -C "$(5ETOOLS_PATH)" sparse-checkout set data; \
@@ -79,7 +118,7 @@ status:
 	@if [ -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" ]; then \
 		printf 'our5etools data: %s\n' "$$(du -sh "$(OUR5ETOOLS_DATA_PATH)" | cut -f1 | tr -d ' ')"; \
 	else \
-		echo "our5etools data: not built yet (run make our5etools-build)"; \
+		echo "our5etools data: not built yet (run make build COLLECTION=our5etools)"; \
 	fi
 
 clean:
@@ -88,17 +127,37 @@ clean:
 icons:
 	@"$(PYTHON)" scripts/build_icons.py
 
-build: clone icons
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build --5etools "$(5ETOOLS_PATH)"
-	@$(MAKE) --no-print-directory linked WEB_DIR="$(WEB_PATH)"
-	@if [ -d "$(OUR5ETOOLS_PATH)/data" ] && [ -f "$(OUR5ETOOLS_PATH)/__api/books.json" ]; then \
-		$(MAKE) --no-print-directory our5etools-build OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" OUR5ETOOLS_DATA="$(OUR5ETOOLS_DATA_PATH)"; \
-	else \
-		echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"; \
-	fi
+ifneq ($(BUILD_ERROR),)
+build:
+	$(error $(BUILD_ERROR))
+else
+ifeq ($(REUSE_ENABLED),)
+ifneq ($(BUILD_CATALOG),)
+build: _clone-web $(if $(COUNTERPARTS_ENABLED),_clone-counterparts)
+endif
+ifneq ($(BUILD_CATALOG)$(PAGES_ENABLED),)
+build: icons
+endif
+endif
 
-our5etools-build:
+build:
+ifeq ($(REUSE_ENABLED),)
+ifneq ($(BUILD_CATALOG),)
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build $(COUNTERPART_ARGS)
+endif
+ifneq ($(filter all 5echm linked,$(COLLECTION)),)
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
+endif
+ifneq ($(BUILD_COMPANION),)
 	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
+else ifeq ($(COLLECTION),all)
+	@echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"
+endif
+endif
+ifneq ($(PAGES_ENABLED),)
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.pages_build --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(if $(BUILD_COMPANION),--our5etools-data "$(OUR5ETOOLS_DATA_PATH)",) $(HOME_CACHE_FLAG)
+endif
+endif
 
 our5etools-audit:
 	@"$(PYTHON)" -m anna.our5etools.audit --data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"
@@ -118,9 +177,6 @@ audit-links:
 	@"$(PYTHON)" -m anna.catalog.reference_coverage
 
 check: test audit
-
-linked:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
 
 up:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)

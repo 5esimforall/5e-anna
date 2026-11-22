@@ -18,6 +18,8 @@ const annaKit = (() => {
   // The exported HTML marks Pages mode, and kit.js lives at the root of either deployment.
   const pages = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-anna-pages');
   const base = pages ? new URL('.', document.currentScript.src) : null;
+  // Keep deep links on the worker even if app.js later rewrites their address.
+  const home = pages && !location.search && !location.hash && document.documentElement.getAttribute('data-anna-home');
   function href(path) {
     if (!pages || !/^\/(?!\/)/.test(path)) return path;
     const route = path.replace(/^\/(read|tour|source)(?=[?#]|$)/, '/$1/');
@@ -56,8 +58,9 @@ const annaKit = (() => {
   async function request(path, options) {
     if (!pages) return fetch(path, options);
     options?.signal?.throwIfAborted();
+    const homeCache = home && !location.search && !location.hash && !annaLibrary.params().length ? home : null;
     const transport = await import(new URL('pages.js', base).href);
-    return transport.request(path, options);
+    return transport.request(path, {...options, homeCache});
   }
   return {esc, stored, pages, href, rebaseLinks, hydrateImages, request};
 })();

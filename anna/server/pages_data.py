@@ -16,6 +16,7 @@ from anna.presentation.catalog import TYPES
 from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
 from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS, load_our5etools_collection
 from anna.presentation.tour import load as load_curation
+from anna.server.pages import PublishedSite
 from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
 
 
@@ -417,9 +418,28 @@ def _shard(root, files, chunk_size, gzip_shards):
     (root / 'index.json').write_bytes(_json(index))
 
 
+def _write_home_cache(stage, work, files):
+    # Give the regular Pages worker adapter the same file layout it will see after publication.
+    root = work / 'site-data'
+    for name, file in files.items():
+        mounted = root / name
+        mounted.parent.mkdir(parents=True, exist_ok=True)
+        mounted.symlink_to(file)
+    site = PublishedSite(root)
+    responses = {}
+    for route in ('/api/library', '/api/meta', '/api/facets', '/api/entries?offset=0&limit=150'):
+        status, _, body = site.handle(route)
+        if status != 200:
+            raise ValueError(f'Could not cache {route} (HTTP {status})')
+        responses[route] = json.loads(body)
+    payload = _json(responses)
+    filename = f'pages-home.{sha256(payload).hexdigest()[:16]}.json'
+    (stage / filename).write_bytes(payload)
+
+
 def export_pages_data(output, *, db, book, source, our5etools_data=None, our5etools_source=None,
                       rewrite_html=None, curation=PROJECT / CURATION, chunk_size=CHUNK_SIZE, gzip_shards=True,
-                      size_limit=PAGES_LIMIT):
+                      size_limit=PAGES_LIMIT, home_cache=False):
     """Write static assets and a virtual file index into the caller's output directory.
 
     ``rewrite_html`` receives (bytes, published POSIX path) for each copied HTML, CSS and JS file.
@@ -462,6 +482,8 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
             build_publications(relationships, registry)
             files[PUBLICATIONS] = relationships
         files[CURATION] = public_curation
+        if home_cache:
+            _write_home_cache(stage, work, files)
         _shard(stage / 'pages-data', files, chunk_size, gzip_shards)
         bytes_written = sum(file.stat().st_size for file in stage.rglob('*') if file.is_file())
         if bytes_written + existing_bytes > size_limit:

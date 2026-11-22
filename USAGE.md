@@ -2,18 +2,16 @@
 
 ## 统一命令
 
-以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 只转调其已列出的常用命令，不维护另一套实现；`icons` 等维护目标在本项目中执行。
+以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 转调常用命令。使用构建选项时，在本项目目录执行 `make build`。
 
 | 命令 | 用途 |
 | --- | --- |
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
-| `make build` | 从同一原文快照重建不全书数据库（含 `book_search`）与链接版；存在 our5etools 镜像时同步执行 `our5etools-build` |
-| `make our5etools-build` | 从 `OUR5ETOOLS_DIR` 构建完全自包含的 `data/our5etools/` 查询库、Stella 整书章节、随包媒体（`media/`，可选 `OUR5ETOOLS_IMG_DIR`）与对账清单 |
+| `make build` | 构建不全书数据库与链接版，有 our5etools 镜像时一并构建。可选择资料库、Pages 输出和首页缓存，见[构建选项](#构建选项) |
 | `make our5etools-audit` | 核查 `data/our5etools/` 的不变量并生成 `data/our5etools/audit.md` |
 | `make up` | 启动单端口查询、导览、阅读与正文资源服务（存在 `data/our5etools/manifest.json` 时自动挂载 `our5etools` 资料库；`data/5etools/` 预留给独立中文版 `5etools`；可用 `LAZY_MEDIA=1` 开启远端配图按需懒加载缓存） |
 | `make upper` | 开发用：同上，不全书或 our5etools 重建完成后自动校验并热重载 |
 | `make icons` | 从原始人物图生成界面图标 |
-| `make linked` | 由现有不全书数据库生成链接版，并校验原文快照 |
 | `make test` | 运行单元测试和浏览器回归（需先构建数据） |
 | `make test-unit` / `make test-browser` | 分别运行单元测试 / 浏览器回归 |
 | `make browser-setup` | 安装锁定的 Node 依赖与 Chromium，首次运行浏览器测试前执行 |
@@ -24,13 +22,28 @@
 | `make status` | 查看原文、5etools-cn、our5etools 镜像及构建产物状态 |
 | `make clean` | 删除本地生成数据、报告、图标和依赖环境；保留源码、独立输入与共享镜像 |
 
-命令清单集中在本页；不带目标运行 `make` 只输出本页位置。下文的 `python -m anna.…` 模块命令在 anna 仓库根目录运行；应用代码不再通过 `scripts/` 路径启动。
+不带目标运行 `make` 会显示本页位置。下文的 `python -m anna.…` 开发维护命令在仓库根目录运行。
 
-默认原文位于 anna 同级的 `5echm-web/`。`WEB_DIR=/绝对路径/镜像` 可指定其他位置，也支持相对路径（相对于执行 make 的目录）。两层 Makefile 之间传递绝对路径，避免切换工作目录后指向另一处。直接运行脚本也可通过环境变量 `WEB_DIR` 配置原文；`python -m anna.catalog.build --source` 可进一步覆盖该默认值。
+## 构建选项
 
-[来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。直接运行 `python -m anna.catalog.build` 时可用 `--5etools` 指定镜像，镜像缺失时构建失败并提示下载；`--no-counterparts` 跳过对照，摘要记为 `skipped`。
+| 参数 | 用途 |
+| --- | --- |
+| `COLLECTION=all` | 默认重建不全书，有 our5etools 镜像时一并重建 |
+| `COLLECTION=5echm` | 重建不全书查询库与链接版 |
+| `COLLECTION=our5etools` | 重建 our5etools 查询库、章节和随包媒体 |
+| `COLLECTION=linked` | 用已有不全书数据库重建链接版 |
+| `NO_COUNTERPARTS=1` | 跳过 5etools-cn 来源对照 |
+| `PAGES=1` | 同时输出静态站点。用 `PAGES_BASE` 设置托管路径，`PAGES_OUTPUT` 指定尚不存在的输出目录（默认 `output/pages`） |
+| `REUSE=1` | 与 `PAGES=1` 一起使用，打包现有产物并校验快照 |
+| `HOME_CACHE=1` | 与 `PAGES=1` 一起使用，生成默认首页的资料库摘要、元数据、筛选计数和首批 150 行 |
 
-[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。通过 `OUR5ETOOLS_DIR=/路径` 指定本地镜像（未指定时由 `anna.paths.OUR5ETOOLS` 依次探测同级 `our5etools/` 与本机镜像），可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。`make build` 仅在目标目录存在 `data/` 和 `__api/books.json` 时自动触发 `make our5etools-build`，镜像缺席时安静跳过，不影响不全书构建。
+Pages 以不全书为基础。`COLLECTION=all` 同时打包已选用的 our5etools。用 `COLLECTION=our5etools PAGES=1` 只重建 our5etools 并复用已有的不全书产物。
+
+默认原文位于项目同级的 `5echm-web/`。用 `WEB_DIR=/路径` 指定其他镜像，相对路径以执行 `make` 的目录为基准。
+
+[来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。用 `NO_COUNTERPARTS=1` 跳过对照时，构建摘要记为 `skipped`。
+
+[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。通过 `OUR5ETOOLS_DIR=/路径` 指定本地镜像（未指定时由 `anna.paths.OUR5ETOOLS` 依次探测同级 `our5etools/` 与本机镜像），可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make build COLLECTION=our5etools`。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
@@ -280,7 +293,7 @@ make build
 
 上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。回归样例由 `tests/browser/links.spec.cjs` 覆盖。
 
-未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make linked` 会拒绝沿用过期的概念发现依据。
+未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make build COLLECTION=linked` 会拒绝沿用过期的概念发现依据。
 
 ## 来源对照（5etools-cn）
 
@@ -318,7 +331,7 @@ make build
 
 ```sh
 # 使用 Makefile（可用 OUR5ETOOLS_DIR / OUR5ETOOLS_IMG_DIR / OUR5ETOOLS_DATA / 5ETOOLS_DATA 覆盖默认路径）
-make our5etools-build
+make build COLLECTION=our5etools
 make our5etools-audit
 
 # 直接调用模块命令行
@@ -371,11 +384,13 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 
 [GitHub Pages 工作流](.github/workflows/pages.yml)从固定的原文镜像提交构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
 
-已有 `make build` 产物时，可生成静态预览包。`--base` 对应托管路径，`--output` 指定尚不存在的目录。
+工作流用 `make build PAGES=1 HOME_CACHE=1` 重建并打包。已有构建产物时，可校验并复用它们生成静态预览包。
 
 ```sh
-.venv/bin/python -m anna.server.pages_build --base /5e-anna/ --our5etools-data data/our5etools --output output/pages
+make build PAGES=1 REUSE=1 HOME_CACHE=1 PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages
 ```
+
+默认首页直接读取首屏缓存，搜索、分页和打开条目等需要查询的操作再启动工作线程。带查询条件、条目链接或非默认资料库设置的访问按需查询。
 
 不全书原文来自 [DND5eChm/DND5e_chm](https://github.com/DND5eChm/DND5e_chm) 与 [5echm_web](https://github.com/DND5eChm/5echm_web)，发布包包含上游许可证。链接版在原文上添加引用和定位层，供 Anna 与 Stella 互通。
 
@@ -440,7 +455,7 @@ make up
 全量重建（只读镜像）：
 
 ```sh
-/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m anna.catalog.build
+make build
 ```
 
 查询（复用 `anna.presentation.catalog` 只读消费层）：

@@ -11,7 +11,7 @@ from anna.paths import PROJECT, WEB
 from anna.presentation.catalog import DB
 from anna.server.linked_book import BOOK
 from anna.server.pages_assets import stage_browser_runtime
-from anna.server.pages_data import export_pages_data
+from anna.server.pages_data import PAGES_LIMIT, export_pages_data
 
 DOCUMENTS = {
     '/': ('index.html', 'index.html'),
@@ -76,7 +76,7 @@ def rebase_book(content, path, base):
     return content
 
 
-def build(output, source, db, book, base, *, our5etools_data=None):
+def build(output, source, db, book, base, *, our5etools_data=None, home_cache=False):
     if re.fullmatch(r'/(?:[A-Za-z0-9_.-]+/)*', base) is None or set(base.split('/')) & {'.', '..'}:
         raise ValueError('Use an absolute Pages base path ending in /')
     if output.exists():
@@ -89,33 +89,35 @@ def build(output, source, db, book, base, *, our5etools_data=None):
         for file in sorted((PROJECT / 'web').iterdir()):
             if file.suffix in WEB_SUFFIXES:
                 shutil.copyfile(file, stage / file.name)
+        (stage / '.nojekyll').touch()
+        total = export_pages_data(stage, source=source, db=db, book=book, our5etools_data=our5etools_data,
+                                  rewrite_html=lambda raw, path: rebase_book(raw, path, base), home_cache=home_cache)
+        home = next(stage.glob('pages-home.*.json')).name if home_cache else None
         for source_name, target_name in DOCUMENTS.values():
             target = stage / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
-            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', b'<html data-anna-pages', 1)
+            attrs = b'<html data-anna-pages'
+            if home and source_name == 'index.html':
+                attrs += f' data-anna-home="{home}"'.encode('ascii')
+            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', attrs, 1)
             target.write_bytes(rebase_links(html, lambda url: mount_url(url, base)))
         with ZipFile(stage / 'pages-runtime.zip', 'w', ZIP_DEFLATED) as runtime:
             for module in sorted((PROJECT / 'anna').rglob('*.py')):
                 runtime.write(module, module.relative_to(PROJECT))
-        (stage / '.nojekyll').touch()
-        total = export_pages_data(stage, source=source, db=db, book=book, our5etools_data=our5etools_data,
-                                  rewrite_html=lambda raw, path: rebase_book(raw, path, base))
+        total += sum((stage / target).stat().st_size for _, target in DOCUMENTS.values())
+        total += (stage / 'pages-runtime.zip').stat().st_size
+        if total > PAGES_LIMIT:
+            raise ValueError(f'Pages output is {total:,} bytes, over the {PAGES_LIMIT:,}-byte limit')
         stage.rename(output)
     print(f'{output}: {total:,} bytes')
 
 
-def main():
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--base', default='/5e-anna/')
-    parser.add_argument('--source', type=Path, default=WEB)
-    parser.add_argument('--db', type=Path, default=DB)
-    parser.add_argument('--book', type=Path, default=BOOK)
-    parser.add_argument('--our5etools-data', type=Path, help='built our5etools snapshot to publish with the default library')
+    parser.add_argument('--our5etools-data', type=Path)
+    parser.add_argument('--home-cache', action='store_true')
     args = parser.parse_args()
-    build(args.output.resolve(), args.source.resolve(), args.db.resolve(), args.book.resolve(), args.base,
-          our5etools_data=args.our5etools_data)
-
-
-if __name__ == '__main__':
-    main()
+    build(args.output.resolve(), WEB, DB, BOOK, args.base, our5etools_data=args.our5etools_data,
+          home_cache=args.home_cache)

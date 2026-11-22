@@ -23,6 +23,19 @@ const annaKit = (() => {
     const route = path.replace(/^\/(read|tour|source)(?=[?#]|$)/, '/$1/');
     return base.pathname + route.slice(1);
   }
+  // Older collection layouts name the collection separately. Reader addresses qualify each location.
+  function readerLink(path) {
+    if (!path.startsWith('/read?')) return path;
+    const url = new URL(path, base.origin);
+    const collection = url.searchParams.get('collection');
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(collection || '')) return path;
+    url.searchParams.delete('collection');
+    for (const key of ['root', 'page', 'entry', 'node']) {
+      const value = url.searchParams.get(key);
+      if (value && !/^[a-z0-9]+(?:-[a-z0-9]+)*:./.test(value)) url.searchParams.set(key, collection + ':' + value);
+    }
+    return url.pathname + url.search + url.hash;
+  }
   // Rendered entry and tour fragments also use the server's site-root URL convention.
   function rebaseLinks(fragment) {
     if (!pages) return;
@@ -30,9 +43,15 @@ const annaKit = (() => {
     for (const element of fragment.querySelectorAll(attributes.map(name => `[${name}]`).join(','))) {
       for (const name of attributes) {
         const path = element.getAttribute(name);
-        if (path !== null) element.setAttribute(name, href(path));
+        if (path !== null) element.setAttribute(name, href(name === 'href' ? readerLink(path) : path));
       }
     }
+  }
+  function hydrateImages(root, measure) {
+    if (!pages || !root.querySelector('figure[data-lazy-media]')) return;
+    import(new URL('pages-media.js', base).href)
+      .then(media => media.hydrateImages(root, {measure}))
+      .catch(() => {});
   }
   async function request(path, options) {
     if (!pages) return fetch(path, options);
@@ -40,6 +59,6 @@ const annaKit = (() => {
     const transport = await import(new URL('pages.js', base).href);
     return transport.request(path, options);
   }
-  return {esc, stored, pages, href, rebaseLinks, request};
+  return {esc, stored, pages, href, rebaseLinks, hydrateImages, request};
 })();
 if (typeof module !== 'undefined') module.exports = annaKit;

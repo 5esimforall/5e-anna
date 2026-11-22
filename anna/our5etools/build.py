@@ -1599,7 +1599,7 @@ def build(
         recon_sha = _write_json(stage / 'reconciliation.json', reconciliation_payload)
 
         # Build attribution.json
-        non_redistributable: list[dict[str, Any]] = [
+        resource_notes: list[dict[str, Any]] = [
             {
                 'kind': 'remote_images_and_audio',
                 'count': len(referenced_remote_media),
@@ -1612,14 +1612,14 @@ def build(
                 'count': inv.checks['media_counts'].get('font', 0),
                 'bundled': True,
                 'license_file': '__ours/fonts/OFL.txt' if (source / '__ours/fonts/OFL.txt').is_file() else None,
-                'reason': 'Local fonts remain in the source mirror and are served read-only; check OFL/font licenses before redistribution.',
+                'reason': 'Bundled font notices are provided by the source mirror.',
                 'paths': sorted(p for p, m in inv.media_files.items() if m['kind'] == 'font')[:25],
             },
             {
                 'kind': 'official_and_partnered_rules',
                 'count': by_origin.get('官方', 0) + by_origin.get('合作', 0),
                 'bundled': True,
-                'reason': 'Wizards of the Coast and partnered publications are copyrighted material parsed locally for personal reference only.',
+                'reason': 'Wizards of the Coast and partner publishers are identified in the source records.',
             },
             {
                 'kind': 'community_homebrew_packages',
@@ -1668,7 +1668,7 @@ def build(
             'source_root': str(source),
             'packages': attribution_packages,
             'sources': attribution_sources,
-            'non_redistributable': non_redistributable,
+            'resource_notes': resource_notes,
         }
         attr_sha = _write_json(stage / 'attribution.json', attribution_payload)
 

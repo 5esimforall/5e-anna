@@ -1,4 +1,4 @@
-"""Package the default Anna and Stella library for a static GitHub Pages deployment."""
+"""Package Anna and Stella libraries for static GitHub Pages hosting."""
 import argparse
 import json
 from pathlib import Path
@@ -20,17 +20,14 @@ DOCUMENTS = {
     '/source': ('source.html', 'source/index.html'),
 }
 WEB_SUFFIXES = {'.css', '.ico', '.js', '.png'}
-HTML_LINK = re.compile(rb'''(\b(?:src|href)=)(["'])(/(?!/)[^"']*)\2''', re.I)
+HTML_LINK = re.compile(rb'''((?<=\s)(?:src|href|poster|data-lazy-media|data-font)\s*=\s*)(["'])(/(?!/)[^"']*)\2''', re.I)
+BOOK_QUERY = re.compile(rb'<a class="ref-filter" href="/\?[^"<>]*"', re.I)
+DOCUMENT_SUFFIX = re.compile(r'^(/(?:read|tour|source))(?=[?#]|$)')
 BINDINGS = re.compile(rb'(<script type="application/json" id="anna-bindings">)(.*?)(</script>)', re.S)
-PAGES_LIMIT = 1_000_000_000
 
 
 def mount_url(value, base):
-    if value == '/':
-        return base
-    if value in DOCUMENTS:
-        return base + value.strip('/') + '/'
-    return base + value.lstrip('/')
+    return base + DOCUMENT_SUFFIX.sub(r'\1/', value)[1:]
 
 
 def rebase_links(content, resolve):
@@ -55,7 +52,7 @@ def rebase_book(content, path, base):
     def book_url(url):
         if url.startswith(('/topics/', '/assets/')):
             return base + book.strip('/') + url
-        if url.startswith(('/book/', '/our5etools-book/', '/our5etools-media/')):
+        if url.startswith(('/book/', '/our5etools-book/', '/our5etools-media/', '/?', '/read?')):
             return mount_url(url, base)
         return url
 
@@ -70,10 +67,16 @@ def rebase_book(content, path, base):
         payload = json.dumps(data, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c')
         return start + payload.encode('ascii') + end
 
-    return BINDINGS.sub(bindings, rebase_links(content, book_url))
+    if book == '/our5etools-book/':
+        content = BOOK_QUERY.sub(lambda match: match[0] + b' target="_blank" rel="noopener"', content)
+    content = BINDINGS.sub(bindings, rebase_links(content, book_url))
+    if book == '/our5etools-book/' and b'data-lazy-media=' in content:
+        module = f'<script type="module" src="{base}pages-media.js"></script>'.encode('ascii')
+        content = content.replace(b'</body>', module + b'</body>', 1)
+    return content
 
 
-def build(output, source, db, book, base):
+def build(output, source, db, book, base, *, our5etools_data=None):
     if re.fullmatch(r'/(?:[A-Za-z0-9_.-]+/)*', base) is None or set(base.split('/')) & {'.', '..'}:
         raise ValueError('Use an absolute Pages base path ending in /')
     if output.exists():
@@ -94,12 +97,9 @@ def build(output, source, db, book, base):
         with ZipFile(stage / 'pages-runtime.zip', 'w', ZIP_DEFLATED) as runtime:
             for module in sorted((PROJECT / 'anna').rglob('*.py')):
                 runtime.write(module, module.relative_to(PROJECT))
-        export_pages_data(stage, source=source, db=db, book=book,
-                          rewrite_html=lambda raw, path: rebase_book(raw, path, base))
         (stage / '.nojekyll').touch()
-        total = sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
-        if total > PAGES_LIMIT:
-            raise ValueError(f'GitHub Pages site exceeds 1 GB ({total:,} bytes)')
+        total = export_pages_data(stage, source=source, db=db, book=book, our5etools_data=our5etools_data,
+                                  rewrite_html=lambda raw, path: rebase_book(raw, path, base))
         stage.rename(output)
     print(f'{output}: {total:,} bytes')
 
@@ -111,8 +111,10 @@ def main():
     parser.add_argument('--source', type=Path, default=WEB)
     parser.add_argument('--db', type=Path, default=DB)
     parser.add_argument('--book', type=Path, default=BOOK)
+    parser.add_argument('--our5etools-data', type=Path, help='built our5etools snapshot to publish with the default library')
     args = parser.parse_args()
-    build(args.output.resolve(), args.source.resolve(), args.db.resolve(), args.book.resolve(), args.base)
+    build(args.output.resolve(), args.source.resolve(), args.db.resolve(), args.book.resolve(), args.base,
+          our5etools_data=args.our5etools_data)
 
 
 if __name__ == '__main__':

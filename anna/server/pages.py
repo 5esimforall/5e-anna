@@ -2,18 +2,34 @@
 from contextlib import closing
 from functools import cached_property, lru_cache
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import traceback
 from urllib.parse import urlsplit
 
 from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, CollectionRegistry
+from anna.presentation.our5etools import load_our5etools_collection
 from anna.presentation.reader import BookReader
 from anna.presentation.tour import Tour
 from anna.server.app import AnnaHandler, READER_ROUTES
 from anna.source import search
 
 ROOT = Path('/anna-pages')
+
+
+def add_cached_media_markers(collection):
+    """Keep media availability in the worker while the site serves the files."""
+    inventory = collection / 'cached-media.json'
+    if not inventory.is_file():
+        return
+    for name in json.loads(inventory.read_text(encoding='utf-8')):
+        rel = PurePosixPath(name)
+        if len(rel.parts) < 2 or rel.parts[0] not in {'img', 'ext'} or '..' in rel.parts:
+            raise ValueError(f'Invalid published media path: {name}')
+        marker = collection / 'media' / rel
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        if not marker.exists():
+            marker.touch()
 
 
 class PublishedReader(BookReader):
@@ -37,7 +53,15 @@ class PublishedSite:
         reader = json.loads((book / 'anna-reader.json').read_text(encoding='utf-8'))
         manifest = json.loads((book / 'anna-manifest.json').read_text(encoding='utf-8'))
         self.reader = PublishedReader(reader, manifest, self.db)
-        self.registry = CollectionRegistry(BookCatalog(self.db, self.source), book_reader=self.reader,
+        our5etools = root / 'data/our5etools'
+        additional = ()
+        if (our5etools / 'manifest.json').is_file():
+            add_cached_media_markers(our5etools)
+            collection = load_our5etools_collection(our5etools, curation_path=self.curation)
+            if collection is None:
+                raise ValueError('Published our5etools snapshot is incomplete')
+            additional = (collection,)
+        self.registry = CollectionRegistry(BookCatalog(self.db, self.source), additional, book_reader=self.reader,
                                            book_snapshot=self.reader.snapshot, book_tour=self)
 
     @cached_property

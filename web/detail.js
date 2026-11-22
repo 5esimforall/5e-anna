@@ -226,7 +226,7 @@ function renderDetail(tab='body') {
   const name=e.name_zh||e.name;
   $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(sourceIds.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(tabButton).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section><p class="reader-hint">${esc(readerHint())}</p>`;
   $('#reader-name').textContent=name;updatePageChrome();watchReaderTitle();markTableFrames();
-  if(tab==='body')markDifferences(e);
+  if(tab==='body')prepareBody(e);
   $('#detail').setAttribute('aria-labelledby','entry-title');
 }
 // A tab to the right of the current one comes in from the right, one to the left from the left.
@@ -315,11 +315,15 @@ async function markDifferences(e){
   text.classList.toggle('differences-marked',result.status==='marked');
   status.textContent=(result.status==='marked'?ui.diffLegend:result.status==='same'?ui.diffNone:ui.diffTooMany).replace('{name}',name);
 }
+function prepareBody(e){
+  annaKit.hydrateImages($('#detail-panel'),markTableFrames);
+  markDifferences(e);
+}
 function toggleDifferences(id){
   const e=currentEntry;if(!e||detailTab!=='body')return;
   e.differenceWith=e.differenceWith===id?null:id;
   const top=$('#detail-content').scrollTop;
-  $('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();markDifferences(e);
+  $('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();prepareBody(e);
   $('#detail-panel').querySelector(`[data-difference="${CSS.escape(id)}"]`)?.focus();
 }
 // Each source table scrolls inside its own frame, so a wide table never drags the prose sideways.
@@ -354,7 +358,7 @@ function loadLayout(e){
   if(e.layout||e.layoutAwaited)return;
   e.layoutAwaited=(e.layoutRequest||layoutOf(e.id)).then(layout=>{
     e.layout=layout;
-    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();markDifferences(e);annaMotion.arrive($('#detail-panel'));}
+    if(currentEntry===e&&detailTab==='body'){const top=$('#detail-content').scrollTop;$('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();prepareBody(e);annaMotion.arrive($('#detail-panel'));}
   });
 }
 // A note and the words it was read from light up together; activating a note brings its words into view.

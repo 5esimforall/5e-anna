@@ -2,24 +2,29 @@
 from contextlib import closing
 import gzip
 from hashlib import sha256
+from ipaddress import ip_address
 import json
 from pathlib import Path, PurePosixPath
 import re
 import shutil
 import sqlite3
 from tempfile import TemporaryDirectory
+from urllib.parse import urlsplit
 
 from anna.paths import PROJECT
 from anna.presentation.catalog import TYPES
 from anna.presentation.collections import DEFAULT
+from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS
 from anna.presentation.tour import load as load_curation
 
 
 CHUNK_SIZE = 1024 * 1024
 MAX_CHUNKS = 4096
-PAGES_LIMIT = 1024 ** 3
+PAGES_LIMIT = 1_000_000_000
 DEFAULT_DB = 'data/extracted/catalog.sqlite'
 DEFAULT_BOOK = 'data/5echm-anna'
+OUR5ETOOLS_DATA = 'data/our5etools'
+OUR5ETOOLS_READER = 'reader/anna-reader.json'
 CURATION = 'tour/tour.json'
 HTML_SUFFIXES = {'.htm', '.html'}
 WEB_SUFFIXES = {'.css', '.js', '.gif', '.ico', '.jpg', '.jpeg', '.png', '.svg', '.webp', '.avif',
@@ -28,6 +33,10 @@ LOCAL_URL = re.compile(rb'''(?P<quote>["'])file:(?://|\\\\)[^"'<>\r\n]*(?P=quote
 
 DEFAULT_TABLES = ('metadata', 'sources', 'pages', 'entities', 'entries', 'entry_sources', 'facts',
                   'relations', 'identity_candidates', 'book_search', 'effective_references')
+OUR5ETOOLS_TABLES = ('metadata', 'entries', 'entry_sources', 'entry_facets', 'sources', 'packages',
+                     'identity_groups', 'identity_members', 'relations', 'book_pages', 'book_search')
+FONT_NOTICE_ROOTS = ('fonts/', '__ours/fonts/', '__brewrepo/_font/')
+FONT_NOTICE_NAMES = ('license', 'ofl', 'copying', 'notice', 'copyright', 'readme')
 
 
 def _json(data):
@@ -36,6 +45,20 @@ def _json(data):
 
 def _read_json(file):
     return json.loads(file.read_text(encoding='utf-8'))
+
+
+def _file_hash(file):
+    digest = sha256()
+    with file.open('rb') as f:
+        for block in iter(lambda: f.read(CHUNK_SIZE), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _db_schema(conn, original):
+    conn.execute('ATTACH DATABASE ? AS original', (original.as_uri() + '?mode=ro',))
+    return conn.execute("SELECT type, tbl_name, name, sql FROM original.sqlite_schema "
+                        "WHERE sql IS NOT NULL AND type IN ('table', 'index') ORDER BY rowid").fetchall()
 
 
 def _input(root, name):
@@ -91,11 +114,9 @@ def _project_entries(conn):
     conn.execute('CREATE VIEW entries AS SELECT e.*, d.data FROM entry_core e LEFT JOIN entry_data d ON d.id=e.id')
 
 
-def _project_db(original, target, source):
+def _project_db(original, target, source, *, align_works=False):
     with closing(sqlite3.connect(target, uri=True)) as conn, conn:
-        conn.execute('ATTACH DATABASE ? AS original', (original.as_uri() + '?mode=ro',))
-        schema = conn.execute("SELECT type, tbl_name, name, sql FROM original.sqlite_schema "
-                              "WHERE sql IS NOT NULL AND type IN ('table', 'index') ORDER BY rowid").fetchall()
+        schema = _db_schema(conn, original)
         definitions = {table: sql for kind, table, _, sql in schema if kind == 'table'}
         for table in DEFAULT_TABLES:
             if table not in definitions:
@@ -124,11 +145,59 @@ def _project_db(original, target, source):
                 sql = sql.replace(' ON entries(', ' ON entry_core(')
             if table != 'effective_references' or name == 'effective_reference_page_idx':
                 conn.execute(sql)
+        if align_works and 'counterpart_sources' in definitions:
+            # The library uses reconciled source codes to align the two translations of a work.
+            conn.execute('CREATE TABLE counterpart_sources (source_id TEXT, code TEXT, status TEXT, '
+                         'PRIMARY KEY(source_id, code)) WITHOUT ROWID')
+            conn.execute("INSERT INTO counterpart_sources SELECT source_id, code, status "
+                         "FROM original.counterpart_sources WHERE status = '上下文推得' AND code != ''")
         conn.execute('CREATE TABLE pages_source (path TEXT PRIMARY KEY, sha256 TEXT NOT NULL, '
                      'html_gzip BLOB NOT NULL)')
         conn.executemany('INSERT INTO pages_source VALUES (?, ?, ?)', _source_rows(source, conn))
         if conn.execute('PRAGMA foreign_key_check').fetchone():
             raise ValueError(f'Invalid foreign keys in projected {original.name}')
+        conn.execute('ANALYZE main')
+
+
+def _project_our_entries(conn):
+    # List queries can avoid reading body and layout data, and body searches can skip rendered HTML.
+    columns = conn.execute('PRAGMA original.table_info(entries)').fetchall()
+    payloads = {'body_text': 'entry_body', 'search_body': 'entry_body', 'layout_html': 'entry_layout'}
+    core = [(name, kind, required, pk) for _, name, kind, required, _, pk in columns if name not in payloads]
+    declarations = [f'{name} {kind}' + (' PRIMARY KEY' if pk else '') + (' NOT NULL' if required else '')
+                    for name, kind, required, pk in core]
+    conn.execute('CREATE TABLE entry_core (' + ', '.join(declarations) + ')')
+    names = 'rowid, ' + ', '.join(name for name, *_ in core)
+    conn.execute(f'INSERT INTO entry_core ({names}) SELECT {names} FROM original.entries ORDER BY rowid')
+    conn.execute('CREATE TABLE entry_body (entry_rowid INTEGER PRIMARY KEY, body_text TEXT NOT NULL, search_body TEXT NOT NULL)')
+    conn.execute('CREATE TABLE entry_layout (entry_rowid INTEGER PRIMARY KEY, layout_html TEXT NOT NULL)')
+    conn.execute('INSERT INTO entry_body SELECT rowid, body_text, search_body FROM original.entries ORDER BY rowid')
+    conn.execute('INSERT INTO entry_layout SELECT rowid, layout_html FROM original.entries ORDER BY rowid')
+    fields = ', '.join(f'{payloads.get(name, "entry_core")}.{name}' for _, name, *_ in columns)
+    conn.execute(f'''CREATE VIEW entries AS SELECT {fields}, entry_core.rowid AS rowid FROM entry_core
+                    LEFT JOIN entry_body ON entry_body.entry_rowid=entry_core.rowid
+                    LEFT JOIN entry_layout ON entry_layout.entry_rowid=entry_core.rowid''')
+
+
+def _project_our_db(original, target):
+    with closing(sqlite3.connect(target, uri=True)) as conn, conn:
+        schema = _db_schema(conn, original)
+        definitions = {table: sql for kind, table, _, sql in schema if kind == 'table'}
+        for table in OUR5ETOOLS_TABLES:
+            if table not in definitions:
+                raise ValueError(f'Missing our5etools table {table}. Rebuild the data before exporting.')
+            if table == 'entries':
+                _project_our_entries(conn)
+                continue
+            conn.execute(definitions[table])
+            where = (" WHERE key IN ('schema','reader_schema','snapshot','built_at','collection','summary')"
+                     if table == 'metadata' else '')
+            conn.execute(f'INSERT INTO "{table}" SELECT * FROM original."{table}"{where} ORDER BY rowid')
+        for kind, table, _, sql in schema:
+            if kind == 'index' and table in OUR5ETOOLS_TABLES:
+                conn.execute(re.sub(r'\bON\s+entries\s*\(', 'ON entry_core(', sql, flags=re.I) if table == 'entries' else sql)
+        if conn.execute('PRAGMA foreign_key_check').fetchone():
+            raise ValueError('Invalid foreign keys in the projected our5etools catalog')
         conn.execute('ANALYZE main')
 
 
@@ -151,11 +220,7 @@ def _default_book(stage, db, book, rewrite_html):
     reader = _read_json(reader_file)
     if manifest['reader_schema'] != reader['schema'] or sha256(reader_file.read_bytes()).hexdigest() != manifest['outputs']['anna-reader.json']:
         raise ValueError('Default reader does not match its manifest; rebuild the linked book')
-    with db.open('rb') as f:
-        digest = sha256()
-        for block in iter(lambda: f.read(CHUNK_SIZE), b''):
-            digest.update(block)
-    if digest.hexdigest() != manifest['database_sha256']:
+    if _file_hash(db) != manifest['database_sha256']:
         raise ValueError('Default database does not match the linked book; rebuild the data')
     pages = reader['pages']
     if any(not name.startswith('topics/') or PurePosixPath(name).suffix.lower() not in HTML_SUFFIXES
@@ -169,6 +234,137 @@ def _default_book(stage, db, book, rewrite_html):
     entries = {entry_id: {key: entry[key] for key in ('path', 'fragment', 'locatable')}
                for entry_id, entry in manifest['entries'].items()}
     return {'reader_schema': manifest['reader_schema'], 'entries': entries}, reader_file
+
+
+def _our_attribution(attribution):
+    attribution.pop('source_root', None)
+    if 'non_redistributable' in attribution:
+        notes = attribution.pop('non_redistributable')
+        attribution.setdefault('resource_notes', notes)
+    for note in attribution.get('resource_notes', ()):
+        if note['kind'] == 'local_fonts' and 'remain in the source mirror' in note.get('reason', ''):
+            note['reason'] = 'Bundled fonts retain their upstream licenses and notices.'
+        if note['kind'] == 'official_and_partnered_rules' and 'for personal reference only' in note.get('reason', ''):
+            note['reason'] = 'Official and partner publications are credited to Wizards of the Coast and their respective partners.'
+    return attribution
+
+
+def _our_media(stage, root, source, inventory, rewrite_html):
+    media_root = root / 'media'
+    media = {item['path']: item['sha256'] for item in inventory['files'] if item['disposition'] == 'local_media'}
+    cached = set()
+    for subdir in ('img', 'ext'):
+        for file in (media_root / subdir).rglob('*'):
+            path = file.relative_to(media_root)
+            if (file.is_file() and file.suffix.lower() in (WEB_SUFFIXES | {'.m4a'}) - {'.css', '.js'}
+                    and not any(part.startswith('.') for part in path.parts)):
+                cached.add(path.as_posix())
+    cached.update(name for name in media if name.startswith(('img/', 'ext/')))
+    for name in sorted(media.keys() | cached):
+        _copy_asset(stage, _input(media_root, name), 'our5etools-media/' + name, rewrite_html,
+                    expected=media.get(name))
+    for item in inventory['files']:
+        name = item['path']
+        path = PurePosixPath(name)
+        if (name.startswith(FONT_NOTICE_ROOTS) and path.name.casefold().startswith(FONT_NOTICE_NAMES)
+                and path.suffix.lower() in {'', '.txt', '.md'}):
+            # The collection build keeps notice hashes in inventory but stages the fonts alone.
+            _copy_asset(stage, _input(source, name), 'our5etools-media/' + name, None, expected=item['sha256'])
+    return sorted(cached)
+
+
+def _public_remote_url(value):
+    if not isinstance(value, str) or any(ord(char) < 33 or char.isspace() or char == '\\' for char in value):
+        return False
+    try:
+        url = urlsplit(value)
+        if (url.scheme != 'https' or url.username is not None or url.password is not None or not url.hostname
+                or url.port == 0):
+            return False
+        host = url.hostname.rstrip('.')
+        if host.endswith(('.localhost', '.local', '.localdomain', '.internal', '.test', '.invalid')):
+            return False
+        try:
+            return ip_address(host).is_global
+        except ValueError:
+            domain = host.encode('idna').decode('ascii')
+            return bool(re.fullmatch(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]*', domain))
+    except (UnicodeError, ValueError):
+        return False
+
+
+def _our_remotes(stage, document, snapshot, cached):
+    if document['snapshot'] != snapshot:
+        raise ValueError('our5etools remote media metadata does not match its manifest')
+    entries = {}
+    for name, candidates in document['entries'].items():
+        path = PurePosixPath(name)
+        if (not name.startswith(('img/', 'ext/')) or name != path.as_posix() or '\\' in name
+                or any(part.startswith('.') or '\x00' in part for part in path.parts)):
+            continue
+        urls = [url for url in candidates if _public_remote_url(url)]
+        if urls:
+            entries[name] = urls
+    (stage / 'our5etools-media-remotes.json').write_bytes(_json({'entries': entries, 'cachedMedia': cached}))
+
+
+def _our_bundle(stage, work, root, source, rewrite_html):
+    manifest = _read_json(_input(root, 'manifest.json'))
+    reader_path = _input(root, OUR5ETOOLS_READER)
+    db = _input(root, 'catalog.sqlite')
+    summary_path = _input(root, 'summary.json')
+    attribution_path = _input(root, 'attribution.json')
+    inventory_path = _input(root, 'inventory.json')
+    remotes_path = _input(root, 'media-remotes.json')
+    for file in (reader_path, db, summary_path, attribution_path, inventory_path, remotes_path):
+        name = file.relative_to(root).as_posix()
+        if _file_hash(file) != manifest['files'].get(name):
+            raise ValueError(f'our5etools {name} does not match its manifest. Rebuild the collection before exporting.')
+    reader = _read_json(reader_path)
+    attribution = _read_json(attribution_path)
+    for document in (reader, attribution, _read_json(summary_path)):
+        if document['collection'] != 'our5etools' or document['snapshot'] != manifest['snapshot']:
+            raise ValueError('our5etools collection metadata does not match its manifest')
+    if manifest['collection'] != 'our5etools' or manifest['reader']['schema'] != reader['schema']:
+        raise ValueError('our5etools reader does not match its manifest')
+    projection = work / 'our5etools.sqlite'
+    _project_our_db(db, projection)
+    with closing(sqlite3.connect(projection.as_uri() + '?mode=ro', uri=True)) as conn:
+        pages = {row[0] for row in conn.execute('SELECT page_path FROM book_pages')}
+        metadata = dict(conn.execute('SELECT key,value FROM metadata'))
+    if pages != reader['pages'].keys() or reader['default_page'] not in pages or any(
+        PurePosixPath(name).suffix.lower() not in HTML_SUFFIXES for name in pages
+    ):
+        raise ValueError('our5etools chapter index does not match the reader model')
+    if metadata['snapshot'] != manifest['snapshot'] or metadata['collection'] != 'our5etools':
+        raise ValueError('our5etools database metadata does not match its manifest')
+    book_root = root / 'reader'
+    assets = {path.relative_to(book_root).as_posix() for path in (book_root / 'anna-assets').rglob('*')
+              if path.is_file() and path.suffix.lower() in WEB_SUFFIXES}
+    assets.update(resource['path'] for resource in reader['presentation_resources'])
+    for name in sorted(pages | assets):
+        _copy_asset(stage, _input(book_root, name), 'our5etools-book/' + name, rewrite_html)
+    for name in sorted(FALLBACK_BOOK_ASSETS):
+        asset = f'anna-assets/{name}'
+        if asset not in assets:
+            fallback = PROJECT / ('web' if name == 'link-labels.js' else 'book')
+            _copy_asset(stage, _input(fallback, name), 'our5etools-book/' + asset, rewrite_html)
+    if source is None:
+        source = Path(manifest['source_root']).resolve()
+    cached = _our_media(stage, root, source, _read_json(inventory_path), rewrite_html)
+    _our_remotes(stage, _read_json(remotes_path), manifest['snapshot'], cached)
+    cached_file = work / 'cached-media.json'
+    cached_file.write_bytes(_json(cached))
+    (stage / 'our5etools-attribution.json').write_bytes(_json(_our_attribution(attribution)))
+    files = {'catalog.sqlite': projection, OUR5ETOOLS_READER: reader_path,
+             'summary.json': summary_path, 'cached-media.json': cached_file}
+    public_manifest = {key: manifest[key] for key in ('schema', 'collection', 'snapshot', 'git_commit',
+                                                       'input_sha256', 'built_at', 'counts', 'reader')}
+    public_manifest['files'] = {name: _file_hash(file) for name, file in files.items()}
+    manifest_file = work / 'our5etools-manifest.json'
+    manifest_file.write_bytes(_json(public_manifest))
+    files['manifest.json'] = manifest_file
+    return {f'{OUR5ETOOLS_DATA}/{name}': file for name, file in files.items()}
 
 
 def _public_curation(source, target):
@@ -220,11 +416,14 @@ def _shard(root, files, chunk_size, gzip_shards):
     (root / 'index.json').write_bytes(_json(index))
 
 
-def export_pages_data(output, *, db, book, source, rewrite_html=None,
-                      curation=PROJECT / CURATION, chunk_size=CHUNK_SIZE, gzip_shards=True, size_limit=PAGES_LIMIT):
+def export_pages_data(output, *, db, book, source, our5etools_data=None, our5etools_source=None,
+                      rewrite_html=None, curation=PROJECT / CURATION, chunk_size=CHUNK_SIZE, gzip_shards=True,
+                      size_limit=PAGES_LIMIT):
     """Write static assets and a virtual file index into the caller's output directory.
 
     ``rewrite_html`` receives (bytes, published POSIX path) for each copied HTML, CSS and JS file.
+    ``our5etools_data`` adds the full companion collection. Font notices use its build's source mirror
+    unless ``our5etools_source`` points to a relocated copy.
     The index records uncompressed lengths and labels gzip shards explicitly.
     ``size_limit`` includes any files the caller has already staged. Returns the resulting byte count.
     """
@@ -239,13 +438,21 @@ def export_pages_data(output, *, db, book, source, rewrite_html=None,
         stage.mkdir()
         default_manifest, default_reader = _default_book(stage, db, book, rewrite_html)
         default_projection = work / 'default.sqlite'
-        _project_db(db, default_projection, source)
+        _project_db(db, default_projection, source, align_works=our5etools_data is not None)
         manifest_path = work / 'default-manifest.json'
         manifest_path.write_bytes(_json(default_manifest))
-        public_curation = work / 'tour.json'
-        _public_curation(curation, public_curation)
         files = {DEFAULT_DB: default_projection, f'{DEFAULT_BOOK}/anna-manifest.json': manifest_path,
-                 f'{DEFAULT_BOOK}/anna-reader.json': default_reader, CURATION: public_curation}
+                 f'{DEFAULT_BOOK}/anna-reader.json': default_reader}
+        if our5etools_data is None:
+            public_curation = work / 'tour.json'
+            _public_curation(curation, public_curation)
+        else:
+            public_curation = curation
+            load_curation(public_curation)
+            companion = Path(our5etools_data).resolve()
+            companion_source = Path(our5etools_source).resolve() if our5etools_source is not None else None
+            files.update(_our_bundle(stage, work, companion, companion_source, rewrite_html))
+        files[CURATION] = public_curation
         _shard(stage / 'pages-data', files, chunk_size, gzip_shards)
         bytes_written = sum(file.stat().st_size for file in stage.rglob('*') if file.is_file())
         if bytes_written + existing_bytes > size_limit:

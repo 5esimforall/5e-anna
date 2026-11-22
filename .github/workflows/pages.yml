@@ -24,23 +24,32 @@ jobs:
           cache: pip
       - id: pages
         uses: actions/configure-pages@v5
-      - name: Build the default library
+      - name: Build the libraries
         env:
           WEB_DIR: ${{ runner.temp }}/5echm-web
+          OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
+          COMPARISON_DIR: ${{ runner.temp }}/5etools-cn
           BOOK_REVISION: c1425c8e90804766689a0db7ec416833f3fc3046
+          OUR5ETOOLS_REVISION: e475d00b50ea1e8bca0dd8f8c1767e4205660a11
+          COMPARISON_REVISION: bdf81fee890db59847b8b1c44b79aaf220f65400
         run: |
           git init "$WEB_DIR"
           git -C "$WEB_DIR" fetch --depth 1 https://github.com/DND5eChm/5echm_web.git "$BOOK_REVISION"
           git -C "$WEB_DIR" checkout --detach FETCH_HEAD
+          git init "$OUR5ETOOLS_DIR"
+          git -C "$OUR5ETOOLS_DIR" fetch --depth 1 https://github.com/KuroNeko233333/KuroNeko233333.github.io.git "$OUR5ETOOLS_REVISION"
+          git -C "$OUR5ETOOLS_DIR" checkout --detach FETCH_HEAD
+          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/tjliqy/5etools-cn.git "$COMPARISON_DIR"
+          git -C "$COMPARISON_DIR" sparse-checkout set --cone data
+          git -C "$COMPARISON_DIR" fetch --depth 1 --filter=blob:none origin "$COMPARISON_REVISION"
+          git -C "$COMPARISON_DIR" checkout --detach FETCH_HEAD
           python -m pip install -r requirements.txt
-          make icons
-          python -m anna.catalog.build --no-counterparts
-          make linked
+          make build "5ETOOLS_DIR=$COMPARISON_DIR"
       - name: Package Anna and Stella
         env:
           WEB_DIR: ${{ runner.temp }}/5echm-web
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
-        run: python -m anna.server.pages_build --base "${BASE_PATH%/}/" --output output/pages
+        run: python -m anna.server.pages_build --base "${BASE_PATH%/}/" --our5etools-data data/our5etools --output output/pages
       - uses: actions/upload-pages-artifact@v4
         with:
           path: output/pages

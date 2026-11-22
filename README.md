@@ -4,7 +4,7 @@ anna 把 5e 不全书整理为可查询的细粒度条目，并生成与原版�
 
 ## 运行
 
-GitHub Pages 提供 [Anna 查询](https://5esimforall.github.io/5e-anna/)、[导览](https://5esimforall.github.io/5e-anna/tour/)和 [Stella 阅读器](https://5esimforall.github.io/5e-anna/read/)，使用默认的不全书资料库。首次打开会载入浏览器查询环境，并按需下载目录和数据分片。发布流程见[使用说明](USAGE.md#github-pages-发布)。
+GitHub Pages 提供 [Anna 查询](https://5esimforall.github.io/5e-anna/)、[导览](https://5esimforall.github.io/5e-anna/tour/)和 [Stella 阅读器](https://5esimforall.github.io/5e-anna/read/)，可在「资料库」中选择不全书和 our5etools。首次打开会载入浏览器查询环境，并按需下载目录、数据分片和 CDN 配图。发布流程见[使用说明](USAGE.md#github-pages-发布)。
 
 ```sh
 make build             # 从原文快照生成数据库与链接版（存在 our5etools 镜像时同步构建）

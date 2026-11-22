@@ -1267,18 +1267,18 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f'  - 告警：{warn}')
     lines.append('')
 
-    # 8. Attribution & non-redistributable resources
-    lines.append('## 8. 来源署名与不可再分发资源清单')
+    # 8. Source attribution and media notices
+    lines.append('## 8. 来源署名与资源说明')
     lines.append('')
     attr_pkgs = attr.get('packages') or []
     attr_srcs = attr.get('sources') or []
-    non_red = attr.get('non_redistributable') or []
+    resource_notes = attr.get('resource_notes', attr.get('non_redistributable')) or []
     lines.append(
         f'- **署名登记**：内容包 `{len(attr_pkgs)}` 项，独立来源 `{len(attr_srcs)}` 项。'
     )
-    if isinstance(non_red, list) and non_red:
-        lines.append(f'- **不可再分发资源说明**（共 `{len(non_red)}` 项）：')
-        for item in non_red[:30]:
+    if isinstance(resource_notes, list) and resource_notes:
+        lines.append(f'- **资源说明**（共 `{len(resource_notes)}` 项）')
+        for item in resource_notes[:30]:
             if isinstance(item, dict):
                 lines.append(
                     f'  - `{item.get("path") or item.get("kind") or item.get("category") or item.get("name", "")}`：'
@@ -1286,10 +1286,10 @@ def render_markdown(report: dict[str, Any]) -> str:
                 )
             else:
                 lines.append(f'  - {item}')
-    elif isinstance(non_red, dict) and non_red:
-        lines.append(f'- **不可再分发资源说明**：{json.dumps(non_red, ensure_ascii=False)}')
+    elif isinstance(resource_notes, dict) and resource_notes:
+        lines.append(f'- **资源说明**：{json.dumps(resource_notes, ensure_ascii=False)}')
     else:
-        lines.append('- **不可再分发资源说明**：未在 `attribution.json` 中登记额外项。')
+        lines.append('- **资源说明**：未在 `attribution.json` 中登记额外项。')
     lines.append('')
 
     return '\n'.join(lines)

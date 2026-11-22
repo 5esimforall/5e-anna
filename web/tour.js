@@ -250,6 +250,7 @@ const annaTour = (() => {
     }, true);
     const lead = section.querySelector('.tour-lead');
     lead ? lead.after(box) : section.querySelector('.tour-main').append(box);
+    annaKit.hydrateImages(box);
     section.dataset.layout = 'ready';
     if (section.isConnected) annaMotion.arrive(box);
   }

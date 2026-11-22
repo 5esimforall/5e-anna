@@ -357,23 +357,20 @@ make up [LAZY_MEDIA=1]
 - **整书阅读与媒体策略**：Stella 从 `/our5etools-book/` 加载 our5etools 的章节 HTML 与 DOM 链接层，与其他资料库同在一个书架上，支持目录导航、章节分页、全文搜索、定义与引用定位以及刷新后位置恢复；`/our5etools-media/` 完全从 `data/our5etools/media/` 提供音频（支持 `Range` 分段播放）、字体与图像，不依赖源镜像目录。由于上游 `our5etools` 仓库本身未打包 `img/` 图包（原站点在浏览器端通过 JS 将 `img/...` 动态指向 `5e.kiwee.top/img/` 等外链），默认运行保持严格离线（`CSP img-src 'self' data:`）与安静的单行「远端配图（未离线收录）」提示；加入 `LAZY_MEDIA=1`、`--lazy-media` 或环境变量 `ANNA_LAZY_MEDIA=1` 后，界面按需把配图提升为延迟加载图像，由服务端按白名单镜像（主站 `5e.kiwee.top/img/`、备站 `raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/` 或 `media-remotes.json`）做校验后原子缓存到 `data/our5etools/media/{img,ext}/`，既保持同源 CSP 策略，后续即使恢复默认离线模式也能直接复用已缓存配图。
 - **预留独立 `5etools` 接口**：`CollectionRegistry`、`load_fivetools_collection()`（读取 `--5etools-data`，默认 `data/5etools/`）、`/5etools-book/` 与 `/5etools-media/` 仍保留给独立的纯中文版 `5etools` 资料库，构建后与其他资料库一样进入合表、导览与书架；未单独构建时界面仅显示 `5etools（未接入）` 占位，与 `our5etools` 严格分离。
 
-### 署名与分发边界
+### 来源署名与媒体
 
-`data/our5etools/attribution.json` 记录全部 323 个资料包、541 个来源及不可随项目二次分发的资源：
+`data/our5etools/attribution.json` 记录官方、合作和社区作品的来源及署名。社区与站点自制包保留原作者、译者、来源链接和 `_meta` 许可注记。GitHub Pages 发布全部已构建的作品和随包媒体，并附上 [our5etools 署名清单](https://5esimforall.github.io/5e-anna/our5etools-attribution.json)及上游字体许可文件。
 
-- **官方与合作出版物（16,190 条）**：Wizards of the Coast 及合作出版内容受版权保护，仅在本机个人查阅使用。
-- **社区与站点自制包（322 个）**：保留原作者、译者、来源链接与 `_meta` 许可注记。
-- **未随包远端媒体（10,914 处引用／22,271 条映射键）**：源镜像仓库未离线打包 `img/` 与外部图床媒体；默认显示为静默占位提示，仅在显式启用 `--lazy-media` 时按需本地缓存，或在构建时通过 `--img-dir` 纳入本机离线图包。
-- **随包本地字体（68 个，已打入 `data/our5etools/media/`）**：构建自上游仓库 `fonts/` 与 `__ours/fonts/`，二次分发前需核对 `__ours/fonts/OFL.txt` 等字体许可。
+Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或来源图床加载，取不到时保留配图提示。使用本机服务时仍可启用 `--lazy-media` 按需缓存，或在构建时通过 `--img-dir` 打包离线配图。
 
 ## GitHub Pages 发布
 
-默认的不全书资料库随 [GitHub Pages 工作流](.github/workflows/pages.yml)发布。工作流从固定的原文镜像提交构建查询库与链接版，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，从站点按需读取数据分片。发布包包含默认资料库的查询、导览与原文阅读，our5etools 和 5etools-cn 的本机对照数据继续在本地流程中使用。
+[GitHub Pages 工作流](.github/workflows/pages.yml)发布不全书和 our5etools。工作流从固定的原文镜像提交构建查询库与链接版，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。5etools-cn 镜像用于构建时的来源对照。
 
 已有 `make build` 产物时，可生成静态预览包。`--base` 对应托管路径，`--output` 指定尚不存在的目录。
 
 ```sh
-.venv/bin/python -m anna.server.pages_build --base /5e-anna/ --output output/pages
+.venv/bin/python -m anna.server.pages_build --base /5e-anna/ --our5etools-data data/our5etools --output output/pages
 ```
 
 不全书原文来自 [DND5eChm/DND5e_chm](https://github.com/DND5eChm/DND5e_chm) 与 [5echm_web](https://github.com/DND5eChm/5echm_web)，发布包包含上游许可证。链接版在原文上添加引用和定位层，供 Anna 与 Stella 互通。

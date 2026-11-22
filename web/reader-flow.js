@@ -307,7 +307,7 @@ class AnnaReaderFlow {
       record.timer = setTimeout(() => this.fail(record,new Error('frame_timeout')),15000);
       if (!collection) throw new Error('outside_library');
       const local = path.slice(path.indexOf(':') + 1);
-      frame.contentWindow.location.replace(collection.page_base + local.split('/').map(encodeURIComponent).join('/'));
+      frame.contentWindow.location.replace(annaKit.href(collection.page_base + local.split('/').map(encodeURIComponent).join('/')));
     } catch (error) { this.fail(record,error); }
     return completion;
   }
@@ -366,7 +366,7 @@ class AnnaReaderFlow {
       record.documentId = data.documentId;
       this.resize(record,data.height);
       this.send(record,'initialize',{theme:document.documentElement.dataset.theme,linkMarks:this.linkMarks,
-        lazyMedia:!!record.collection.lazy_media,cachedMedia:record.collection.cached_media || []}); return;
+        lazyMedia:!annaKit.pages && !!record.collection.lazy_media,cachedMedia:record.collection.cached_media || []}); return;
     }
     if (data.documentId !== record.documentId || data.navigationId !== record.navigationId) return;
     if (data.type === 'initialized') {

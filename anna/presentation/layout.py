@@ -7,13 +7,14 @@ The linked book preserves source content and layout; this derived view is never 
 """
 from __future__ import annotations
 
+import gzip
 import html
 import json
 
 from bs4 import Comment, Doctype, NavigableString, Tag
 
 from anna.catalog.views import METADATA_FIELDS
-from anna.source.pages import read_page
+from anna.source.pages import decode_page, read_page
 from anna.source.html import IGNORED, Document
 
 # Source tags map onto a small, inert vocabulary; anything else is unwrapped, never copied.
@@ -170,9 +171,17 @@ def open_page(db, path, source_root):
     """The source page as the build read it, or why it cannot be laid out: missing, or changed since the build."""
     page = db.execute('SELECT text, sha256 FROM pages WHERE path=?',(path,)).fetchone()
     source = source_root/path
-    if not page or not source.is_file():return None,'missing'
-    raw,_,sha = read_page(source)
-    if sha!=page[1]:return None,'stale'
+    if not page:return None,'missing'
+    expected_sha = page[1]
+    if source.is_file():
+        raw, _, sha = read_page(source)
+    else:
+        packed = db.execute("SELECT 1 FROM sqlite_master WHERE name='pages_source'").fetchone()
+        original = db.execute('SELECT html_gzip,sha256 FROM pages_source WHERE path=?', (path,)).fetchone() if packed else None
+        if not original:return None,'missing'
+        data, expected_sha = original
+        raw, _, sha = decode_page(gzip.decompress(data))
+    if sha!=expected_sha:return None,'stale'
     doc = Document(path,raw)
     if doc.text!=page[0]:
         doc.close();return None,'stale'

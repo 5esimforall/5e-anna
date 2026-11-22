@@ -9,7 +9,10 @@ from anna.paths import WEB
 
 
 def read_page(path):
-    raw = path.read_bytes()
+    return decode_page(path.read_bytes())
+
+
+def decode_page(raw):
     try:
         return raw.decode('utf-8-sig'), 'utf-8', sha256(raw).hexdigest()
     except UnicodeDecodeError:

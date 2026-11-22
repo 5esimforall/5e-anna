@@ -1,0 +1,117 @@
+"""Package the default Anna and Stella library for a static GitHub Pages deployment."""
+import argparse
+import json
+from pathlib import Path
+import re
+import shutil
+import tempfile
+from zipfile import ZIP_DEFLATED, ZipFile
+
+from anna.paths import PROJECT, WEB
+from anna.presentation.catalog import DB
+from anna.server.linked_book import BOOK
+from anna.server.pages_data import export_pages_data
+
+DOCUMENTS = {
+    '/': ('index.html', 'index.html'),
+    '/read': ('reader.html', 'read/index.html'),
+    '/tour': ('tour.html', 'tour/index.html'),
+    '/source': ('source.html', 'source/index.html'),
+}
+WEB_SUFFIXES = {'.css', '.ico', '.js', '.png'}
+HTML_LINK = re.compile(rb'''(\b(?:src|href)=)(["'])(/(?!/)[^"']*)\2''', re.I)
+BINDINGS = re.compile(rb'(<script type="application/json" id="anna-bindings">)(.*?)(</script>)', re.S)
+PAGES_LIMIT = 1_000_000_000
+
+
+def mount_url(value, base):
+    if value == '/':
+        return base
+    if value in DOCUMENTS:
+        return base + value.strip('/') + '/'
+    return base + value.lstrip('/')
+
+
+def rebase_links(content, resolve):
+    def rebase(match):
+        key, quote, raw_url = match.groups()
+        new_url = resolve(raw_url.decode('ascii', errors='surrogateescape')).encode('ascii', errors='surrogateescape')
+        return key + quote + new_url + quote
+    return HTML_LINK.sub(rebase, content)
+
+
+def rebase_book(content, path, base):
+    if path.endswith(('/anna-assets/topic.js', '/anna-assets/links.js')):
+        content = content.replace(b"'/read'", json.dumps(mount_url('/read', base)).encode())
+        content = content.replace(b"'/?entry='", json.dumps(base + '?entry=').encode())
+        reader_entry = json.dumps(mount_url('/read', base) + '?entry=').encode()
+        return content.replace(b'definitionBase+encodeURIComponent(r.id)',
+                               reader_entry + b"+encodeURIComponent((data.reader?.collection || '5echm')+':'+r.id)")
+    if not path.lower().endswith(('.htm', '.html')):
+        return content
+    book = '/' + path.split('/', 1)[0] + '/'
+
+    def book_url(url):
+        if url.startswith(('/topics/', '/assets/')):
+            return base + book.strip('/') + url
+        if url.startswith(('/book/', '/our5etools-book/', '/our5etools-media/')):
+            return mount_url(url, base)
+        return url
+
+    def bindings(match):
+        start, encoded, end = match.groups()
+        data = json.loads(encoded)
+        context = data['reader']
+        context['content_base'] = mount_url(book, base)
+        context['definition_base'] = context['content_base'] + 'definition/'
+        if context.get('media_base'):
+            context['media_base'] = mount_url(context['media_base'], base)
+        payload = json.dumps(data, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c')
+        return start + payload.encode('ascii') + end
+
+    return BINDINGS.sub(bindings, rebase_links(content, book_url))
+
+
+def build(output, source, db, book, base):
+    if re.fullmatch(r'/(?:[A-Za-z0-9_.-]+/)*', base) is None or set(base.split('/')) & {'.', '..'}:
+        raise ValueError('Use an absolute Pages base path ending in /')
+    if output.exists():
+        raise ValueError(f'Choose a new output directory: {output}')
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.pages-', dir=output.parent) as staging:
+        stage = Path(staging) / 'site'
+        stage.mkdir()
+        for file in sorted((PROJECT / 'web').iterdir()):
+            if file.suffix in WEB_SUFFIXES:
+                shutil.copyfile(file, stage / file.name)
+        for source_name, target_name in DOCUMENTS.values():
+            target = stage / target_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', b'<html data-anna-pages', 1)
+            target.write_bytes(rebase_links(html, lambda url: mount_url(url, base)))
+        with ZipFile(stage / 'pages-runtime.zip', 'w', ZIP_DEFLATED) as runtime:
+            for module in sorted((PROJECT / 'anna').rglob('*.py')):
+                runtime.write(module, module.relative_to(PROJECT))
+        export_pages_data(stage, source=source, db=db, book=book,
+                          rewrite_html=lambda raw, path: rebase_book(raw, path, base))
+        (stage / '.nojekyll').touch()
+        total = sum(path.stat().st_size for path in stage.rglob('*') if path.is_file())
+        if total > PAGES_LIMIT:
+            raise ValueError(f'GitHub Pages site exceeds 1 GB ({total:,} bytes)')
+        stage.rename(output)
+    print(f'{output}: {total:,} bytes')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--base', default='/5e-anna/')
+    parser.add_argument('--source', type=Path, default=WEB)
+    parser.add_argument('--db', type=Path, default=DB)
+    parser.add_argument('--book', type=Path, default=BOOK)
+    args = parser.parse_args()
+    build(args.output.resolve(), args.source.resolve(), args.db.resolve(), args.book.resolve(), args.base)
+
+
+if __name__ == '__main__':
+    main()

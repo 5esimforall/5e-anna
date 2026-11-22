@@ -149,6 +149,17 @@ def scan_entries(source: Path | None = None, quiet: bool = False) -> list[dict]:
     return entries
 
 
+def indexed_entries(db):
+    """Read the published full-text index from an already validated database."""
+    return [
+        {"i": i, "url": url, "src": src, "title": title, "tll": title.lower(),
+         "cat": cat, "text": text, "tl": text.lower()}
+        for i, (url, src, title, cat, text) in enumerate(
+            db.execute('SELECT url,src,title,cat,text FROM book_search ORDER BY rowid')
+        )
+    ]
+
+
 def load_index(db_path: Path | None = None, source: Path | None = None, quiet: bool = False) -> list[dict]:
     root = Path(source).resolve() if source else WEB.resolve()
     if not (root / "topics").is_dir():
@@ -161,21 +172,7 @@ def load_index(db_path: Path | None = None, source: Path | None = None, quiet: b
                 has_table = conn.execute("SELECT 1 FROM sqlite_master WHERE name='book_search'").fetchone()
                 sig = conn.execute("SELECT value FROM metadata WHERE key='book_search_signature'").fetchone()
                 if has_table and sig and sig[0] == snapshot:
-                    entries = [
-                        {
-                            "i": i,
-                            "url": url,
-                            "src": src,
-                            "title": title,
-                            "tll": title.lower(),
-                            "cat": cat,
-                            "text": text,
-                            "tl": text.lower(),
-                        }
-                        for i, (url, src, title, cat, text) in enumerate(
-                            conn.execute('SELECT url,src,title,cat,text FROM book_search ORDER BY rowid')
-                        )
-                    ]
+                    entries = indexed_entries(conn)
                     if entries:
                         if not quiet:
                             print(

@@ -124,7 +124,7 @@ const annaLibrary = (() => {
   async function describe(works = false) {
     if (described && (!works || described.works)) return described;
     if (!describing || works) {
-      describing = fetch('/api/library' + (works ? '?works=1' : '')).then(async r => {
+      describing = annaKit.request('/api/library' + (works ? '?works=1' : '')).then(async r => {
         const body = await r.json();
         if (!r.ok) throw new Error(body.error || body.code || r.status);
         described = {...body, works};

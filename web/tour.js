@@ -16,7 +16,7 @@ const annaTourLabels = {
     rest:'选择一项，它会在这里展开', onward:'由此继续', onwardJump:'由此继续 · {count} 项 ↓', unfold:'展开「{name}」',
     filterPlaceholder:'筛选此列表…', filterLabel:'筛选 {name}', filterCount:'{shown} / {total}', filterEmpty:'没有匹配项。',
     loading:'正在读取…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
-    bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。',
+    bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。', pagesUnavailable:'无法读取导览数据，请重试。',
     status:{missing:'未找到对应原文', ambiguous:'原文对应不唯一', placeholder:'分组'},
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']}},
   en:{title:'Tour', skip:'Skip to the tour', intro:'Start from what you want to do, then go down through the book\'s chapters, steps and entries.',
@@ -29,7 +29,7 @@ const annaTourLabels = {
     rest:'Choose an item to open it here', onward:'Where this leads', onwardJump:'Where this leads · {count} ↓', unfold:'Show {name}',
     filterPlaceholder:'Filter this list…', filterLabel:'Filter {name}', filterCount:'{shown} / {total}', filterEmpty:'No matching items.',
     loading:'Loading…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
-    bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.',
+    bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.', pagesUnavailable:'Unable to load tour data. Please retry.',
     status:{missing:'Source not found', ambiguous:'Source match not unique', placeholder:'Group'},
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']}}
 };
@@ -70,11 +70,11 @@ const annaTour = (() => {
     const parts = at.split('/').filter(Boolean);
     return parts.length && parts.every(part => SEGMENT.test(part)) ? parts : [];
   };
-  const tourHref = segments => '/tour' + (segments.length ? '?' + new URLSearchParams({at:joinSegments(segments)}) : '');
-  const queryHref = query => '/?' + new URLSearchParams(Object.entries(query).flatMap(([key, values]) => (Array.isArray(values) ? values : [values]).map(v => [key, v])));
-  const readHref = read => '/read?' + new URLSearchParams(Object.entries(read).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+  const tourHref = segments => annaKit.href('/tour' + (segments.length ? '?' + new URLSearchParams({at:joinSegments(segments)}) : ''));
+  const queryHref = query => annaKit.href('/?' + new URLSearchParams(Object.entries(query).flatMap(([key, values]) => (Array.isArray(values) ? values : [values]).map(v => [key, v]))));
+  const readHref = read => annaKit.href('/read?' + new URLSearchParams(Object.entries(read).filter(([, v]) => v !== null && v !== undefined && v !== '')));
   // Anna names an entry by its own id; the collection that holds it answers.
-  const entryHref = anna => '/?' + new URLSearchParams({...(anna.type ? {type:anna.type} : {}), entry:anna.entry});
+  const entryHref = anna => annaKit.href('/?' + new URLSearchParams({...(anna.type ? {type:anna.type} : {}), entry:anna.entry}));
   // A segment of one collection's own: the collection that answers it, and its own name there.
   const collectionOf = segment => annaWorkspace.collectionOf(segment);
   const icon = '<svg class="tour-item-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
@@ -88,7 +88,7 @@ const annaTour = (() => {
     const params = new URLSearchParams({at:segment});
     if (snapshot) params.set('snapshot', snapshot);
     let response, body = null;
-    try { response = await fetch(annaLibrary.withScope(api + '?' + params)); } catch { throw new LoadError('network', 0); }
+    try { response = await annaKit.request(annaLibrary.withScope(api + '?' + params)); } catch { throw new LoadError('network', 0); }
     try { body = await response.json(); } catch { body = null; }
     if (!response.ok || !body) throw new LoadError(body?.code || 'error', response.status);
     if (body.snapshot) { snapshot ||= body.snapshot; snapshots = body.snapshots || snapshots; }
@@ -120,7 +120,7 @@ const annaTour = (() => {
       (row.count ? `<span class="tour-item-count">${fmt(row.count)}</span>` : '');
     const search = row.search ? ` data-search="${esc(row.search)}"` : '';
     if (row.kind === 'query')
-      return `<li${search}><a class="tour-item" href="${esc(queryHref(row.query))}">${main}<img class="tour-item-out" src="/anna-logo.png" alt="" width="18" height="18"></a></li>`;
+      return `<li${search}><a class="tour-item" href="${esc(queryHref(row.query))}">${main}<img class="tour-item-out" src="${esc(annaKit.href('/anna-logo.png'))}" alt="" width="18" height="18"></a></li>`;
     const at = [...path.slice(0, depth), row.id];
     const disabled = row.kind === 'topic' && row.status !== 'ok';
     const step = group.ordered ? `<span class="tour-step">${index + 1}</span>` : '';
@@ -177,9 +177,9 @@ const annaTour = (() => {
   function body(view, depth) {
     const lead = view.lead ? `<blockquote class="tour-lead" lang="zh-CN">${esc(view.lead.text)}${view.lead.truncated && !view.lead.text.endsWith('…') ? '<span class="tour-ellipsis"> …</span>' : ''}</blockquote>` : '';
     const actions = [];
-    if (view.read) actions.push(`<a class="tour-go" href="${esc(readHref(view.read))}"><img src="/stella-logo.png" alt="" width="24" height="24">${esc(ui.readBook)}</a>`);
-    if (view.anna?.query) actions.push(`<a class="tour-go" href="${esc(queryHref(view.anna.query))}"><img src="/anna-logo.png" alt="" width="24" height="24">${esc(fill(ui.openQuery, {count:fmt(view.anna.count)}))}</a>`);
-    else if (view.anna?.entry) actions.push(`<a class="tour-go" href="${esc(entryHref(view.anna))}"><img src="/anna-logo.png" alt="" width="24" height="24">${esc(ui.openEntry)}</a>`);
+    if (view.read) actions.push(`<a class="tour-go" href="${esc(readHref(view.read))}"><img src="${esc(annaKit.href('/stella-logo.png'))}" alt="" width="24" height="24">${esc(ui.readBook)}</a>`);
+    if (view.anna?.query) actions.push(`<a class="tour-go" href="${esc(queryHref(view.anna.query))}"><img src="${esc(annaKit.href('/anna-logo.png'))}" alt="" width="24" height="24">${esc(fill(ui.openQuery, {count:fmt(view.anna.count)}))}</a>`);
+    else if (view.anna?.entry) actions.push(`<a class="tour-go" href="${esc(entryHref(view.anna))}"><img src="${esc(annaKit.href('/anna-logo.png'))}" alt="" width="24" height="24">${esc(ui.openEntry)}</a>`);
     const status = view.status && !['ok', 'present', 'placeholder'].includes(view.status) ? `<p class="tour-status">${esc(ui.status[view.status] || view.status)}</p>` : '';
     const sequence = view.sequence && depth > 0 ? `<nav class="tour-sequence" aria-label="${esc(nameOf(view))}">${[['previous', 'prev'], ['next', 'next']].map(([key, rel]) => {
       const sibling = view.sequence[key];
@@ -233,7 +233,12 @@ const annaTour = (() => {
     let layout = null;
     try { layout = await load('/api/tour-layout', layouts, section.dataset.segment); } catch { layout = null; }
     if (layout?.status !== 'ok') { section.dataset.layout = 'none'; return; }
-    const box = document.createElement('div'); box.className = 'tour-body layout-text'; box.lang = 'zh-CN'; box.innerHTML = layout.html;
+    const box = document.createElement('div'); box.className = 'tour-body layout-text'; box.lang = 'zh-CN';
+    if (annaKit.pages) {
+      const template = document.createElement('template'); template.innerHTML = layout.html;
+      annaKit.rebaseLinks(template.content);
+      box.innerHTML = template.innerHTML;
+    } else box.innerHTML = layout.html;
     box.addEventListener('error', event => {
       const img = event.target;
       if (!(img instanceof HTMLImageElement) || !img.hasAttribute('data-o5e-fallback')) return;
@@ -449,7 +454,7 @@ const annaTour = (() => {
     if (error) {
       const depth = keep + failure;
       if (error.status === 409) say(ui.bundleChanged);
-      else if (depth === 0) say(ui.unavailable);
+      else if (depth === 0) say(annaKit.pages ? ui.pagesUnavailable : ui.unavailable);
       // A level that no longer exists in this snapshot returns the reader to the level above it.
       if (error.status === 404 && depth > 0) {
         const kept = segments.slice(0, depth - 1);

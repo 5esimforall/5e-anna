@@ -366,6 +366,18 @@ make up [LAZY_MEDIA=1]
 - **未随包远端媒体（10,914 处引用／22,271 条映射键）**：源镜像仓库未离线打包 `img/` 与外部图床媒体；默认显示为静默占位提示，仅在显式启用 `--lazy-media` 时按需本地缓存，或在构建时通过 `--img-dir` 纳入本机离线图包。
 - **随包本地字体（68 个，已打入 `data/our5etools/media/`）**：构建自上游仓库 `fonts/` 与 `__ours/fonts/`，二次分发前需核对 `__ours/fonts/OFL.txt` 等字体许可。
 
+## GitHub Pages 发布
+
+默认的不全书资料库随 [GitHub Pages 工作流](.github/workflows/pages.yml)发布。工作流从固定的原文镜像提交构建查询库与链接版，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，从站点按需读取数据分片。发布包包含默认资料库的查询、导览与原文阅读，our5etools 和 5etools-cn 的本机对照数据继续在本地流程中使用。
+
+已有 `make build` 产物时，可生成静态预览包。`--base` 对应托管路径，`--output` 指定尚不存在的目录。
+
+```sh
+.venv/bin/python -m anna.server.pages_build --base /5e-anna/ --output output/pages
+```
+
+不全书原文来自 [DND5eChm/DND5e_chm](https://github.com/DND5eChm/DND5e_chm) 与 [5echm_web](https://github.com/DND5eChm/5echm_web)，发布包包含上游许可证。链接版在原文上添加引用和定位层，供 Anna 与 Stella 互通。
+
 ## 自动化验证
 
 `make test` 同时运行单元测试和 Playwright 浏览器回归；`make check` 再加数据审计。首次需要 Node.js 20+ 与 npm，并执行 `make browser-setup` 安装 `package-lock.json` 锁定的开发依赖及 Chromium；运行 anna 本身仍只需 Python 依赖。单独运行某层检查：

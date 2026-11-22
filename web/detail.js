@@ -135,7 +135,7 @@ function bookHref(e){
   if(!metadata.collections?.find(c=>c.id===collection)?.reader)return '';
   const loc=e.reader_location||e.provenance?.reader_location;
   if(!nativeEntry(e)&&!(loc&&loc.locatable!==false&&(loc.path||loc.page)))return '';
-  return '/read?'+new URLSearchParams({entry:collection+':'+e.id});
+  return annaKit.href('/read?'+new URLSearchParams({entry:collection+':'+e.id}));
 }
 function safeExternalHref(raw){
   if(typeof raw!=='string')return '';
@@ -220,7 +220,7 @@ function renderDetail(tab='body') {
   const badges=`${e.legacy&&e.legacy!=='unmarked'&&legacy[e.legacy]?badge(legacy[e.legacy]):''}${conflicts.length?badge(`${conflicts.length} 个字段冲突`,'amber'):''}`;
   const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}${relationMark(m)}</button>`).join('')}</div>`:'';
   const native=nativeEntry(e),stella=bookHref(e);
-  const bookLink=stella?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(stella)}"><img src="/stella-logo.png" width="18" height="18" alt="">${esc(native?linkLabels.bookDefinition:ui.provReadBook)} ↗</a>`:'';
+  const bookLink=stella?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(stella)}"><img src="${esc(annaKit.href('/stella-logo.png'))}" width="18" height="18" alt="">${esc(native?linkLabels.bookDefinition:ui.provReadBook)} ↗</a>`:'';
   const rangeLink=native&&metadata.source_text!==false?`<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a>`:'';
   const links=bookLink||rangeLink?`<div class="detail-links">${bookLink}${rangeLink}</div>`:'';
   const name=e.name_zh||e.name;
@@ -326,6 +326,7 @@ function toggleDifferences(id){
 // A frame whose table is wider than the reader offers full-width reading.
 function framedTables(html){
   const template=document.createElement('template');template.innerHTML=html;
+  annaKit.rebaseLinks(template.content);
   for(const table of template.content.querySelectorAll('table')){
     if(table.parentElement?.closest('table'))continue;
     const frame=document.createElement('div');

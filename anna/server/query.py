@@ -50,21 +50,29 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('Host','') not in {f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'}:
             self.send({'error':'仅限本机访问'},status=403); return
         url=urlsplit(self.path)
+        static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
+        static['/favicon.ico']=('favicon.ico','image/x-icon')
+        static['/anna-logo.png']=('anna-logo.png','image/png')
+        static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','motion','menu','topbar','workspace','companions','library','differences')})
+        static['/read']=('reader.html','text/html; charset=utf-8')
+        static['/tour']=('tour.html','text/html; charset=utf-8')
+        static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
+        static['/stella-logo.png']=('stella-logo.png','image/png')
+        static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')
+        static.update({f'/reader.{ext}':(f'reader.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
+        static.update({f'/reader-{name}.js':(f'reader-{name}.js','text/javascript; charset=utf-8') for name in ('labels','model','flow')})
+        static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
+        if url.path in static:
+            try:
+                file,kind=static[url.path]
+                self.send((WEB/file).read_bytes(),kind)
+            except (BrokenPipeError,ConnectionResetError):
+                pass
+            return
+        self.serve_query(url)
+
+    def serve_query(self,url):
         try:
-            static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
-            static['/favicon.ico']=('favicon.ico','image/x-icon')
-            static['/anna-logo.png']=('anna-logo.png','image/png')
-            static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','motion','menu','topbar','workspace','companions','library','differences')})
-            static['/read']=('reader.html','text/html; charset=utf-8')
-            static['/tour']=('tour.html','text/html; charset=utf-8')
-            static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
-            static['/stella-logo.png']=('stella-logo.png','image/png')
-            static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')
-            static.update({f'/reader.{ext}':(f'reader.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
-            static.update({f'/reader-{name}.js':(f'reader-{name}.js','text/javascript; charset=utf-8') for name in ('labels','model','flow')})
-            static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
-            if url.path in static:
-                file,kind=static[url.path]; self.send((WEB/file).read_bytes(),kind); return
             if url.path not in {'/api/meta','/api/facets','/api/entries','/api/entry','/api/entry-layout','/api/export','/api/library','/source'}:
                 raise LookupError('页面不存在')
             registry = self.collection_registry()

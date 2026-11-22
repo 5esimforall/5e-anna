@@ -538,6 +538,9 @@ class AnnaHandler(serve.Handler):
         if url.path not in READER_ROUTES:
             super().do_GET()
             return
+        self.serve_reader(url)
+
+    def serve_reader(self, url):
         params = parse_qs(url.query, keep_blank_values=True)
         try:
             registry = self.collection_registry()

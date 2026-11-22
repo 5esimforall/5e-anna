@@ -7,7 +7,7 @@ const annaUiLabels = {
     readerTitle:'条目阅读',readerHint:'Esc 关闭 · F6 切换列表与详情',readerHintNarrow:'Esc 关闭 · 上方箭头连续查阅结果',readerHintTouch:'用上方箭头连续查阅结果',closeDetail:'关闭详情',
     fullWidth:'全宽阅读',resizeReader:'调整阅读栏宽度',resizeReaderHint:'拖动或用左右方向键调整阅读栏宽度，双击恢复默认',wideTable:'表格宽于阅读栏 · 全宽阅读',readerShare:'阅读栏占 {percent}%',
     previousEntry:'上一条',nextEntry:'下一条',listPosition:'第 {current} / {total} 行',
-    outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',
+    outsideResults:'不在已加载的结果中',loadMore:'继续加载',loadingMore:'正在加载…',retryLoad:'重新加载',exportError:'无法导出 CSV。',
     loadedRange:'已显示 {shown} / {total} {unit}',allLoaded:'已全部显示 {total} {unit}',noResults:'0 条结果',units:{stacked:'行',each:'条'},loading:'正在读取条目…',retry:'重新读取',readError:'无法读取条目',
     body:'正文',fields:'属性',relations:'关系',
     detailTabs:'详情栏目',moreFilters:'更多筛选条件',allEntries:'全部条目',
@@ -38,7 +38,7 @@ const annaUiLabels = {
     readerTitle:'Entry reader',readerHint:'Esc to close · F6 to switch between results and reader',readerHintNarrow:'Esc to close · Use the arrows above to browse the results',readerHintTouch:'Use the arrows above to browse the results',closeDetail:'Close details',
     fullWidth:'Full-width reading',resizeReader:'Resize reader',resizeReaderHint:'Drag or use the arrow keys to resize the reader; double-click to reset',wideTable:'Table wider than the reader · Read full width',readerShare:'Reader at {percent}%',
     previousEntry:'Previous entry',nextEntry:'Next entry',listPosition:'Row {current} of {total}',
-    outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',
+    outsideResults:'Not among the loaded results',loadMore:'Load more',loadingMore:'Loading…',retryLoad:'Try again',exportError:'Unable to export CSV.',
     loadedRange:'Showing {shown} of {total} {unit}',allLoaded:'All {total} {unit} shown',noResults:'No results',units:{stacked:'rows',each:'entries'},loading:'Loading entry…',retry:'Try again',readError:'Unable to load entry',
     body:'Text',fields:'Attributes',relations:'Relations',
     detailTabs:'Detail sections',moreFilters:'More filters',allEntries:'All entries',
@@ -85,7 +85,7 @@ const COMMON=new Set(['ruleset','source','origin','package','status','legacy','c
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
 let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='', focusSections=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
-const sourceURL=(path,start=0,end=0)=>'/source?'+new URLSearchParams({path,start,end})+'#evidence';
+const sourceURL=(path,start=0,end=0)=>annaKit.href('/source?'+new URLSearchParams({path,start,end})+'#evidence');
 const sourceOf=id=>metadata?.sources?.find(s=>s.id===id);
 const sourceName=id=>sourceOf(id)?.name||id, sourceShort=id=>sourceOf(id)?.short_name||id;
 const packageOf=id=>metadata?.packages?.find(p=>p.id===id);
@@ -119,7 +119,7 @@ function fieldText(entry,field,short=false){
 }
 // Every request carries the reader's library (annaLibrary).
 // A failed request keeps its HTTP status: 400 means the server cannot run the query as written.
-async function api(path,signal){const r=await fetch(annaLibrary.withScope(path),{signal});const d=await r.json();
+async function api(path,signal){const r=await annaKit.request(annaLibrary.withScope(path),{signal});const d=await r.json();
   if(!r.ok)throw Object.assign(new Error(d.code==='bundle_changed'?ui.bundleChanged:d.code==='reloading'?ui.reloading:d.code==='reload_failed'?ui.reloadFailed:ui.collectionErrors[d.code]||d.error||'请求失败'),{status:r.status,code:d.code||null});return d;}
 const collectionName=id=>metadata?.collections?.find(c=>c.id===id)?.label?.[locale]||annaLibrary.nameOf(id);
 function showLibrary(){
@@ -1043,7 +1043,27 @@ $('#query-problems').addEventListener('click',e=>{
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
-$('#export').onclick=()=>{location.href=annaLibrary.withScope('/api/export?'+address());};
+let exporting=false;
+$('#export').onclick=async()=>{
+  const path=annaLibrary.withScope('/api/export?'+address());
+  if(!annaKit.pages){location.href=path;return;}
+  if(exporting)return;
+  exporting=true;
+  const status=$('#export-error');status.hidden=true;
+  try{
+    const response=await annaKit.request(path);
+    if(!response.ok){
+      const error=await response.json().catch(()=>({}));
+      throw new Error(error.error||error.code||response.status);
+    }
+    const url=URL.createObjectURL(await response.blob());
+    const link=document.createElement('a');link.href=url;
+    link.download=response.headers.get('Content-Disposition')?.match(/\bfilename="([^"]+)"/i)?.[1]||'5e-anna.csv';
+    document.body.append(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){status.textContent=[ui.exportError,e.message].filter(Boolean).join(' ');status.hidden=false;}
+  finally{exporting=false;}
+};
 // The whole row is the target: anywhere on it reads the row's entry, a version pill reads that version.
 // Selecting text in a row reads nothing, so values stay copyable.
 let resultClick=false;

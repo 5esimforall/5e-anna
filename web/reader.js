@@ -3,7 +3,8 @@
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
-  const ui = annaReaderLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+  const labels = annaReaderLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+  const ui = annaKit.pages ? {...labels, errors:{...labels.errors,...labels.pagesErrors}} : labels;
   const {esc, stored} = annaKit;
   const text = (key, values = {}) => Object.entries(values).reduce((s, [k,v]) => s.replaceAll('{'+k+'}', v), ui[key]);
   for (const element of document.querySelectorAll('[data-text]')) element.textContent = ui[element.dataset.text];
@@ -38,7 +39,7 @@
   function queryURL(params = {}) {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null && v !== '') qs.set(k, v);
-    return '/' + (qs.size ? '?' + qs : '');
+    return annaKit.href('/' + (qs.size ? '?' + qs : ''));
   }
   function readRoute() {
     const p = new URL(location.href).searchParams;
@@ -51,7 +52,7 @@
   function routeURL(target) {
     const params = new URLSearchParams();
     for (const key of ['root','entry','page','anchor','node']) if (target[key]) params.set(key, target[key]);
-    return '/read' + (params.size ? '?' + params : '');
+    return annaKit.href('/read' + (params.size ? '?' + params : ''));
   }
   if ($('#book-query-search')) $('#book-query-search').href = queryURL();
   if ($('#book-error a')) $('#book-error a').href = routeURL({});
@@ -120,7 +121,7 @@
   }
   async function api(path, signal) {
     let response;
-    try { response = await fetch(path, {signal}); } catch (error) {
+    try { response = await annaKit.request(path, {signal}); } catch (error) {
       if (error.name === 'AbortError') throw error;
       throw new Error('network');
     }
@@ -585,7 +586,7 @@
     const link = event.target.closest('a[href]');
     if (!link || link.target === '_blank') return;
     const url = new URL(link.href);
-    if (url.origin !== location.origin || url.pathname !== '/read') return;
+    if (url.origin !== location.origin || url.pathname !== annaKit.href('/read')) return;
     event.preventDefault();
     const params = url.searchParams;
     const target = params.has('entry') ? {root:params.get('root') || '',entry:params.get('entry'),node:params.get('node') || ''} :

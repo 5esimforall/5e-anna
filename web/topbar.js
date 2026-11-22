@@ -7,6 +7,7 @@ const annaTopbar = (() => {
   // A tour level is named by its segments from the first column down, each `topic` or `collection:segment`.
   const TOUR_PATH = /^[A-Za-z0-9_.:-]+(\/[A-Za-z0-9_.:-]+)*$/;
   // Each page belongs to one companion: Anna answers queries and keeps the tour, Stella reads the book with you.
+  const {href} = annaKit;
   const pages = {
     query:{home:'/', logo:'/anna-logo.png', guide:'anna', companion:'query'},
     // The tour remembers the last level the reader opened; turning back to it from the query page returns there.
@@ -33,7 +34,7 @@ const annaTopbar = (() => {
     const nav = document.createElement('nav'); nav.className = 'page-switch'; nav.setAttribute('aria-label', labels.label);
     for (const key of ['tour', 'query'].filter(key => siblings.includes(key))) {
       const link = document.createElement('a');
-      link.href = key === page ? pages[key].home : pages[key].resume?.() || pages[key].home;
+      link.href = href(key === page ? pages[key].home : pages[key].resume?.() || pages[key].home);
       link.dataset.page = key;
       link.textContent = labels[key];
       if (key === page) link.setAttribute('aria-current', 'page');
@@ -43,8 +44,8 @@ const annaTopbar = (() => {
   }
   function render(header) {
     const page = header.dataset.page, {home, logo, guide} = pages[page];
-    const brand = document.createElement('a'); brand.className = 'brand'; brand.href = home;
-    const image = document.createElement('img'); image.className = 'brand-logo'; image.src = logo;
+    const brand = document.createElement('a'); brand.className = 'brand'; brand.href = href(home);
+    const image = document.createElement('img'); image.className = 'brand-logo'; image.src = href(logo);
     image.width = image.height = 36; image.alt = ''; // The name beside it already labels the link.
     image.dataset.guide = guide; // Each guide keeps her avatar across pages: turning to the other, they trade places.
     brand.append(image, annaBrands[page]);
@@ -65,9 +66,9 @@ const annaTopbar = (() => {
   }
   for (const header of document.querySelectorAll('header.topbar[data-page]')) render(header);
   // A page that remembers where the reader was points its switch link there instead of at its home.
-  function pointSwitch(page, href) {
+  function pointSwitch(page, target) {
     const link = document.querySelector(`.page-switch a[data-page="${page}"]`);
-    if (link && href) link.href = href;
+    if (link && target) link.href = href(target);
   }
   return {pages, pointSwitch};
 })();

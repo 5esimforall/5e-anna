@@ -15,19 +15,19 @@ const annaCompanions = (() => {
   const fill = (template, values) => Object.entries(values).reduce((s,[k,v]) => s.replaceAll('{'+k+'}', v), template);
   // `snapshots` are the builds of the collections the page reads, {collection: snapshot}.
   let page, snapshots, slot, go, more, menu;
-  const homeHref = companion => annaTopbar.pages[companion].home;
+  const homeHref = companion => annaKit.href(annaTopbar.pages[companion].home);
   // Where each choice leads. A recent place also asks the page it opens to restore that place.
   function bookHref(choice) {
     const params = new URLSearchParams();
     if (choice.kind === 'topic') {
       const loc = choice.topic.bookLocation;
-      if (!loc) return '/read?' + new URLSearchParams({entry:choice.topic.entry});
+      if (!loc) return annaKit.href('/read?' + new URLSearchParams({entry:choice.topic.entry}));
       for (const field of ['root', 'page', 'node']) if (loc[field]) params.set(field, loc[field]);
       if (loc.fragment) params.set('anchor', loc.fragment);
-      return '/read?' + params;
+    } else {
+      for (const field of ['root', 'page', 'node']) if (choice.memory[field]) params.set(field, choice.memory[field]);
     }
-    for (const field of ['root', 'page', 'node']) if (choice.memory[field]) params.set(field, choice.memory[field]);
-    return '/read?' + params;
+    return annaKit.href('/read?' + params);
   }
   // Anna names an entry by its own id; the collection that holds it answers.
   function queryHref(choice, state) {
@@ -35,7 +35,7 @@ const annaCompanions = (() => {
     const params = new URLSearchParams(choice.kind === 'topic' ? state.query[0]?.query || '' : choice.memory.query);
     const entry = choice.kind === 'topic' ? choice.topic.entry : choice.memory.entry;
     if (entry) params.set('entry', annaWorkspace.localOf(entry));
-    return '/' + (params.size ? '?' + params : '');
+    return annaKit.href('/' + (params.size ? '?' + params : ''));
   }
   const href = (choice, state) => choice.kind === 'home' ? homeHref(other[page]) :
     other[page] === 'book' ? bookHref(choice) : queryHref(choice, state);
@@ -78,7 +78,7 @@ const annaCompanions = (() => {
   function entry(choice, state, primary, secondary = '') {
     const anchor = link(choice, state, 'popup-menu-entry');
     const avatar = document.createElement('img'); avatar.className = 'popup-menu-avatar';
-    avatar.src = annaTopbar.pages[other[page]].logo; avatar.width = avatar.height = 18; avatar.alt = '';
+    avatar.src = annaKit.href(annaTopbar.pages[other[page]].logo); avatar.width = avatar.height = 18; avatar.alt = '';
     const main = document.createElement('span'); main.className = 'popup-menu-label'; main.textContent = primary; anchor.append(avatar, main);
     if (secondary && secondary !== primary) {
       const detail = document.createElement('span'); detail.className = 'popup-menu-detail'; detail.textContent = secondary; anchor.append(detail);
@@ -112,7 +112,7 @@ const annaCompanions = (() => {
     slot = document.querySelector('.topbar .companion');
     const companion = other[page];
     go = document.createElement('a'); go.className = 'companion-go';
-    const avatar = document.createElement('img'); avatar.className = 'companion-avatar'; avatar.src = annaTopbar.pages[companion].logo;
+    const avatar = document.createElement('img'); avatar.className = 'companion-avatar'; avatar.src = annaKit.href(annaTopbar.pages[companion].logo);
     avatar.width = avatar.height = 26; avatar.alt = ''; avatar.dataset.guide = annaTopbar.pages[companion].guide;
     const label = document.createElement('span'); label.className = 'companion-label';
     go.append(avatar, label);

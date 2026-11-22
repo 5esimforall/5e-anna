@@ -540,7 +540,7 @@ class AnnaHandler(serve.Handler):
             return
         self.serve_reader(url)
 
-    def serve_reader(self, url):
+    def serve_reader(self, url, *, curation_path=None):
         params = parse_qs(url.query, keep_blank_values=True)
         try:
             registry = self.collection_registry()
@@ -554,7 +554,7 @@ class AnnaHandler(serve.Handler):
                 raise TourError('invalid_node', 400) if touring else ReaderError('invalid_location', 400)
             one = lambda name: catalog.first(params, name)
             if touring:
-                tour = LibraryTour(registry, scope)
+                tour = LibraryTour(registry, scope, curation_path)
                 tour.check(one('snapshot'))
                 self.send(tour.view(one('at')) if url.path == '/api/tour' else tour.layout(one('at')))
                 return

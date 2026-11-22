@@ -15,10 +15,10 @@ const annaUiLabels = {
     emptyLibrary:'资料库设置收窄了规则版本或作品范围，部分条目未列出。',filterLibraryHint:'资料库、规则版本与作品范围在顶栏「资料库」中设置。',
     libraryState:{narrowed:'已收窄',each:'不去重'},
     collectionErrors:{invalid_collection:'资料库地址无效。',unknown_collection:'未找到这个资料库。',collection_unavailable:'这个资料库尚未接入。'},
-    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
+    moreTypes:'{first}等 {count} 类',nameField:'名称',bodyField:'正文',and:'且',or:'或',joinAnd:'且，改为或',joinOr:'或，改为且',openParen:'左括号',closeParen:'右括号',ghostParen:'未配对的括号按行首或行尾补全',sectionsScope:'含未分类段落',mergeInto:'并入',excludeGroup:'排除',allExcept:'全部条目（不含{list}）',excludeInstead:'改为排除',includeInstead:'改为包含',isNot:'不是',lacks:'不含',excludeCount:'排除它会去掉 {count} 条',nameContains:'包含“{text}”',presetField:'预设',clearGroup:'清除',invertGroup:'反选',optionCount:'选中后 {count} 条',
     elsewhere:'其他类型另有 {count} 条',elsewhereTitle:'搜索在其他类型中的匹配：{list}',dropCondition:'去掉 {condition}',
     problems:'查询提示',unknownField:'anna 不认识“{condition}”这个条件，它不影响结果。',lacksSome:'{types}没有{fields}，不会出现在结果中。',lacksAll:'{types}没有{fields}，没有条目满足{conditions}。',
-    crInverted:'最低 CR {min} 高于最高 CR {max}，两者不能同时成立。',crUnreadable:'CR “{value}”不是数字或分数。',queryRejected:'这个查询无法执行：{message}',queryHeld:'条件需要修改',
+    crInverted:'最低 CR {min} 高于最高 CR {max}，两者不能同时成立。',cannotBoth:'条目只有一个{field}，{a}与{b}不能同时成立。',fixUseOr:'改为“或”',fixMerge:'合并为一张卡片',crUnreadable:'CR “{value}”不是数字或分数。',queryRejected:'这个查询无法执行：{message}',queryHeld:'条件需要修改',
     fixRemove:'移除“{condition}”',fixKeepTypes:'类型只保留{types}',fixSwapCr:'改为 CR {min}–{max}',fixClearAll:'清空条件',listJoin:'、',
     marks:{verbal:['言','言语'],somatic:['姿','姿势'],material:['材','材料'],ritual:['仪','仪式'],concentration:['专','专注']},
     markStates:{absent:'无{name}',unknown:'{name}未提取',conflict:'{name}存在冲突',special:'{name}（特殊材料）'},
@@ -46,10 +46,10 @@ const annaUiLabels = {
     emptyLibrary:'Your library settings leave out some rules versions or works, so some entries are not listed.',filterLibraryHint:'Collections, rules versions and works are set under Library in the top bar.',
     libraryState:{narrowed:'narrowed',each:'not deduplicated'},
     collectionErrors:{invalid_collection:'Invalid collection address.',unknown_collection:'Collection not found.',collection_unavailable:'This collection is not connected yet.'},
-    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
+    moreTypes:'{first} and {count} types',nameField:'Name',bodyField:'Text',and:'and',or:'or',joinAnd:'and; switch to or',joinOr:'or; switch to and',openParen:'Opening parenthesis',closeParen:'Closing parenthesis',ghostParen:'An unmatched parenthesis is completed at the start or end of the line',sectionsScope:'Including untyped sections',mergeInto:'Add to',excludeGroup:'Exclude',allExcept:'All entries except {list}',excludeInstead:'Exclude instead',includeInstead:'Include instead',isNot:'is not',lacks:'lacks',excludeCount:'Excluding it removes {count}',nameContains:'contains “{text}”',presetField:'Preset',clearGroup:'Clear',invertGroup:'Invert',optionCount:'{count} results if chosen',
     elsewhere:'{count} more in other types',elsewhereTitle:'Matches for this search in other types: {list}',dropCondition:'Without {condition}',
     problems:'Query notes',unknownField:'anna does not know the condition “{condition}”; it does not affect the results.',lacksSome:'{types} have no {fields}, so they do not appear in the results.',lacksAll:'{types} have no {fields}, so nothing meets {conditions}.',
-    crInverted:'Minimum CR {min} is above maximum CR {max}; both cannot hold.',crUnreadable:'CR “{value}” is not a number or fraction.',queryRejected:'This query cannot run: {message}',queryHeld:'Conditions need a fix',
+    crInverted:'Minimum CR {min} is above maximum CR {max}; both cannot hold.',cannotBoth:'An entry has one {field}, so {a} and {b} cannot both hold.',fixUseOr:'Use “or”',fixMerge:'Merge into one card',crUnreadable:'CR “{value}” is not a number or fraction.',queryRejected:'This query cannot run: {message}',queryHeld:'Conditions need a fix',
     fixRemove:'Remove “{condition}”',fixKeepTypes:'Keep only {types}',fixSwapCr:'Use CR {min}–{max}',fixClearAll:'Clear conditions',listJoin:', ',
     marks:{verbal:['V','Verbal'],somatic:['S','Somatic'],material:['M','Material'],ritual:['R','Ritual'],concentration:['C','Concentration']},
     markStates:{absent:'No {name}',unknown:'{name} not extracted',conflict:'{name} conflicts',special:'{name} (special material)'},
@@ -160,8 +160,8 @@ const snapshots=()=>Object.fromEntries((metadata?.collections||[]).filter(c=>c.s
 // An entry belongs to its own collection: Stella and the shared workspace name it `collection:id`.
 const entryCollection=e=>e?.collection||metadata.collection;
 const qualifiedEntry=e=>e?entryCollection(e)+':'+e.id:'';
-// A remembered query is its committed conditions: the open entry and unfinished typing are not part of it.
-function queryKey(){const query=new URLSearchParams(params);query.delete('entry');query.delete('typing');query.delete('tab');return query.toString();}
+// A remembered query is its kept conditions: the open entry and unfinished typing are not part of it.
+function queryKey(){return address({typed:false,omit:['entry','tab']}).toString();}
 // Names a remembered query by its heading and search words, as a reader would describe it.
 function queryTitle(){const terms=searchTerms(),title=typeTitle();return !terms.length?title:title===ui.allEntries?terms.join(' '):`${title} · ${terms.join(' ')}`;}
 // This tab's query is Anna's latest place in the shared workspace, so Stella's switcher can lead back to it.
@@ -197,10 +197,9 @@ function endTopic(entry){
   if(sharing()&&entry)annaWorkspace.update(snapshots(),state=>annaWorkspace.clearTopic(state,qualifiedEntry(entry)));
 }
 function historyUpdate(replace=false){
-  // The address lists the conditions in the bar's order, so a reload or Back shows them where they were.
-  placeCards();params=orderedParams();
+  // The address writes the line in the bar's order, so a reload or Back shows each card where it was.
   if(!replace)saveUiState();
-  const search=params.toString();history[replace?'replaceState':'pushState'](history.state,'',location.pathname+(search?'?'+search:''));
+  const search=address().toString();history[replace?'replaceState':'pushState'](history.state,'',location.pathname+(search?'?'+search:''));
 }
 function restoreUiState(state){
   if(!state)return;
@@ -233,24 +232,134 @@ function renderSortOptions(){
   $('#sort').value=effectiveSort();
 }
 // Every field reads the same way: nothing chosen sets no condition, choosing a value includes it, and values
-// chosen in one field are alternatives. A field's values can instead be excluded (`not_<key>`): the field then
-// holds for entries with none of them. The panel edits whichever list the field uses; a field holding only
-// excluded values is in exclude mode. A condition stays as chosen, every value included, until the reader removes it.
+// chosen in one card are alternatives. A card can instead exclude its values (`not_<key>`): it then holds for
+// entries with none of them. The panel edits a field's card where it stands; a field whose card excludes is in
+// exclude mode. A card stays as chosen, every value included, until the reader removes it.
 const NOT='not_';
 const baseKey=key=>key.replace(/^not_/,'');
-const excluding=g=>params.has(NOT+g.key)&&!params.has(g.key);
-const modeKey=g=>excluding(g)?NOT+g.key:g.key;
-function selected(g){return new Set(params.getAll(modeKey(g)).filter(v=>v!==NONE));}
-function setSelection(g,values,key=modeKey(g)){
-  params.delete(key);values.forEach(v=>params.append(key,v));
+// The condition bar reads like a line of text: cards, parentheses and the joins between them, with the text
+// field as the caret. Neighbouring cards join with ∧ until the reader turns a join to ∨, and ∨ binds tighter than
+// ∧: `A ∧ B ∨ C` reads A ∧ (B ∨ C), so one turned join adds an alternative and leaves the rest required.
+// Parentheses regroup. The address writes the line in its order, as anna/presentation/expression.py reads it:
+// consecutive values of one field are one card, each search term is a card of its own, and the markers `or`,
+// `and`, `open` and `close` stand between them.
+const TERM_KEYS=new Set(['q','body','typing','not_q','not_body']);
+const FIELD_KEYS=new Set(['type','cr_min','cr_max','conflict','ruleset','legacy','status','source','origin','package','copy_status']);
+const NEGATABLE=new Set(['type','q','body','ruleset','legacy','status','source','origin','package','copy_status']);
+const MARKERS=new Set(['or','and','open','close']);
+const cardKey=k=>TERM_KEYS.has(k)||FIELD_KEYS.has(k)||k.startsWith('f_')||k.startsWith(NOT)&&(NEGATABLE.has(baseKey(k))||baseKey(k).startsWith('f_'));
+// A token keeps its `uid` while it stays in the line; `or` says it joins the token before it with ∨. `caret`
+// counts the tokens before the field; `caretOr` is the join a card typed at the caret takes where no card follows.
+let line=[],caret=0,caretOr=false,tokenCount=0;
+const token=t=>({uid:++tokenCount,or:false,...t});
+const card=(key,values)=>token({kind:'card',key,values});
+const ends=t=>t?.kind==='card'||t?.kind==='close';
+const begins=t=>t?.kind==='card'||t?.kind==='open';
+// A join stands after a card or `)` and before a card or `(`.
+const joined=i=>ends(line[i-1])&&begins(line[i]);
+function settleJoins(){line.forEach((t,i)=>{if(!joined(i))t.or=false;});}
+const cardsOf=test=>line.filter(t=>t.kind==='card'&&test(t));
+const valuesOf=key=>cardsOf(t=>t.key===key).flatMap(t=>t.values);
+const tokenOf=uid=>line.find(t=>t.uid===Number(uid))||null;
+const orTurned=()=>line.some((t,i)=>t.or&&joined(i));
+// The join at the caret: the one between its neighbours, or the one the next card takes where none follows.
+const gapOr=()=>joined(caret)?line[caret].or:caretOr;
+function setGapOr(or){
+  if(!ends(line[caret-1]))return;
+  if(joined(caret)){if(line[caret].or!==or){line[caret].or=or;commit();}}else{caretOr=or;renderCards();}
 }
-function clearField(key){params.delete(key);params.delete(NOT+key);}
-// Flipping a field moves its values between included and excluded, merging with any already on the other side.
-function flipField(key){
-  const to=key.startsWith(NOT)?baseKey(key):NOT+key,values=[...new Set([...params.getAll(to),...params.getAll(key)])].filter(v=>v!==NONE);
-  params.delete(key);params.delete(to);values.forEach(v=>params.append(to,v));
-  if(baseKey(key)==='type'){chooseTypes(params.getAll('type'));return;}
-  changed();
+// New tokens land at the caret and take its join on both sides: a card typed among alternatives joins them.
+function insert(tokens){
+  tokens[0].or=gapOr();line.splice(caret,0,...tokens);caret+=tokens.length;caretOr=false;settleJoins();
+}
+function partner(i){
+  const step=line[i].kind==='open'?1:-1;let depth=0;
+  for(let j=i;j>=0&&j<line.length;j+=step){if(line[j].kind===line[i].kind)depth++;else if(line[j].kind!=='card'&&--depth===0)return j;}
+  return -1;
+}
+// A card leaves with the tighter of its joins, so it leaves its alternatives and the rest keeps its shape. A
+// parenthesis leaves with its partner, ungrouping what they held.
+function removeAt(i){
+  const t=line[i];if(!t)return;
+  for(const j of t.kind==='card'?[i]:[i,partner(i)].filter(j=>j>=0).sort((a,b)=>b-a)){
+    const gone=line[j],next=line[j+1];
+    if(gone.kind==='card'&&joined(j)&&joined(j+1))next.or=gone.or&&next.or;
+    if(gone.kind==='open'&&next)next.or=gone.or;
+    line.splice(j,1);if(caret>j)caret--;
+  }
+  settleJoins();
+}
+// A `(` the line leaves open closes at its end, and a stray `)` opens at its start.
+function ghosts(){
+  let depth=0,stray=0;
+  for(const t of line){if(t.kind==='open')depth++;else if(t.kind==='close'){if(depth)depth--;else stray++;}}
+  return {opens:stray,closes:depth};
+}
+// The line as the server reads it: cards are leaves, `{op,parts}` their ∧ (`all`) or ∨ (`any`). An empty group
+// stands for nothing.
+function lineTree(){
+  const {opens,closes}=ghosts(),ts=[...Array(opens).fill({kind:'open'}),...line,...Array(closes).fill({kind:'close'})];
+  let at=0;const more=()=>at<ts.length&&ts[at].kind!=='close';
+  const join=(op,parts)=>{parts=parts.filter(Boolean).flatMap(p=>p.op===op?p.parts:[p]);return parts.length>1?{op,parts}:parts[0]||null;};
+  const atom=()=>{const t=ts[at++];if(t.kind!=='open')return t;const inner=all();at++;return inner;};
+  const any=()=>{const parts=[atom()];while(more()&&ts[at].or)parts.push(atom());return join('any',parts);};
+  const all=()=>{const parts=[];while(more())parts.push(any());return join('all',parts);};
+  return all()||{op:'all',parts:[]};
+}
+// Whether two cards must both hold: they stand side by side in one conjunction.
+const conjoined=(a,b,node=lineTree())=>!!node.op&&(node.op==='all'&&node.parts.includes(a)&&node.parts.includes(b)||node.parts.some(p=>conjoined(a,b,p)));
+// Three-valued: whether the line can hold given what `leaf` knows of each card (true, false, or null for unknown).
+function possible(node,leaf){
+  if(!node.op)return leaf(node);
+  const values=node.parts.map(p=>possible(p,leaf));
+  if(node.op==='all')return values.includes(false)?false:values.every(v=>v===true)?true:null;
+  return values.includes(true)?true:values.every(v=>v===false)?false:null;
+}
+// The address of the line. The draft (`typing`) or the probe stands at the caret and takes its join; `cards`
+// lists the cards in the order the server numbers them, which is how counts name a card.
+function lineParams({typed=true,probe=false}={}){
+  const tokens=[...line],extra=probe?{kind:'probe'}:typed&&draft?{kind:'card',key:'typing',values:[draft],draft:true}:null;
+  if(extra)tokens.splice(caret,0,{...extra,or:gapOr()});
+  const out=new URLSearchParams(),cards=[];
+  const left=t=>ends(t)||t?.kind==='probe',right=t=>begins(t)||t?.kind==='probe';
+  tokens.forEach((t,i)=>{
+    const prev=tokens[i-1],join=left(prev)&&right(t);
+    if(join&&t.or)out.append('or','');
+    else if(join&&t.kind==='card'&&prev.kind==='card'&&prev.key===t.key&&!TERM_KEYS.has(t.key))out.append('and','');
+    if(t.kind!=='card'){out.append(t.kind,'');return;}
+    cards.push(t.draft?'typing':t.uid);for(const v of t.values)out.append(t.key,v);
+  });
+  return {params:out,cards};
+}
+// The page's address: the line, then the request's other parameters (sort, entry, sections…).
+function address({typed=true,probe=false,omit=[]}={}){
+  const out=lineParams({typed,probe}).params;
+  for(const [k,v] of params)if(!omit.includes(k))out.append(k,v);
+  return out;
+}
+// A link's line read back. The draft returns to the field at its place; every other parameter is kept in `params`.
+function readLine(search){
+  const tokens=[],options=new URLSearchParams();let or=false,split=true,typed=null;
+  for(const [k,v] of new URLSearchParams(search)){
+    if(MARKERS.has(k)){if(k==='open')tokens.push(token({kind:'open',or}));else if(k==='close')tokens.push(token({kind:'close'}));or=k==='or';split=true;continue;}
+    if(k==='probe'){or=false;split=true;continue;}
+    if(!cardKey(k)){options.append(k,v);continue;}
+    const value=TERM_KEYS.has(k)?v.trim():v;if(!value)continue;
+    if(k==='typing'){typed??={text:value,at:tokens.length,or};or=false;split=true;continue;}
+    const last=tokens.at(-1);
+    if(!split&&!TERM_KEYS.has(k)&&last?.kind==='card'&&last.key===k)last.values.push(value);
+    else tokens.push({...card(k,[value]),or});
+    or=false;split=false;
+  }
+  line=tokens;settleJoins();caret=typed?typed.at:line.length;
+  caretOr=!!typed&&!joined(caret)&&ends(line[caret-1])&&typed.or;
+  draft=typed?.text||'';$('#q').value=draft;params=options;
+}
+// Every edit of the line ends here. A change of the chosen types reads a new table; any other reads the results.
+let tableTypes=null;
+function commit(replace=false){
+  if(tableKey()!==tableTypes){clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});changeTable();return;}
+  changed(replace);
 }
 function changed(replace=false){
   clearTimeout(timer);params.delete('entry');historyUpdate(replace);closeEntry({update:false,restoreFocus:false});
@@ -258,6 +367,23 @@ function changed(replace=false){
   if(tableRejected){changeTable();return;}
   sync();$('.table-wrap').scrollTop=0;load();refreshFacets();
 }
+// The panel edits a field's card: the last card written for the field, included or excluded. A field without one
+// gets a new card at the end of the line.
+const panelCard=key=>cardsOf(t=>baseKey(t.key)===key).at(-1)||null;
+const excluding=g=>!!panelCard(g.key)?.key.startsWith(NOT);
+function selected(g){return new Set((panelCard(g.key)?.values||[]).filter(v=>v!==NONE));}
+const fieldValue=key=>panelCard(key)?.values[0]||'';
+function setSelection(key,values){
+  const at=panelCard(key);values=[...new Set(values)];
+  if(key==='type')values.sort((a,b)=>typeRank(a)-typeRank(b));
+  if(at){if(values.length)at.values=values;else removeAt(line.indexOf(at));return;}
+  if(!values.length)return;
+  const end=caret===line.length;line.push(card(key,values));settleJoins();if(end)caret=line.length;
+}
+function clearField(key){for(const t of cardsOf(t=>baseKey(t.key)===key))removeAt(line.indexOf(t));}
+// Turning a card over moves its values between included and excluded; it keeps its place.
+function flipCard(t){t.key=t.key.startsWith(NOT)?baseKey(t.key):NOT+t.key;commit();}
+function dropToken(t){const i=line.indexOf(t);if(i<0)return;removeAt(i);commit();}
 // Each option counts what choosing it would match under every other condition (serve.facets).
 const optionTitle=(o,g)=>`${o.title||o.label} · ${(g&&excluding(g)?ui.excludeCount:ui.optionCount).replace('{count}',fmt(o.count||0))}`;
 function multiGroup(g){
@@ -265,100 +391,71 @@ function multiGroup(g){
   return `<fieldset class="facet ${free?'unconstrained':''} ${excluding(g)?'excluding':''}" data-group="${esc(g.key)}"><legend>${esc(g.label)}</legend><div class="facet-line"><div class="group-actions"><button type="button" data-action="clear" aria-label="${esc(g.label)}${ui.clearGroup}" ${free?'disabled':''}>${ui.clearGroup}</button><button type="button" data-action="invert" aria-label="${esc(g.label)}${ui.invertGroup}" ${free?'disabled':''}>${ui.invertGroup}</button><button type="button" data-action="exclude" aria-label="${esc(g.label)}${ui.excludeGroup}" aria-pressed="${excluding(g)}" ${free?'disabled':''}>${ui.excludeGroup}</button></div><div class="choices">${g.options.map(o=>`<label class="chip ${o.count?'':'empty'}" title="${esc(optionTitle(o,g))}" data-option-search="${esc((o.search||o.label).toLowerCase())}"><input type="checkbox" value="${esc(o.value)}" aria-label="${esc(g.label+'：'+o.label)}" ${chosen.has(o.value)?'checked':''}><span>${esc(o.label)}<small class="chip-count">${fmt(o.count||0)}</small></span></label>`).join('')}</div></div></fieldset>`;
 }
 function flagGroup(g){
-  const active=params.get(g.key)||'';
+  const active=fieldValue(g.key);
   const known=g.options.filter(o=>o.value==='true'||o.value==='false');
   const options=[{value:'',label:'任意'},...known.map(o=>({...o,label:g.key==='f_attunement'?(o.value==='true'?'需要':'无需'):o.value==='true'?'是':'否'})),...g.options.filter(o=>!['true','false','__na__'].includes(o.value))];
   return `<fieldset class="flag-group" data-group="${esc(g.key)}"><legend>${esc(g.label)}</legend><div class="segmented">${options.map(o=>`<button type="button" data-flag="${esc(o.value)}" aria-label="${esc(g.label+'：'+o.label)}" aria-pressed="${active===o.value}">${esc(o.label)}</button>`).join('')}</div></fieldset>`;
 }
 function rangeGroup(){
   const values=['0','1/8','1/4','1/2',...Array.from({length:30},(_,i)=>String(i+1))];
-  for(const key of ['cr_min','cr_max'])if(params.has(key)&&!values.includes(params.get(key)))values.push(params.get(key));
-  return `<fieldset class="facet cr-range"><legend>挑战等级</legend><div class="range-controls">${['cr_min','cr_max'].map((key,i)=>`<label>${i?'最高':'最低'} <select id="${key}" aria-label="${i?'最高':'最低'} CR"><option value="">不限</option>${values.map(v=>`<option value="${v}" ${params.get(key)===v?'selected':''}>${v}</option>`).join('')}</select></label>`).join('<span>—</span>')}<span class="muted">含边界；未提取与冲突值不进入范围结果</span></div></fieldset>`;
+  for(const key of ['cr_min','cr_max'])if(fieldValue(key)&&!values.includes(fieldValue(key)))values.push(fieldValue(key));
+  return `<fieldset class="facet cr-range"><legend>挑战等级</legend><div class="range-controls">${['cr_min','cr_max'].map((key,i)=>`<label>${i?'最高':'最低'} <select id="${key}" aria-label="${i?'最高':'最低'} CR"><option value="">不限</option>${values.map(v=>`<option value="${v}" ${fieldValue(key)===v?'selected':''}>${v}</option>`).join('')}</select></label>`).join('<span>—</span>')}<span class="muted">含边界；未提取与冲突值不进入范围结果</span></div></fieldset>`;
 }
-// The condition bar reads like a line of text. Each card is one condition and keeps the place it was given; the
-// text field is the caret and can sit between any two cards. A field's card is named by its URL key (`type`,
-// `not_f_school`, `cr_min`), a kept search by its list and words (`q:火`, `not_body:专注`), since removing one
-// search renumbers the rest. Including or excluding the same field or words is the same card turned over.
-const TERM_LISTS=['q','not_q','body','not_body'];
-const fieldKey=k=>k.startsWith('f_')||COMMON.has(k)||['type','cr_min','cr_max'].includes(k);
-const isFieldCard=k=>fieldKey(k)||k.startsWith(NOT)&&fieldKey(baseKey(k))&&!['cr_min','cr_max'].includes(baseKey(k));
-const isCardParam=k=>isFieldCard(k)||TERM_LISTS.includes(k);
-function cardParts(id){const i=id.indexOf(':');return i<0?{key:id}:{key:id.slice(0,i),term:id.slice(i+1)};}
-// `caret` counts the cards before the field. `cardsAt` says where the next new cards go: 'caret' when the
-// reader adds them from the bar, otherwise after the others.
-let cardOrder=[],caret=0,cardsAt=null;
-// The cards a query holds in its address's order, as a link or a history entry lists them.
-function naturalCards(){
-  const out=new Set();
-  for(const [k,v] of params){if(isFieldCard(k))out.add(k);else if(TERM_LISTS.includes(k)&&v.trim())out.add(k+':'+v.trim());}
-  return [...out];
-}
-function resetCards(){cardOrder=naturalCards();caret=cardOrder.length;cardsAt=null;}
-// Cards that remain keep their order and the caret keeps its place among them. A card turned over takes the
-// place of the one it replaces; a new one lands at the caret, or after the others. Nothing is resorted or merged.
-const CARET=Symbol('caret');
-function placeCards(){
-  const present=naturalCards(),held=new Set(present),known=new Set(cardOrder);
-  const line=[...cardOrder.slice(0,caret),CARET,...cardOrder.slice(caret)],fresh=[];
-  for(const id of present){
-    if(known.has(id))continue;
-    const i=line.findIndex(x=>x!==CARET&&!held.has(x)&&baseKey(x)===baseKey(id));
-    if(i>=0)line[i]=id;else fresh.push(id);
-  }
-  const kept=line.filter(x=>x===CARET||held.has(x));
-  kept.splice(cardsAt==='caret'||kept.at(-1)===CARET?kept.indexOf(CARET):kept.length,0,...fresh);
-  cardsAt=null;caret=kept.indexOf(CARET);cardOrder=kept.filter(x=>x!==CARET);
-  committed=cardOrder.filter(id=>id.startsWith('q:')).map(id=>id.slice(2));
-}
-function orderedParams(){
-  const out=new URLSearchParams();
-  for(const id of cardOrder){const {key,term}=cardParts(id);if(term!==undefined)out.append(key,term);else for(const v of params.getAll(key))out.append(key,v);}
-  for(const [k,v] of params)if(!isCardParam(k))out.append(k,v);
-  return out;
-}
-// Counts and the server name a kept search by its list and position in the bar (`q0`, `not_body1`).
-function serverKey(id){const {key,term}=cardParts(id);return term===undefined?key:key+cardOrder.filter(c=>cardParts(c).key===key).indexOf(id);}
-function cardOf(key){const m=/^((?:not_)?(?:q|body))(\d+)$/.exec(key);return m?cardOrder.filter(c=>cardParts(c).key===m[1])[Number(m[2])]||null:key;}
-const termsOf=list=>list==='q'?committed:termList(list);
-const AND=extra=>`<span class="and${extra}" role="img" aria-label="${esc(ui.and)}">∧</span>`;
-function cardHTML(id,note){
-  const {key}=cardParts(id),server=serverKey(id),text=conditionText(id),negated=key.startsWith(NOT);
-  const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict','sections'].includes(key);
+function cardHTML(t,note){
+  const {key}=t,text=conditionText(t),negated=key.startsWith(NOT);
+  const flip=negated?ui.includeInstead:ui.excludeInstead,flippable=!['cr_min','cr_max','conflict'].includes(key);
   const described=note?` aria-describedby="${note.id}"`:'';
-  return `<span class="condition${negated?' negated':''}"${note?` data-tone="${note.tone}"`:''} data-card="${esc(id)}">`+
-    (flippable?`<button type="button" class="condition-text" data-flip="${esc(server)}" aria-label="${esc(text)}，${esc(flip)}" title="${esc(flip)}"${described}>${esc(text)}</button>`:`<span class="condition-text"${described}>${esc(text)}</span>`)+
-    `<button type="button" class="condition-remove" data-remove="${esc(server)}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">×</button></span>`;
+  return `<span class="condition${negated?' negated':''}"${note?` data-tone="${note.tone}"`:''} data-uid="${t.uid}" data-key="${esc(key)}">`+
+    (flippable?`<button type="button" class="condition-text" data-flip="${t.uid}" aria-label="${esc(text)}，${esc(flip)}" title="${esc(flip)}"${described}>${esc(text)}</button>`:`<span class="condition-text"${described}>${esc(text)}</span>`)+
+    `<button type="button" class="condition-remove" data-remove="${t.uid}" aria-label="移除 ${esc(text)}" title="移除 ${esc(text)}">×</button></span>`;
 }
-// A card and its ∧ stay the same while they name the same condition, whether it includes or excludes. The ∧
-// beside the caret belongs to no card: it may be hidden, and a hidden box has no place to slide from or to.
+function parenHTML(t,ghost=false){
+  const open=t.kind==='open',label=ghost?ui.ghostParen:open?ui.openParen:ui.closeParen;
+  return `<span class="paren${ghost?' ghost':''}"${ghost?' aria-hidden="true"':` data-uid="${t.uid}" role="img" aria-label="${esc(label)}"`} title="${esc(label)}">${open?'(':')'}</span>`;
+}
+// A join reads ∧ or ∨ and turns over when pressed. `at` names the token after it, or the caret.
+function joinHTML(or,at,extra=''){
+  const label=or?ui.joinOr:ui.joinAnd;
+  return at==null?`<span class="join${extra}" data-op="${or?'or':'and'}" role="img" aria-label="${esc(or?ui.or:ui.and)}">${or?'∨':'∧'}</span>`
+    :`<button type="button" class="join${extra}" data-op="${or?'or':'and'}" data-join="${at}" aria-label="${esc(label)}" title="${esc(label)}">${or?'∨':'∧'}</button>`;
+}
+// A card and the join before it stay the same while they keep their uid, whichever way they are turned. The
+// joins beside the caret belong to no card: they may be hidden, and a hidden box has no place to slide from or to.
 function conditionKey(el){
-  if(el.matches('.and'))return !el.matches('.slot-before,.slot-after')&&el.nextElementSibling?.dataset.card?baseKey(el.nextElementSibling.dataset.card)+' ∧':null;
-  return baseKey(el.dataset.card);
+  if(el.matches('.join'))return el.dataset.join&&el.dataset.join!=='caret'?'j'+el.dataset.join:null;
+  return el.dataset.uid?'t'+el.dataset.uid:null;
 }
-// The cards are placed around the field, never the field among them: moving a focused field would blur it.
-// Beside the caret, a ∧ shows only while words are typed there, so the line always reads card ∧ card.
+// The tokens are placed around the field, never the field among them: moving a focused field would blur it.
+// Beside the caret the join shows while words are typed there or while it joins two cards, so the line always
+// reads card ∧ card; a ∨ chosen for the next card shows at once.
 let cardsShape='';
 function renderCards({animate=false}={}){
-  const strip=$('#active-filters'),input=$('#q'),notes=problemNotes();
-  const join=ids=>ids.map(id=>cardHTML(id,notes.get(id))).join(AND(''));
-  const before=cardOrder.slice(0,caret),after=cardOrder.slice(caret);
-  const html=[join(before)+(before.length?AND(' slot-before'+(after.length?' joins':'')):''),(after.length?AND(' slot-after'):'')+join(after)];
-  const shape=html.join('\n');
+  const strip=$('#active-filters'),input=$('#q'),notes=problemNotes(),{opens,closes}=ghosts();
+  // Each token with the join before it; the join at the caret stands beside the field instead.
+  const piece=(t,i)=>(joined(i)&&i!==caret?joinHTML(t.or,t.uid):'')+(t.kind==='card'?cardHTML(t,notes.get(t.uid)):parenHTML(t));
+  const left=line[caret-1],right=line[caret];
+  const before='<span class="paren ghost" aria-hidden="true">(</span>'.repeat(opens)+line.slice(0,caret).map((t,i)=>piece(t,i)).join('')+
+    (ends(left)?joinHTML(gapOr(),'caret',' slot-before'+(joined(caret)?' joins':'')+(caretOr?' pending':'')):'');
+  const after=(begins(right)?joinHTML(right.or,joined(caret)?'caret':null,' slot-after'):'')+line.slice(caret).map((t,i)=>piece(t,caret+i)).join('')+
+    '<span class="paren ghost" aria-hidden="true">)</span>'.repeat(closes)+
+    (params.get('sections')==='1'?`<span class="condition scope" data-scope="sections"><span class="condition-text">${esc(ui.sectionsScope)}</span><button type="button" class="condition-remove" data-remove-scope="sections" aria-label="移除 ${esc(ui.sectionsScope)}" title="移除 ${esc(ui.sectionsScope)}">×</button></span>`:'');
+  const shape=before+'\n'+after;
   if(shape!==cardsShape){
     cardsShape=shape;
-    const active=strip.contains(document.activeElement)&&document.activeElement.closest('.condition');
-    const keep=active&&{base:baseKey(active.dataset.card),remove:document.activeElement.matches('.condition-remove')};
-    // The field takes its new width inside the change, so cards are measured where they finally stand.
-    const place=()=>{for(const el of [...strip.children])if(el!==input)el.remove();input.insertAdjacentHTML('beforebegin',html[0]);input.insertAdjacentHTML('afterend',html[1]);fitCaret();};
-    animate?annaMotion.rearrange(strip,'.condition,.and',conditionKey,place):place();
-    if(keep)[...strip.querySelectorAll('.condition')].find(c=>baseKey(c.dataset.card)===keep.base)
-      ?.querySelector(keep.remove?'.condition-remove':'button.condition-text')?.focus({preventScroll:true});
+    const active=strip.contains(document.activeElement)&&document.activeElement!==input&&document.activeElement;
+    const keep=active&&{uid:active.closest('[data-uid]')?.dataset.uid,join:active.dataset.join,remove:active.matches('.condition-remove')};
+    // The field takes its new width inside the change, so tokens are measured where they finally stand.
+    const place=()=>{for(const el of [...strip.children])if(el!==input)el.remove();input.insertAdjacentHTML('beforebegin',before);input.insertAdjacentHTML('afterend',after);fitCaret();};
+    animate?annaMotion.rearrange(strip,'.condition,.join,.paren',conditionKey,place):place();
+    if(keep?.join)strip.querySelector(`[data-join="${CSS.escape(keep.join)}"]`)?.focus({preventScroll:true});
+    else if(keep?.uid)strip.querySelector(`[data-uid="${CSS.escape(keep.uid)}"]`)?.querySelector(keep.remove?'.condition-remove':'button.condition-text')?.focus({preventScroll:true});
   }else fitCaret();
 }
-// At the end the field takes the rest of the line and shows its hint; between cards it is as wide as its words.
+// At the end the field takes the rest of the line and shows its hint; between tokens, or before a `)` the line
+// closes for the reader, it is as wide as its words.
 let measure=null;
 function fitCaret(){
-  const strip=$('#active-filters'),input=$('#q'),inside=caret<cardOrder.length;
+  const strip=$('#active-filters'),input=$('#q'),inside=caret<line.length||ghosts().closes>0;
   strip.classList.toggle('drafting',!!input.value);strip.classList.toggle('caret-inside',inside);
   input.placeholder=inside?'':input.dataset.placeholder;
   if(inside){
@@ -377,50 +474,67 @@ function moveCaret(to){
   if(to===caret)return;
   const from=caret;
   if($('#q').value.trim()){keepDraft();if(to>from)to+=caret-from;}
-  caret=Math.max(0,Math.min(cardOrder.length,to));renderCards();
+  caret=Math.max(0,Math.min(line.length,to));caretOr=false;renderCards();
 }
-// The gap a point falls in: after every card that ends above it or whose middle lies before it on its line.
+// The gap a point falls in: after every token that ends above it or whose middle lies before it on its line.
 function gapAt(x,y){
   let gap=0;
-  for(const card of $('#active-filters').querySelectorAll('.condition')){const r=card.getBoundingClientRect();if(r.bottom<=y||r.top<=y&&(r.left+r.right)/2<x)gap++;else break;}
+  for(const el of $('#active-filters').querySelectorAll('.condition[data-uid],.paren[data-uid]')){const r=el.getBoundingClientRect();if(r.bottom<=y||r.top<=y&&(r.left+r.right)/2<x)gap++;else break;}
   return gap;
 }
-// A query stays as the reader wrote it. Where conditions cannot all hold, a chosen type cannot answer one, or
-// the server cannot run the query, a note below the bar says so and offers the edits that would resolve it.
+// A query stays as the reader wrote it. Where cards cannot all hold, a chosen type cannot answer one, or the
+// server cannot run the query, a note below the bar says so and offers the edits that would resolve it.
 let rejection=null,shownProblems=[],problemsShape='';
-const rejectionKey=()=>{const query=new URLSearchParams(params);query.delete('entry');query.delete('tab');return query.toString();};
+const rejectionKey=()=>address({omit:['entry','tab']}).toString();
 const crValue=s=>!s?null:s.includes('/')?s.split('/').map(Number).reduce((a,b)=>a/b):Number(s);
+// The fields one value at a time: an entry has one type, one rules version, one legacy mark and one basis.
+const SINGLE_FIELDS=new Set(['type','ruleset','legacy','status']);
 function queryProblems(){
-  const out=[],list=xs=>xs.join(ui.listJoin),types=params.getAll('type').filter(t=>t!==NONE);
+  const out=[],list=xs=>xs.join(ui.listJoin),quoted=xs=>list(xs.map(x=>`“${x}”`));
+  const remove=c=>({label:ui.fixRemove.replace('{condition}',conditionText(c)),run:()=>dropToken(c)});
   const rejected=rejection&&rejection.query===rejectionKey()?{tone:'error',cards:[],text:ui.queryRejected.replace('{message}',rejection.message),fixes:[{label:ui.fixClearAll,run:clearAll}]}:null;
   if(rejected)out.push(rejected);
+  const tree=lineTree(),crCards=cardsOf(c=>c.key==='cr_min'||c.key==='cr_max');
+  // A bound that is not a number explains why the server cannot run the query; its note replaces the server's.
+  for(const c of crCards)if(!Number.isFinite(crValue(c.values[0])))out.push({tone:'error',cards:[c.uid],explains:true,text:ui.crUnreadable.replace('{value}',c.values[0]),fixes:[remove(c)]});
+  if(out.some(p=>p.explains))return out.filter(p=>p!==rejected);
   if(metadata){
-    // Conditions that leave out the same chosen types share one note, which offers each removal and one narrowing.
-    const answered=Object.values(metadata.type_conditions||{}).flat(),seen=new Set(),lacks=new Map(),quoted=xs=>list(xs.map(x=>`“${x}”`));
-    for(const id of cardOrder){
-      const condition=id.startsWith('f_')?id.slice(2):id==='cr_min'||id==='cr_max'?'cr':null;
-      if(!condition||seen.has(condition))continue;seen.add(condition);
-      const cards=condition==='cr'?cardOrder.filter(c=>c==='cr_min'||c==='cr_max'):[id],key=condition==='cr'?'cr':id,text=conditionText(key);
-      const remove={label:ui.fixRemove.replace('{condition}',text),run:()=>dropCondition(key)};
-      if(!answered.includes(condition)){out.push({tone:'warning',cards,text:ui.unknownField.replace('{condition}',text),fixes:[remove]});continue;}
-      const lacking=types.filter(t=>!(metadata.type_conditions[t]||[]).includes(condition));if(!lacking.length)continue;
-      const group=lacks.get(lacking.join())||{lacking,answering:types.filter(t=>!lacking.includes(t)),cards:[],fields:[],texts:[],fixes:[]};
-      group.cards.push(...cards);group.fields.push(condition==='cr'?'CR':fieldLabel(id));group.texts.push(text);group.fixes.push(remove);lacks.set(lacking.join(),group);
+    // A type-specific card holds for no entry of a type that cannot answer it. Where that leaves a chosen type out
+    // of the results, the cards responsible share one note, which offers each removal and one narrowing.
+    const conditions=metadata.type_conditions||{},answered=new Set(Object.values(conditions).flat());
+    const field=c=>{const b=baseKey(c.key);return b.startsWith('f_')?b.slice(2):b==='cr_min'||b==='cr_max'?'cr':null;};
+    for(const c of cardsOf(c=>field(c)&&!answered.has(field(c))))out.push({tone:'warning',cards:[c.uid],text:ui.unknownField.replace('{condition}',conditionText(c)),fixes:[remove(c)]});
+    const lacks=(t,c)=>!!field(c)&&answered.has(field(c))&&!(conditions[t]||[]).includes(field(c));
+    const knows=(t,free)=>c=>c===free?null:baseKey(c.key)==='type'?c.values.includes(t)!==c.key.startsWith(NOT):lacks(t,c)?c.key.startsWith(NOT):null;
+    const can=t=>possible(tree,knows(t))!==false,types=chosenTypes(),groups=new Map();
+    for(const t of types){
+      if(can(t))continue;
+      const blamed=cardsOf(c=>!c.key.startsWith(NOT)&&lacks(t,c)&&possible(tree,knows(t,c))!==false);
+      if(!blamed.length)continue;
+      const id=blamed.map(c=>c.uid).join();if(!groups.has(id))groups.set(id,{lacking:[],blamed});groups.get(id).lacking.push(t);
     }
-    for(const {lacking,answering,cards,fields,texts,fixes} of lacks.values()){
-      const narrow=answering.length?{label:ui.fixKeepTypes.replace('{types}',list(answering.map(typeName))),run:()=>chooseTypes(answering)}
-        :{label:ui.fixRemove.replace('{condition}',conditionText('type')),run:()=>dropCard('type')};
-      out.push({tone:answering.length?'warning':'error',cards,fixes:[...fixes,narrow],
-        text:(answering.length?ui.lacksSome:ui.lacksAll).replace('{types}',list(lacking.map(typeName))).replace('{fields}',quoted(fields)).replace('{conditions}',quoted(texts))});
+    const anything=(metadata.type_order||[]).some(can),answering=types.filter(can),typeCards=cardsOf(c=>c.key==='type');
+    for(const {lacking,blamed} of groups.values()){
+      const narrow=typeCards.length!==1?[]:answering.length?[{label:ui.fixKeepTypes.replace('{types}',list(answering.map(typeName))),run:()=>{typeCards[0].values=answering;commit();}}]:!anything?[remove(typeCards[0])]:[];
+      out.push({tone:anything?'warning':'error',cards:blamed.map(c=>c.uid),fixes:[...blamed.map(remove),...narrow],
+        text:(anything?ui.lacksSome:ui.lacksAll).replace('{types}',list(lacking.map(typeName))).replace('{fields}',quoted([...new Set(blamed.map(c=>field(c)==='cr'?'CR':fieldLabel(baseKey(c.key))))])).replace('{conditions}',quoted(blamed.map(conditionText)))});
     }
   }
-  const min=params.get('cr_min'),max=params.get('cr_max');
-  // A bound that is not a number explains why the server cannot run the query; its note replaces the server's.
-  for(const key of ['cr_min','cr_max']){const value=params.get(key);if(value&&!Number.isFinite(crValue(value)))
-    out.push({tone:'error',cards:[key],explains:true,text:ui.crUnreadable.replace('{value}',value),fixes:[{label:ui.fixRemove.replace('{condition}',conditionText(key)),run:()=>dropCard(key)}]});}
-  if(out.some(p=>p.explains))return out.filter(p=>p!==rejected);
-  if(crValue(min)>crValue(max)&&max)out.push({tone:'error',cards:['cr_min','cr_max'],text:ui.crInverted.replace('{min}',min).replace('{max}',max),
-    fixes:[{label:ui.fixSwapCr.replace('{min}',max).replace('{max}',min),run:()=>{params.set('cr_min',max);params.set('cr_max',min);changed();}}]});
+  // Two cards of a field that holds one value per entry cannot both hold with no value in common.
+  const single=cardsOf(c=>SINGLE_FIELDS.has(c.key));
+  single.forEach((a,i)=>single.slice(i+1).forEach(b=>{
+    if(a.key!==b.key||a.values.some(v=>b.values.includes(v))||!conjoined(a,b,tree))return;
+    const next=line.indexOf(b)===line.indexOf(a)+1;
+    out.push({tone:'error',cards:[a.uid,b.uid],text:ui.cannotBoth.replace('{field}',fieldLabel(a.key)).replace('{a}',`“${conditionText(a)}”`).replace('{b}',`“${conditionText(b)}”`),
+      fixes:[...(next?[{label:ui.fixUseOr,run:()=>{b.or=true;commit();}}]:[]),{label:ui.fixMerge,run:()=>{a.values=[...new Set([...a.values,...b.values])];if(a.key==='type')a.values.sort((x,y)=>typeRank(x)-typeRank(y));dropToken(b);}}]});
+  }));
+  // An inverted range cannot hold where both bounds are required together; under ∨ it reads outside the range.
+  for(const min of crCards.filter(c=>c.key==='cr_min'))for(const max of crCards.filter(c=>c.key==='cr_max')){
+    const [low,high]=[min.values[0],max.values[0]];
+    if(!(crValue(low)>crValue(high))||!conjoined(min,max,tree))continue;
+    out.push({tone:'error',cards:[min.uid,max.uid],text:ui.crInverted.replace('{min}',low).replace('{max}',high),
+      fixes:[{label:ui.fixSwapCr.replace('{min}',high).replace('{max}',low),run:()=>{min.values=[high];max.values=[low];commit();}}]});
+  }
   return out;
 }
 function renderProblems(){
@@ -432,13 +546,13 @@ function renderProblems(){
 }
 function problemNotes(){
   const notes=new Map();
-  shownProblems.forEach((p,i)=>p.cards.forEach(id=>{if(!notes.has(id))notes.set(id,{id:'query-problem-'+i,tone:p.tone});}));
+  shownProblems.forEach((p,i)=>p.cards.forEach(uid=>{if(!notes.has(uid))notes.set(uid,{id:'query-problem-'+i,tone:p.tone});}));
   return notes;
 }
 // Cards and notes render even before a table is known, so a query the server rejects can still be edited.
 function renderQuery(){
-  placeCards();renderProblems();renderCards({animate:true});
-  $('#filter-count').textContent=cardOrder.length||'';
+  renderProblems();renderCards({animate:true});
+  $('#filter-count').textContent=cardsOf(()=>true).length||'';
   if(metadata){$('#title').textContent=typeTitle();updatePageChrome();}
 }
 function sync(){
@@ -447,16 +561,16 @@ function sync(){
   renderSortOptions();
   const desc=params.get('dir')==='desc';$('#direction').textContent=desc?'降序 ↓':'升序 ↑';
   $('#direction').setAttribute('aria-label',desc?'切换为升序':'切换为降序');
-  for(const key of ['cr_min','cr_max'])if($('#'+key))$('#'+key).value=params.get(key)||'';
+  for(const key of ['cr_min','cr_max'])if($('#'+key))$('#'+key).value=fieldValue(key);
   for(const g of groups){
     const el=document.querySelector(`[data-group="${g.key}"]`);if(!el)continue;
     const values=selected(g);el.classList.toggle('unconstrained',!values.size);el.classList.toggle('excluding',excluding(g));
     for(const input of el.querySelectorAll('input[type=checkbox]'))input.checked=values.has(input.value);
     for(const b of el.querySelectorAll('[data-action]'))b.disabled=!values.size;
     el.querySelector('[data-action=exclude]')?.setAttribute('aria-pressed',String(excluding(g)));
-    for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',(params.get(g.key)||'')===b.dataset.flag);
+    for(const b of el.querySelectorAll('[data-flag]'))b.setAttribute('aria-pressed',fieldValue(g.key)===b.dataset.flag);
   }
-  const extraCount=groups.filter(g=>(params.has(g.key)||params.has(NOT+g.key))&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
+  const extraCount=groups.filter(g=>panelCard(g.key)&&$('#domain-extra')?.querySelector(`[data-group="${g.key}"]`)).length;
   if($('#extra-count'))$('#extra-count').textContent=extraCount?String(extraCount):'';
 }
 // The table keeps the last completed results, dimmed and inert, until the next response renders
@@ -487,7 +601,7 @@ function renderPanel(){
   const focusAt=focused&&{group:focused.closest('[data-group]')?.dataset.group,value:focused.value,action:focused.dataset.action};
   $('#type-filters').innerHTML=multiGroup(groups.find(g=>g.key==='type'));
   $('#domain-filters').innerHTML=(schema.range?rangeGroup():'')+multi.slice(0,2).map(multiGroup).join('')+
-    (extra?`<details id="domain-extra" ${extraGroups.some(g=>params.has(g.key)||params.has(NOT+g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
+    (extra?`<details id="domain-extra" ${extraGroups.some(g=>panelCard(g.key))||$('#domain-extra')?.open?'open':''}><summary>${esc(ui.moreFilters)} <span id="extra-count"></span></summary>${extra}</details>`:'');
   $('#domain-extra')?.addEventListener('toggle',queueUiSave);
   if(focusAt?.group){
     const box=document.querySelector(`[data-group="${CSS.escape(focusAt.group)}"]`);
@@ -510,21 +624,26 @@ function applyFacets(data){
   $('#type-total').textContent=`${fmt(data.scope_total)} 个版本候选`;
   renderElsewhere();sync();
 }
-const facetsURL=()=>'/api/facets?'+new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir'].includes(k)));
+// Counts name each card by its place; the cards a response describes are kept with it.
+let facetCards=[];
+const facetsURL=()=>'/api/facets?'+address({omit:['entry','sort','dir']});
+
 // Counts follow every condition, so they refresh beside each query; a late response never replaces a newer one.
 async function refreshFacets(){
   const gen=++facetGeneration;
-  try{const data=await api(facetsURL());if(gen===facetGeneration)applyFacets(data);}catch{/* The results report query errors; counts keep their last values. */}
+  const cards=lineParams().cards;
+  try{const data=await api(facetsURL());if(gen===facetGeneration){facetCards=cards;applyFacets(data);}}catch{/* The results report query errors; counts keep their last values. */}
 }
 // New types change the table itself: its columns, fields and sorts arrive before the rows are read.
 // Conditions the new table cannot answer stay on the bar, with a note saying which types they leave out.
 let tableRejected=false;
 async function changeTable(){
-  const gen=++panelGeneration,fgen=++facetGeneration;request?.abort();generation++;ready=false;tableRejected=false;
+  const gen=++panelGeneration,fgen=++facetGeneration;request?.abort();generation++;ready=false;tableRejected=false;tableTypes=tableKey();
   awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;renderQuery();
+  const cards=lineParams().cards;
   try{
     const data=await api(facetsURL());if(gen!==panelGeneration||fgen!==facetGeneration)return;
-    applyFacets(data);
+    facetCards=cards;applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     historyUpdate(true);sync();ready=true;await load();
   }catch(e){
@@ -618,7 +737,7 @@ function nearEnd(){
   const row=$('#load-more-row');if(row.hidden)return false;
   return row.getBoundingClientRect().top<$('.table-wrap').getBoundingClientRect().bottom+NEAR_END;
 }
-const entriesURL=(offset,limit)=>'/api/entries?'+new URLSearchParams([...params,['offset',offset],['limit',limit]]);
+function entriesURL(offset,limit){const query=address();query.append('offset',offset);query.append('limit',limit);return '/api/entries?'+query;}
 const hasMore=()=>!!currentData&&currentData.rows.length<currentData.total;
 function renderLoadState(){
   const data=currentData,unit=ui.units[data?.versions]||ui.units.each;
@@ -681,55 +800,57 @@ $('#filter-panel').addEventListener('change',e=>{
   if(el.type==='checkbox'&&el.closest('[data-group]')){
     const g=groups.find(g=>g.key===el.closest('[data-group]').dataset.group);const set=selected(g);
     el.checked?set.add(el.value):set.delete(el.value);
-    if(g.key==='type'&&!excluding(g)){chooseTypes([...set]);return;}
-    setSelection(g,[...set]);changed();
+    setSelection(g.key,[...set]);commit();
   }else if(['cr_min','cr_max'].includes(el.id)){
     // An inverted range stays as chosen; the note below the bar offers to swap its ends.
-    setParam(el.id,el.value);changed();
+    setSelection(el.id,el.value?[el.value]:[]);commit();
   }
 });
 $('#filter-panel').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;const group=b.closest('[data-group]');if(!group)return;const g=groups.find(g=>g.key===group.dataset.group);
-  if(b.hasAttribute('data-flag')){setParam(g.key,b.dataset.flag);changed();return;}
-  if(b.dataset.action==='exclude'){flipField(modeKey(g));return;}
-  if(b.dataset.action==='clear'){clearField(g.key);if(g.key==='type')chooseTypes([]);else changed();return;}
-  const current=selected(g),next=g.options.map(o=>o.value).filter(v=>!current.has(v));
-  if(g.key==='type'&&!excluding(g)){chooseTypes(next);return;}
-  setSelection(g,next);changed();
+  if(b.hasAttribute('data-flag')){setSelection(g.key,b.dataset.flag?[b.dataset.flag]:[]);commit();return;}
+  if(b.dataset.action==='exclude'){const at=panelCard(g.key);if(at)flipCard(at);return;}
+  if(b.dataset.action==='clear'){clearField(g.key);commit();return;}
+  const current=selected(g);setSelection(g.key,g.options.map(o=>o.value).filter(v=>!current.has(v)));commit();
 });
-// Name searches are conditions like any other. Kept searches are `q`; the text being typed is `typing`, a live
-// search that Enter keeps as a chip, so a reload returns it to the field rather than making it a chip.
-// Both are page state, read from the URL only on load and history navigation: the URL trails the field by the
-// debounce, and inferring kept searches from it once took half-typed IME text for a kept search.
-const searchTerms=()=>[...new Set(params.getAll('q').map(t=>t.trim()).filter(Boolean))];
+// Name searches are cards like any other: each kept search is a `q` card, and the text being typed is the draft,
+// a live search at the caret that Enter keeps as a card. The address carries the draft as `typing`, so a reload
+// returns it to the field. Both are page state, read from the address only on load and history navigation: it
+// trails the field by the debounce, and inferring kept searches from it once took half-typed IME text for one.
+const searchTerms=()=>[...new Set(valuesOf('q'))];
 // Body searches look in an entry's text after its title; they are added from the suggestions, never typed live.
-// Excluded searches (`not_q`, `not_body`) come from flipping a search chip.
-const termList=key=>[...new Set(params.getAll(key).map(t=>t.trim()).filter(Boolean))];
-const bodyTerms=()=>termList('body');
-function setList(key,terms){params.delete(key);[...new Set(terms)].forEach(t=>params.append(key,t));}
-function writeList(list,terms){if(list==='q'){committed=terms;writeTerms();}else setList(list,terms);}
-// Turning a search card over moves its words to the other list; the card keeps its place in the bar.
-function flipTerm(id){
-  const {key:list,term}=cardParts(id),to=list.startsWith(NOT)?baseKey(list):NOT+list;
-  writeList(list,termsOf(list).filter(t=>t!==term));writeList(to,[...termsOf(to),term]);changed();
-}
-let committed=[],draft='';
-const searching=()=>committed.length>0||!!draft;
-function writeTerms(){params.delete('q');[...new Set(committed)].forEach(t=>params.append('q',t));setParam('typing',draft);}
-function readTerms(){committed=searchTerms();draft=(params.get('typing')||'').trim();$('#q').value=draft;}
+const bodyTerms=()=>valuesOf('body');
+let draft='';
+const searching=()=>valuesOf('q').length>0||!!draft;
 function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;$('#q').value='';closeSuggestions();}
 let composingSearch=false;
 // Results that follow each keystroke replace the rows without fading, so the list does not flicker while typing.
 let typedQuery=false;
+// The field reads `(` and `)` as parentheses and `|` and `&` as the join at the caret, in either width; words
+// typed before one are kept as a search where they stand.
+const SYNTAX={'(':'open','（':'open',')':'close','）':'close','|':'or','｜':'or','&':'and','＆':'and'},SYNTAX_RE=/[()（）|｜&＆]/;
+function takeSyntax(){
+  const field=$('#q');let text=field.value;if(!SYNTAX_RE.test(text))return false;
+  for(let m;(m=SYNTAX_RE.exec(text));){
+    const words=text.slice(0,m.index).trim(),kind=SYNTAX[m[0]];text=text.slice(m.index+1);
+    if(words)insert([card('q',[words])]);
+    if(kind==='open'||kind==='close')insert([token({kind})]);
+    else if(ends(line[caret-1])){if(joined(caret))line[caret].or=kind==='or';else caretOr=kind==='or';}
+  }
+  clearTimeout(timer);field.value=text.trimStart();draft=field.value.trim();
+  if(!draft)closeSuggestions();else renderSuggestions();
+  commit();return true;
+}
 function queueSearch(){
   clearTimeout(timer);if(composingSearch)return;
+  if(takeSyntax())return;
   draft=$('#q').value.trim();renderSuggestions();
-  timer=setTimeout(()=>{writeTerms();typedQuery=true;changed(true);refreshSuggestionCounts();},160);
+  timer=setTimeout(()=>{typedQuery=true;changed(true);refreshSuggestionCounts();},160);
 }
-// Choosing a suggested value drops the draft, so suggestions count with the draft left out.
+// Suggestions count with the probe where the caret stands: each value says what placing it there would match.
 let suggestionGroups=null,suggestionGeneration=0;
 async function refreshSuggestionCounts(){
-  const gen=++suggestionGeneration,query=new URLSearchParams([...params].filter(([k])=>!['entry','sort','dir','typing'].includes(k)));
+  const gen=++suggestionGeneration,query=address({probe:true,omit:['entry','sort','dir']});
   try{const data=await api('/api/facets?'+query);if(gen!==suggestionGeneration)return;suggestionGroups=readGroups(data);
     if(!$('#suggestions').hidden){const keep=activeSuggestion;renderSuggestions();if(keep<suggestions.length){activeSuggestion=0;moveSuggestion(keep);}}}catch{/* Suggestions keep their last counts. */}
 }
@@ -740,18 +861,24 @@ $('#q').addEventListener('focus',()=>{if($('#q').value.trim())renderSuggestions(
 $('#q').addEventListener('blur',()=>setTimeout(()=>{if(document.activeElement!==$('#q'))closeSuggestions();},0));
 $('#search-form').addEventListener('submit',e=>e.preventDefault());
 // Typing offers the name search first, then any field value whose label matches: “法术” finds the type,
-// “塑能” the school, “PHB” the sources, “坐骑” the preset. Choosing a value adds it to its field.
+// “塑能” the school, “PHB” the sources, “坐骑” the preset. Choosing a value adds its card at the caret; where the
+// field already has a card, the best value can also join that card instead.
 let suggestions=[],activeSuggestion=0;
 // Rules versions and kinds of content belong to the reader's library, not to one query.
 const LIBRARY_GROUPS=new Set(['ruleset','origin']);
 const fold=t=>String(t||'').normalize('NFKC').toLowerCase();
 function suggestionList(text){
   const q=fold(text);if(!q)return [];
-  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&!LIBRARY_GROUPS.has(g.key)).flatMap(g=>{const chosen=new Set(params.getAll(g.key));
-    return g.options.filter(o=>!chosen.has(o.value)&&(fold(o.label).includes(q)||fold(o.search).includes(q)))
-      .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2}));});
+  const values=(suggestionGroups&&draft?suggestionGroups:groups).filter(g=>g.mode==='multi'&&!LIBRARY_GROUPS.has(g.key)).flatMap(g=>
+    g.options.filter(o=>fold(o.label).includes(q)||fold(o.search).includes(q))
+      .map(o=>({kind:'value',group:g,option:o,field:g.label,label:o.label,count:o.count||0,rank:fold(o.label)===q?0:fold(o.label).startsWith(q)?1:2})));
   const presets=(metadata?.presets||[]).filter(p=>fold(p.name).includes(q)).map(p=>({kind:'preset',preset:p,field:ui.presetField,label:`${p.name}（${typeName(p.type)}）`,count:null,rank:fold(p.name)===q?0:1}));
   const ranked=[...values,...presets].sort((a,b)=>a.rank-b.rank||(b.count??-1)-(a.count??-1)).slice(0,8);
+  // The nearest card of the best value's field, if it lacks the value, is offered to take it.
+  const best=ranked.find(s=>s.kind==='value'),near=c=>Math.abs(line.indexOf(c)+.5-caret);
+  const into=best&&cardsOf(c=>c.key===best.group.key&&!c.values.includes(best.option.value)).sort((a,b)=>near(a)-near(b))[0];
+  if(into)ranked.splice(ranked.indexOf(best)+1,0,{kind:'merge',card:into,option:best.option,field:ui.mergeInto,count:null,
+    label:conditionText({key:into.key,values:[...into.values,best.option.value]})});
   return [{kind:'name',field:ui.nameField,label:ui.nameContains.replace('{text}',text)},
     {kind:'body',field:ui.bodyField,label:ui.nameContains.replace('{text}',text)},...ranked];
 }
@@ -773,27 +900,27 @@ function moveSuggestion(step){
 // Keep the draft as a search card at the caret; the field empties for the next search.
 function keepDraft(){
   clearTimeout(timer);const text=$('#q').value.trim();clearDraft();if(!text)return;
-  cardsAt='caret';committed=[...new Set([...committed,text])];writeTerms();changed();
+  insert([card('q',[text])]);commit();
 }
-// A suggestion always includes its value; if the value was excluded, it leaves the excluded list.
-function includeValue(key,value){
-  const excluded=params.getAll(NOT+key).filter(x=>x!==value),included=[...params.getAll(key).filter(x=>x!==NONE&&x!==value),value];
-  params.delete(NOT+key);excluded.forEach(x=>params.append(NOT+key,x));params.delete(key);included.forEach(x=>params.append(key,x));
-}
-// What a suggestion adds lands at the caret. A value joins its field's card wherever that card is.
+// What a suggestion adds lands at the caret, as a card of its own; the merge item adds the value to its card.
+// The typed text found the value, so it is not kept as a name search.
 function applySuggestion(item){
   clearTimeout(timer);
   if(!item||item.kind==='name'){keepDraft();return;}
-  const text=$('#q').value.trim();clearDraft();writeTerms();cardsAt='caret';
-  if(item.kind==='body'){if(!bodyTerms().includes(text))params.append('body',text);changed();return;}
-  // The typed text found the value; it was not meant as a name search. A preset adds its type, then its value.
-  if(item.kind==='preset'){includeValue('type',item.preset.type);placeCards();cardsAt='caret';includeValue('f_'+item.preset.field,item.preset.value);chooseTypes(params.getAll('type'));return;}
-  includeValue(item.group.key,item.option.value);
-  if(item.group.key==='type'){chooseTypes(params.getAll('type'));return;}
-  changed();
+  const text=$('#q').value.trim();clearDraft();
+  if(item.kind==='body')insert([card('body',[text])]);
+  else if(item.kind==='merge'){
+    const into=item.card;into.values=[...new Set([...into.values,item.option.value])];
+    if(into.key==='type')into.values.sort((a,b)=>typeRank(a)-typeRank(b));
+  }else if(item.kind==='preset'){
+    // A preset is one slice, its type and its value; among alternatives it stands in parentheses as one of them.
+    const slice=[card('type',[item.preset.type]),card('f_'+item.preset.field,[item.preset.value])];
+    insert(gapOr()?[token({kind:'open'}),...slice,token({kind:'close'})]:slice);
+  }else insert([card(item.group.key,[item.option.value])]);
+  commit();
 }
-// The field edits the line like text. At the field's start, Backspace removes the card before the caret and ←
-// steps over it; at its end, Delete and → do the same for the card after it. Home and End, once the caret
+// The field edits the line like text. At the field's start, Backspace removes the token before the caret and ←
+// steps over it; at its end, Delete and → do the same for the token after it. Home and End, once the caret
 // reaches the end of the words, go to the ends of the line. Shift keeps selecting within the words.
 $('#q').addEventListener('keydown',e=>{
   // Safari reports the key that ends a composition after compositionend, with keyCode 229; it is not an Enter.
@@ -805,15 +932,15 @@ $('#q').addEventListener('keydown',e=>{
   const q=$('#q'),collapsed=q.selectionStart===q.selectionEnd,atStart=collapsed&&q.selectionStart===0,atEnd=collapsed&&q.selectionEnd===q.value.length;
   const home=e.key==='Home'||e.metaKey&&e.key==='ArrowLeft',end=e.key==='End'||e.metaKey&&e.key==='ArrowRight';
   let act=null;
-  if(e.key==='Backspace'&&atStart&&caret>0)act=()=>{dropCard(cardOrder[caret-1]);};
-  else if(e.key==='Delete'&&atEnd&&caret<cardOrder.length)act=()=>{dropCard(cardOrder[caret]);};
+  if(e.key==='Backspace'&&atStart&&caret>0)act=()=>dropToken(line[caret-1]);
+  else if(e.key==='Delete'&&atEnd&&caret<line.length)act=()=>dropToken(line[caret]);
   else if(home&&atStart&&caret>0)act=()=>moveCaret(0);
-  else if(end&&atEnd&&caret<cardOrder.length)act=()=>moveCaret(cardOrder.length);
+  else if(end&&atEnd&&caret<line.length)act=()=>moveCaret(line.length);
   else if(e.key==='ArrowLeft'&&!e.metaKey&&atStart&&caret>0)act=()=>moveCaret(caret-1);
-  else if(e.key==='ArrowRight'&&!e.metaKey&&atEnd&&caret<cardOrder.length)act=()=>moveCaret(caret+1);
+  else if(e.key==='ArrowRight'&&!e.metaKey&&atEnd&&caret<line.length)act=()=>moveCaret(caret+1);
   if(act){e.preventDefault();act();}
 });
-// A press between cards, or on the bar around them, puts the caret there.
+// A press between tokens, or on the bar around them, puts the caret there.
 $('.condition-bar').addEventListener('mousedown',e=>{
   if(e.button||composingSearch||e.target.closest('button,#suggestions')||e.target===$('#q'))return;
   e.preventDefault();if($('#active-filters').contains(e.target))moveCaret(gapAt(e.clientX,e.clientY));$('#q').focus();
@@ -824,31 +951,20 @@ $('#suggestions').addEventListener('pointerdown',e=>{const li=e.target.closest('
 $('#toggle-filters').onclick=()=>{const hidden=!$('#filter-panel').hidden;$('#filter-panel').hidden=hidden;$('#toggle-filters').setAttribute('aria-expanded',!hidden);saveUiState();};
 // Clearing removes every condition, the types included; presentation choices (sort, stacking) stay.
 function clearAll(){
-  clearDraft();committed=[];rejection=null;
+  clearDraft();line=[];caret=0;caretOr=false;rejection=null;
   for(const key of [...params.keys()])if(!['sort','dir'].includes(key))params.delete(key);
   historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 }
 $('#reset').onclick=clearAll;
-// Removing a card removes only its condition; whatever is being typed stays in the field.
-function dropCard(id){
-  if(!id)return;
-  const {key,term}=cardParts(id);
-  if(term!==undefined){writeList(key,termsOf(key).filter(t=>t!==term));changed();return;}
-  params.delete(key);
-  if(key==='type'){chooseTypes([]);return;}
-  changed();
-}
-// Counts name a condition the way the server does: `q0`, `f_school`, or `cr` for both ends of the range.
-function dropCondition(key){
-  if(key==='cr'){params.delete('cr_min');params.delete('cr_max');changed();return;}
-  dropCard(cardOf(key));
-}
-// × removes its card and leaves the caret where the card was, unless words typed elsewhere hold the caret.
+// × removes its card and leaves the caret where the card was, unless words typed elsewhere hold the caret; whatever
+// is being typed stays in the field. A join turns between ∧ and ∨ where it stands.
 $('#active-filters').addEventListener('click',e=>{
   const remove=e.target.closest('[data-remove]');
-  if(remove){const id=cardOf(remove.dataset.remove),at=cardOrder.indexOf(id);if(at>=0&&!$('#q').value.trim())caret=at;dropCard(id);$('#q').focus({preventScroll:true});return;}
-  const flip=e.target.closest('[data-flip]');if(!flip)return;
-  const id=cardOf(flip.dataset.flip);cardParts(id).term!==undefined?flipTerm(id):flipField(id);
+  if(remove){const t=tokenOf(remove.dataset.remove),at=line.indexOf(t);if(at>=0&&!$('#q').value.trim()){caret=at;caretOr=false;}dropToken(t);$('#q').focus({preventScroll:true});return;}
+  if(e.target.closest('[data-remove-scope]')){params.delete('sections');changed();$('#q').focus({preventScroll:true});return;}
+  const join=e.target.closest('[data-join]');
+  if(join){if(join.dataset.join==='caret')setGapOr(!gapOr());else{const t=tokenOf(join.dataset.join);if(t){t.or=!t.or;commit();}}return;}
+  const flip=e.target.closest('[data-flip]');if(flip){const t=tokenOf(flip.dataset.flip);if(t)flipCard(t);}
 });
 $('#query-problems').addEventListener('click',e=>{
   const b=e.target.closest('[data-fix]');if(!b)return;const [i,j]=b.dataset.fix.split(':').map(Number);shownProblems[i]?.fixes[j]?.run();
@@ -856,7 +972,7 @@ $('#query-problems').addEventListener('click',e=>{
 $('#sort').onchange=()=>{params.set('sort',$('#sort').value);changed();};
 $('#direction').onclick=()=>{setParam('dir',params.get('dir')==='desc'?'asc':'desc');changed();};
 $('#columns').addEventListener('click',e=>{if(awaitingResults())return;const b=e.target.closest('[data-sort]');if(b)sortBy(b.dataset.sort);});
-$('#export').onclick=()=>{location.href=annaLibrary.withScope('/api/export?'+params);};
+$('#export').onclick=()=>{location.href=annaLibrary.withScope('/api/export?'+address());};
 // The whole row is the target: anywhere on it reads the row's entry, a version pill reads that version.
 // Selecting text in a row reads nothing, so values stay copyable.
 let resultClick=false;
@@ -914,11 +1030,11 @@ $('#detail').addEventListener('keydown',e=>{
 $('#entry-prev').onclick=()=>stepEntry(-1);$('#entry-next').onclick=()=>stepEntry(1);
 let navigationGeneration=0;
 window.addEventListener('popstate',async e=>{
-  const gen=++navigationGeneration,state=e.state?.anna,oldTypes=chosenTypes().join();
+  const gen=++navigationGeneration,state=e.state?.anna,oldTable=tableKey();
   clearTimeout(timer);clearTimeout(uiSaveTimer);restoringUi=true;
-  params=new URLSearchParams(location.search);restoreRows=state?.loadedRows||0;clearDraft();readTerms();resetCards();rejection=null;
+  restoreRows=state?.loadedRows||0;clearDraft();readLine(location.search);rejection=null;
   if(!params.has('entry'))closeEntry({update:false,restoreFocus:false});
-  if(oldTypes===chosenTypes().join()&&ready){sync();refreshFacets();await load();}else await changeTable();
+  if(oldTable===tableKey()&&ready){sync();refreshFacets();await load();}else await changeTable();
   if(gen!==navigationGeneration)return;
   quietTopic=true;
   if(params.has('entry'))await openEntry(params.get('entry'),false,state?.readerId===params.get('entry')?state.readerTab:'body');
@@ -959,15 +1075,20 @@ $('#display-toggle').addEventListener('click',()=>setDisplayMenu($('#display-pan
 document.addEventListener('pointerdown',e=>{
   if(!$('#display-panel').hidden&&!e.target.closest('#display-panel,#display-toggle'))setDisplayMenu(false);
 });
-// Entry types are one field among the others. They also pick the table's columns, fields and sorts, and the
-// heading names them.
-const chosenTypes=()=>params.getAll('type');
+// Entry types are one field among the others. The types of every type card together pick the table's columns,
+// fields and sorts, and the heading names them.
+const chosenTypes=()=>[...new Set(valuesOf('type'))];
+// Where a ∨ lets entries of any type match, the types no longer bound the table: it reads as all entries, widened
+// by the chosen types' columns.
+const openTypes=()=>possible(lineTree(),c=>baseKey(c.key)==='type'?null:true)===true;
+const tableKey=()=>chosenTypes().join()+(openTypes()?'|*':'');
+const boundTypes=()=>openTypes()?[]:chosenTypes();
 const typeName=t=>metadata?.types[t]||t;
 const typeRank=t=>{const i=metadata.type_order.indexOf(t);return i<0?metadata.type_order.length:i;};
-// A preset is one type plus one facet value; it names the heading while exactly that slice is chosen.
+// A preset is one type plus one facet value; it names the heading while exactly that slice is required.
 function activePreset(){
-  const types=chosenTypes();if(types.length!==1||!metadata)return null;
-  return metadata.presets.find(p=>p.type===types[0]&&params.getAll('f_'+p.field).join()===p.value)||null;
+  const types=chosenTypes();if(types.length!==1||!metadata||orTurned())return null;
+  return metadata.presets.find(p=>p.type===types[0]&&valuesOf('f_'+p.field).join()===p.value)||null;
 }
 // The tab title names the open entry, else the chosen slice.
 function updatePageChrome(){
@@ -975,30 +1096,24 @@ function updatePageChrome(){
   document.title=annaPageTitle('query',subject);
 }
 function typeTitle(){
-  const types=chosenTypes(),left=params.getAll(NOT+'type');
+  const types=boundTypes(),left=openTypes()?[]:valuesOf(NOT+'type');
   if(!types.length)return left.length?ui.allExcept.replace('{list}',left.map(typeName).join('、')):ui.allEntries;
   const preset=activePreset();if(preset)return preset.name;
   return types.length<=2?types.map(typeName).join('、'):ui.moreTypes.replace('{first}',typeName(types[0])).replace('{count}',types.length);
-}
-// Changing the types changes the table, never the other conditions. One the chosen types cannot all answer
-// stays on the bar: adding 法术 to 魔法武器 keeps its item-category condition, and the note below the bar says
-// the spells are left out and offers to remove it.
-function chooseTypes(types){
-  types=[...new Set(types)].sort((a,b)=>typeRank(a)-typeRank(b));
-  params.delete('type');types.forEach(t=>params.append('type',t));
-  params.delete('entry');historyUpdate();closeEntry({update:false,restoreFocus:false});changeTable();
 }
 // An empty name search can still have matches among the untyped sections. The server counts them
 // under the same conditions, so the offer never leads to a result the filter cannot return.
 // While searching within some types, matches in the others stay one step away; an empty result names the
 // conditions whose removal would bring results back.
 function renderElsewhere(){
-  const types=chosenTypes(),typeGroup=groups.find(g=>g.key==='type');
+  const types=boundTypes(),typeGroup=groups.find(g=>g.key==='type');
   const others=(searching()||bodyTerms().length)&&types.length?typeGroup.options.filter(o=>o.count&&!types.includes(o.value)):[];
   const total=others.reduce((sum,o)=>sum+o.count,0);
   $('#elsewhere').hidden=!total;$('#elsewhere').textContent=total?ui.elsewhere.replace('{count}',fmt(total)):'';
   $('#elsewhere').title=total?ui.elsewhereTitle.replace('{list}',others.map(o=>`${o.label} ${fmt(o.count)}`).join(' · ')):'';
-  const drops=Object.entries(facetData?.without||{}).filter(([,n])=>n).map(([key,n])=>({key,n,text:conditionText(key)})).filter(d=>d.text);
+  // Counts name a card by its place in the line the response answered.
+  const drops=Object.entries(facetData?.without||{}).filter(([,n])=>n).map(([at,n])=>{const ref=facetCards[Number(at)],t=ref==='typing'?ref:tokenOf(ref);
+    return t&&{key:ref,n,text:t==='typing'?(draft?conditionText(t):''):conditionText(t)};}).filter(d=>d?.text);
   $('#empty-elsewhere').innerHTML=drops.map(d=>`<button type="button" data-drop="${esc(d.key)}">${esc(ui.dropCondition.replace('{condition}',d.text))} <span class="muted">→ ${fmt(d.n)}</span></button>`).join('');
 }
 // A field the current table lacks still reads by its own name and values, so a card it left out stays legible.
@@ -1007,17 +1122,15 @@ function valueLabel(base,v){
   const option=groups.find(g=>g.key===base)?.options.find(o=>o.value===v);if(option)return option.label;
   return base==='package'?packageName(v):base==='source'?sourceName(v):base==='type'?typeName(v):base==='ruleset'?rulesetShort(v):base.startsWith('f_')?tokenText(base.slice(2),v):v;
 }
-// Reads a card (`q:火`, `f_school`) or a condition as counts name it (`q0`, `cr`, `typing`).
-function conditionText(key){
-  if(key==='cr')return `CR：${params.get('cr_min')||'0'}–${params.get('cr_max')||'∞'}`;
+// Reads a card, or the draft (`typing`), as the bar shows it.
+function conditionText(t){
+  if(t==='typing')return `${ui.nameField}：${draft}`;
+  const {key,values}=t,negated=key.startsWith(NOT),base=baseKey(key);
   if(key==='conflict')return fieldNames.conflict;
-  if(key==='typing')return `${ui.nameField}：${draft}`;
-  key=cardOf(key);if(!key)return '';
-  const {key:list,term}=cardParts(key),negated=list.startsWith(NOT);
-  if(term!==undefined)return `${baseKey(list)==='q'?ui.nameField:ui.bodyField}${negated?ui.lacks:''}：${term}`;
-  if(key==='cr_min'||key==='cr_max')return `${fieldNames[key]}：${params.get(key)}`;
-  const base=baseKey(key),labels=params.getAll(key).map(v=>valueLabel(base,v));
-  return labels.length?`${fieldLabel(base)}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`:'';
+  if(TERM_KEYS.has(key))return `${base==='q'?ui.nameField:ui.bodyField}${negated?ui.lacks:''}：${values[0]}`;
+  if(key==='cr_min'||key==='cr_max')return `${fieldNames[key]}：${values[0]}`;
+  const labels=values.map(v=>valueLabel(base,v));
+  return `${fieldLabel(base)}${negated?ui.isNot:''}：${labels.length>3?labels.slice(0,2).join('、')+` 等 ${labels.length} 项`:labels.join('、')}`;
 }
 $('#elsewhere').addEventListener('click',()=>{
   $('#filter-panel').hidden=false;$('#toggle-filters').setAttribute('aria-expanded','true');
@@ -1025,8 +1138,8 @@ $('#elsewhere').addEventListener('click',()=>{
 });
 $('#empty-elsewhere').addEventListener('click',e=>{
   const b=e.target.closest('[data-drop]');if(!b)return;const key=b.dataset.drop;
-  if(key==='typing'){clearDraft();writeTerms();changed();return;}
-  dropCondition(key);
+  if(key==='typing'){clearDraft();changed();return;}
+  const t=tokenOf(key);if(t)dropToken(t);
 });
 // Row density is a per-browser reading preference like the theme; shared links never carry it.
 const DENSITY_KEY='anna.density';
@@ -1043,6 +1156,7 @@ initReaderLayout();
 async function init(){
   let saved=history.state?.anna;restoringUi=true;
   try{
+    readLine(location.search);
     // Static files can be updated while the old Python process is still serving them.
     // Leave its original unscoped queries usable, but never read it as a requested library.
     // Same-name rows and the preferred rules belong to the reader's library now; old links drop them.
@@ -1064,10 +1178,12 @@ async function init(){
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');
-    // Category views became type filters; an old view link opens on all entries with its other conditions.
-    readTerms();
-    if(params.has('field')&&params.has('value')){const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));params.set('f_'+f,v);params.delete('field');params.delete('value');}
-    resetCards();
+    // Category views became type filters; an old view link opens on all entries with its other conditions, and its
+    // single attribute becomes a card at the end of the line.
+    if(params.has('field')&&params.has('value')){
+      const f=params.get('field');let v=params.get('value');if(f==='spell_level'&&LEVELS.includes(v))v=String(LEVELS.indexOf(v));
+      const end=caret===line.length;line.push(card('f_'+f,[v]));settleJoins();if(end)caret=line.length;params.delete('field');params.delete('value');
+    }
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);

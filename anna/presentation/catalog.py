@@ -9,7 +9,8 @@ import re
 import sqlite3
 from pathlib import Path
 import anna.catalog.views as browse
-from anna.presentation import contracts
+from anna.presentation import contracts, expression
+from anna.presentation.expression import Query
 import anna.paths as paths
 from anna.presentation.layout import text_start
 
@@ -55,21 +56,14 @@ NOT = 'not_'
 NEGATABLE = ('type','q','body','ruleset','legacy','status','source','origin')
 
 
-def field_of(key):
-    """The field a condition belongs to: `q0`, `not_q1` and `typing` are all the name field `q`."""
-    key = key.removeprefix(NOT)
-    return 'q' if key=='typing' else re.sub(r'^(q|body)\d+$',r'\1',key)
-
-
-def conditions(params):
-    """Every condition a request sets, as (key, SQL, values). Values within one condition are alternatives;
-    an entry matches when it meets every condition. The keys name the URL parameter (one per search term,
-    `q0`, `body1`, `not_q0`, …), so counts can say what each condition removes. An excluded condition holds
-    for entries that meet none of its values; an entry whose value was not extracted is not excluded."""
-    excluded = {k[len(NOT):]:v for k,v in params.items() if k.startswith(NOT)}
-    for key in excluded:
-        if key not in NEGATABLE and not key.startswith('f_'): raise ValueError('无法排除：'+key)
-    return included(params)+[(NOT+key,f'NOT COALESCE(({sql}),0)',values) for key,sql,values in included(excluded)]
+def card_condition(card):
+    """One card's SQL. Its values are alternatives; an excluded card holds for entries that meet none of them, and an
+    entry whose value was not extracted is not excluded. A card this catalog cannot read holds for every entry."""
+    if card.negated and card.base not in NEGATABLE and not card.base.startswith('f_'): raise ValueError('无法排除：'+card.base)
+    found = included({card.base:list(card.values)})
+    if not found: return '1',[]
+    _,sql,values = found[0]
+    return (f'NOT COALESCE(({sql}),0)',values) if card.negated else (sql,values)
 
 
 def included(params):
@@ -80,7 +74,7 @@ def included(params):
     terms = browse.search_terms(params)
     for i, term in enumerate(terms): out.append((f'q{i}','instr(lower(e.name),lower(?))>0',[term]))
     typing = browse.typing_term(params)
-    if typing and typing not in terms: out.append(('typing','instr(lower(e.name),lower(?))>0',[typing]))
+    if typing: out.append(('typing','instr(lower(e.name),lower(?))>0',[typing]))
     # Body searches read the entry's own text after its title line (entry_layout.text_start), literally.
     for i, term in enumerate(browse.body_terms(params)): out.append((f'body{i}','instr(lower('+ENTRY_BODY+'),lower(?))>0',[term]))
     for key,(column,allowed) in COMMON_CHOICES.items():
@@ -99,10 +93,6 @@ def included(params):
         elif any(o not in ORIGINS for o in origin): raise ValueError('无效来源性质')
         else: out.append(('origin',SOURCE_EXISTS+'s.origin IN ('+','.join('?' for _ in origin)+'))',origin))
     if first(params,'conflict')=='1': out.append(('conflict',"json_array_length(json_extract(e.data,'$.field_conflicts'))>0",[]))
-    field, value = first(params,'field'),first(params,'value')
-    if value:
-        if field not in FIELDS: raise ValueError('无效属性')
-        out.append(('field','EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)',['$.'+field,{'true':'1','false':'0'}.get(value,value)]))
     out.extend(browse.facet_conditions(params))
     return out
 
@@ -119,10 +109,20 @@ def restriction_clause(restrict):
     return clauses, values
 
 
+def attribute_clause(params):
+    """A request's single attribute (`field` with `value`), the form category views linked by before facets: it
+    narrows every query and count. The page turns such links into a card; the API still reads them."""
+    field, value = first(params,'field'),first(params,'value')
+    if not value: return [],[]
+    if field not in FIELDS: raise ValueError('无效属性')
+    return ['EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)'],['$.'+field,{'true':'1','false':'0'}.get(value,value)]
+
+
 def base_clause(params, restrict=None):
     """Untyped sections join the results only on request; with the library scope this bounds every query and count."""
     clauses, values = restriction_clause(restrict)
-    return ' AND '.join(["e.type!='section'" if first(params,'sections')!='1' else '1', *clauses]), values
+    attribute, attributed = attribute_clause(params)
+    return ' AND '.join(["e.type!='section'" if first(params,'sections')!='1' else '1', *clauses, *attribute]), values+attributed
 
 
 def unclassified_matches(db, params, restrict=None):
@@ -131,65 +131,94 @@ def unclassified_matches(db, params, restrict=None):
     The same conditions apply, including any type filter: a section cannot stand in for a chosen
     type, so the offer appears only when adding sections would actually return rows.
     """
-    conds = conditions(params)
+    query = Query.of(params)
     scope, scoped = restriction_clause(restrict)
-    clause = ' AND '.join(["e.type='section'", *scope, *(sql for _,sql,_ in conds)])
-    return db.execute('SELECT count(*) FROM entries e WHERE '+clause,scoped+[v for _,_,vals in conds for v in vals]).fetchone()[0]
+    attribute, attributed = attribute_clause(query)
+    sql, values = expression.sql(query.where, card_condition)
+    return db.execute('SELECT count(*) FROM entries e WHERE '+' AND '.join(["e.type='section'",*scope,*attribute,sql]),scoped+attributed+values).fetchone()[0]
+
+
+def bounded(query):
+    """A query within the search limits: each list of terms counts across all its cards."""
+    browse.search_terms(query);browse.body_terms(query)
+    return query
 
 
 def filters(db, params, restrict=None):
-    conds = conditions(params)
-    base, scoped = base_clause(params, restrict)
-    clauses = [base]+[sql for _,sql,_ in conds]
-    return ' WHERE '+' AND '.join(clauses), scoped+[v for _,_,vals in conds for v in vals]
+    """The WHERE clause for the query's conditions as written, within the library scope."""
+    query = bounded(Query.of(params))
+    base, scoped = base_clause(query, restrict)
+    sql, values = expression.sql(query.where, card_condition)
+    return f' WHERE {base} AND {sql}', scoped+values
 
 
 def facets(db, params, restrict=None):
-    """Each field's options with counts under every other condition: what picking the option would match.
-    `without` counts the results if one condition were removed; `scope_total` counts the chosen types."""
-    types = entry_types(params)
-    config = browse.schema_for(types)
-    conds = conditions(params)
-    fields_of = [field_of(key) for key,_,_ in conds]
-    columns = ''.join(f', ({sql}) AS c{i}' for i,(_,sql,_) in enumerate(conds))
+    """Each field's options with counts. An option counts what the query matches with that field's own cards set
+    aside and the option held; while the caret probes (`probe`), what the query matches with the option placed at
+    the caret, so a suggestion says what choosing it there returns. `without` counts the matches each card's removal
+    would add, naming the card by its place in the line; `scope_total` counts the chosen types."""
+    query = bounded(Query.of(params))
+    types = entry_types(query)
+    config = browse.schema_for(types, expression.open_types(query.where))
+    line = query.cards()
+    columns = [expression.sql(card,card_condition) for card in line]
+    selected = ''.join(f', ({sql}) AS c{card.index}' for card,(sql,_) in zip(line,columns))
     origin_of = dict(db.execute('SELECT id, origin FROM sources'))
     domain = [*config['facets'],*config['flags']]
     counted = ['type',*('f_'+f for f in domain),'ruleset','origin','source']
     counts = {k:Counter() for k in counted}
     universe = {k:set() for k in counted}
     unknown_cover = Counter()
-    total = scope_total = 0
+    total = scope_total = always = 0
     without = Counter()
-    base, scoped = base_clause(params, restrict)
+    # One test per distinct tree; a field without cards of its own counts under the query itself.
+    tests = {}
+    meets = lambda card: (lambda row,name=f'c{card.index}': bool(row[name]))
+    def check(node):
+        tests.setdefault(node, expression.test(node, meets))
+        return node
+    where = query.where
+    matches = check(where)
+    gains = [(str(card.index),check(expression.without(where,card.index))) for card in line]
+    in_scope = check(expression.relax(where,lambda c: c.field!='type'))
+    if query.probing:
+        placed = check(expression.substitute(query.tree,lambda c: expression.TRUE if c is expression.PROBE else c))
+        unplaced = check(expression.substitute(query.tree,lambda c: expression.FALSE if c is expression.PROBE else c))
+    else:
+        aside = {key:check(expression.relax(where,lambda c,key=key: c.field==key)) for key in counted}
+    base, scoped = base_clause(query, restrict)
     rows = db.execute('SELECT e.type, e.fields, e.ruleset, e.legacy, e.classification_status, '
-        "(SELECT group_concat(es.source_id, char(31)) FROM entry_sources es WHERE es.entry_id=e.id) AS sources"+columns+
-        ' FROM entries e WHERE '+base, [v for _,_,vals in conds for v in vals]+scoped)
+        "(SELECT group_concat(es.source_id, char(31)) FROM entry_sources es WHERE es.entry_id=e.id) AS sources"+selected+
+        ' FROM entries e WHERE '+base, [v for _,values in columns for v in values]+scoped)
     for row in rows:
-        failed = [i for i in range(len(conds)) if not row[f'c{i}']]
-        in_scope = all(fields_of[i]!='type' for i in failed)
-        # A type counts what choosing it matches: every other condition stays as written.
-        counts_type = all(fields_of[i]=='type' for i in failed)
-        if not in_scope and not counts_type: continue
-        fields = json.loads(row['fields']) if in_scope and domain else None
+        result = {node:t(row) for node,t in tests.items()}
+        if not any(result.values()): continue
+        parsed = None
         source_ids = row['sources'].split('\x1f') if row['sources'] else []
         def values(key):
+            nonlocal parsed
             if key=='type': return [row['type']]
-            if key.startswith('f_'): return browse.normalized(fields,key[2:])
+            if key.startswith('f_'):
+                parsed = parsed or json.loads(row['fields'])
+                return browse.normalized(parsed,key[2:])
             if key=='source': return source_ids
             if key=='origin': return list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
             return [row[{'status':'classification_status'}.get(key,key)]]
-        if in_scope:
+        if result[in_scope]:
             scope_total += 1
+            for key in counted[1:]: universe[key].update(values(key))
+            for f in domain: unknown_cover[f] += values('f_'+f)!=[browse.UNKNOWN]
+        if result[matches]: total += 1
+        else:
+            for name,t in gains:
+                if result[t]: without[name] += 1
+        if query.probing:
+            if result[unplaced]: always += 1
+            elif result[placed]:
+                for key in counted: counts[key].update(values(key))
+        else:
             for key in counted:
-                if key!='type': universe[key].update(values(key))
-            for f in domain: unknown_cover[f] += browse.normalized(fields,f)!=[browse.UNKNOWN]
-        if not failed: total += 1
-        elif len(failed)==1: without[conds[failed[0]][0]] += 1
-        if counts_type: counts['type'][row['type']] += 1
-        # A field's options count with every other field's conditions kept and its own, chosen or excluded, set aside.
-        for key in counted[1:]:
-            if all(fields_of[i]==key for i in failed):
-                counts[key].update(values(key))
+                if result[aside[key]]: counts[key].update(values(key))
     for key in counted:
         # A chosen value stays listed even when nothing in scope holds it, so it can be unchosen.
         universe[key].update(v for v in [*params.get(key,[]),*params.get(NOT+key,[])] if v!=browse.NONE)
@@ -207,7 +236,7 @@ def facets(db, params, restrict=None):
                                'search':' '.join([sources[v]['name'],*sources[v].get('aliases',[])])} for v in universe[key] if v in sources),key=lambda o:o['label'])
         elif key=='origin': options = [{'value':v,'label':v} for v in ORIGINS]
         else: options = [{'value':v,'label':v} for v in COMMON_CHOICES[key][1]]
-        for o in options: o['count'] = counts[key][o['value']]
+        for o in options: o['count'] = counts[key][o['value']]+always
         label = {'type':'类型','ruleset':'规则版本','origin':'来源性质','source':'来源','legacy':'旧版标记','status':'分类依据'}.get(key) or browse.LABELS[key[2:]]
         mode = 'flag' if key.startswith('f_') and key[2:] in config['flags'] else 'multi'
         return {'key':key,'label':label,'mode':mode,'options':options}
@@ -215,7 +244,7 @@ def facets(db, params, restrict=None):
     # Mixed types lead with the facets most of their entries can answer (rarity before weapon mastery).
     if len(config['kinds'])>1: domain_groups.sort(key=lambda g:-unknown_cover[g['key'][2:]])
     return {'schema':config,'groups':[group('type'),*domain_groups,*(group(k) for k in ('ruleset','origin','source'))],
-            'total':total,'scope_total':scope_total,'without':dict(without)}
+            'total':total,'scope_total':scope_total,'without':dict(without),**({'probe_base':always} if query.probing else {})}
 
 
 VERSION_FIELDS = ('id','name','name_zh','name_en','ruleset','source_ids','source_names','fields','field_conflicts','quickref','legacy')
@@ -241,6 +270,7 @@ def result_window(params):
 
 
 def query(db, params, export=False, restrict=None):
+    params = Query.of(params)
     where, values = filters(db,params,restrict)
     names = bool(browse.search_terms(params) or browse.typing_term(params))
     def section_hint(total):
@@ -248,7 +278,7 @@ def query(db, params, export=False, restrict=None):
         return unclassified_matches(db,params,restrict)
     latest = browse.latest_term(params)
     db.create_function('browse_query',0,lambda:latest)
-    config = browse.schema_for(entry_types(params))
+    config = browse.schema_for(entry_types(params), expression.open_types(params.where))
     order = browse.order_sql(params,config['default_sort'])
     offset, limit = result_window(params)
     versions = first(params,'versions','stacked')
@@ -321,6 +351,7 @@ def works(db):
 # One cheap row per matching version, in this catalog's own order: what a library spanning several
 # catalogs needs to sort, stack and page the versions before reading the shown rows in full.
 def ranked(db, params, restrict=None, sort_field=None):
+    params = Query.of(params)
     where, values = filters(db, params, restrict)
     latest = browse.latest_term(params)
     db.create_function('browse_query',0,lambda:latest)

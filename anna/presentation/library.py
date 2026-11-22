@@ -24,8 +24,10 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import anna.catalog.views as browse
+from anna.presentation import expression
 from anna.presentation.alignment import Alignment, align
 from anna.presentation.collections import DEFAULT, Restriction
+from anna.presentation.expression import Query
 
 # Origins as each collection records them, read as one vocabulary of kinds of content.
 CONTENT = ('official', 'partnered', 'unverified', 'curated', 'community')
@@ -299,25 +301,18 @@ def describe_works(registry, collection_keys):
 
 # --- Conditions as each collection can answer them ----------------------------------------------------------------
 
-def _condition_key(key: str, conditions) -> bool:
-    base = key.removeprefix('not_')
-    return base.startswith('f_') or base in conditions
+def localize(params, caps, every_condition, known_types) -> Query:
+    """The query as one collection can answer it: each card keeps its place and the values this collection can hold.
 
-
-def localize(params, caps, every_condition, known_types):
-    """The request's conditions as one collection can answer them.
-
-    Returns the collection's own parameters and the fields of included conditions it cannot hold at all
-    (another collection's type, work or field). Excluded values it cannot hold exclude nothing and drop."""
-    local, unanswerable = {}, {}
-    for key, values in params.items():
-        if not _condition_key(key, every_condition):
-            local[key] = values
-            continue
-        base = key.removeprefix('not_')
-        negated = base != key
+    An included card left with none (another collection's type, work or field) holds for none of its entries; an
+    excluded one excludes nothing. Both keep their place, so counts still name every card and can set it aside. A
+    condition no collection knows is passed on for its catalog to judge."""
+    def local(card):
+        base = card.base
+        if not (base.startswith('f_') or base in every_condition):
+            return card
         if base == 'type':
-            if any(v not in known_types for v in values):
+            if any(v not in known_types for v in card.values if v != NONE):
                 raise ValueError('未知条目类型')
             allowed = caps.types
         elif base == 'source':
@@ -329,12 +324,14 @@ def localize(params, caps, every_condition, known_types):
         else:
             allowed = None
         answerable = base in caps.conditions or (base.startswith('f_') and base[2:] in caps.facets)
-        kept = [v for v in values if allowed is None or v in allowed] if answerable else []
-        if kept:
-            local[key] = kept
-        elif not negated and any(values):
-            unanswerable[base] = key
-    return local, unanswerable
+        kept = tuple(v for v in card.values if allowed is None or v in allowed) if answerable else ()
+        return card if kept == card.values else replace(card, values=kept or (NONE,))
+    return Query.of(params).with_cards(local)
+
+
+def answers(query: Query) -> bool:
+    """Whether a collection's local query can match anything at all."""
+    return expression.settle(query.where) != expression.FALSE
 
 
 # --- How versions in a stack relate ------------------------------------------------------------------------------
@@ -442,14 +439,14 @@ class Library:
     def _local(self, collection, params):
         return localize(params, capabilities_of(collection), self.every_condition, self.known_types)
 
-    def _presentation(self, params):
+    def _presentation(self, query):
         """A collection's own parameters for how versions show; defaults stay implicit, as a link would leave them."""
-        out = dict(params)
+        out = {}
         if self.scope.versions != 'stacked':
             out['versions'] = [self.scope.versions]
         if self.scope.prefer != '5r':
             out['prefer'] = [self.scope.prefer]
-        return out
+        return query.updated(out)
 
     def _answer(self, method, collection, params):
         """One collection's answer within the library scope; a collection read whole is asked as before."""
@@ -475,9 +472,9 @@ class Library:
         out['type_conditions'] = conditions
         return out
 
-    def schema(self, types):
+    def schema(self, types, widened=False):
         types = list(dict.fromkeys(types))
-        schemas = [c.provider.schema(types) for c in self.members
+        schemas = [c.provider.schema(types, widened) for c in self.members
                    if not types or any(t in capabilities_of(c).types for t in types)] or [self.primary.provider.schema([])]
         if len(schemas) == 1:
             return schemas[0]
@@ -491,11 +488,12 @@ class Library:
     # --- Entries ---
 
     def entries(self, params) -> dict:
+        params = Query.of(params)
         offset, limit = _window(params)
         if self.alone:
             collection = self.primary
-            local, unanswerable = self._local(collection, params)
-            if unanswerable:
+            local = self._local(collection, params)
+            if not answers(local):
                 return self._empty(params, offset)
             return self._answer(collection.provider.entries, collection, self._presentation(local))
         ranking = self._ranking(params)
@@ -533,17 +531,17 @@ class Library:
 
     def _empty(self, params, offset):
         return {'total': 0, 'versions_total': 0, 'versions': self.scope.versions, 'prefer': self.scope.prefer,
-                'offset': offset, 'rows': [], 'schema': self.schema(params.get('type', [])), 'section_matches': 0}
+                'offset': offset, 'rows': [], 'schema': self.schema(params.get('type', []), expression.open_types(params.where)), 'section_matches': 0}
 
     def _section_matches(self, params):
         if not (params.get('q') or params.get('typing')) or _first(params, 'sections') == '1':
             return 0
         total = 0
         for collection in self.members:
-            local, unanswerable = self._local(collection, params)
-            if unanswerable or 'sections' not in capabilities_of(collection).conditions:
+            local = self._local(collection, params)
+            if not answers(local) or 'sections' not in capabilities_of(collection).conditions:
                 continue
-            result = self._answer(collection.provider.entries, collection, {**self._presentation(local), 'limit': ['1'], 'offset': ['0']})
+            result = self._answer(collection.provider.entries, collection, self._presentation(local).updated({'limit': ['1'], 'offset': ['0']}))
             total += result.get('section_matches', 0)
         return total
 
@@ -565,10 +563,11 @@ class Library:
 
     def _ranking(self, params):
         """Every matching version in one order, stacked by the reader's choice; cached per query."""
+        params = Query.of(params)
         types = list(dict.fromkeys(params.get('type', [])))
-        schema = self.schema(types)
+        schema = self.schema(types, expression.open_types(params.where))
         sort, desc, default = self._sort(params, schema)
-        query = tuple(sorted((k, tuple(v)) for k, v in params.items() if k not in {'offset', 'limit', 'entry', 'tab'}))
+        query = Query(params.tree, {k: v for k, v in params.options.items() if k not in {'offset', 'limit', 'entry', 'tab'}}).key()
         signature = tuple((c.key, c.provider.signature()) for c in self.members)
         cache_key = (query, self.scope, signature)
         with _cache_lock:
@@ -580,8 +579,8 @@ class Library:
         field = sort if sort not in direct else default if sort == browse.MATCH and default not in direct else None
         rows = []
         for collection in self.members:
-            local, unanswerable = self._local(collection, params)
-            if unanswerable:
+            local = self._local(collection, params)
+            if not answers(local):
                 continue
             rows.extend(self._versions(collection, collection.provider.ranked(local, self.restrict(collection), field)))
         ordered = self._ordered(rows, sort, desc, default, browse.latest_term(params))
@@ -690,29 +689,25 @@ class Library:
     # --- Facets ---
 
     def facets(self, params) -> dict:
+        params = Query.of(params)
         if not self.federated:
             collection = self.primary
-            local, unanswerable = self._local(collection, params)
-            if not unanswerable:
-                return self._answer(collection.provider.facets, collection, local)
+            return self._answer(collection.provider.facets, collection, self._local(collection, params))
         types = list(dict.fromkeys(params.get('type', [])))
         merged: dict[str, dict] = {}
         order: list[str] = []
-        total = scope_total = 0
+        total = scope_total = base = 0
         without: Counter = Counter()
+        # Each collection counts its own entries; a card it cannot answer holds for none of them, in place, so its
+        # counts and removals already say what each collection adds. While the caret probes, the entries that match
+        # wherever the probe stands count for every option, also those another collection lists.
         for collection in self.members:
-            local, unanswerable = self._local(collection, params)
-            answered = {k: v for k, v in local.items() if k.removeprefix('not_') not in unanswerable}
-            result = self._answer(collection.provider.facets, collection, answered)
-            counted = None if not unanswerable else set(unanswerable) if len(unanswerable) == 1 else set()
-            if counted is None:
-                total += result['total']
-                without.update(result.get('without', {}))
-            elif len(unanswerable) == 1:
-                ((field, key),) = unanswerable.items()
-                without[key] += result['total']
-            if 'type' not in unanswerable:
-                scope_total += result['scope_total']
+            result = self._answer(collection.provider.facets, collection, self._local(collection, params))
+            total += result['total']
+            scope_total += result['scope_total']
+            without.update(result.get('without', {}))
+            own = result.get('probe_base', 0)
+            base += own
             for group in result['groups']:
                 key = group['key']
                 if key not in merged:
@@ -720,7 +715,7 @@ class Library:
                     order.append(key)
                 into = {o['value']: o for o in merged[key]['options']}
                 for option in group['options']:
-                    count = option.get('count', 0) if counted is None or key in counted else 0
+                    count = option.get('count', 0) - own
                     if option['value'] in into:
                         into[option['value']]['count'] = into[option['value']].get('count', 0) + count
                     else:
@@ -729,6 +724,9 @@ class Library:
                             fresh['collection'] = collection.key
                         merged[key]['options'].append(fresh)
                         into[option['value']] = fresh
+        for group in merged.values():
+            for option in group['options']:
+                option['count'] += base
         if 'type' in merged:
             type_order = merge_order(meta_of(c)['type_order'] for c in self.members)
             rank = {t: i for i, t in enumerate(type_order)}
@@ -740,8 +738,8 @@ class Library:
                 if labels[o['label']] > 1:
                     o['label'] = f"{o['label']}（{names.get(o.get('collection'), o.get('collection'))}）"
             merged['source']['options'].sort(key=lambda o: o['label'].lower())
-        return {'schema': self.schema(types), 'groups': [merged[k] for k in order], 'total': total,
-                'scope_total': scope_total, 'without': dict(without)}
+        return {'schema': self.schema(types, expression.open_types(params.where)), 'groups': [merged[k] for k in order], 'total': total,
+                'scope_total': scope_total, 'without': dict(without), **({'probe_base': base} if params.probing else {})}
 
     # --- Detail, layout and export ---
 
@@ -780,8 +778,8 @@ class Library:
         for other in holders:
             if entry['type'] not in capabilities_of(other).stackable:
                 continue
-            local, unanswerable = self._local(other, {'type': [entry['type']]})
-            if unanswerable:
+            local = self._local(other, {'type': [entry['type']]})
+            if not answers(local):
                 continue
             # The opened version and its own group count whatever the scope; other versions only within it.
             restrict = self.restrict(other) if other.key in self.rank else None
@@ -815,11 +813,10 @@ class Library:
                              'members': members, 'fields': fields}
 
     def export(self, params) -> tuple[bytes, str]:
+        params = Query.of(params)
         if not self.federated:
             collection = self.primary
-            local, unanswerable = self._local(collection, params)
-            if not unanswerable:
-                return self._answer(collection.provider.export, collection, local), collection.key
+            return self._answer(collection.provider.export, collection, self._local(collection, params)), collection.key
         each = Library(self.registry, replace(self.scope, versions='each'))
         ranking = each._ranking(params)
         rows = []

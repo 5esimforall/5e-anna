@@ -24,6 +24,7 @@ from anna.presentation.our5etools import (
     load_fivetools_collection,
     load_our5etools_collection,
 )
+from anna.presentation.expression import Query
 from anna.presentation.reader import SCHEMA
 from anna.presentation.tour import load as load_curation
 from anna.server.app import create_server
@@ -918,6 +919,28 @@ class Our5etoolsPresentationAndServerTests(unittest.TestCase):
             self.cat.detail('o5e_0000000000000000')
         with self.assertRaises(LookupError):
             self.cat.layout('o5e_0000000000000000')
+
+    def test_cards_join_with_or_and_regroup_in_parentheses_in_entries_and_counts(self):
+        OR, OPEN, CLOSE = ('or', ''), ('open', ''), ('close', '')
+        line = lambda *pairs: Query.parse(pairs)
+        total = lambda *pairs: self.cat.entries(line(*pairs, ('versions', 'each')))['versions_total']
+        ids = lambda *pairs: {r['id'] for r in self.cat.entries(line(*pairs, ('versions', 'each'), ('limit', '1500')))['rows']}
+        spell, third, evocation, dragon = ('type', 'spell'), ('f_spell_level', '3'), ('f_school', '塑能'), ('q', '龙')
+        # ∨ binds tighter than ∧; parentheses regroup.
+        self.assertEqual(ids(spell, third, OR, evocation), ids(spell, third) | ids(spell, evocation))
+        grouped = total(OPEN, spell, third, CLOSE, OR, dragon)
+        self.assertEqual(grouped, total(spell, third) + total(dragon) - total(spell, third, dragon))
+        self.assertGreater(grouped, total(spell, third, OR, dragon))
+        # Counts follow the tree, and the probe counts what each value placed at the caret would match.
+        # Removing an alternative narrows the query, so only the type's removal adds matches.
+        facets = self.cat.facets(line(spell, third, OR, dragon))
+        self.assertEqual(facets['total'], total(spell, third, OR, dragon))
+        self.assertEqual(facets['without'], {'0': total(third, OR, dragon) - facets['total']})
+        probe = self.cat.facets(line(spell, third, OR, ('probe', '')))
+        groups = {g['key']: {o['value']: o['count'] for o in g['options']} for g in probe['groups']}
+        self.assertEqual(probe['probe_base'], total(spell, third))
+        self.assertEqual(groups['f_school']['塑能'], total(spell, third, OR, evocation))
+        self.assertEqual(groups['type']['creature'], total(spell, third, OR, ('type', 'creature')))
 
     def test_tour_books_and_dynamic_packages_link_to_their_own_entries(self):
         phb = self.tour.view('nn_book_phb')

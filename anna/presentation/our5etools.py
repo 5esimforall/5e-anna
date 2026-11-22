@@ -25,7 +25,9 @@ import urllib.request
 
 import anna.our5etools.types as otypes
 import anna.paths as paths
+from anna.presentation import expression
 from anna.presentation.collections import Collection, SearchHits
+from anna.presentation.expression import Query
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
 from anna.presentation import tour as tour_curation
 from anna.presentation.tour import DIVIDER, HINTED_GROUP, TourError, clip, divider, first_sentence
@@ -157,13 +159,6 @@ def _json_loads(raw: Any, default: Any) -> Any:
         return json.loads(raw)
     except (ValueError, TypeError):
         return default
-
-
-def _field_of(key: str) -> str:
-    key = key.removeprefix(NOT)
-    if key == 'typing':
-        return 'q'
-    return re.sub(r'^(q|body)\d+$', r'\1', key)
 
 
 def _search_terms(params: dict[str, list[str]], key: str = 'q') -> list[str]:
@@ -519,7 +514,7 @@ class Our5etoolsCatalog:
             out.append((f'q{i}', 'instr(lower(e.search_name), lower(?)) > 0', [term]))
 
         typing = _typing_term(params)
-        if typing and typing not in terms:
+        if typing:
             out.append(('typing', 'instr(lower(e.search_name), lower(?)) > 0', [typing]))
 
         for i, term in enumerate(_search_terms(params, 'body')):
@@ -622,27 +617,32 @@ class Our5etoolsCatalog:
             values.extend(sorted(restrict.sources))
         return [(SCOPE_KEY, ' AND '.join(clauses), values)] if clauses else []
 
-    def _conditions(self, params: dict[str, list[str]], restrict: Any = None) -> list[tuple[str, str, list[Any]]]:
-        excluded: dict[str, list[str]] = {}
-        for k, v in params.items():
-            if not k.startswith(NOT):
-                continue
-            base = k[len(NOT):]
-            if base not in NEGATABLE and not base.startswith('f_'):
-                raise ValueError('无法排除：' + base)
-            excluded[base] = v
-        inc = self._included_conditions(params)
-        exc_raw = self._included_conditions(excluded) if excluded else []
-        exc = [(NOT + key, f'NOT COALESCE(({sql}), 0)', vals) for key, sql, vals in exc_raw]
-        return self._restriction(restrict) + inc + exc
+    def _card_condition(self, card: expression.Card) -> tuple[str, list[Any]]:
+        """One card's SQL. Its values are alternatives; an excluded card holds for entries that meet none of them.
+        A card this catalog cannot read holds for every entry."""
+        if card.negated and card.base not in NEGATABLE and not card.base.startswith('f_'):
+            raise ValueError('无法排除：' + card.base)
+        found = self._included_conditions({card.base: list(card.values)})
+        if not found:
+            return '1', []
+        _, sql, values = found[0]
+        return (f'NOT COALESCE(({sql}), 0)', values) if card.negated else (sql, values)
 
-    @staticmethod
-    def _where_from(conds: list[tuple[str, str, list[Any]]]) -> tuple[str, list[Any]]:
-        if not conds:
-            return '', []
-        sql = ' WHERE ' + ' AND '.join(f'({c[1]})' for c in conds)
-        vals = [v for _, _, vs in conds for v in vs]
-        return sql, vals
+    def _clauses(self, node: expression.Node, scope: list[tuple[str, str, list[Any]]]) -> tuple[list[str], list[Any]]:
+        parts, values = [f'({sql})' for _, sql, _ in scope], [v for _, _, vals in scope for v in vals]
+        text, found = expression.sql(node, self._card_condition)
+        if text != '1':
+            parts.append(text)
+            values.extend(found)
+        return parts, values
+
+    def _where_of(self, node: expression.Node, scope: list[tuple[str, str, list[Any]]]) -> tuple[str, list[Any]]:
+        parts, values = self._clauses(node, scope)
+        return (' WHERE ' + ' AND '.join(parts), values) if parts else ('', [])
+
+    def _where(self, params: dict[str, list[str]], restrict: Any = None) -> tuple[str, list[Any]]:
+        """The WHERE clause for the query's conditions as written, within the library scope."""
+        return self._where_of(Query.of(params).where, self._restriction(restrict))
 
     def _order_sql(self, params: dict[str, list[str]], default_sort: str, has_search: bool) -> str:
         raw_sort = _first(params, 'sort')
@@ -807,14 +807,14 @@ class Our5etoolsCatalog:
     def entries(self, params: dict[str, list[str]], restrict: Any = None, *, _export: bool = False) -> dict[str, Any]:
         with closing(self._connect()) as db:
             self._ensure_static_cache(db)
-            conds = self._conditions(params, restrict)
-            where, values = self._where_from(conds)
+            params = Query.of(params)
+            where, values = self._where(params, restrict)
             has_search = bool(_search_terms(params, 'q') or _typing_term(params))
             latest = _latest_term(params)
             db.create_function('browse_query', 0, lambda: latest)
 
             chosen_types = _entry_types(params)
-            config = otypes.schema_for(chosen_types)
+            config = otypes.schema_for(chosen_types, expression.open_types(params.where))
             order = self._order_sql(params, config['default_sort'], has_search)
             offset, limit = _result_window(params)
 
@@ -974,11 +974,12 @@ class Our5etoolsCatalog:
     def facets(self, params: dict[str, list[str]], restrict: Any = None) -> dict[str, Any]:
         with closing(self._connect()) as db:
             self._ensure_static_cache(db)
+            params = Query.of(params)
             chosen_types = _entry_types(params)
-            config = otypes.schema_for(chosen_types)
-            conds = self._conditions(params, restrict)
+            config = otypes.schema_for(chosen_types, expression.open_types(params.where))
+            where = params.where
             scope = self._restriction(restrict)
-            if not conds:
+            if where == expression.TRUE and not params.probing and not scope:
                 with self._lock:
                     if self._unfiltered_facets_cache is not None:
                         return self._unfiltered_facets_cache
@@ -1057,25 +1058,40 @@ class Our5etoolsCatalog:
                     self._unfiltered_facets_cache = result
                 return result
 
-            fields_of = [_field_of(k) for k, _, _ in conds]
-            active_fields = set(fields_of)
+            # A field counts with its own cards set aside; while the caret probes, every field counts the rows the
+            # probe decides, plus those that match wherever it stands (`probe_base`).
+            line = params.cards()
+            active_fields = set() if params.probing else {c.field for c in line}
             domain = [*config['facets'], *config['flags']]
 
             # 1. Cached scope total & domain universe for chosen types
             scope_total, uni_map, unknown_cover = self._scope_universe(db, chosen_types, domain, scope)
 
             # 2. Fetch matched entries ONCE for total + all unfiltered facet groups
-            where_all, vals_all = self._where_from(conds)
+            where_all, vals_all = self._where_of(where, scope)
             matched_rows = db.execute(
                 'SELECT e.id, e.ruleset, e.source_id, e.package_id, e.type FROM entries e' + where_all,
                 vals_all,
             ).fetchall()
             total = len(matched_rows)
-            matched_ids = [r[0] for r in matched_rows]
+            always = 0
+            count_rows, count_where, count_vals = matched_rows, where_all, vals_all
+            if params.probing:
+                at = lambda value: expression.substitute(params.tree, lambda c: value if c is expression.PROBE else c)
+                w_u, v_u = self._where_of(at(expression.FALSE), scope)
+                always = int(db.execute('SELECT count(*) FROM entries e' + w_u, v_u).fetchone()[0])
+                parts, count_vals = self._clauses(at(expression.TRUE), scope)
+                unplaced, v_unplaced = expression.sql(at(expression.FALSE), self._card_condition)
+                count_where = ' WHERE ' + ' AND '.join([*parts, f'NOT {unplaced}'])
+                count_vals = count_vals + v_unplaced
+                count_rows = db.execute(
+                    'SELECT e.id, e.ruleset, e.source_id, e.package_id, e.type FROM entries e' + count_where,
+                    count_vals,
+                ).fetchall()
+            count_ids = [r[0] for r in count_rows]
 
             def _conds_without_field(target_field: str) -> tuple[str, list[Any]]:
-                sub = [c for c, f in zip(conds, fields_of) if f != target_field]
-                return self._where_from(sub)
+                return self._where_of(expression.relax(where, lambda c: c.field == target_field), scope)
 
             def _count_facets_for_ids(facet_keys: list[str], ids: list[str]) -> dict[str, Counter[str]]:
                 out: dict[str, Counter[str]] = {fk: Counter() for fk in facet_keys}
@@ -1098,10 +1114,10 @@ class Our5etoolsCatalog:
                     sql = (
                         'SELECT ef.facet_key, ef.facet_value, count(*) '
                         'FROM entries e CROSS JOIN entry_facets ef ON ef.entry_id = e.id '
-                        + (f'WHERE ({where_all[7:]}) ' if where_all else '')
+                        + (f'WHERE ({count_where[7:]}) ' if count_where else '')
                         + 'GROUP BY ef.facet_key, ef.facet_value'
                     )
-                    for fk, fv, cnt in db.execute(sql, vals_all):
+                    for fk, fv, cnt in db.execute(sql, count_vals):
                         if fk in key_set:
                             out[fk][fv] += int(cnt)
                 return out
@@ -1109,35 +1125,28 @@ class Our5etoolsCatalog:
             # 3. Type counts: what choosing each type matches with every other condition kept as written.
             type_counts: Counter[str] = Counter()
             if 'type' not in active_fields:
-                type_counts = Counter(r[4] for r in matched_rows)
+                type_counts = Counter(r[4] for r in count_rows)
             else:
                 w_t, v_t = _conds_without_field('type')
                 for r in db.execute('SELECT e.type, count(*) FROM entries e' + w_t + ' GROUP BY e.type', v_t):
                     type_counts[r[0]] = int(r[1])
 
-            # 4. `without`: additional results gained when removing one condition
+            # 4. `without`: the matches each card's removal from the line would add, by the card's place.
             without: dict[str, int] = {}
-            field_counts_once = Counter(fields_of)
-            for i, (ckey, _, _) in enumerate(conds):
-                if ckey == SCOPE_KEY:
-                    continue
-                f_i = fields_of[i]
-                if f_i == 'type' and field_counts_once['type'] == 1:
+            type_cards = sum(c.field == 'type' for c in line)
+            for card in line:
+                if card.field == 'type' and type_cards == 1 and not params.probing and expression.required(where, card.index):
                     diff = sum(type_counts.values()) - total
-                    if diff > 0:
-                        without[ckey] = diff
-                    continue
-                sub_conds = conds[:i] + conds[i + 1:]
-                w_sub, v_sub = self._where_from(sub_conds)
-                c_without = int(db.execute('SELECT count(*) FROM entries e' + w_sub, v_sub).fetchone()[0])
-                diff = c_without - total
+                else:
+                    w_sub, v_sub = self._where_of(expression.without(where, card.index), scope)
+                    diff = int(db.execute('SELECT count(*) FROM entries e' + w_sub, v_sub).fetchone()[0]) - total
                 if diff > 0:
-                    without[ckey] = diff
+                    without[str(card.index)] = diff
 
             # 5. Domain facets & flags: batch ALL unfiltered facets into ONE query!
             unfiltered_domain = [f for f in domain if ('f_' + f) not in active_fields]
             filtered_domain = [f for f in domain if ('f_' + f) in active_fields]
-            batched_counts = _count_facets_for_ids(unfiltered_domain, matched_ids)
+            batched_counts = _count_facets_for_ids(unfiltered_domain, count_ids)
 
             for f in filtered_domain:
                 fkey = 'f_' + f
@@ -1166,7 +1175,7 @@ class Our5etoolsCatalog:
                     {
                         'value': v,
                         'label': otypes.option_label(f, v),
-                        'count': int(f_counts.get(v, 0)),
+                        'count': int(f_counts.get(v, 0)) + always,
                     }
                     for v in sorted(f_universe, key=lambda val: otypes.option_order(f, val))
                 ]
@@ -1181,9 +1190,9 @@ class Our5etoolsCatalog:
             if len(config['kinds']) > 1:
                 domain_groups.sort(key=lambda g: -unknown_cover.get(g['key'][2:], 0))
 
-            # 6. Ruleset, Origin, Source, Package counts (reuse matched_rows whenever unfiltered!)
+            # 6. Ruleset, Origin, Source, Package counts (reuse the counted rows whenever unfiltered!)
             if 'ruleset' not in active_fields:
-                rs_counts = Counter(r[1] for r in matched_rows)
+                rs_counts = Counter(r[1] for r in count_rows)
             else:
                 w_rs, v_rs = _conds_without_field('ruleset')
                 rs_counts = Counter(dict(db.execute('SELECT e.ruleset, count(*) FROM entries e' + w_rs + ' GROUP BY e.ruleset', v_rs)))
@@ -1191,13 +1200,13 @@ class Our5etoolsCatalog:
                 'key': 'ruleset',
                 'label': COMMON_LABELS['ruleset'],
                 'mode': 'multi',
-                'options': [{'value': v, 'label': v, 'count': int(rs_counts.get(v, 0))} for v in RULESETS],
+                'options': [{'value': v, 'label': v, 'count': int(rs_counts.get(v, 0)) + always} for v in RULESETS],
             }
 
             if 'origin' not in active_fields:
                 or_counts = Counter(
                     self._sources_map[r[2]]['origin']
-                    for r in matched_rows if r[2] in self._sources_map
+                    for r in count_rows if r[2] in self._sources_map
                 )
             else:
                 w_or, v_or = _conds_without_field('origin')
@@ -1210,11 +1219,11 @@ class Our5etoolsCatalog:
                 'key': 'origin',
                 'label': COMMON_LABELS['origin'],
                 'mode': 'multi',
-                'options': [{'value': v, 'label': v, 'count': int(or_counts.get(v, 0))} for v in ORIGINS],
+                'options': [{'value': v, 'label': v, 'count': int(or_counts.get(v, 0)) + always} for v in ORIGINS],
             }
 
             if 'source' not in active_fields:
-                src_counts = Counter(r[2] for r in matched_rows if r[2])
+                src_counts = Counter(r[2] for r in count_rows if r[2])
             else:
                 w_src, v_src = _conds_without_field('source')
                 src_counts = Counter(dict(db.execute('SELECT e.source_id, count(*) FROM entries e' + w_src + ' GROUP BY e.source_id', v_src)))
@@ -1233,7 +1242,7 @@ class Our5etoolsCatalog:
                             self._sources_map[sid]['short_name'],
                             self._sources_map[sid]['data'].get('code'),
                         ])),
-                        'count': int(src_counts.get(sid, 0)),
+                        'count': int(src_counts.get(sid, 0)) + always,
                     }
                     for sid in src_universe if sid in self._sources_map
                 ),
@@ -1247,7 +1256,7 @@ class Our5etoolsCatalog:
             }
 
             if 'package' not in active_fields:
-                pkg_counts = Counter(r[3] for r in matched_rows if r[3])
+                pkg_counts = Counter(r[3] for r in count_rows if r[3])
             else:
                 w_pkg, v_pkg = _conds_without_field('package')
                 pkg_counts = Counter(dict(db.execute('SELECT e.package_id, count(*) FROM entries e' + w_pkg + ' GROUP BY e.package_id', v_pkg)))
@@ -1263,7 +1272,7 @@ class Our5etoolsCatalog:
                         'title': self._packages_map[pid]['name'],
                         'origin': self._packages_map[pid]['origin'],
                         'ours': self._packages_map[pid]['ours'],
-                        'count': int(pkg_counts.get(pid, 0)),
+                        'count': int(pkg_counts.get(pid, 0)) + always,
                     }
                     for pid in pkg_universe if pid in self._packages_map
                 ),
@@ -1281,14 +1290,14 @@ class Our5etoolsCatalog:
                 'label': COMMON_LABELS['type'],
                 'mode': 'multi',
                 'options': [
-                    {'value': t, 'label': otypes.TYPES[t], 'count': int(type_counts.get(t, 0))}
+                    {'value': t, 'label': otypes.TYPES[t], 'count': int(type_counts.get(t, 0)) + always}
                     for t in otypes.TYPE_ORDER if t in self._held_types
                 ],
             }
 
             # 7. Elsewhere hints when current narrowed query returns 0 rows
             elsewhere: list[dict[str, Any]] = []
-            if total == 0 and conds:
+            if total == 0 and line:
                 for relax_field, label in (
                     ('source', '放宽来源限制'),
                     ('package', '放宽资料包限制'),
@@ -1308,6 +1317,7 @@ class Our5etoolsCatalog:
                 'scope_total': scope_total,
                 'without': without,
                 'elsewhere': elsewhere,
+                **({'probe_base': always} if params.probing else {}),
             }
 
     # --- Library federation: works, cheap ranking rows and full rows by ID ---
@@ -1340,7 +1350,8 @@ class Our5etoolsCatalog:
         """One cheap row per matching entry: what a library spanning several catalogs sorts, stacks and pages."""
         with closing(self._connect()) as db:
             self._ensure_static_cache(db)
-            where, values = self._where_from(self._conditions(params, restrict))
+            params = Query.of(params)
+            where, values = self._where(params, restrict)
             latest = _latest_term(params)
             db.create_function('browse_query', 0, lambda: latest)
             if sort_field and sort_field not in otypes.COLUMN_LABELS and sort_field not in otypes.LABELS:
@@ -1376,8 +1387,8 @@ class Our5etoolsCatalog:
                     out[r['id']] = self._row_to_entry(r)
         return out
 
-    def schema(self, types: list[str]) -> dict[str, Any]:
-        return otypes.schema_for([t for t in types if t in otypes.TYPES])
+    def schema(self, types: list[str], widened: bool = False) -> dict[str, Any]:
+        return otypes.schema_for([t for t in types if t in otypes.TYPES], widened)
 
     def capabilities(self) -> Any:
         from anna.presentation.collections import Capabilities
@@ -1817,8 +1828,7 @@ class Our5etoolsTour:
 
     def _query_count(self, query: dict[str, list[str]]) -> int:
         with closing(_connect_ro(self.db_path)) as db:
-            conds = self.catalog._conditions(query)
-            where, vals = self.catalog._where_from(conds)
+            where, vals = self.catalog._where(query)
             return int(db.execute('SELECT count(*) FROM entries e' + where, vals).fetchone()[0])
 
     @staticmethod
@@ -1828,8 +1838,7 @@ class Our5etoolsTour:
 
     def _type_items(self, scope: dict[str, list[str]]) -> list[dict[str, Any]]:
         with closing(_connect_ro(self.db_path)) as db:
-            conds = self.catalog._conditions(scope)
-            where, vals = self.catalog._where_from(conds)
+            where, vals = self.catalog._where(scope)
             counts = dict(db.execute('SELECT e.type, count(*) FROM entries e' + where + ' GROUP BY e.type', vals))
         return [{'id': None, 'kind': 'query', 'title': otypes.TYPES[t], 'type': t, 'count': int(counts[t]),
                  'query': {**scope, 'type': [t]}} for t in otypes.TYPE_ORDER if int(counts.get(t, 0)) > 0]

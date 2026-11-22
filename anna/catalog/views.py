@@ -99,11 +99,12 @@ def type_conditions(entry_type):
     return [*own['facets'],*own['flags'],*([own['range']] if own.get('range') else [])]
 
 
-def schema_for(types):
+def schema_for(types, widened=False):
     """The table a set of entry types reads as: one kind's own schema, or the generic table
-    widened by every kind present when types mix (装备 lists mundane gear beside magic items)."""
+    widened by every kind present when types mix (装备 lists mundane gear beside magic items).
+    `widened` says entries of other types match too, so the generic table leads."""
     types = sorted(set(types),key=lambda t:TYPE_ORDER.index(t) if t in TYPE_ORDER else len(TYPE_ORDER))
-    kinds = list(dict.fromkeys(TYPE_KINDS.get(t,GENERIC) for t in types))
+    kinds = list(dict.fromkeys([*(TYPE_KINDS.get(t,GENERIC) for t in types),*([GENERIC] if widened else [])]))
     if len(kinds)<=1:return configure(kinds[0] if kinds else GENERIC)
     return combine([k for k in kinds if k!=GENERIC])
 

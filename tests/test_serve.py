@@ -14,6 +14,7 @@ from anna.presentation.catalog import DB, connect, query, detail, meta, csv_expo
 from anna.server.query import Handler
 from http.server import ThreadingHTTPServer
 import anna.catalog.views as browse
+from anna.presentation.expression import Query
 
 @unittest.skipUnless(DB.exists(),'Build the dataset first')
 class WebTests(unittest.TestCase):
@@ -230,8 +231,9 @@ class WebTests(unittest.TestCase):
         # The term being typed filters like a kept one and decides match order; a repeat adds nothing.
         self.assertEqual(query(self.db,{'q':['火'],'typing':['球']})['total'],query(self.db,{'q':['火','球']})['total'])
         self.assertEqual(query(self.db,{'q':['球'],'typing':['火球术']})['rows'][0]['name_zh'],'火球术')
-        self.assertNotIn('typing',facets(self.db,{'q':['火'],'typing':['火']})['without'])
-        self.assertIn('typing',facets(self.db,{'type':['spell'],'typing':['成年红龙']})['without'])
+        # Counts name each card by its place in the line: removing the repeat, or the term it repeats, adds nothing.
+        self.assertEqual(facets(self.db,{'q':['火'],'typing':['火']})['without'],{})
+        self.assertIn('1',facets(self.db,{'type':['spell'],'typing':['成年红龙']})['without'])
         for bad in [{'q':[str(i) for i in range(21)]},{'q':['x'*201]},{'typing':['x'*201]}]:
             with self.assertRaises(ValueError):query(self.db,bad)
 
@@ -264,7 +266,7 @@ class WebTests(unittest.TestCase):
         bodied={r['id'] for r in query(self.db,{'type':['spell'],'body':[title_only],'versions':['each']},export=True)['rows']}
         self.assertTrue(named);self.assertFalse(named&bodied)
         data=facets(self.db,{'type':['spell'],'body':['专注','火焰']})
-        self.assertEqual(data['total'],len(rows));self.assertIn('body0',data['without']);self.assertIn('body1',data['without'])
+        self.assertEqual(data['total'],len(rows));self.assertIn('1',data['without']);self.assertIn('2',data['without'])
         for bad in [{'body':[str(i) for i in range(21)]},{'body':['x'*201]}]:
             with self.assertRaises(ValueError):query(self.db,bad)
 
@@ -281,15 +283,54 @@ class WebTests(unittest.TestCase):
         # A field can include and exclude at once; each list is its own condition.
         both=facets(self.db,{'type':['spell'],'f_school':['塑能','咒法'],'not_f_school':['咒法']})
         self.assertEqual(both['total'],total({'type':['spell'],'f_school':['塑能']}))
-        self.assertEqual(both['without']['not_f_school'],total({'type':['spell'],'f_school':['咒法']}))
+        self.assertEqual(both['without']['2'],total({'type':['spell'],'f_school':['咒法']}))
         # Counts set aside both lists of their own field; excluded values stay listed.
         school={o['value']:o['count'] for g in both['groups'] if g['key']=='f_school' for o in g['options']}
         self.assertEqual(school['咒法'],total({'type':['spell'],'f_school':['咒法']}))
         notq=facets(self.db,{'type':['spell'],'q':['火'],'not_q':['球']})
         self.assertEqual(notq['total'],total({'type':['spell'],'q':['火']})-total({'type':['spell'],'q':['火','球']}))
-        self.assertIn('not_q0',notq['without'])
+        self.assertIn('2',notq['without'])
         for bad in [{'not_cr_min':['1']},{'not_typing':['x']},{'not_conflict':['1']},{'not_type':['section']}]:
             with self.assertRaises(ValueError):query(self.db,bad)
+
+    def test_cards_join_with_or_bind_it_tighter_and_regroup_in_parentheses(self):
+        OR,OPEN,CLOSE=('or',''),('open',''),('close','')
+        line=lambda *pairs:Query.parse([*pairs,('versions','each')])
+        ids=lambda *pairs:{r['id'] for r in query(self.db,line(*pairs),export=True)['rows']}
+        total=lambda *pairs:query(self.db,line(*pairs))['total']
+        spell,evocation,conjuration,fire=('type','spell'),('f_school','塑能'),('f_school','咒法'),('q','火')
+        # ∨ between two cards of one field matches what one card holding both values does.
+        self.assertEqual(ids(spell,evocation,OR,conjuration),ids(spell,evocation,('f_school','咒法')))
+        # ∨ binds tighter than ∧: spells that are evocations or named with 火.
+        either=ids(spell,evocation,OR,fire)
+        self.assertEqual(either,ids(spell,evocation)|ids(spell,fire))
+        # Parentheses regroup: evocation spells, or anything named with 火.
+        grouped=ids(OPEN,spell,evocation,CLOSE,OR,fire)
+        self.assertEqual(grouped,ids(spell,evocation)|ids(fire))
+        self.assertTrue(grouped-either)
+        # Two cards of one field both hold, unlike one card's alternatives: spells of both wizards and sorcerers.
+        wizard,sorcerer=('f_spell_classes','法师'),('f_spell_classes','术士')
+        both=ids(spell,wizard,('and',''),sorcerer)
+        self.assertEqual(both,ids(spell,wizard)&ids(spell,sorcerer))
+        self.assertLess(len(both),len(ids(spell,wizard,('f_spell_classes','术士'))))
+        # The address carries the line in its order and markers.
+        status,_,body=self.request('/api/entries?'+urlencode([spell,evocation,OR,fire,('versions','each')]))
+        self.assertEqual((status,json.loads(body)['total']),(200,len(either)))
+        # Counts follow the tree: removing an alternative narrows the query, so only the type's removal adds results.
+        data=facets(self.db,line(spell,evocation,OR,fire))
+        self.assertEqual(data['total'],len(either))
+        self.assertEqual(set(data['without']),{'0'})
+        self.assertEqual(data['without']['0'],total(evocation,OR,fire)-len(either))
+        # A field counts with its own cards set aside: with 学派 aside, spell ∧ (TRUE ∨ 火) is every spell.
+        school={o['value']:o['count'] for g in data['groups'] if g['key']=='f_school' for o in g['options']}
+        self.assertEqual(school['咒法'],total(spell,conjuration))
+        # While the caret probes, each value counts what placing it at the caret would match.
+        probe=facets(self.db,line(spell,evocation,OR,('probe','')))
+        self.assertEqual((probe['total'],probe['probe_base']),(total(spell,evocation),total(spell,evocation)))
+        groups={g['key']:{o['value']:o['count'] for o in g['options']} for g in probe['groups']}
+        self.assertEqual(groups['f_school']['咒法'],total(spell,evocation,OR,conjuration))
+        self.assertEqual(groups['type']['creature'],total(spell,evocation,OR,('type','creature')))
+        self.assertEqual(groups['f_spell_level']['1'],total(spell,evocation,OR,('f_spell_level','1')))
 
     def test_counts_say_what_choosing_each_option_would_match(self):
         params={'type':['spell'],'q':['火'],'f_school':['塑能']}
@@ -311,9 +352,9 @@ class WebTests(unittest.TestCase):
         fire={o['value']:o['count'] for o in facets(self.db,{'type':['spell'],'q':['火']})['groups'][0]['options']}
         self.assertEqual(fire['magic_item'],query(self.db,{'type':['magic_item'],'q':['火'],'versions':['each']})['total'])
         self.assertNotIn('section',types)
-        # Removing one condition: each search term and field is its own condition.
-        self.assertEqual(data['without']['q0'],query(self.db,{'type':['spell'],'f_school':['塑能'],'versions':['each']})['total']-data['total'])
-        self.assertEqual(data['without']['f_school'],query(self.db,{'type':['spell'],'q':['火'],'versions':['each']})['total']-data['total'])
+        # Removing one card: each search term and field is its own card, named by its place in the line.
+        self.assertEqual(data['without']['1'],query(self.db,{'type':['spell'],'f_school':['塑能'],'versions':['each']})['total']-data['total'])
+        self.assertEqual(data['without']['2'],query(self.db,{'type':['spell'],'q':['火'],'versions':['each']})['total']-data['total'])
         # A chosen value stays listed when nothing in scope holds it, so it can be unchosen.
         elsewhere=self.db.execute("SELECT es.source_id FROM entry_sources es JOIN entries e ON e.id=es.entry_id GROUP BY es.source_id HAVING sum(e.type='spell')=0 LIMIT 1").fetchone()[0]
         odd={g['key']:g for g in facets(self.db,{'type':['spell'],'source':[elsewhere]})['groups']}

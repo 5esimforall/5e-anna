@@ -15,7 +15,8 @@ import anna.catalog.views as browse
 from anna.presentation import catalog
 from anna.presentation.alignment import align, title_key
 from anna.presentation.collections import BookCatalog, Capabilities, Collection, CollectionRegistry, DEFAULT
-from anna.presentation.library import Library, Scope, localize, merge_order, parse_scope, describe_works, relations
+from anna.presentation.expression import Query
+from anna.presentation.library import Library, Scope, answers, localize, merge_order, parse_scope, describe_works, relations
 
 from test_presentation_contracts import endpoint, fixture
 
@@ -150,29 +151,49 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual(library.entries({**params, 'source': [PHB14, 'src:XPHB']})['total'], 1)
         with self.assertRaisesRegex(ValueError, '未知条目类型'):
             library.entries({**params, 'type': ['dragon']})
-        # Counts set aside the condition a collection cannot answer only for that condition's own field.
+        # Counts set aside the condition a collection cannot answer only for that condition's own field; removing the
+        # type card (the line's first) brings back the other collection's spells.
         facets = library.facets({**params, 'type': ['class_feature']})
         types = {o['value']: o['count'] for o in next(g for g in facets['groups'] if g['key'] == 'type')['options']}
         self.assertEqual(types, {'class_feature': 1, 'spell': 2})
-        self.assertEqual((facets['total'], facets['scope_total'], facets['without']), (1, 1, {'type': 2}))
+        self.assertEqual((facets['total'], facets['scope_total'], facets['without']), (1, 1, {'0': 2}))
+        # Under ∨ the card a collection cannot answer drops out of its alternatives, not out of the query: the class
+        # feature comes from the book, Shield from both collections.
+        either = Query.parse([('type', 'class_feature'), ('or', ''), ('q', '护盾术')])
+        result = library.entries(either)
+        self.assertEqual(sorted((r['id'], [v['collection'] for v in r['versions']]) for r in result['rows']),
+                         sorted([(WIND, [DEFAULT]), (SHIELD, [DEFAULT, 'spells'])]))
+        facets = library.facets(either)
+        self.assertEqual((facets['total'], facets['without']), (3, {}))
+        probe = library.facets(Query.parse([('type', 'class_feature'), ('or', ''), ('probe', '')]))
+        types = {o['value']: o['count'] for o in next(g for g in probe['groups'] if g['key'] == 'type')['options']}
+        self.assertEqual((probe['probe_base'], types), (1, {'class_feature': 1, 'spell': 3}))
         # A single collection that cannot answer at all returns an empty table rather than an error.
         library, params = self.library(libraries='spells', type='class_feature')
         self.assertEqual(library.entries(params)['total'], 0)
 
-    def test_localize_keeps_what_a_collection_answers_and_reports_what_it_cannot(self):
+    def test_localize_keeps_each_card_in_place_with_the_values_a_collection_holds(self):
         caps = self.registry.get(DEFAULT).provider.capabilities()
         every = caps.conditions | {'package', 'copy_status'}
-        local, unanswerable = localize({'type': ['spell'], 'q': ['盾'], 'sort': ['name'], 'not_copy_status': ['ok'],
-                                        'origin': ['社区']}, caps, every, caps.types)
-        self.assertEqual(local, {'type': ['spell'], 'q': ['盾'], 'sort': ['name']})
-        self.assertEqual(unanswerable, {'origin': 'origin'})
+        local = localize({'type': ['spell'], 'q': ['盾'], 'sort': ['name'], 'not_copy_status': ['ok'],
+                          'origin': ['社区']}, caps, every, caps.types)
+        # Every card keeps its place, so counts still name it; what this collection cannot hold reads as absent.
+        self.assertEqual([(c.index, c.key, c.values) for c in local.cards()],
+                         [(0, 'type', ('spell',)), (1, 'q', ('盾',)), (2, "not_copy_status", (browse.NONE,)), (3, "origin", (browse.NONE,))])
+        self.assertEqual(dict(local), {'type': ['spell'], 'q': ['盾'], 'sort': ['name']})
+        # An included card left without values holds for nothing; an excluded one excludes nothing.
+        self.assertFalse(answers(local))
+        self.assertTrue(answers(localize({'not_copy_status': ['ok'], 'q': ['盾']}, caps, every, caps.types)))
+        # Under ∨ the card another collection cannot answer drops out of its alternatives.
+        either = localize(Query.parse([('origin', '社区'), ('or', ''), ('q', '盾')]), caps, every, caps.types)
+        self.assertTrue(answers(either))
 
     def test_facets_merge_options_and_counts_across_collections(self):
         library, params = self.library(libraries='5echm,demo')
         facets = library.facets({**params, 'type': ['spell']})
         types = {o['value']: o['count'] for o in next(g for g in facets['groups'] if g['key'] == 'type')['options']}
         self.assertEqual(types, {'class_feature': 2, 'spell': 2})
-        self.assertEqual((facets['total'], facets['scope_total'], facets['without']), (2, 2, {'type': 2}))
+        self.assertEqual((facets['total'], facets['scope_total'], facets['without']), (2, 2, {'0': 2}))
         sources = next(g for g in facets['groups'] if g['key'] == 'source')['options']
         # The two collections share work IDs here; each option still names its collection.
         self.assertEqual({o['collection'] for o in sources}, {DEFAULT})
@@ -246,8 +267,8 @@ class HomebrewCatalog:
     def detail(self, entry_id):
         return next(self._row(e) | {'versions': None, 'body': ''} for e in self.entries_ if e['id'] == entry_id)
 
-    def schema(self, types):
-        return browse.schema_for(types)
+    def schema(self, types, widened=False):
+        return browse.schema_for(types, widened)
 
     def meta(self):
         return {'type_order': ['spell', 'magic_item'], 'types': {}, 'fields': {}, 'sources': [], 'packages': []}

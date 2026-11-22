@@ -1146,12 +1146,13 @@ def type_conditions(entry_type: str) -> list[str]:
     return [*own['facets'], *own['flags'], *([own['range']] if own.get('range') else [])]
 
 
-def schema_for(types: Any) -> dict[str, Any]:
+def schema_for(types: Any, widened: bool = False) -> dict[str, Any]:
+    """The table a set of entry types reads as; `widened` says entries of other types match too."""
     ordered_types = sorted(
         set(types),
         key=lambda t: TYPE_ORDER.index(t) if t in TYPE_ORDER else len(TYPE_ORDER),
     )
-    kinds = list(dict.fromkeys(TYPE_KINDS.get(t, GENERIC) for t in ordered_types))
+    kinds = list(dict.fromkeys([*(TYPE_KINDS.get(t, GENERIC) for t in ordered_types), *([GENERIC] if widened else [])]))
     if len(kinds) <= 1:
         return configure(kinds[0] if kinds else GENERIC)
     return combine([k for k in kinds if k != GENERIC])

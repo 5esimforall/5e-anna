@@ -127,8 +127,8 @@ test('entries and tabs come in from the side they come from',async({page})=>{
 test('conditions keep their identity and slide over as one leaves',async({page})=>{
   await page.setViewportSize({width:1440,height:900});await page.goto(anna+'/?type=spell&q=火&q=球');await ready(page);await settled(page);
   await motions(page);
-  await page.evaluate(()=>document.querySelector('[data-remove="q0"]').click());
-  const slid=(await motions(page)).filter(m=>/condition|and/.test(m.target)&&m.keyframes.translate);
+  await page.evaluate(()=>document.querySelector('[data-key="q"] .condition-remove').click());
+  const slid=(await motions(page)).filter(m=>/condition|join/.test(m.target)&&m.keyframes.translate);
   expect(slid.length).toBeGreaterThan(0);
   expect(slid.every(m=>parseFloat(m.keyframes.translate[0])>0)).toBeTruthy();
 });

@@ -335,9 +335,9 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .active-filters { display: flex; flex: 1 1 auto; align-items: center; gap: 5px; min-width: 0; padding: 2px; }
 .searchbox .active-filters>input { flex: 1 0 120px; width: auto; min-width: 120px; }
 .searchbox .active-filters.caret-inside>input { flex: none; min-width: 2px; }
-/* Beside the caret a ∧ shows only while words are typed there, so the line always reads card ∧ card. */
-.active-filters>.and.slot-after, .active-filters>.and.slot-before:not(.joins) { display: none; }
-.active-filters.drafting>.and.slot-after, .active-filters.drafting>.and.slot-before { display: inline; }
+/* Beside the caret a join shows while words are typed there, while it joins two tokens, or once ∨ is chosen for
+   the next card, so the line always reads card ∧ card. */
+.active-filters:not(.drafting)>.join.slot-after, .active-filters:not(.drafting)>.join.slot-before:not(.joins, .pending) { display: none; }
 /* A chip's text flips it between “is” and “is not”; its × removes it. An excluded condition reads as an outline. */
 .condition { display: inline-flex; flex-shrink: 0; align-items: center; border: 1px solid var(--anna-selected-line); border-radius: var(--anna-radius-sm); background: var(--anna-selected); color: var(--anna-brand); font-size: var(--anna-type-ui); white-space: nowrap; }
 .condition>button { min-height: 24px; border: 0; background: transparent; color: inherit; }
@@ -359,8 +359,16 @@ summary>span { margin-left: 8px; font-size: var(--anna-type-ui); color: var(--an
 .query-problem>p { flex: 1 1 18em; min-width: 0; margin: 0; }
 .problem-fixes { display: flex; flex-wrap: wrap; gap: 6px; }
 .problem-fixes>button { min-height: 28px; padding: 2px 9px; background: var(--anna-paper); font-size: var(--anna-type-ui); }
-/* Chips always combine with ∧: each condition, each kept search included, stands on its own. */
-.active-filters>.and { flex-shrink: 0; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 15px; font-weight: 600; line-height: 1; }
+/* A join reads ∧ or ∨ between tokens and turns over when pressed. ∨ takes the brand colour: the alternatives it
+   joins read as one condition. */
+.active-filters>.join { display: inline-grid; place-items: center; flex-shrink: 0; min-width: 18px; min-height: 24px; padding: 0 2px; border: 0; border-radius: var(--anna-radius-sm); background: transparent; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 15px; font-weight: 600; line-height: 1; }
+.active-filters>button.join:hover { background: var(--anna-hover); color: var(--anna-ink); }
+.active-filters>.join[data-op=or] { color: var(--anna-brand); }
+/* Parentheses group tokens as in a line of text; one the line leaves unmatched shows faintly where it closes. */
+.active-filters>.paren { flex-shrink: 0; padding: 0 1px; color: var(--anna-secondary); font-family: var(--anna-serif); font-size: 19px; line-height: 1; }
+.active-filters>.paren.ghost { opacity: .4; }
+/* Untyped sections widen what the results read from; that card is not a condition, so it stands apart. */
+.condition.scope { border-style: dotted; background: transparent; }
 #suggestions { position: absolute; z-index: 9; top: calc(100% + 6px); left: 0; right: 0; max-height: min(60dvh,420px); overflow: auto; margin: 0; padding: 5px; list-style: none; border: 1px solid var(--anna-line); border-radius: var(--anna-radius); background: var(--anna-paper); box-shadow: var(--anna-shadow); }
 #suggestions>li { display: flex; align-items: baseline; gap: 10px; min-height: 34px; padding: 6px 9px; border-radius: var(--anna-radius-sm); color: var(--anna-ink); cursor: pointer; }
 #suggestions>li[aria-selected=true] { background: var(--anna-selected); color: var(--anna-brand); }

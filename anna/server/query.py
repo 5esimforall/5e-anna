@@ -3,10 +3,11 @@ import html
 import json
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, parse_qsl, urlsplit
 import anna.paths as paths
 from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.expression import Query
 from anna.presentation.library import Library, describe_works, parse_scope
 
 WEB = paths.PROJECT / 'web'
@@ -80,6 +81,10 @@ class Handler(BaseHTTPRequestHandler):
             for key in scope.libraries:
                 if issue := self.collection_conflict(key):
                     self.send(issue, status=409); return
+            # The query's conditions are a line: their order and the markers between them carry its meaning.
+            # Markers carry blank values, so the line reads the request before blanks are dropped.
+            own = set(p)
+            query = lambda: Query.parse((k, v) for k, v in parse_qsl(url.query, keep_blank_values=True) if k in own)
             p = filled(p)
             library = Library(registry, scope)
             primary = library.primary
@@ -97,12 +102,12 @@ class Handler(BaseHTTPRequestHandler):
                     'reader_url': '/read' if any(c.reader is not None for c in members) else None,
                     'tour_url': '/tour' if any(c.tour is not None for c in members) else None,
                 })
-            elif url.path=='/api/facets': self.send(library.facets(p))
-            elif url.path=='/api/entries': self.send(library.entries(p))
+            elif url.path=='/api/facets': self.send(library.facets(query()))
+            elif url.path=='/api/entries': self.send(library.entries(query()))
             elif url.path=='/api/entry': self.send(library.detail(catalog.first(p,'id')))
             elif url.path=='/api/entry-layout': self.send(library.layout(catalog.first(p,'id')))
             else:
-                body, key = library.export(p)
+                body, key = library.export(query())
                 filename = '5e-anna.csv' if key==DEFAULT else f'5e-anna-{key}.csv'
                 self.send(body,'text/csv; charset=utf-8',download=filename)
         except CollectionError as exc: self.send({'code':exc.code},status=exc.status)

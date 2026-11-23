@@ -1,4 +1,6 @@
 # anna owns the workflow; the sibling mirror remains an independent repository.
+# Machine-specific paths and defaults live in the untracked local.mk; command-line variables still override them.
+-include local.mk
 WEB_DIR ?= ../5echm-web
 WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(WEB_DIR)")
 REPO ?= https://github.com/DND5eChm/5echm_web.git
@@ -9,11 +11,11 @@ BRANCH ?= pages
 5ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
 5ETOOLS_BRANCH ?= main
 # our5etools (collection=our5etools) and reserved standalone 5etools (collection=5etools) are kept separate from comparison-only 5ETOOLS_DIR (5etools-cn).
-OUR5ETOOLS_DIR ?=
+OUR5ETOOLS_DIR ?= ../our5etools
 OUR5ETOOLS_IMG_DIR ?=
 OUR5ETOOLS_DATA ?= data/our5etools
 5ETOOLS_DATA ?= data/5etools
-OUR5ETOOLS_PATH := $(shell python3 -c 'import os, sys; from anna.paths import OUR5ETOOLS; print(os.path.abspath(sys.argv[1]) if sys.argv[1] else OUR5ETOOLS)' "$(OUR5ETOOLS_DIR)")
+OUR5ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(OUR5ETOOLS_DIR)")
 OUR5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(OUR5ETOOLS_DATA)")
 5ETOOLS_DATA_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DATA)")
 TRUE_VALUES := 1 true yes on
@@ -55,7 +57,7 @@ endif
 endif
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone _clone-web _clone-counterparts update status clean build test audit audit-links check up upper our5etools-audit test-unit test-browser browser-setup icons
+.PHONY: usage clone _clone-web _clone-counterparts update status clean distclean build test audit audit-links check up upper our5etools-audit test-unit test-browser browser-setup icons
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -111,7 +113,7 @@ status:
 	elif [ -d "$(OUR5ETOOLS_PATH)/data" ]; then \
 		echo "our5etools (no Git version): $(OUR5ETOOLS_PATH)"; \
 	else \
-		echo "our5etools: not present (set OUR5ETOOLS_DIR=...)"; \
+		echo "our5etools: not present (set OUR5ETOOLS_DIR in local.mk or on the command line)"; \
 	fi
 	@if [ -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" ]; then \
 		printf 'our5etools data: %s\n' "$$(du -sh "$(OUR5ETOOLS_DATA_PATH)" | cut -f1 | tr -d ' ')"; \
@@ -121,6 +123,9 @@ status:
 
 clean:
 	@python3 scripts/clean.py
+
+distclean:
+	@python3 scripts/clean.py --dependencies
 
 icons:
 	@"$(PYTHON)" scripts/build_icons.py
@@ -168,7 +173,7 @@ our5etools-audit:
 test: test-unit test-browser
 
 test-unit:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m unittest discover -s tests
+	@WEB_DIR="$(WEB_PATH)" OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m unittest discover -s tests
 
 audit:
 	@"$(PYTHON)" -m anna.catalog.audit

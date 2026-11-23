@@ -2,13 +2,16 @@
 __pycache__/
 *.pyc
 
+# 本机路径与默认参数，由 Makefile 载入
+/local.mk
+
 # 可由原文镜像重新生成的盘点、数据库和导出文件
 /data/
 # 本地构建与系统缓存
 .build-*/
 .DS_Store
 
-# 本地原文全文搜索缓存
+# 浏览器回归使用的 npm 与 Chromium 缓存
 .cache/
 
 # Browser regression dependencies, reports and screenshots

@@ -76,6 +76,52 @@ class WorkflowTests(unittest.TestCase):
                                     text=True, capture_output=True, check=True)
             self.assertEqual(Path(result.stdout.strip()), (Path(td) / 'custom mirror').resolve())
 
+    def test_our5etools_mirror_defaults_to_sibling_and_follows_environment(self):
+        code = 'import anna.paths as paths; print(paths.OUR5ETOOLS)'
+        with tempfile.TemporaryDirectory() as td:
+            env = dict(os.environ, PYTHONPATH=str(PROJECT))
+            env.pop('OUR5ETOOLS_DIR', None)
+            result = subprocess.run([sys.executable, '-c', code], cwd=td, env=env,
+                                    text=True, capture_output=True, check=True)
+            self.assertEqual(Path(result.stdout.strip()), (WORKSPACE / 'our5etools').resolve())
+            env['OUR5ETOOLS_DIR'] = 'custom mirror'
+            result = subprocess.run([sys.executable, '-c', code], cwd=td, env=env,
+                                    text=True, capture_output=True, check=True)
+            self.assertEqual(Path(result.stdout.strip()), (Path(td) / 'custom mirror').resolve())
+
+    def test_local_settings_supply_defaults_that_command_line_overrides(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            env = {k: v for k, v in os.environ.items() if k != 'OUR5ETOOLS_DIR'}
+
+            def companion_source(*args):
+                result = self.make(root, '-f', str(PROJECT / 'Makefile'), '-n', 'build',
+                                   'COLLECTION=our5etools', *args, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                return result.stdout
+
+            self.assertIn(f'--source "{root.parent / "our5etools"}"', companion_source())
+            (root / 'local.mk').write_text(f'OUR5ETOOLS_DIR ?= {root / "local mirror"}\n')
+            self.assertIn(f'--source "{root / "local mirror"}"', companion_source())
+            override = companion_source(f'OUR5ETOOLS_DIR={root / "override"}')
+            self.assertIn(f'--source "{root / "override"}"', override)
+            self.assertNotIn('local mirror', override)
+
+    def test_workspace_forwards_every_target_and_reports_unknown_ones(self):
+        wrapper = WORKSPACE / 'Makefile'
+        if not wrapper.exists() or '5e-anna' not in wrapper.read_text():
+            self.skipTest('standalone checkout without workspace wrapper')
+        for target, command in (('icons', 'scripts/build_icons.py'),
+                                ('audit-links', '-m anna.catalog.reference_coverage'),
+                                ('our5etools-audit', '-m anna.our5etools.audit')):
+            with self.subTest(target=target):
+                result = self.make(WORKSPACE, '-n', target)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(command, result.stdout)
+        result = self.make(WORKSPACE, '-n', 'retired-target')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('No rule to make target', result.stderr)
+
     def test_clone_existing_source_does_not_touch_it(self):
         with tempfile.TemporaryDirectory() as td:
             web = Path(td) / 'mirror with spaces'

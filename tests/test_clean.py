@@ -16,7 +16,8 @@ class CleanTests(unittest.TestCase):
     def test_generated_data_removed_and_inputs_preserved(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for name in (*cleaner.GENERATED, '.build-interrupted', 'anna/__pycache__'):
+            for name in (*cleaner.GENERATED, *cleaner.DEPENDENCIES, '.build-interrupted', 'anna/__pycache__',
+                         '.venv/lib/__pycache__'):
                 folder = root / name
                 folder.mkdir(parents=True)
                 (folder / 'generated').write_text('generated')
@@ -24,7 +25,7 @@ class CleanTests(unittest.TestCase):
             for name in cleaner.ICONS:
                 (root / 'web' / name).write_bytes(b'generated')
             inputs = ['.git/objects/keep', 'annotations/annotations.jsonl',
-                      'assets/branding/anna.png', 'anna/source.py']
+                      'assets/branding/anna.png', 'anna/source.py', 'local.mk']
             for name in inputs:
                 path = root / name
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -38,7 +39,13 @@ class CleanTests(unittest.TestCase):
             self.assertFalse((root / 'anna/stray.pyc').exists())
             self.assertFalse((root / '.DS_Store').exists())
             self.assertTrue(all((root / name).read_text() == 'input' for name in inputs))
+            # Installed environments stay intact, including the bytecode inside them.
+            self.assertTrue(all((root / name / 'generated').is_file() for name in cleaner.DEPENDENCIES))
+            self.assertTrue((root / '.venv/lib/__pycache__/generated').is_file())
             self.assertEqual(cleaner.clean(root), [])
+            self.assertEqual(sorted(cleaner.clean(root, dependencies=True)), sorted(cleaner.DEPENDENCIES))
+            self.assertTrue(all((root / name).read_text() == 'input' for name in inputs))
+            self.assertEqual(cleaner.clean(root, dependencies=True), [])
 
     def test_links_are_removed_without_traversing_external_data(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -57,9 +64,12 @@ class CleanTests(unittest.TestCase):
             self.assertEqual((mirror / '__pycache__/keep').read_text(), 'source')
 
     def test_make_clean_uses_only_local_maintenance_command(self):
-        result = subprocess.run(['make', '-n', 'clean', 'WEB_DIR=/external/source'], cwd=PROJECT,
-                                text=True, capture_output=True, check=True)
-        self.assertEqual(result.stdout.strip(), 'python3 scripts/clean.py')
+        for target, command in (('clean', 'python3 scripts/clean.py'),
+                                ('distclean', 'python3 scripts/clean.py --dependencies')):
+            with self.subTest(target=target):
+                result = subprocess.run(['make', '-n', target, 'WEB_DIR=/external/source'], cwd=PROJECT,
+                                        text=True, capture_output=True, check=True)
+                self.assertEqual(result.stdout.strip(), command)
 
     def test_build_regenerates_icons_before_catalog_and_linked_book(self):
         result = subprocess.run(['make', '-n', 'build'], cwd=PROJECT,

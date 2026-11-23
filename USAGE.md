@@ -2,7 +2,7 @@
 
 ## 统一命令
 
-以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 转调常用命令。使用构建选项时，在本项目目录执行 `make build`。
+以下命令在 `5e-anna` 目录运行。上层 DnD 的 Makefile 把全部目标与参数转调到本项目，只按上层目录换算 `WEB_DIR`；在上层使用其他路径参数时写绝对路径。
 
 | 命令 | 用途 |
 | --- | --- |
@@ -20,7 +20,8 @@
 | `make check` | 运行测试与审计 |
 | `make update` | 显式拉取原文与 5etools-cn 更新；之后运行 `make build` 更新数据 |
 | `make status` | 查看原文、5etools-cn、our5etools 镜像及构建产物状态 |
-| `make clean` | 删除本地生成数据、报告、图标和依赖环境；保留源码、独立输入与共享镜像 |
+| `make clean` | 删除本地生成数据、报告和图标；保留依赖环境、源码、独立输入与共享镜像 |
+| `make distclean` | 在 `make clean` 之外删除 Python 虚拟环境、Node 依赖和浏览器测试缓存 |
 
 不带目标运行 `make` 会显示本页位置。下文的 `python -m anna.…` 开发维护命令在仓库根目录运行。
 
@@ -41,9 +42,16 @@ Pages 以不全书为基础。`COLLECTION=all` 同时打包已选用的 our5etoo
 
 默认原文位于项目同级的 `5echm-web/`。用 `WEB_DIR=/路径` 指定其他镜像，相对路径以执行 `make` 的目录为基准。
 
+本机固定的路径与参数写入项目根目录的 `local.mk`。该文件不提交 Git，Makefile 启动时载入；用 `?=` 赋值时，环境变量和命令行参数仍然优先：
+
+```make
+OUR5ETOOLS_DIR ?= /路径/our5etools
+OUR5ETOOLS_IMG_DIR ?= /路径/5etools-img
+```
+
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。用 `NO_COUNTERPARTS=1` 跳过对照时，构建摘要记为 `skipped`。
 
-[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。通过 `OUR5ETOOLS_DIR=/路径` 指定本地镜像（未指定时由 `anna.paths.OUR5ETOOLS` 依次探测同级 `our5etools/` 与本机镜像），可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make build COLLECTION=our5etools`。
+[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make build COLLECTION=our5etools`。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
@@ -62,9 +70,12 @@ make check
 
 ## 清理与重建
 
-清理前停止正在运行的 anna 服务，然后执行 `make clean`。命令直接删除 `data/`、`output/`、`.cache/`、`.venv/`、`node_modules/`、中断构建目录、Python 缓存和由人物原图导出的界面图标，不备份，也不遍历指向项目外的符号链接。`assets/branding/` 原图与 `annotations/` 结构化标注输入保留。
+清理前停止正在运行的 anna 服务。两级清理都直接删除，不备份，也不遍历指向项目外的符号链接；`assets/branding/` 原图、`annotations/` 结构化标注输入与 `local.mk` 保留。
 
-清理后按上节重新安装依赖，执行 `make build` 恢复图标、查询库与链接版。只有运行浏览器测试才需要 `make browser-setup`。生成文件和历史测试报告不提交 Git。
+- `make clean` 删除 `data/`、`output/`、中断构建目录、项目内的 Python 缓存和由人物原图导出的界面图标，之后执行 `make build` 恢复图标、查询库与链接版。
+- `make distclean` 另外删除 `.venv/`、`node_modules/` 和 `.cache/`（npm 与 Chromium 缓存），之后按上节重新安装依赖；只有运行浏览器测试才需要 `make browser-setup`。
+
+生成文件和历史测试报告不提交 Git。
 
 ## 阅读服务与正文生成
 
@@ -472,16 +483,10 @@ python3 -m anna.catalog.query --type spell --field school=塑能 --csv > evocati
 
 `entry_marked`＝条目标旧；`source_archived`＝整书归档；`unmarked`＝未见标记，不代表新版。实体身份暂按定位区分，同名与同文匹配仅生成候选，不自动合并。未分类段落和原始表格保留在数据库中；恢复的断链仍保留原链接。
 
-迁移环境：创建 `.venv`，安装 [requirements.txt](/Users/arctic/Loom/Streamer/DnD/5e-anna/requirements.txt)。测试：
+新环境的依赖安装见[构建选项](#构建选项)末尾；单元测试用 `make test-unit`。结构审计只读数据库，校验表结构、外键与统计一致性，`make audit` 会运行它，需要传参时直接调用：
 
 ```sh
-/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m unittest discover -s /Users/arctic/Loom/Streamer/DnD/5e-anna/tests
-```
-
-结构审计（只读数据库，校验表结构、外键与统计一致性）：
-
-```sh
-/Users/arctic/Loom/Streamer/DnD/5e-anna/.venv/bin/python -m anna.catalog.audit
+.venv/bin/python -m anna.catalog.audit
 ```
 
 可用 `--baseline /绝对路径/旧版catalog.sqlite --output /报告目录` 生成逐条增删及分类／字段差异。审计不等于全库人工核验；未支持表格和无法唯一关联的动物保留在审核队列。

@@ -57,9 +57,9 @@ OUR5ETOOLS_DIR ?= /路径/our5etools
 OUR5ETOOLS_IMG_DIR ?= /路径/5etools-img
 ```
 
-[来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。用 `NO_COUNTERPARTS=1` 跳过对照时，构建摘要记为 `skipped`。
+[来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。`COUNTERPARTS_DIR=/路径`（以及 `COUNTERPARTS_REPO`、`COUNTERPARTS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；它们可以写在 make 参数、`local.mk` 或环境变量中。直接运行 `python -m anna.catalog.build` 时用 `--counterparts /路径` 或环境变量 `COUNTERPARTS_DIR`。用 `NO_COUNTERPARTS=1` 跳过对照时，构建摘要记为 `skipped`。
 
-[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make our5etools`。
+[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `COUNTERPARTS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make our5etools`。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
@@ -344,7 +344,7 @@ make build
 
 ## our5etools 资料库
 
-`our5etools` 作为独立资料库（键名 `our5etools`）接入 Anna、导览与 Stella，与默认不全书（`5echm`）及预留的纯中文版 `5etools` 接口（`5etools`，默认数据目录 `data/5etools/`）各自保存条目、证据与身份，不按名称互相回退，也不会改写或替代 `5ETOOLS_DIR` 指向、仅用于不全书旁证的 `5etools-cn` 对照镜像。读者在[资料库设置](#资料库设置)中勾选 `our5etools` 后，Anna 把它与不全书合成一张表，同名的出版物与家酿合为一行；导览与 Stella 把它的书目排进同一个书架，两库都有的作品只列一次并可切换文本。
+`our5etools` 作为独立资料库（键名 `our5etools`）接入 Anna、导览与 Stella，与默认不全书（`5echm`）及预留的纯中文版 `5etools` 接口（`5etools`，默认数据目录 `data/5etools/`）各自保存条目、证据与身份，不按名称互相回退，也不会改写或替代 `COUNTERPARTS_DIR` 指向、仅用于不全书旁证的 `5etools-cn` 对照镜像。读者在[资料库设置](#资料库设置)中勾选 `our5etools` 后，Anna 把它与不全书合成一张表，同名的出版物与家酿合为一行；导览与 Stella 把它的书目排进同一个书架，两库都有的作品只列一次并可切换文本。
 
 ### 构建、增量更新与回滚
 
@@ -403,7 +403,7 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 
 [GitHub Pages 工作流](.github/workflows/pages.yml)从固定的原文镜像提交构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
 
-工作流用 `make build pages` 重建并打包。已有构建产物时，`make pages` 校验并复用它们生成静态预览包：
+工作流用 `make build pages` 重建并打包，镜像路径通过环境变量 `WEB_DIR`、`OUR5ETOOLS_DIR` 与 `COUNTERPARTS_DIR` 传入。已有构建产物时，`make pages` 校验并复用它们生成静态预览包：
 
 ```sh
 make pages PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages
@@ -459,7 +459,7 @@ make up
 | 规则版本 | 2024 版（5.5e）、2014 版（5e）与规则版本待核的条目分别显示或隐藏，至少保留一种。 |
 | 内容范围 | 「官方内容」「第三方内容」（合作出版物、本站精选与社区家酿）与「性质待核」三张卡片分别开关；「按作品挑选」按资料库与来源性质列出全部作品，可筛选、逐部勾选。只勾选一部本已关闭的作品时，该类内容打开、其余作品隐藏。 |
 
-查询页始终读取资料库设置中的全部资料库；旧链接中的 `collection=` 参数在载入时移除，其余条件保留。条目由所属资料库回答：地址中的 `entry` 是条目自身的标识，它所在的资料库未勾选时仍可打开。结果为空且资料库设置收窄了范围时，空状态提供「资料库设置…」入口。未构建对应数据时，`our5etools` 与 `5etools` 显示为「未接入」，设置对照用的 `5ETOOLS_DIR` 不会启用它们。
+查询页始终读取资料库设置中的全部资料库；旧链接中的 `collection=` 参数在载入时移除，其余条件保留。条目由所属资料库回答：地址中的 `entry` 是条目自身的标识，它所在的资料库未勾选时仍可打开。结果为空且资料库设置收窄了范围时，空状态提供「资料库设置…」入口。未构建对应数据时，`our5etools` 与 `5etools` 显示为「未接入」，设置对照用的 `COUNTERPARTS_DIR` 不会启用它们。
 
 阅读栏只保留正文、属性、版本对照和关系四个栏目；核对模式、证据、概念线索、有效引用和待核栏目不再出现在界面中。
 

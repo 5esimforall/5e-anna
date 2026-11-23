@@ -5,12 +5,12 @@ WEB_DIR ?= ../5echm-web
 WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(WEB_DIR)")
 REPO ?= https://github.com/DND5eChm/5echm_web.git
 BRANCH ?= pages
-# 5etools-cn is compared with anna's entries; only its data/ directory is checked out.
-5ETOOLS_DIR ?= ../5etools-cn
-5ETOOLS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(5ETOOLS_DIR)")
-5ETOOLS_REPO ?= https://github.com/tjliqy/5etools-cn.git
-5ETOOLS_BRANCH ?= main
-# our5etools (collection=our5etools) and reserved standalone 5etools (collection=5etools) are kept separate from comparison-only 5ETOOLS_DIR (5etools-cn).
+# The counterparts mirror is 5etools-cn, compared with anna's entries; only its data/ directory is checked out.
+COUNTERPARTS_DIR ?= ../5etools-cn
+COUNTERPARTS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(COUNTERPARTS_DIR)")
+COUNTERPARTS_REPO ?= https://github.com/tjliqy/5etools-cn.git
+COUNTERPARTS_BRANCH ?= main
+# our5etools and the reserved standalone 5etools collection are libraries anna serves, unlike the counterparts mirror.
 OUR5ETOOLS_DIR ?= ../our5etools
 OUR5ETOOLS_IMG_DIR ?=
 OUR5ETOOLS_DATA ?= data/our5etools
@@ -28,7 +28,7 @@ NO_COUNTERPARTS ?= 0
 PAGES_BASE ?= /5e-anna/
 PAGES_OUTPUT ?= output/pages
 COUNTERPARTS_ENABLED := $(if $(filter $(TRUE_VALUES),$(NO_COUNTERPARTS)),,yes)
-COUNTERPART_ARGS := $(if $(COUNTERPARTS_ENABLED),--5etools "$(5ETOOLS_PATH)",--no-counterparts)
+COUNTERPART_ARGS := $(if $(COUNTERPARTS_ENABLED),--counterparts "$(COUNTERPARTS_PATH)",--no-counterparts)
 # The mirror is an external input, so whether it can be built is known when make starts.
 OUR5ETOOLS_MIRROR := $(shell test -d "$(OUR5ETOOLS_PATH)/data" && test -f "$(OUR5ETOOLS_PATH)/__api/books.json" && printf yes)
 # Built libraries appear while make runs (make build pages), so pages looks for them when its recipe starts.
@@ -53,18 +53,18 @@ _clone-web:
 	fi
 
 _clone-counterparts:
-	@if [ ! -e "$(5ETOOLS_PATH)" ]; then \
-		git clone --depth 1 --filter=blob:none --sparse --branch "$(5ETOOLS_BRANCH)" "$(5ETOOLS_REPO)" "$(5ETOOLS_PATH)" && \
-		git -C "$(5ETOOLS_PATH)" sparse-checkout set data; \
-	elif [ ! -d "$(5ETOOLS_PATH)/data" ]; then \
-		echo "5etools-cn has no data directory; refusing to overwrite: $(5ETOOLS_PATH)" >&2; exit 1; \
+	@if [ ! -e "$(COUNTERPARTS_PATH)" ]; then \
+		git clone --depth 1 --filter=blob:none --sparse --branch "$(COUNTERPARTS_BRANCH)" "$(COUNTERPARTS_REPO)" "$(COUNTERPARTS_PATH)" && \
+		git -C "$(COUNTERPARTS_PATH)" sparse-checkout set data; \
+	elif [ ! -d "$(COUNTERPARTS_PATH)/data" ]; then \
+		echo "5etools-cn has no data directory; refusing to overwrite: $(COUNTERPARTS_PATH)" >&2; exit 1; \
 	fi
 
 update: clone
 	@git -C "$(WEB_PATH)" pull --ff-only
 	@git -C "$(WEB_PATH)" log -1 --format='source updated to %h  %ad  %s' --date=iso
-	@git -C "$(5ETOOLS_PATH)" pull --ff-only
-	@git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn updated to %h  %ad  %s' --date=iso
+	@git -C "$(COUNTERPARTS_PATH)" pull --ff-only
+	@git -C "$(COUNTERPARTS_PATH)" log -1 --format='5etools-cn updated to %h  %ad  %s' --date=iso
 
 status:
 	@if [ -d "$(WEB_PATH)/.git" ] || [ -f "$(WEB_PATH)/.git" ]; then \
@@ -76,10 +76,10 @@ status:
 	else \
 		echo "source: not downloaded yet; run make clone"; \
 	fi
-	@if [ -d "$(5ETOOLS_PATH)/.git" ] || [ -f "$(5ETOOLS_PATH)/.git" ]; then \
-		git -C "$(5ETOOLS_PATH)" log -1 --format='5etools-cn: %h  %ad  %s' --date=iso; \
-	elif [ -d "$(5ETOOLS_PATH)/data" ]; then \
-		echo "5etools-cn (no Git version): $(5ETOOLS_PATH)"; \
+	@if [ -d "$(COUNTERPARTS_PATH)/.git" ] || [ -f "$(COUNTERPARTS_PATH)/.git" ]; then \
+		git -C "$(COUNTERPARTS_PATH)" log -1 --format='5etools-cn: %h  %ad  %s' --date=iso; \
+	elif [ -d "$(COUNTERPARTS_PATH)/data" ]; then \
+		echo "5etools-cn (no Git version): $(COUNTERPARTS_PATH)"; \
 	else \
 		echo "5etools-cn: not downloaded yet; run make clone"; \
 	fi

@@ -26,7 +26,7 @@ from anna.catalog.types import TYPE_LABELS, evidence_status, type_conflicts
 from anna.source.registry import QUICK_REFERENCE, SourceRegistry
 from anna.source.search import extract_body_text as extract_search_body, extract_title as extract_search_title, index_signature, load_toc_titles
 
-from anna.paths import PROJECT, WEB as DEFAULT_WEB, FIVETOOLS as DEFAULT_FIVETOOLS
+from anna.paths import PROJECT, WEB as DEFAULT_WEB, COUNTERPARTS as DEFAULT_COUNTERPARTS
 from anna.review.store import DEFAULT_ANNOTATIONS, require_current_annotations, pipeline_hash, extraction_hash
 INDEX_FIELDS={
     '物品名':'name','怪物名':'name','法术名':'name','稀有度':'rarity','类别':'item_type','子类别':'item_subtypes',
@@ -487,7 +487,7 @@ class Build:
             assert sha256((self.web/path).read_bytes()).hexdigest()==page['sha256'],('Source changed during build',path)
         return {'input_accounting':'pass','unique_ids':'pass','evidence_ranges':'pass','raw_evidence':'pass','foreign_keys':'pass','source_unchanged':'pass'}
 
-    def export(self,out,validation,total_inputs,elapsed,fivetools=None,annotations_path=DEFAULT_ANNOTATIONS):
+    def export(self,out,validation,total_inputs,elapsed,counterparts=None,annotations_path=DEFAULT_ANNOTATIONS):
         out.mkdir(parents=True,exist_ok=True)
         db=sqlite3.connect(out/'catalog.sqlite')
         db.execute('PRAGMA foreign_keys=ON')
@@ -532,9 +532,9 @@ class Build:
         from anna.catalog.references import build_references
         reference_coverage=build_references(db,self.web,out,annotations_path,dom_by_path=self.dom_by_path,context=shared_context)
         counterpart_coverage=None
-        if fivetools:
+        if counterparts:
             from anna.compare.catalog import build_counterparts
-            counterpart_coverage=build_counterparts(db,fivetools,out)
+            counterpart_coverage=build_counterparts(db,counterparts,out)
         reviews=[json.loads(row[0]) for row in db.execute('SELECT data FROM review_queue ORDER BY reason,target,id')]
         summary={'snapshot_commit':self.commit,'input_html_files':total_inputs,'processed_html_files':len(self.pages),'full_scan':len(self.pages)==total_inputs,
             'page_roles':dict(Counter(p['role'] for p in self.pages.values())),'parse_status':dict(Counter(p['parse_status'] for p in self.pages.values())),
@@ -592,13 +592,13 @@ def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--source',type=Path,default=DEFAULT_WEB);ap.add_argument('--output',type=Path,default=PROJECT/'data/extracted')
     ap.add_argument('--annotations',type=Path,default=DEFAULT_ANNOTATIONS)
-    ap.add_argument('--5etools',dest='fivetools',type=Path,default=DEFAULT_FIVETOOLS,help='5etools-cn mirror compared with the extracted entries')
+    ap.add_argument('--counterparts',type=Path,default=DEFAULT_COUNTERPARTS,help='5etools-cn mirror compared with the extracted entries')
     ap.add_argument('--no-counterparts',action='store_true',help='skip the 5etools-cn comparison; the summary records it as skipped')
     ap.add_argument('--workers',type=int,default=min(4,os.cpu_count() or 1));ap.add_argument('--limit',type=int,help='development only; summary explicitly marks partial scans')
     args=ap.parse_args()
-    fivetools=None if args.no_counterparts else args.fivetools
-    if fivetools and not (fivetools/'data').is_dir():
-        raise SystemExit(f'5etools-cn mirror missing: {fivetools}; run make clone to download it, or pass --no-counterparts to skip the comparison')
+    counterparts=None if args.no_counterparts else args.counterparts
+    if counterparts and not (counterparts/'data').is_dir():
+        raise SystemExit(f'5etools-cn mirror missing: {counterparts}; run make clone to download it, or pass --no-counterparts to skip the comparison')
     started=time.monotonic();extraction_at_start=extraction_hash();b=Build(args.source)
     paths=sorted(p.relative_to(args.source).as_posix() for p in (args.source/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
     total=len(paths)
@@ -618,7 +618,7 @@ def main():
                 if i%500==0:print(f'Pages: {i}/{len(paths)}; candidates: {len(b.entries)}',flush=True)
     b.finish();validation=b.validate(paths)
     with tempfile.TemporaryDirectory(prefix='.build-',dir=PROJECT) as tmp:
-        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,fivetools,annotations_path=args.annotations)
+        summary=b.export(Path(tmp),validation,total,time.monotonic()-started,counterparts,annotations_path=args.annotations)
         b.validate(paths)
         if extraction_hash()!=extraction_at_start:
             raise ValueError('Extraction implementation changed during the build; nothing was published. Rebuild.')

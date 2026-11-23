@@ -121,9 +121,9 @@ class WorkflowTests(unittest.TestCase):
 
     def stage_steps(self, root, *args):
         """Run `make -n` with fixture mirrors and reduce the printed recipe to one name per stage step."""
-        env = {k: v for k, v in os.environ.items() if k not in {'WEB_DIR', 'OUR5ETOOLS_DIR', '5ETOOLS_DIR'}}
+        env = {k: v for k, v in os.environ.items() if k not in {'WEB_DIR', 'OUR5ETOOLS_DIR', 'COUNTERPARTS_DIR'}}
         result = self.make(PROJECT, '-n', *args, f'WEB_DIR={root / "web mirror"}',
-                           f'5ETOOLS_DIR={root / "counterparts mirror"}',
+                           f'COUNTERPARTS_DIR={root / "counterparts mirror"}',
                            f'OUR5ETOOLS_DATA={root / "our data"}', f'PAGES_OUTPUT={root / "site"}',
                            'PAGES_BASE=/fixture/', env=env)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -162,7 +162,7 @@ class WorkflowTests(unittest.TestCase):
                 with self.subTest(args=args):
                     self.assertEqual(self.stage_steps(root, *args)[0], steps)
             steps, output = self.stage_steps(root, '5echm')
-            self.assertIn(f'-m anna.catalog.build --5etools "{root / "counterparts mirror"}"', output)
+            self.assertIn(f'-m anna.catalog.build --counterparts "{root / "counterparts mirror"}"', output)
             steps, output = self.stage_steps(root, '5echm', 'NO_COUNTERPARTS=1')
             self.assertEqual(steps, ['clone web mirror', 'icons', 'catalog.build', 'server.linked_book'])
             self.assertIn('-m anna.catalog.build --no-counterparts', output)
@@ -216,6 +216,23 @@ class WorkflowTests(unittest.TestCase):
                     self.assertEqual(steps[-2:], ['skip our5etools', 'server.home'])
                     self.assertNotIn('anna.our5etools.build', output)
 
+    def test_counterparts_mirror_follows_environment(self):
+        env = dict(os.environ, COUNTERPARTS_DIR='/fixture/counterparts')
+        result = self.make(PROJECT, '-n', '5echm', env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--counterparts "/fixture/counterparts"', result.stdout)
+        code = 'import anna.paths as paths; print(paths.COUNTERPARTS)'
+        with tempfile.TemporaryDirectory() as td:
+            env = dict(os.environ, PYTHONPATH=str(PROJECT))
+            env.pop('COUNTERPARTS_DIR', None)
+            result = subprocess.run([sys.executable, '-c', code], cwd=td, env=env,
+                                    text=True, capture_output=True, check=True)
+            self.assertEqual(Path(result.stdout.strip()), (WORKSPACE / '5etools-cn').resolve())
+            env['COUNTERPARTS_DIR'] = 'custom mirror'
+            result = subprocess.run([sys.executable, '-c', code], cwd=td, env=env,
+                                    text=True, capture_output=True, check=True)
+            self.assertEqual(Path(result.stdout.strip()), (Path(td) / 'custom mirror').resolve())
+
     def test_workspace_forwards_every_target_and_reports_unknown_ones(self):
         wrapper = WORKSPACE / 'Makefile'
         if not wrapper.exists() or '5e-anna' not in wrapper.read_text():
@@ -240,17 +257,17 @@ class WorkflowTests(unittest.TestCase):
             (web / 'topics').mkdir(parents=True)
             sentinel = web / 'topics' / 'source.htm'
             sentinel.write_text('unchanged')
-            fivetools = Path(td) / '5etools cn'
-            (fivetools / 'data').mkdir(parents=True)
-            catalog = fivetools / 'data' / 'spells.json'
+            counterparts = Path(td) / '5etools cn'
+            (counterparts / 'data').mkdir(parents=True)
+            catalog = counterparts / 'data' / 'spells.json'
             catalog.write_text('{}')
             result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', 'REPO=/does/not/exist',
-                               f'5ETOOLS_DIR={fivetools}', '5ETOOLS_REPO=/does/not/exist')
+                               f'COUNTERPARTS_DIR={counterparts}', 'COUNTERPARTS_REPO=/does/not/exist')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(sentinel.read_text(), 'unchanged')
             self.assertEqual(catalog.read_text(), '{}')
             self.assertFalse((web / '.git').exists())
-            self.assertFalse((fivetools / '.git').exists())
+            self.assertFalse((counterparts / '.git').exists())
 
     @staticmethod
     def repository(path, branch, files):
@@ -267,16 +284,16 @@ class WorkflowTests(unittest.TestCase):
     def test_clone_missing_source_from_local_repository(self):
         with tempfile.TemporaryDirectory() as td:
             source, dest = Path(td) / 'origin', Path(td) / 'mirror'
-            fivetools_source, fivetools = Path(td) / '5etools-origin', Path(td) / '5etools-cn'
+            counterparts_source, counterparts = Path(td) / '5etools-origin', Path(td) / '5etools-cn'
             self.repository(source, 'pages', {'topics/test.htm': 'source'})
             # Only data/ is checked out; the site's pages and docs stay in the repository.
-            self.repository(fivetools_source, 'main', {'data/spells.json': '{"spell":[]}', 'docs/guide.md': 'guide'})
+            self.repository(counterparts_source, 'main', {'data/spells.json': '{"spell":[]}', 'docs/guide.md': 'guide'})
             result = self.make(PROJECT, 'clone', f'WEB_DIR={dest}', f'REPO={source}',
-                               f'5ETOOLS_DIR={fivetools}', f'5ETOOLS_REPO=file://{fivetools_source}')
+                               f'COUNTERPARTS_DIR={counterparts}', f'COUNTERPARTS_REPO=file://{counterparts_source}')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual((dest / 'topics/test.htm').read_text(), 'source')
-            self.assertEqual((fivetools / 'data/spells.json').read_text(), '{"spell":[]}')
-            self.assertFalse((fivetools / 'docs').exists())
+            self.assertEqual((counterparts / 'data/spells.json').read_text(), '{"spell":[]}')
+            self.assertFalse((counterparts / 'docs').exists())
 
     def test_invalid_directory_rejected_without_deletion(self):
         with tempfile.TemporaryDirectory() as td:
@@ -289,7 +306,7 @@ class WorkflowTests(unittest.TestCase):
             # An existing 5etools-cn location without data/ is not replaced either.
             web = Path(td) / 'mirror'
             (web / 'topics').mkdir(parents=True)
-            result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', f'5ETOOLS_DIR={td}', '5ETOOLS_REPO=/does/not/exist')
+            result = self.make(PROJECT, 'clone', f'WEB_DIR={web}', f'COUNTERPARTS_DIR={td}', 'COUNTERPARTS_REPO=/does/not/exist')
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('5etools-cn has no data directory', result.stderr)
             self.assertEqual(sentinel.read_text(), 'keep')

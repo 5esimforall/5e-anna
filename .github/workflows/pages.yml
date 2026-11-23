@@ -31,10 +31,10 @@ jobs:
           BASE_PATH: ${{ steps.pages.outputs.base_path }}
           WEB_DIR: ${{ runner.temp }}/5echm-web
           OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
-          COMPARISON_DIR: ${{ runner.temp }}/5etools-cn
+          COUNTERPARTS_DIR: ${{ runner.temp }}/5etools-cn
           BOOK_REVISION: c1425c8e90804766689a0db7ec416833f3fc3046
           OUR5ETOOLS_REVISION: e475d00b50ea1e8bca0dd8f8c1767e4205660a11
-          COMPARISON_REVISION: bdf81fee890db59847b8b1c44b79aaf220f65400
+          COUNTERPARTS_REVISION: bdf81fee890db59847b8b1c44b79aaf220f65400
         run: |
           git init "$WEB_DIR"
           git -C "$WEB_DIR" fetch --depth 1 https://github.com/DND5eChm/5echm_web.git "$BOOK_REVISION"
@@ -44,12 +44,12 @@ jobs:
           git -C "$OUR5ETOOLS_DIR" checkout --detach FETCH_HEAD
           test -d "$OUR5ETOOLS_DIR/data"
           test -f "$OUR5ETOOLS_DIR/__api/books.json"
-          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/tjliqy/5etools-cn.git "$COMPARISON_DIR"
-          git -C "$COMPARISON_DIR" sparse-checkout set --cone data
-          git -C "$COMPARISON_DIR" fetch --depth 1 --filter=blob:none origin "$COMPARISON_REVISION"
-          git -C "$COMPARISON_DIR" checkout --detach FETCH_HEAD
+          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/tjliqy/5etools-cn.git "$COUNTERPARTS_DIR"
+          git -C "$COUNTERPARTS_DIR" sparse-checkout set --cone data
+          git -C "$COUNTERPARTS_DIR" fetch --depth 1 --filter=blob:none origin "$COUNTERPARTS_REVISION"
+          git -C "$COUNTERPARTS_DIR" checkout --detach FETCH_HEAD
           python -m pip install -r requirements.txt
-          make build pages "PAGES_BASE=${BASE_PATH%/}/" "5ETOOLS_DIR=$COMPARISON_DIR"
+          make build pages "PAGES_BASE=${BASE_PATH%/}/"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ env.PAGES_OUTPUT }}

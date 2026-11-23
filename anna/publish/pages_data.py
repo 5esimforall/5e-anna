@@ -12,13 +12,17 @@ from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
 
 from anna.paths import PROJECT
+from anna.presentation import catalog
 from anna.presentation.catalog import TYPES
 from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
+from anna.presentation.library import name_fold
 from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS, load_our5etools_collection
 from anna.presentation.tour import load as load_curation
 from anna.server import home
 from anna.server.pages import PublishedSite
 from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
+import anna.catalog.views as browse
+import anna.our5etools.types as otypes
 
 
 CHUNK_SIZE = 1024 * 1024
@@ -157,9 +161,34 @@ def _project_db(original, target, source, *, align_works=False):
         conn.execute('CREATE TABLE pages_source (path TEXT PRIMARY KEY, sha256 TEXT NOT NULL, '
                      'html_gzip BLOB NOT NULL)')
         conn.executemany('INSERT INTO pages_source VALUES (?, ?, ?)', _source_rows(source, conn))
+        _build_name_fold_index(conn, browse.STACKABLE_TYPES)
+        conn.execute('CREATE TABLE identity_candidate_members ('
+                     'entry_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, status TEXT NOT NULL) WITHOUT ROWID')
+        kinds = ','.join("'" + k + "'" for k in browse.STACKABLE_TYPES)
+        conn.execute(
+            'INSERT OR IGNORE INTO identity_candidate_members (entry_id, group_id, status) '
+            'SELECT j.value, g.group_id, g.status FROM identity_candidates g, '
+            f"json_each(g.data, '$.entry_ids') j WHERE g.type IN ({kinds})"
+        )
+        conn.execute('CREATE INDEX identity_candidate_group_idx ON identity_candidate_members(group_id)')
         if conn.execute('PRAGMA foreign_key_check').fetchone():
             raise ValueError(f'Invalid foreign keys in projected {original.name}')
         conn.execute('ANALYZE main')
+
+
+def _build_name_fold_index(conn, stackable_types):
+    conn.execute('CREATE TABLE name_fold_index ('
+                 'type TEXT NOT NULL, folded TEXT NOT NULL, entry_id TEXT NOT NULL, '
+                 'PRIMARY KEY (type, folded, entry_id)) WITHOUT ROWID')
+    kinds = ','.join("'" + k + "'" for k in stackable_types)
+    rows = []
+    for eid, typ, name_en in conn.execute(
+        f"SELECT id, type, name_en FROM entry_core WHERE type IN ({kinds}) AND name_en IS NOT NULL AND name_en != ''"
+    ):
+        folded = name_fold(name_en)
+        if folded:
+            rows.append((typ, folded, eid))
+    conn.executemany('INSERT OR IGNORE INTO name_fold_index VALUES (?, ?, ?)', rows)
 
 
 def _project_our_entries(conn):
@@ -199,6 +228,17 @@ def _project_our_db(original, target):
         for kind, table, _, sql in schema:
             if kind == 'index' and table in OUR5ETOOLS_TABLES:
                 conn.execute(re.sub(r'\bON\s+entries\s*\(', 'ON entry_core(', sql, flags=re.I) if table == 'entries' else sql)
+        _build_name_fold_index(conn, otypes.STACKABLE_TYPES)
+        conn.execute('CREATE TABLE pages_copied_bases ('
+                     'source_id TEXT PRIMARY KEY, target_id TEXT NOT NULL, '
+                     'base_source_id TEXT NOT NULL, base_name_en TEXT NOT NULL) WITHOUT ROWID')
+        conn.execute(
+            'INSERT OR IGNORE INTO pages_copied_bases (source_id, target_id, base_source_id, base_name_en) '
+            'SELECT r.source_id, r.target_id, b.source_id, b.name_en '
+            "FROM relations r JOIN entry_core b ON b.id = r.target_id "
+            "WHERE r.type = 'copied_from' ORDER BY r.source_id, r.target_id"
+        )
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_identity_members_group ON identity_members(group_id)')
         if conn.execute('PRAGMA foreign_key_check').fetchone():
             raise ValueError('Invalid foreign keys in the projected our5etools catalog')
         conn.execute('ANALYZE main')

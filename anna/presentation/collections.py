@@ -1,9 +1,12 @@
 """Read-only catalog providers. A collection is a library, not a book's source code."""
+from collections import OrderedDict
 from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import threading
 from typing import Any, Callable, Protocol
+import weakref
 
 import anna.catalog.views as browse
 from anna.presentation import catalog
@@ -86,6 +89,52 @@ class ReaderProvider(Protocol):
     def search(self, keyword: str, *, title_only: bool = False) -> SearchHits: ...
 
 
+_thread_local = threading.local()
+_name_fold_lock = threading.Lock()
+_name_fold_cache: OrderedDict[tuple, dict[tuple[str, str], tuple[str, ...]]] = OrderedDict()
+
+
+class _ConnectionSlot:
+    """Own one thread-local read-only connection and close it cleanly if its thread or cache dies."""
+
+    def __init__(self, conn):
+        self.conn = conn
+        self._close = weakref.finalize(self, conn.close)
+
+    def close(self):
+        self._close()
+
+
+def _cached_book_connection(db_path: Path, signature: tuple):
+    cache = getattr(_thread_local, 'book_conns', None)
+    if cache is None:
+        cache = OrderedDict()
+        _thread_local.book_conns = cache
+    key = str(Path(db_path).resolve())
+    entry = cache.get(key)
+    if entry is not None:
+        cached_sig, slot = entry
+        if cached_sig == signature:
+            cache.move_to_end(key)
+            return slot.conn
+        cache.pop(key, None)
+        slot.close()
+    conn = catalog.connect(db_path, check_same_thread=False)
+    cache[key] = (signature, _ConnectionSlot(conn))
+    while len(cache) > 8:
+        _, (_, old) = cache.popitem(last=False)
+        old.close()
+    return conn
+
+
+def _clear_book_connections():
+    cache = getattr(_thread_local, 'book_conns', None)
+    if cache:
+        for _, slot in cache.values():
+            slot.close()
+        cache.clear()
+
+
 @dataclass(frozen=True)
 class BookCatalog:
     """Adapt the published 不全书 SQLite projection without changing its entries or evidence."""
@@ -94,8 +143,46 @@ class BookCatalog:
     source_root: Path
 
     def _read(self, view, *args, **kwargs):
-        with closing(catalog.connect(self.db_path)) as db:
-            return view(db, *args, **kwargs)
+        try:
+            sig = self.signature()
+        except OSError:
+            with closing(catalog.connect(self.db_path)) as db:
+                return view(db, *args, **kwargs)
+        db = _cached_book_connection(self.db_path, sig)
+        return view(db, *args, **kwargs)
+
+    def has(self, entry):
+        return self._read(catalog.has, entry)
+
+    def same_name(self, entry_type, folded, include_ids=()):
+        if not folded or entry_type not in browse.STACKABLE_TYPES:
+            return self._read(catalog.same_name, entry_type, '', include_ids)
+        if self._read(catalog._has_table, 'name_fold_index'):
+            return self._read(catalog.same_name, entry_type, folded, include_ids)
+        # Local unprojected databases lack name_fold_index; cache the folded lookup per snapshot.
+        sig = self.signature()
+        with _name_fold_lock:
+            index = _name_fold_cache.get(sig)
+            if index is not None:
+                _name_fold_cache.move_to_end(sig)
+        if index is None:
+            from anna.presentation.library import name_fold
+            built: dict[tuple[str, str], list[str]] = {}
+            kinds = ','.join("'" + k + "'" for k in browse.STACKABLE_TYPES)
+            rows = self._read(lambda db: db.execute(
+                f"SELECT id, type, name_en FROM entries WHERE type IN ({kinds}) AND name_en IS NOT NULL AND name_en!=''"
+            ).fetchall())
+            for eid, typ, name_en in rows:
+                f = name_fold(name_en)
+                if f:
+                    built.setdefault((typ, f), []).append(eid)
+            index = {k: tuple(v) for k, v in built.items()}
+            with _name_fold_lock:
+                _name_fold_cache.clear()
+                _name_fold_cache[sig] = index
+        matched = index.get((entry_type, folded), ())
+        merged = tuple(dict.fromkeys((*matched, *include_ids)))
+        return self._read(catalog.same_name, entry_type, '', merged)
 
     def meta(self):
         return self._read(catalog.meta)
@@ -144,11 +231,10 @@ class BookCatalog:
         return (str(self.db_path), stat.st_ino, stat.st_size, stat.st_mtime_ns)
 
     def source_text(self, path):
-        with closing(catalog.connect(self.db_path)) as db:
-            row = db.execute('SELECT text,sha256 FROM pages WHERE path=?', (path,)).fetchone()
-            if row is None:
-                raise LookupError('页面不存在')
-            return tuple(row)
+        row = self._read(lambda db: db.execute('SELECT text,sha256 FROM pages WHERE path=?', (path,)).fetchone())
+        if row is None:
+            raise LookupError('页面不存在')
+        return tuple(row)
 
 
 @dataclass(frozen=True)

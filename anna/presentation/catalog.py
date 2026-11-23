@@ -21,8 +21,8 @@ TYPES['class'] = TYPES.pop('class_')
 FIELDS = {'spell_level':'环阶', 'school':'学派', 'rarity':'稀有度', 'cr':'挑战等级', 'item_type':'物品类别', 'feat_category':'专长类别', 'concentration':'专注', 'attunement':'同调'}
 
 
-def connect(path=DB):
-    db = sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro', uri=True)
+def connect(path=DB, *, check_same_thread=True):
+    db = sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro', uri=True, check_same_thread=check_same_thread)
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA query_only=ON')
     browse.register(db)
@@ -325,22 +325,45 @@ def query(db, params, export=False, restrict=None):
             'section_matches':section_hint(total)}
 
 
+def _has_table(db, name):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def _entry_table(db):
+    return 'entry_core' if _has_table(db, 'entry_core') else 'entries'
+
+
+def has(db, eid):
+    if not eid:
+        return False
+    table = _entry_table(db)
+    return db.execute(f'SELECT 1 FROM {table} WHERE id=? LIMIT 1', (eid,)).fetchone() is not None
+
+
+def _source_counts(db):
+    table = _entry_table(db)
+    return dict(db.execute(
+        f"SELECT es.source_id, count(*) FROM entry_sources es JOIN {table} e ON e.id=es.entry_id "
+        "WHERE e.type!='section' GROUP BY es.source_id"
+    ))
+
+
 def works(db):
     """Every work (book or other source) of this catalog with its origin, rules generation and entry count:
     what the reader's library can include or leave out. `codes`, `abbreviations` and `titles` are the names
     another collection may know the same work by: 5etools source codes this build aligned by its own votes,
     the book's abbreviations, and its titles and aliases."""
     codes = {}
-    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counterpart_sources'").fetchone():
+    if _has_table(db, 'counterpart_sources'):
         for source_id, code in db.execute("SELECT source_id, code FROM counterpart_sources WHERE status='上下文推得' AND code!=''"):
             codes.setdefault(source_id, []).append(code)
+    counts = _source_counts(db)
     out = []
-    for r in db.execute("SELECT s.id, s.name, s.origin, s.ruleset_hint, s.data, count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id "
-                        "LEFT JOIN entries e ON e.id=es.entry_id AND e.type!='section' GROUP BY s.id ORDER BY s.name"):
+    for r in db.execute('SELECT id, name, origin, ruleset_hint, data FROM sources ORDER BY name'):
         data = json.loads(r['data'])
         titles = [r['name'], r['name'].split(' / ')[-1], *(data.get('aliases') or [])]
         out.append({'id':r['id'],'name':r['name'],'label':data.get('label') or r['name'],'origin':r['origin'] or '待核',
-                    'ruleset':r['ruleset_hint'] if r['ruleset_hint'] in {'5e','5r'} else '待核','group':data.get('group') or '','count':r['n'],
+                    'ruleset':r['ruleset_hint'] if r['ruleset_hint'] in {'5e','5r'} else '待核','group':data.get('group') or '','count':counts.get(r['id'], 0),
                     'codes':sorted(codes.get(r['id'], [])),'abbreviations':list(data.get('abbreviations') or []),
                     'titles':list(dict.fromkeys(t for t in titles if t)),
                     # The Stella contents node that opens this work's book.
@@ -366,6 +389,61 @@ def ranked(db, params, restrict=None, sort_field=None):
              'work':r['work'],'base':None,'base_work':None,'base_name_en':None} for r in db.execute(sql, values)]
 
 
+def same_name(db, entry_type, folded, include_ids=()):
+    """Cheap ranked rows for entries matching a normalized English name (plus explicit IDs)."""
+    table = _entry_table(db)
+    ids = set(include_ids)
+    if folded and entry_type in browse.STACKABLE_TYPES:
+        if _has_table(db, 'name_fold_index'):
+            ids.update(r[0] for r in db.execute(
+                'SELECT entry_id FROM name_fold_index WHERE type=? AND folded=?',
+                (entry_type, folded),
+            ))
+        else:
+            from anna.presentation.library import name_fold
+            for eid, name_en in db.execute(
+                f"SELECT id, name_en FROM {table} WHERE type=? AND name_en IS NOT NULL AND name_en!=''",
+                (entry_type,),
+            ):
+                if name_fold(name_en) == folded:
+                    ids.add(eid)
+    if not ids:
+        return []
+    ordered_ids = list(dict.fromkeys(ids))
+    has_members = _has_table(db, 'identity_candidate_members')
+    out = []
+    for start in range(0, len(ordered_ids), 400):
+        batch = ordered_ids[start:start + 400]
+        ph = ','.join('?' for _ in batch)
+        if has_members:
+            sql = (
+                'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.group_id AS stack, '
+                'e.page_path AS path, e.start AS start, '
+                '(SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin, '
+                '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
+                f'FROM {table} e LEFT JOIN identity_candidate_members m ON m.entry_id=e.id '
+                f'WHERE e.id IN ({ph})'
+            )
+        else:
+            sql = (
+                'WITH ' + stack_members() + ' '
+                'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.stack AS stack, '
+                'e.page_path AS path, e.start AS start, '
+                '(SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin, '
+                '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
+                f'FROM {table} e LEFT JOIN m ON m.entry_id=e.id '
+                f'WHERE e.id IN ({ph})'
+            )
+        for r in db.execute(sql, batch):
+            out.append({
+                'id': r['id'], 'type': r['type'], 'name': r['name'], 'name_zh': r['name_zh'],
+                'name_en': r['name_en'], 'ruleset': r['ruleset'], 'stack': r['stack'], 'value': None,
+                'source_key': (r['path'] or '', r['start'] or 0), 'origin': r['origin'] or '待核',
+                'work': r['work'], 'base': None, 'base_work': None, 'base_name_en': None,
+            })
+    return out
+
+
 def rows(db, ids):
     """Full table rows for the given version IDs, keyed by ID."""
     out = {}
@@ -378,10 +456,11 @@ def rows(db, ids):
 
 def meta(db):
     summary = json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
+    counts = _source_counts(db)
     sources = []
-    for r in db.execute('SELECT s.data,count(e.id) AS n FROM sources s LEFT JOIN entry_sources es ON es.source_id=s.id LEFT JOIN entries e ON e.id=es.entry_id AND e.type!=\'section\' GROUP BY s.id ORDER BY s.name'):
-        s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'short_name':s['label'],'count':r['n']})
-    held = {r[0] for r in db.execute('SELECT DISTINCT type FROM entries')}
+    for r in db.execute('SELECT id, data FROM sources ORDER BY name'):
+        s=json.loads(r['data']); sources.append({k:s[k] for k in ['id','name','aliases','coverage']}|{'short_name':s['label'],'count':counts.get(r['id'], 0)})
+    held = {r[0] for r in db.execute(f'SELECT DISTINCT type FROM {_entry_table(db)}')}
     return {'summary':summary,'types':TYPES,'fields':{**FIELDS,**browse.COLUMN_LABELS},'sources':sources,
             # Only types the data holds are offered; the picker lists them in reading order.
             'type_order':[t for t in browse.TYPE_ORDER if t!='section' and t in held],'presets':list(browse.PRESETS),
@@ -390,10 +469,20 @@ def meta(db):
 
 def version_compare(db, entry):
     """All versions in the entry's candidate group, independent of the current filters, field by field."""
-    group=db.execute('WITH '+stack_members()+' SELECT stack, status FROM m WHERE entry_id=?',(entry['id'],)).fetchone()
-    if not group:return None
-    rows=[contracts.entry(json.loads(r[0])) for r in db.execute('WITH '+stack_members()+' SELECT e.data FROM m JOIN entries e ON e.id=m.entry_id WHERE m.stack=? '
-        "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",(group['stack'],))]
+    if _has_table(db, 'identity_candidate_members'):
+        group = db.execute('SELECT group_id AS stack, status FROM identity_candidate_members WHERE entry_id=?', (entry['id'],)).fetchone()
+        if not group:
+            return None
+        rows = [contracts.entry(json.loads(r[0])) for r in db.execute(
+            'SELECT e.data FROM identity_candidate_members m JOIN entries e ON e.id=m.entry_id WHERE m.group_id=? '
+            "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",
+            (group['stack'],),
+        )]
+    else:
+        group=db.execute('WITH '+stack_members()+' SELECT stack, status FROM m WHERE entry_id=?',(entry['id'],)).fetchone()
+        if not group:return None
+        rows=[contracts.entry(json.loads(r[0])) for r in db.execute('WITH '+stack_members()+' SELECT e.data FROM m JOIN entries e ON e.id=m.entry_id WHERE m.stack=? '
+            "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",(group['stack'],))]
     order=list(dict.fromkeys(k for r in rows for k in browse.field_order(r) if k not in browse.METADATA_FIELDS))
     fields=[]
     for k in order:

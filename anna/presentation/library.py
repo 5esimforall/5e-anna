@@ -751,7 +751,8 @@ class Library:
             return self.primary
         for key in [*self.scope.libraries, *(k for k in self.registry.ready() if k not in self.rank)]:
             collection = self.registry.get(key)
-            if entry_id in collection.provider.rows([entry_id]):
+            has_fn = getattr(collection.provider, 'has', None)
+            if has_fn(entry_id) if has_fn is not None else (entry_id in collection.provider.rows([entry_id])):
                 return collection
         raise LookupError('条目不存在')
 
@@ -785,7 +786,14 @@ class Library:
                 continue
             # The opened version and its own group count whatever the scope; other versions only within it.
             restrict = self.restrict(other) if other.key in self.rank else None
-            same = [r for r in other.provider.ranked(local)
+            include_ids = tuple(sorted(mine)) if other.key == collection.key else ()
+            same_name_fn = getattr(other.provider, 'same_name', None)
+            candidates = (
+                same_name_fn(entry['type'], folded, include_ids)
+                if same_name_fn is not None
+                else other.provider.ranked(local)
+            )
+            same = [r for r in candidates
                     if (other.key == collection.key and r['id'] in mine) or (name_fold(r['name_en']) == folded and _within(restrict, r))]
             found.update(((other.key, r['id']), r) for r in self._versions(other, same))
         anchor_key = (collection.key, entry['id'])

@@ -462,7 +462,7 @@ class LibraryTour:
 
     def count(self, query):
         """How many versions a query finds, as the facet counts beside it count them."""
-        return self.library.entries({**query, 'limit': ['1']})['versions_total']
+        return self.library.count(query)
 
     def facet_group(self, query, facet):
         key = facet if facet == 'type' else 'f_' + facet

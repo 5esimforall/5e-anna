@@ -1,5 +1,6 @@
 """Tests for Pages export performance optimizations: query plans, parity, and cache invalidation."""
 from contextlib import closing
+import gzip
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -14,10 +15,15 @@ from unittest.mock import patch
 
 import anna.paths as paths
 from anna.presentation import catalog
-from anna.presentation.collections import BookCatalog, Collection, CollectionRegistry, DEFAULT, _clear_book_connections
+from anna.presentation.collections import (
+    BookCatalog, Collection, CollectionRegistry, DEFAULT, Restriction, _clear_book_connections,
+)
 from anna.presentation.layout import entry_layout, span_layout
 from anna.presentation.library import Library, Scope, name_fold
-from anna.presentation.our5etools import Our5etoolsCatalog, load_our5etools_collection
+from anna.presentation.our5etools import (
+    Our5etoolsCatalog, Our5etoolsTour, build_subclass_records, load_our5etools_collection,
+)
+from anna.presentation.tour import PublishedTour, Tour, load as load_curation
 from anna.publish.pages_data import CHUNK_SIZE, _project_db, _project_our_db, export_pages_data
 from anna.server.pages import PublishedSite
 from anna.source.html import Document
@@ -148,12 +154,40 @@ class Phase1QueryPlanAndParityTests(unittest.TestCase):
             with closing(catalog.connect(orig)) as c_orig, closing(catalog.connect(proj)) as c_proj:
                 self.assertEqual(catalog.works(c_proj), catalog.works(c_orig))
                 self.assertEqual(catalog.meta(c_proj), catalog.meta(c_orig))
+                self.assertEqual(catalog.facets(c_proj, {}), catalog.facets(c_orig, {}))
                 self.assertEqual(catalog.detail(c_proj, 'ver_1'), catalog.detail(c_orig, 'ver_1'))
                 self.assertTrue(catalog.has(c_proj, 'ver_1'))
                 self.assertFalse(catalog.has(c_proj, 'ver_missing'))
                 self.assertEqual(
                     {r['id'] for r in catalog.same_name(c_proj, 'spell', name_fold('Fireball'))},
                     {'ver_1', 'ver_2'},
+                )
+                for qparams in (
+                    {},
+                    {'type': ['spell']},
+                    {'type': ['spell'], 'ruleset': ['5r']},
+                    {'type': ['spell'], 'ruleset': ['5r', '5e']},
+                    {'type': ['spell'], 'f_spell_level': ['3']},
+                    {'not_type': ['spell']},
+                ):
+                    self.assertEqual(
+                        catalog.count(c_proj, qparams),
+                        catalog.query(c_proj, {**qparams, 'limit': ['1']})['versions_total'],
+                        qparams,
+                    )
+                for rest in (
+                    Restriction(rulesets=frozenset({'5r'})),
+                    Restriction(sources=frozenset({'src1'})),
+                    Restriction(sources=frozenset()),
+                ):
+                    self.assertEqual(
+                        catalog.count(c_proj, {'type': ['spell']}, restrict=rest),
+                        catalog.query(c_proj, {'type': ['spell'], 'limit': ['1']}, restrict=rest)['versions_total'],
+                        rest,
+                    )
+                self.assertEqual(
+                    catalog.query(c_proj, {'body': ['动作']}, export=True)['rows'],
+                    catalog.query(c_orig, {'body': ['动作']}, export=True)['rows'],
                 )
                 # Verify works/meta count query avoids MATERIALIZE entries
                 plans = [
@@ -163,7 +197,17 @@ class Phase1QueryPlanAndParityTests(unittest.TestCase):
                     )
                 ]
                 self.assertFalse(any('MATERIALIZE' in p for p in plans), plans)
-                # Verify version_compare hits identity_candidate_members without scanning identity_candidates
+                # Verify version_compare hits identity_candidate_members + entry_core without MATERIALIZE or SCAN
+                vc_join_plans = [
+                    r[3] for r in c_proj.execute(
+                        'EXPLAIN QUERY PLAN SELECT d.data FROM identity_candidate_members m '
+                        'JOIN entry_core e ON e.id=m.entry_id LEFT JOIN entry_data d ON d.entry_rowid=e.rowid '
+                        'WHERE m.group_id=? '
+                        "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",
+                        ('grp_1',),
+                    )
+                ]
+                self.assertFalse(any('MATERIALIZE' in p or 'SCAN' in p for p in vc_join_plans), vc_join_plans)
                 vc_plans = [
                     r[3] for r in c_proj.execute(
                         'EXPLAIN QUERY PLAN SELECT group_id, status FROM identity_candidate_members WHERE entry_id=?',
@@ -594,6 +638,7 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
             export_pages_data(out, db=orig, book=book, source=source, curation=curation, gzip_shards=False)
             manifest_idx = json.loads((out / 'pages-data' / 'index.json').read_text(encoding='utf-8'))
             self.assertIn('data/5echm-anna/anna-meta.json', manifest_idx)
+            self.assertIn('data/5echm-anna/tour-index.json.gz', manifest_idx)
 
             site_root = root / 'site-data'
             for rel, meta in manifest_idx.items():
@@ -615,28 +660,147 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
                 with patch.object(Path, 'open', spy_open):
                     site = PublishedSite(site_root)
                     for route in ('/api/meta', '/api/entries?type=spell', '/api/entry?id=ver_1',
-                                  '/api/entry-layout?id=ver_1', '/api/library?works=1'):
+                                  '/api/entry-layout?id=ver_1', '/api/library?works=1',
+                                  '/api/reader', '/api/tour', '/api/tour?at=5echm:n1',
+                                  '/api/tour?at=5echm:ver_1', '/api/tour-layout?at=5echm:ver_1',
+                                  '/api/tour-layout?at=5echm:n1'):
                         status, _, _ = site.handle(route)
                         self.assertEqual(status, 200, route)
                     self.assertFalse(any(p.endswith('anna-reader.json') for p in opened), opened)
                     self.assertFalse(any(p.endswith('anna-manifest.json') for p in opened), opened)
+                    self.assertTrue(any(p.endswith('tour-index.json.gz') for p in opened), opened)
 
-                    # Opening Stella loads anna-reader.json lazily on demand
-                    s_reader, _, _ = site.handle('/api/reader')
-                    self.assertEqual(s_reader, 200)
+                    # Reading an actual Stella page loads anna-reader.json lazily on demand
+                    s_page, _, _ = site.handle('/api/reader-page?path=5echm:topics/spells.htm')
+                    self.assertEqual(s_page, 200)
                     self.assertTrue(any(p.endswith('anna-reader.json') for p in opened), opened)
 
-                # Fresh site: query endpoints stay lazy, then /api/tour loads both manifest and reader lazily
+                # Fresh site: opening by entry in Stella loads anna-manifest.json lazily on demand
                 opened.clear()
                 _clear_book_connections()
                 with patch.object(Path, 'open', spy_open):
                     site2 = PublishedSite(site_root)
                     self.assertEqual(site2.handle('/api/entry?id=ver_1')[0], 200)
+                    self.assertEqual(site2.handle('/api/tour?at=5echm:n1')[0], 200)
                     self.assertFalse(any(p.endswith('anna-reader.json') or p.endswith('anna-manifest.json') for p in opened), opened)
-                    s_tour, _, _ = site2.handle('/api/tour')
-                    self.assertEqual(s_tour, 200)
+                    s_epage, _, _ = site2.handle('/api/reader-page?entry=5echm:ver_1')
+                    self.assertEqual(s_epage, 200)
                     self.assertTrue(any(p.endswith('anna-reader.json') for p in opened), opened)
                     self.assertTrue(any(p.endswith('anna-manifest.json') for p in opened), opened)
+            finally:
+                _clear_book_connections()
+
+    @unittest.skipUnless(
+        catalog.DB.is_file() and (BOOK_DIR / 'anna-reader.json').is_file() and (paths.WEB / 'topics').is_dir(),
+        'Requires built 5echm library and source mirror',
+    )
+    def test_published_tour_parity_and_cross_library_isolation(self):
+        reader_data = json.loads((BOOK_DIR / 'anna-reader.json').read_text(encoding='utf-8'))
+        manifest = json.loads((BOOK_DIR / 'anna-manifest.json').read_text(encoding='utf-8'))
+        curation_data = load_curation()
+        locatable = {eid for eid, target in manifest['entries'].items() if target['locatable']}
+        orig_tour = Tour(catalog.DB, reader_data['nodes'], locatable, curation_data, paths.WEB)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            site_root = root / 'site-data'
+            db_dir = site_root / 'data' / 'extracted'
+            book_dir = site_root / 'data' / '5echm-anna'
+            tour_dir = site_root / 'tour'
+            db_dir.mkdir(parents=True)
+            book_dir.mkdir(parents=True)
+            tour_dir.mkdir(parents=True)
+            shutil.copyfile(paths.PROJECT / 'tour' / 'tour.json', tour_dir / 'tour.json')
+            proj_db = db_dir / 'catalog.sqlite'
+            tour_idx_file = book_dir / 'tour-index.json.gz'
+            _project_db(
+                catalog.DB, proj_db, paths.WEB,
+                reader_nodes=reader_data['nodes'], locatable=locatable,
+                curation=tour_dir / 'tour.json', tour_index_path=tour_idx_file,
+            )
+            (book_dir / 'anna-meta.json').write_text(json.dumps({
+                'reader_schema': manifest['reader_schema'],
+                'snapshot': reader_data['snapshot'],
+                'default_page': reader_data.get('default_page', ''),
+                'source_release': reader_data.get('source_release'),
+            }), encoding='utf-8')
+            (book_dir / 'anna-reader.json').symlink_to(BOOK_DIR / 'anna-reader.json')
+            (book_dir / 'anna-manifest.json').symlink_to(BOOK_DIR / 'anna-manifest.json')
+
+            tour_idx = json.loads(gzip.decompress(tour_idx_file.read_bytes()).decode('utf-8'))
+            pub_tour = PublishedTour(proj_db, tour_idx, curation_data, paths.WEB)
+            wizard_id = next(e.id for e in orig_tour.entries.values() if e.type == 'class' and e.ruleset == '5r' and e.name_en == 'Wizard')
+            sub_id = 'ver_f7736c3a6aed1bf13627368f'
+
+            for seg in ('n284', 'n291', sub_id, wizard_id):
+                self.assertEqual(pub_tour.view(seg), orig_tour.view(seg), seg)
+            for seg in ('n284', sub_id):
+                self.assertEqual(pub_tour.layout(seg), orig_tour.layout(seg), seg)
+            for nid in ('284', '291'):
+                self.assertEqual(pub_tour.below(nid), orig_tour.below(nid), nid)
+            self.assertEqual(pub_tour.resolve('本书速查 / 职业速查'), orig_tour.resolve('本书速查 / 职业速查'))
+            self.assertEqual(pub_tour.subclass_records(), orig_tour.subclass_records())
+
+            # Optional dual-collection isolation check when our5etools is present
+            if (OUR5ETOOLS_DATA / 'manifest.json').is_file():
+                o5e_dir = site_root / 'data' / 'our5etools'
+                (o5e_dir / 'reader').mkdir(parents=True)
+                for name in ('manifest.json', 'summary.json', 'cached-media.json'):
+                    if (OUR5ETOOLS_DATA / name).is_file():
+                        shutil.copyfile(OUR5ETOOLS_DATA / name, o5e_dir / name)
+                (o5e_dir / 'reader' / 'anna-reader.json').symlink_to(OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json')
+                _project_our_db(OUR5ETOOLS_DATA / 'catalog.sqlite', o5e_dir / 'catalog.sqlite')
+                o5e_reader = json.loads((OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json').read_text(encoding='utf-8'))
+                o5e_nav = {
+                    k: o5e_reader.get(k)
+                    for k in ('schema', 'snapshot', 'collection', 'roots', 'nodes', 'default_page',
+                                'page_base', 'media_base', 'presentation_resources', 'source_release')
+                }
+                (o5e_dir / 'nav-nodes.json.gz').write_bytes(
+                    gzip.compress(json.dumps(o5e_nav, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)
+                )
+                with closing(sqlite3.connect((o5e_dir / 'catalog.sqlite').as_uri() + '?mode=ro', uri=True)) as oconn:
+                    oconn.row_factory = sqlite3.Row
+                    o_types = sorted(r[0] for r in oconn.execute('SELECT DISTINCT type FROM entry_core') if r[0])
+                    o_sources = {
+                        r['id']: {
+                            'id': r['id'], 'package_id': r['package_id'], 'origin': r['origin'],
+                            'ruleset': r['ruleset'], 'short_name': r['short_name'], 'name': r['name'],
+                            'data': json.loads(r['data_json'] or '{}'),
+                        }
+                        for r in oconn.execute('SELECT id, package_id, origin, ruleset, short_name, name, data_json FROM sources')
+                    }
+                    o_subs = build_subclass_records(oconn, o_sources, 'entry_core')
+                (o5e_dir / 'tour-subclasses.json.gz').write_bytes(
+                    gzip.compress(json.dumps(o_subs, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)
+                )
+                man = json.loads((o5e_dir / 'manifest.json').read_text(encoding='utf-8'))
+                man['types'] = o_types
+                (o5e_dir / 'manifest.json').write_text(json.dumps(man, ensure_ascii=False), encoding='utf-8')
+                (site_root / 'data' / 'publications.json').write_text(json.dumps({
+                    'schema': 1,
+                    'snapshots': {'5echm': reader_data['snapshot'], 'our5etools': o5e_nav['snapshot']},
+                    'members': {}, 'links': [], 'ranks': {},
+                }), encoding='utf-8')
+
+            opened = []
+            orig_open = Path.open
+            _clear_book_connections()
+            try:
+                with patch.object(Path, 'open', lambda s, *a, **kw: (opened.append(s.as_posix()), orig_open(s, *a, **kw))[1]):
+                    site = PublishedSite(site_root)
+                    for route in ('/api/tour', '/api/tour?at=classes',
+                                  '/api/tour?at=5echm:n284', '/api/tour?at=5echm:n291',
+                                  f'/api/tour?at=5echm:{sub_id}',
+                                  f'/api/entry?id={sub_id}'):
+                        self.assertEqual(site.handle(route)[0], 200, route)
+                    self.assertFalse(any(p.endswith('anna-reader.json') or p.endswith('anna-manifest.json') for p in opened), opened)
+                    self.assertFalse(any('our5etools/catalog.sqlite' in p for p in opened), opened)
+
+                    if (OUR5ETOOLS_DATA / 'manifest.json').is_file():
+                        for route in ('/api/reader?libraries=5echm,our5etools', '/api/tour?libraries=5echm,our5etools'):
+                            self.assertEqual(site.handle(route)[0], 200, route)
+                        self.assertFalse(any(p.endswith('anna-reader.json') for p in opened), opened)
             finally:
                 _clear_book_connections()
 
@@ -696,6 +860,153 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
             finally:
                 if collection is not None and collection.provider is not None:
                     collection.provider.close()
+
+    @unittest.skipUnless((OUR5ETOOLS_DATA / 'manifest.json').is_file(), 'Build our5etools collection first')
+    def test_our5etools_entry_fields_meta_plans_and_full_parity(self):
+        orig_cat = Our5etoolsCatalog(OUR5ETOOLS_DATA)
+        orig_tour = Our5etoolsTour(OUR5ETOOLS_DATA)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                proj_dir = Path(td).resolve() / 'o5e'
+                (proj_dir / 'reader').mkdir(parents=True)
+                for name in ('manifest.json', 'summary.json'):
+                    shutil.copyfile(OUR5ETOOLS_DATA / name, proj_dir / name)
+                (proj_dir / 'reader' / 'anna-reader.json').symlink_to(OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json')
+                _project_our_db(OUR5ETOOLS_DATA / 'catalog.sqlite', proj_dir / 'catalog.sqlite')
+
+                reader_raw = json.loads((OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json').read_text(encoding='utf-8'))
+                nav_payload = {
+                    k: reader_raw.get(k)
+                    for k in ('schema', 'snapshot', 'collection', 'roots', 'nodes', 'default_page',
+                                'page_base', 'media_base', 'presentation_resources', 'source_release')
+                }
+                (proj_dir / 'nav-nodes.json.gz').write_bytes(
+                    gzip.compress(json.dumps(nav_payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)
+                )
+
+                with closing(sqlite3.connect((proj_dir / 'catalog.sqlite').as_uri() + '?mode=ro', uri=True)) as conn:
+                    conn.row_factory = sqlite3.Row
+                    held_types = sorted(r[0] for r in conn.execute('SELECT DISTINCT type FROM entry_core') if r[0])
+                    sources_by_id = {
+                        r['id']: {
+                            'id': r['id'], 'package_id': r['package_id'], 'origin': r['origin'],
+                            'ruleset': r['ruleset'], 'short_name': r['short_name'], 'name': r['name'],
+                            'data': json.loads(r['data_json'] or '{}'),
+                        }
+                        for r in conn.execute('SELECT id, package_id, origin, ruleset, short_name, name, data_json FROM sources')
+                    }
+                    sub_records = build_subclass_records(conn, sources_by_id, 'entry_core')
+                    (proj_dir / 'tour-subclasses.json.gz').write_bytes(
+                        gzip.compress(json.dumps(sub_records, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)
+                    )
+                    manifest = json.loads((proj_dir / 'manifest.json').read_text(encoding='utf-8'))
+                    manifest['types'] = held_types
+                    (proj_dir / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
+
+                    # Query plan checks: never materialize VIEW or join entry_body unnecessarily
+                    for sql, bind in (
+                        ("EXPLAIN QUERY PLAN SELECT ef.facet_value, count(*) FROM entry_facets ef JOIN entry_core e ON e.id=ef.entry_id WHERE ef.facet_key='origin' GROUP BY ef.facet_value", ()),
+                        ("EXPLAIN QUERY PLAN SELECT el.layout_html, em.provenance_json FROM entry_core e LEFT JOIN entry_meta em ON em.entry_rowid=e.rowid LEFT JOIN entry_layout el ON el.entry_rowid=e.rowid WHERE e.id=?", ('o5e_fixture',)),
+                        ("EXPLAIN QUERY PLAN SELECT r.source_id, e.id FROM relations r JOIN entry_core e ON e.id=r.source_id WHERE r.target_id=? AND r.type='belongs_to_class' AND e.type='subclass'", ('cls_1',)),
+                    ):
+                        plan = [r[3] for r in conn.execute(sql, bind)]
+                        joined = ' | '.join(plan)
+                        self.assertNotIn('MATERIALIZE', joined, plan)
+                        self.assertNotIn('entry_body', joined, plan)
+                        self.assertNotIn('SCAN entry_core', joined, plan)
+
+                    spell_eid = conn.execute("SELECT id FROM entry_core WHERE type='spell' LIMIT 1").fetchone()[0]
+                    sub_eid = conn.execute("SELECT id FROM entry_core WHERE type='subclass' LIMIT 1").fetchone()[0]
+                    cls_eid = conn.execute("SELECT id FROM entry_core WHERE type='class' LIMIT 1").fetchone()[0]
+
+                proj_cat = Our5etoolsCatalog(proj_dir)
+                proj_tour = Our5etoolsTour(proj_dir)
+                try:
+                    self.assertEqual(proj_cat.known_types(), orig_cat.capabilities().types)
+                    self.assertEqual(proj_cat.capabilities(), orig_cat.capabilities())
+                    self.assertEqual(proj_cat.meta(), orig_cat.meta())
+                    self.assertEqual(proj_cat.works(), orig_cat.works())
+
+                    for qparams in (
+                        {},
+                        {'type': ['spell']},
+                        {'origin': ['官方']},
+                        {'origin': ['官方'], 'body': ['火球']},
+                    ):
+                        self.assertEqual(proj_cat.facets(qparams), orig_cat.facets(qparams), qparams)
+                    self.assertEqual(
+                        proj_cat.facets({'type': ['spell']}, restrict=Restriction(rulesets=frozenset({'5r'}))),
+                        orig_cat.facets({'type': ['spell']}, restrict=Restriction(rulesets=frozenset({'5r'}))),
+                    )
+                    for qparams in (
+                        {},
+                        {'type': ['spell']},
+                        {'type': ['spell'], 'ruleset': ['5r']},
+                        {'type': ['spell'], 'f_spell_level': ['3']},
+                        {'not_type': ['spell']},
+                    ):
+                        self.assertEqual(
+                            proj_cat.count(qparams),
+                            orig_cat.entries({**qparams, 'limit': ['1']})['versions_total'],
+                            qparams,
+                        )
+                    for qparams in (
+                        {'type': ['spell'], 'limit': ['10']},
+                        {'type': ['spell'], 'versions': ['each'], 'limit': ['10']},
+                        {'type': ['spell'], 'sort': ['spell_level'], 'limit': ['5']},
+                    ):
+                        self.assertEqual(proj_cat.entries(qparams), orig_cat.entries(qparams), qparams)
+                    self.assertEqual(proj_cat.ranked({'type': ['spell']}), orig_cat.ranked({'type': ['spell']}))
+                    self.assertEqual(
+                        proj_cat.ranked({'type': ['spell']}, sort_field='spell_level'),
+                        orig_cat.ranked({'type': ['spell']}, sort_field='spell_level'),
+                    )
+                    self.assertEqual(proj_cat.layout(spell_eid), orig_cat.layout(spell_eid))
+                    self.assertEqual(proj_cat.layout(sub_eid), orig_cat.layout(sub_eid))
+
+                    # Our5etoolsTour reads nav-nodes.json.gz + tour-subclasses.json.gz without anna-reader.json
+                    expected_subs = orig_tour.subclass_records()
+                    expected_sub_view = orig_tour.view(sub_eid)
+                    expected_cls_view = orig_tour.view(cls_eid)
+                    expected_sub_layout = orig_tour.layout(sub_eid)
+                    opened = []
+                    orig_open = Path.open
+                    with patch.object(Path, 'open', lambda s, *a, **kw: (opened.append(s.as_posix()), orig_open(s, *a, **kw))[1]):
+                        self.assertEqual(proj_tour.subclass_records(), expected_subs)
+                        self.assertEqual(proj_tour.view(sub_eid), expected_sub_view)
+                        self.assertEqual(proj_tour.view(cls_eid), expected_cls_view)
+                        self.assertEqual(proj_tour.layout(sub_eid), expected_sub_layout)
+                    self.assertFalse(any(p.endswith('anna-reader.json') for p in opened), opened)
+
+                    # Library.count parity across single, dual, and restricted scopes
+                    collections = (Collection('our5etools', 'our5etools', 'our5etools', provider=proj_cat),)
+                    if catalog.DB.is_file() and paths.WEB.is_dir():
+                        book = BookCatalog(catalog.DB, paths.WEB)
+                        from anna.presentation.alignment import Alignment
+                        from anna.presentation.library import Publications
+                        reg_dual = CollectionRegistry(book, collections, published_publications=Publications(Alignment(), {}))
+                        scopes = (Scope(('5echm',)), Scope(('our5etools',)), Scope(('5echm', 'our5etools')),
+                                  Scope(('5echm', 'our5etools'), rulesets=frozenset({'5r'})))
+                    else:
+                        dummy_book = BookCatalog(proj_dir / 'catalog.sqlite', paths.PROJECT)
+                        reg_dual = CollectionRegistry(dummy_book, collections)
+                        scopes = (Scope(('our5etools',)), Scope(('our5etools',), rulesets=frozenset({'5r'})))
+                    for scope in scopes:
+                        lib = Library(reg_dual, scope)
+                        for qparams in ({}, {'type': ['spell']}, {'type': ['spell'], 'ruleset': ['5r']}, {'type': ['psionic']}, {'type': ['spell'], 'f_spell_level': ['3']}):
+                            self.assertEqual(
+                                lib.count(qparams),
+                                lib.entries({**qparams, 'limit': ['1']})['versions_total'],
+                                (scope, qparams),
+                            )
+                finally:
+                    proj_tour.catalog.close()
+                    proj_cat.close()
+                    _clear_book_connections()
+        finally:
+            orig_tour.catalog.close()
+            orig_cat.close()
+            _clear_book_connections()
 
     def test_frontend_request_order_and_idle_warmup_wiring(self):
         detail_js = (paths.PROJECT / 'web' / 'detail.js').read_text(encoding='utf-8')

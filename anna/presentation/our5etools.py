@@ -5,6 +5,7 @@ from collections import Counter, defaultdict
 from contextlib import closing, contextmanager
 import csv
 import dataclasses
+import gzip
 import html as _html
 import io
 import ipaddress
@@ -26,7 +27,7 @@ import weakref
 
 import anna.our5etools.types as otypes
 import anna.paths as paths
-from anna.presentation import expression
+from anna.presentation import catalog, expression
 from anna.presentation.collections import Collection, SearchHits
 from anna.presentation.expression import Query
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
@@ -416,6 +417,10 @@ def _make_preview(text: str, text_lower: str, terms: list[str]) -> str:
 class Our5etoolsCatalog:
     """Read-only CatalogProvider over our5etools catalog.sqlite."""
 
+    CONDITIONS = frozenset({'type', 'q', 'typing', 'body', 'ruleset', 'legacy', 'copy_status', 'origin', 'source',
+                            'package', 'conflict', 'cr_min', 'cr_max'})
+    same_name_groups = False
+
     def __init__(self, data_dir: Path | str, *, lazy_media: bool = False, collection_key: str = COLLECTION_KEY):
         self.data_dir = Path(data_dir).resolve()
         self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
@@ -423,8 +428,10 @@ class Our5etoolsCatalog:
         self.media_dir = self.data_dir / 'media'
         self.lazy_media = bool(lazy_media)
         self.db_path = self.data_dir / 'catalog.sqlite'
+        self.manifest_path = self.data_dir / 'manifest.json'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
         self.reader_index_path = self.data_dir / 'reader-index.json'
+        self.nav_path = self.data_dir / 'nav-nodes.json.gz'
         self.summary_path = self.data_dir / 'summary.json'
         self._lock = threading.Lock()
         self._local = threading.local()
@@ -433,14 +440,100 @@ class Our5etoolsCatalog:
         self._packages_map: dict[str, dict[str, Any]] = {}
         self._held_types: set[str] = set()
         self._bases: dict[str, tuple[str, str, str]] = {}
+        self._bases_loaded = False
         self._has_entry_core = False
+        self._has_entry_fields = False
+        self._has_entry_meta = False
         self._has_name_fold_index = False
+        self._pages_source_counts: dict[str, int] | None = None
+        self._pages_type_ruleset_counts: list[list[Any]] | None = None
+        self._pages_unfiltered_facets: dict[str, Any] | None = None
+        self._manifest_types_cache: tuple[tuple[Any, ...] | None, frozenset[str]] | None = None
         self._name_fold_cache: dict[tuple[str, str], tuple[str, ...]] | None = None
         self._scope_universe_cache: dict[tuple[str, ...], tuple[int, dict[str, set[str]], dict[str, int]]] = {}
         self._unfiltered_facets_cache: dict[str, Any] | None = None
         self._entry_locations: dict[str, dict[str, Any]] = {}
         self._reader_roots: dict[str, str] = {}
         self._reader_sig: tuple[str, tuple[int, int, int] | None] | None = None
+        self._roots_sig: tuple[str, tuple[int, int, int] | None] | None = None
+
+    @property
+    def _entry_table(self) -> str:
+        return 'entry_core' if self._has_entry_core else 'entries'
+
+    def _fields_col(self, name: str) -> str:
+        return f'efld.{name}' if self._has_entry_fields else f'e.{name}'
+
+    def _meta_col(self, name: str) -> str:
+        return f'em.{name}' if self._has_entry_meta else f'e.{name}'
+
+    def _body_col(self, name: str) -> str:
+        return f'eb.{name}' if self._has_entry_core else f'e.{name}'
+
+    def _layout_col(self, name: str) -> str:
+        return f'el.{name}' if self._has_entry_core else f'e.{name}'
+
+    def _from_entries(
+        self,
+        *,
+        need_fields: bool = False,
+        need_meta: bool = False,
+        need_body: bool = False,
+        need_layout: bool = False,
+    ) -> str:
+        if not self._has_entry_core:
+            return 'entries e'
+        parts = ['entry_core e']
+        if need_fields and self._has_entry_fields:
+            parts.append('LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid')
+        if need_meta and self._has_entry_meta:
+            parts.append('LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid')
+        if need_body:
+            parts.append('LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid')
+        if need_layout:
+            parts.append('LEFT JOIN entry_layout el ON el.entry_rowid = e.rowid')
+        return ' '.join(parts)
+
+    def _row_select_cols(self) -> str:
+        fields_col = self._fields_col('fields_json')
+        quickref_col = self._meta_col('quickref_json')
+        prov_col = self._meta_col('provenance_json')
+        return (
+            'e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
+            'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, '
+            f'e.owner_level, e.copy_status, {fields_col} AS fields_json, '
+            f'{quickref_col} AS quickref_json, e.conflicts_json, {prov_col} AS provenance_json'
+        )
+
+    @staticmethod
+    def _where_needs_body(where_sql: str) -> bool:
+        return 'search_body' in where_sql
+
+    @staticmethod
+    def _order_needs_fields(order_sql: str) -> bool:
+        return 'fields_json' in order_sql
+
+    def known_types(self) -> frozenset[str]:
+        sig = (_file_sig(self.manifest_path), _file_sig(self.summary_path))
+        with self._lock:
+            if self._manifest_types_cache is not None and self._manifest_types_cache[0] == sig:
+                return self._manifest_types_cache[1]
+        types_found: frozenset[str] | None = None
+        if sig[0] is not None:
+            manifest_data = _json_loads(self.manifest_path.read_text('utf-8'), {})
+            raw_types = manifest_data.get('types') if isinstance(manifest_data, dict) else None
+            if isinstance(raw_types, list):
+                types_found = frozenset(t for t in raw_types if t in otypes.TYPE_ORDER)
+        if types_found is None and sig[1] is not None:
+            summary_data = _json_loads(self.summary_path.read_text('utf-8'), {})
+            by_type = summary_data.get('by_type') if isinstance(summary_data, dict) else None
+            if isinstance(by_type, dict):
+                types_found = frozenset(t for t, c in by_type.items() if c > 0 and t in otypes.TYPE_ORDER)
+        if types_found is None:
+            types_found = self.capabilities().types
+        with self._lock:
+            self._manifest_types_cache = (sig, types_found)
+        return types_found
 
     def _connect(self) -> sqlite3.Connection:
         sig = _file_sig(self.db_path)
@@ -511,34 +604,103 @@ class Our5etoolsCatalog:
                 }
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             has_core = 'entry_core' in tables
+            has_fields = 'entry_fields' in tables
+            has_meta = 'entry_meta' in tables
             entry_table = 'entry_core' if has_core else 'entries'
-            held = {r[0] for r in db.execute(f'SELECT DISTINCT type FROM {entry_table}') if r[0]}
-            # A copied entry (5etools `_copy`) names the entry it was copied from and that entry's work.
-            bases: dict[str, tuple[str, str, str]] = {}
-            if 'pages_copied_bases' in tables:
-                for copy, base, base_work, base_name_en in db.execute(
-                    'SELECT source_id, target_id, base_source_id, base_name_en FROM pages_copied_bases ORDER BY source_id, target_id'
-                ):
-                    bases.setdefault(copy, (base, base_work, base_name_en))
+            meta_rows = dict(db.execute(
+                "SELECT key, value FROM metadata WHERE key IN ('pages_source_counts', 'pages_type_ruleset_counts', 'pages_unfiltered_facets')"
+            ))
+            src_counts = _json_loads(meta_rows.get('pages_source_counts'), None)
+            tr_counts = _json_loads(meta_rows.get('pages_type_ruleset_counts'), None)
+            unfiltered_facets = _json_loads(meta_rows.get('pages_unfiltered_facets'), None)
+            if isinstance(tr_counts, list):
+                held = {t for t, _, c in tr_counts if t and c > 0}
             else:
-                for copy, base, base_work, base_name_en in db.execute(
-                    f"SELECT r.source_id, r.target_id, b.source_id, b.name_en FROM relations r JOIN {entry_table} b ON b.id = r.target_id "
-                    "WHERE r.type = 'copied_from' ORDER BY r.source_id, r.target_id"
-                ):
-                    bases.setdefault(copy, (base, base_work, base_name_en))
-            self._bases = bases
+                held = {r[0] for r in db.execute(f'SELECT DISTINCT type FROM {entry_table}') if r[0]}
+            self._bases = {}
+            self._bases_loaded = False
             self._sources_map = sources_map
             self._packages_map = packages_map
             self._held_types = held
             self._has_entry_core = has_core
+            self._has_entry_fields = has_fields
+            self._has_entry_meta = has_meta
             self._has_name_fold_index = 'name_fold_index' in tables
+            self._pages_source_counts = src_counts if isinstance(src_counts, dict) else None
+            self._pages_type_ruleset_counts = tr_counts if isinstance(tr_counts, list) else None
+            self._pages_unfiltered_facets = unfiltered_facets if isinstance(unfiltered_facets, dict) else None
             self._name_fold_cache = None
             self._scope_universe_cache.clear()
             self._unfiltered_facets_cache = None
             self._cache_sig = sig
 
+    def _ensure_bases(self, db: sqlite3.Connection) -> None:
+        """Load copied_from base mapping only when cross-collection stacking or same_name needs it."""
+        self._ensure_static_cache(db)
+        with self._lock:
+            if self._bases_loaded:
+                return
+        tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        entry_table = 'entry_core' if self._has_entry_core else 'entries'
+        bases: dict[str, tuple[str, str, str]] = {}
+        if 'pages_copied_bases' in tables:
+            for copy, base, base_work, base_name_en in db.execute(
+                'SELECT source_id, target_id, base_source_id, base_name_en FROM pages_copied_bases ORDER BY source_id, target_id'
+            ):
+                bases.setdefault(copy, (base, base_work, base_name_en))
+        else:
+            for copy, base, base_work, base_name_en in db.execute(
+                f"SELECT r.source_id, r.target_id, b.source_id, b.name_en FROM relations r JOIN {entry_table} b ON b.id = r.target_id "
+                "WHERE r.type = 'copied_from' ORDER BY r.source_id, r.target_id"
+            ):
+                bases.setdefault(copy, (base, base_work, base_name_en))
+        with self._lock:
+            self._bases = bases
+            self._bases_loaded = True
+
+    @staticmethod
+    def _extract_roots(raw: Any) -> dict[str, str]:
+        roots: dict[str, str] = {}
+        raw_roots = raw.get('roots') if isinstance(raw, dict) else None
+        if isinstance(raw_roots, dict):
+            roots = {str(k): str(v) for k, v in raw_roots.items() if k and v}
+        elif isinstance(raw_roots, list):
+            for root in raw_roots:
+                if isinstance(root, dict) and root.get('source_id') and root.get('id'):
+                    roots.setdefault(root['source_id'], root['id'])
+        return roots
+
+    def _load_reader_roots(self) -> dict[str, str]:
+        """Each work's book root from nav-nodes.json.gz, reader-index.json, or anna-reader.json."""
+        nav_sig = _file_sig(self.nav_path)
+        index_sig = _file_sig(self.reader_index_path) if nav_sig is None else None
+        reader_sig = _file_sig(self.reader_path) if (nav_sig is None and index_sig is None) else None
+        sig: tuple[str, tuple[int, int, int] | None] | None = (
+            ('nav', nav_sig) if nav_sig is not None else (
+                ('index', index_sig) if index_sig is not None else (
+                    ('reader', reader_sig) if reader_sig is not None else None
+                )
+            )
+        )
+        with self._lock:
+            if sig == self._roots_sig and sig is not None:
+                return self._reader_roots
+            roots: dict[str, str] = {}
+            if sig is not None:
+                try:
+                    if sig[0] == 'nav':
+                        raw = json.loads(gzip.decompress(self.nav_path.read_bytes()).decode('utf-8'))
+                    else:
+                        target = self.reader_index_path if sig[0] == 'index' else self.reader_path
+                        raw = json.loads(target.read_text('utf-8'))
+                    roots = self._extract_roots(raw)
+                except (OSError, ValueError):
+                    roots = {}
+            self._reader_roots, self._roots_sig = roots, sig
+            return roots
+
     def _load_reader_index(self) -> None:
-        """Entry locations and each work's book root from the compact index or full reader, reloaded on change."""
+        """Entry locations from the compact index or full reader, reloaded on change."""
         index_sig = _file_sig(self.reader_index_path)
         reader_sig = _file_sig(self.reader_path) if index_sig is None else None
         sig: tuple[str, tuple[int, int, int] | None] | None = (
@@ -548,23 +710,15 @@ class Our5etoolsCatalog:
             if sig == self._reader_sig and sig is not None:
                 return
             locations: dict[str, dict[str, Any]] = {}
-            roots: dict[str, str] = {}
             if sig is not None:
                 target = self.reader_index_path if sig[0] == 'index' else self.reader_path
                 try:
                     raw = json.loads(target.read_text('utf-8'))
                     locs = raw.get('entry_locations')
                     locations = locs if isinstance(locs, dict) else {}
-                    raw_roots = raw.get('roots')
-                    if isinstance(raw_roots, dict):
-                        roots = {str(k): str(v) for k, v in raw_roots.items() if k and v}
-                    elif isinstance(raw_roots, list):
-                        for root in raw_roots:
-                            if isinstance(root, dict) and root.get('source_id') and root.get('id'):
-                                roots.setdefault(root['source_id'], root['id'])
                 except (OSError, ValueError):
-                    locations, roots = {}, {}
-            self._entry_locations, self._reader_roots, self._reader_sig = locations, roots, sig
+                    locations = {}
+            self._entry_locations, self._reader_sig = locations, sig
 
     def _get_entry_locations(self) -> dict[str, dict[str, Any]]:
         self._load_reader_index()
@@ -588,7 +742,7 @@ class Our5etoolsCatalog:
             out.append(('typing', 'instr(lower(e.search_name), lower(?)) > 0', [typing]))
 
         for i, term in enumerate(_search_terms(params, 'body')):
-            out.append((f'body{i}', 'instr(lower(e.search_body), lower(?)) > 0', [term]))
+            out.append((f'body{i}', f'instr(lower({self._body_col("search_body")}), lower(?)) > 0', [term]))
 
         for key, col, allowed in (
             ('ruleset', 'e.ruleset', RULESETS),
@@ -740,9 +894,10 @@ class Our5etoolsCatalog:
         if key == 'cr':
             return f'CASE WHEN e.cr_num IS NULL THEN 1 ELSE 0 END ASC, e.cr_num {direction}, {tie}'
         if key in otypes.COLUMN_LABELS or key in otypes.LABELS:
+            field_col = self._fields_col('fields_json')
             return (
-                f"CASE WHEN browse_rank(e.fields_json, '{key}') IS NULL THEN 1 ELSE 0 END ASC, "
-                f"browse_rank(e.fields_json, '{key}') {direction}, {tie}"
+                f"CASE WHEN browse_rank({field_col}, '{key}') IS NULL THEN 1 ELSE 0 END ASC, "
+                f"browse_rank({field_col}, '{key}') {direction}, {tie}"
             )
         return f'e.sort_name {direction}, e.id ASC'
 
@@ -795,7 +950,7 @@ class Our5etoolsCatalog:
     def meta(self) -> dict[str, Any]:
         with self._db() as db:
             self._ensure_static_cache(db)
-            entry_table = 'entry_core' if self._has_entry_core else 'entries'
+            entry_table = self._entry_table
             summary_row = db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()
             if summary_row is not None:
                 summary = _json_loads(summary_row[0], {})
@@ -808,7 +963,11 @@ class Our5etoolsCatalog:
             if 'total' not in summary:
                 summary['total'] = (summary.get('counts') or {}).get('entries') or db.execute(f'SELECT count(*) FROM {entry_table}').fetchone()[0]
 
-            src_counts = dict(db.execute(f'SELECT source_id, count(*) FROM {entry_table} GROUP BY source_id'))
+            src_counts = (
+                self._pages_source_counts
+                if self._pages_source_counts is not None else
+                dict(db.execute(f'SELECT source_id, count(*) FROM {entry_table} GROUP BY source_id'))
+            )
             sources_list: list[dict[str, Any]] = []
             for sid, srec in sorted(self._sources_map.items(), key=lambda kv: (kv[1]['name'], kv[0])):
                 data = srec['data']
@@ -875,6 +1034,25 @@ class Our5etoolsCatalog:
                 'lazy_media': self.lazy_media,
             }
 
+    def count(self, params: dict[str, list[str]], restrict: Any = None) -> int:
+        """Count matching versions without reading payloads or stacking."""
+        with self._db() as db:
+            self._ensure_static_cache(db)
+            params = Query.of(params)
+            if self._pages_type_ruleset_counts is not None and not params.probing:
+                simple = catalog.simple_type_ruleset_filter(
+                    params, set(otypes.TYPES), set(RULESETS), restrict,
+                )
+                if simple is not None:
+                    types, rulesets = simple
+                    return sum(
+                        cnt for t, r, cnt in self._pages_type_ruleset_counts
+                        if (types is None or t in types) and (rulesets is None or r in rulesets)
+                    )
+            where, values = self._where(params, restrict)
+            from_sql = self._from_entries(need_body=self._where_needs_body(where))
+            return int(db.execute(f'SELECT count(*) FROM {from_sql}{where}', values).fetchone()[0])
+
     def entries(self, params: dict[str, list[str]], restrict: Any = None, *, _export: bool = False) -> dict[str, Any]:
         with self._db() as db:
             self._ensure_static_cache(db)
@@ -904,40 +1082,52 @@ class Our5etoolsCatalog:
             if prefer not in otypes.RULESET_PREFERENCES:
                 raise ValueError('无效规则版本偏好')
 
-            cols = (
-                'e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
-                'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, '
-                'e.owner_level, e.copy_status, e.fields_json, e.quickref_json, e.conflicts_json, '
-                'e.provenance_json'
-            )
+            need_body = self._where_needs_body(where)
+            need_fields = self._order_needs_fields(order)
+            cols = self._row_select_cols()
 
             if _export or versions == 'each':
-                total = db.execute('SELECT count(*) FROM entries e' + where, values).fetchone()[0]
-                sql = f'SELECT {cols} FROM entries e{where} ORDER BY {order}'
-                q_vals = list(values)
+                from_count = self._from_entries(need_body=need_body)
+                total = db.execute(f'SELECT count(*) FROM {from_count}{where}', values).fetchone()[0]
                 if not _export:
-                    sql += ' LIMIT ? OFFSET ?'
-                    q_vals.extend([limit, offset])
-                rows = [self._row_to_entry(r) for r in db.execute(sql, q_vals)]
+                    from_list = self._from_entries(need_fields=need_fields, need_body=need_body)
+                    id_sql = f'SELECT e.id FROM {from_list}{where} ORDER BY {order} LIMIT ? OFFSET ?'
+                    ids = [r[0] for r in db.execute(id_sql, [*values, limit, offset])]
+                    fetched = self._rows_by_ids(db, ids) if ids else {}
+                    rows = [fetched[eid] for eid in ids if eid in fetched]
+                    return {
+                        'total': total,
+                        'versions_total': total,
+                        'versions': versions,
+                        'prefer': prefer,
+                        'offset': offset,
+                        'rows': rows,
+                        'schema': config,
+                        'section_matches': 0,
+                    }
+                from_export = self._from_entries(need_fields=True, need_meta=True, need_body=need_body)
+                sql = f'SELECT {cols} FROM {from_export}{where} ORDER BY {order}'
+                rows = [self._row_to_entry(r) for r in db.execute(sql, values)]
                 return {
                     'total': total,
                     'versions_total': total,
                     'versions': versions,
                     'prefer': prefer,
-                    'offset': 0 if _export else offset,
+                    'offset': 0,
                     'rows': rows,
                     'schema': config,
                     'section_matches': 0,
                 }
 
             first_choice, second_choice = otypes.RULESET_PREFERENCES[prefer]
+            from_stack = self._from_entries(need_fields=need_fields, need_body=need_body)
             matched = db.execute(
                 'WITH matched AS ('
                 '  SELECT e.id, COALESCE(im.group_id, e.id) AS stack_key, im.group_id AS group_id, '
                 '         COALESCE(im.is_primary, 0) AS is_primary, '
                 f'         ROW_NUMBER() OVER (ORDER BY {order}) AS pos, '
                 '         CASE e.ruleset WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END AS pref '
-                '  FROM entries e '
+                f'  FROM {from_stack} '
                 '  LEFT JOIN identity_members im ON im.entry_id = e.id'
                 f'{where}'
                 ') '
@@ -956,12 +1146,7 @@ class Our5etoolsCatalog:
                 members_by_stack[r['stack_key']].append(r['id'])
 
             all_ids = [eid for ids in members_by_stack.values() for eid in ids]
-            fetched: dict[str, dict[str, Any]] = {}
-            for start in range(0, len(all_ids), 400):
-                batch = all_ids[start:start + 400]
-                ph = ','.join('?' for _ in batch)
-                for r in db.execute(f'SELECT {cols} FROM entries e WHERE e.id IN ({ph})', batch):
-                    fetched[r['id']] = self._row_to_entry(r)
+            fetched = self._rows_by_ids(db, all_ids) if all_ids else {}
 
             rows = []
             for head in shown:
@@ -1008,8 +1193,9 @@ class Our5etoolsCatalog:
             bounds.append('e.type IN (' + ','.join('?' for _ in chosen_types) + ')')
             vals_t.extend(chosen_types)
         where_t = ' WHERE ' + ' AND '.join(bounds) if bounds else ''
+        entry_table = self._entry_table
 
-        scope_total = int(db.execute('SELECT count(*) FROM entries e' + where_t, vals_t).fetchone()[0])
+        scope_total = int(db.execute(f'SELECT count(*) FROM {entry_table} e' + where_t, vals_t).fetchone()[0])
         uni: dict[str, set[str]] = {f: set() for f in domain}
         cover: dict[str, int] = {f: 0 for f in domain}
         if domain:
@@ -1017,7 +1203,7 @@ class Our5etoolsCatalog:
             if where_t:
                 sql = (
                     'SELECT ef.facet_key, ef.facet_value, count(*) '
-                    'FROM entries e CROSS JOIN entry_facets ef ON ef.entry_id = e.id '
+                    f'FROM {entry_table} e CROSS JOIN entry_facets ef ON ef.entry_id = e.id '
                     f'WHERE ({where_t[7:]}) '
                     'GROUP BY ef.facet_key, ef.facet_value'
                 )
@@ -1054,15 +1240,24 @@ class Our5etoolsCatalog:
                 with self._lock:
                     if self._unfiltered_facets_cache is not None:
                         return self._unfiltered_facets_cache
-                # Covering-index-only fast path for unfiltered facets (avoids scanning full entries rows)
-                total = int(db.execute('SELECT count(*) FROM entries').fetchone()[0])
-                type_counts = Counter(dict(db.execute('SELECT type, count(*) FROM entries GROUP BY type')))
-                rs_counts = Counter(dict(db.execute('SELECT ruleset, count(*) FROM entries GROUP BY ruleset')))
-                src_counts = Counter(dict(db.execute('SELECT source_id, count(*) FROM entries GROUP BY source_id')))
-                pkg_counts = Counter(dict(db.execute('SELECT package_id, count(*) FROM entries GROUP BY package_id')))
-                or_counts = Counter(dict(db.execute(
-                    "SELECT facet_value, count(*) FROM entry_facets WHERE facet_key='origin' GROUP BY facet_value"
-                )))
+                if self._pages_unfiltered_facets is not None:
+                    pre = self._pages_unfiltered_facets
+                    total = int(pre['total'])
+                    type_counts = Counter(pre['type'])
+                    rs_counts = Counter(pre['ruleset'])
+                    src_counts = Counter(pre['source'])
+                    pkg_counts = Counter(pre['package'])
+                    or_counts = Counter(pre['origin'])
+                else:
+                    entry_table = self._entry_table
+                    total = int(db.execute(f'SELECT count(*) FROM {entry_table}').fetchone()[0])
+                    type_counts = Counter(dict(db.execute(f'SELECT type, count(*) FROM {entry_table} GROUP BY type')))
+                    rs_counts = Counter(dict(db.execute(f'SELECT ruleset, count(*) FROM {entry_table} GROUP BY ruleset')))
+                    src_counts = Counter(dict(db.execute(f'SELECT source_id, count(*) FROM {entry_table} GROUP BY source_id')))
+                    pkg_counts = Counter(dict(db.execute(f'SELECT package_id, count(*) FROM {entry_table} GROUP BY package_id')))
+                    or_counts = Counter(dict(db.execute(
+                        "SELECT facet_value, count(*) FROM entry_facets WHERE facet_key='origin' GROUP BY facet_value"
+                    )))
                 type_group = {
                     'key': 'type',
                     'label': COMMON_LABELS['type'],
@@ -1140,8 +1335,9 @@ class Our5etoolsCatalog:
 
             # 2. Fetch matched entries ONCE for total + all unfiltered facet groups
             where_all, vals_all = self._where_of(where, scope)
+            from_all = self._from_entries(need_body=self._where_needs_body(where_all))
             matched_rows = db.execute(
-                'SELECT e.id, e.ruleset, e.source_id, e.package_id, e.type FROM entries e' + where_all,
+                f'SELECT e.id, e.ruleset, e.source_id, e.package_id, e.type FROM {from_all}' + where_all,
                 vals_all,
             ).fetchall()
             total = len(matched_rows)
@@ -1150,13 +1346,15 @@ class Our5etoolsCatalog:
             if params.probing:
                 at = lambda value: expression.substitute(params.tree, lambda c: value if c is expression.PROBE else c)
                 w_u, v_u = self._where_of(at(expression.FALSE), scope)
-                always = int(db.execute('SELECT count(*) FROM entries e' + w_u, v_u).fetchone()[0])
+                from_u = self._from_entries(need_body=self._where_needs_body(w_u))
+                always = int(db.execute(f'SELECT count(*) FROM {from_u}' + w_u, v_u).fetchone()[0])
                 parts, count_vals = self._clauses(at(expression.TRUE), scope)
                 unplaced, v_unplaced = expression.sql(at(expression.FALSE), self._card_condition)
                 count_where = ' WHERE ' + ' AND '.join([*parts, f'NOT {unplaced}'])
                 count_vals = count_vals + v_unplaced
+                from_cnt = self._from_entries(need_body=self._where_needs_body(count_where))
                 count_rows = db.execute(
-                    'SELECT e.id, e.ruleset, e.source_id, e.package_id, e.type FROM entries e' + count_where,
+                    f'SELECT e.id, e.ruleset, e.source_id, e.package_id, e.type FROM {from_cnt}' + count_where,
                     count_vals,
                 ).fetchall()
             count_ids = [r[0] for r in count_rows]
@@ -1182,9 +1380,10 @@ class Our5etoolsCatalog:
                             if fk in key_set:
                                 out[fk][fv] += int(cnt)
                 else:
+                    from_large = self._from_entries(need_body=self._where_needs_body(count_where))
                     sql = (
                         'SELECT ef.facet_key, ef.facet_value, count(*) '
-                        'FROM entries e CROSS JOIN entry_facets ef ON ef.entry_id = e.id '
+                        f'FROM {from_large} CROSS JOIN entry_facets ef ON ef.entry_id = e.id '
                         + (f'WHERE ({count_where[7:]}) ' if count_where else '')
                         + 'GROUP BY ef.facet_key, ef.facet_value'
                     )
@@ -1199,7 +1398,8 @@ class Our5etoolsCatalog:
                 type_counts = Counter(r[4] for r in count_rows)
             else:
                 w_t, v_t = _conds_without_field('type')
-                for r in db.execute('SELECT e.type, count(*) FROM entries e' + w_t + ' GROUP BY e.type', v_t):
+                from_t = self._from_entries(need_body=self._where_needs_body(w_t))
+                for r in db.execute(f'SELECT e.type, count(*) FROM {from_t}' + w_t + ' GROUP BY e.type', v_t):
                     type_counts[r[0]] = int(r[1])
 
             # 4. `without`: the matches each card's removal from the line would add, by the card's place.
@@ -1210,7 +1410,8 @@ class Our5etoolsCatalog:
                     diff = sum(type_counts.values()) - total
                 else:
                     w_sub, v_sub = self._where_of(expression.without(where, card.index), scope)
-                    diff = int(db.execute('SELECT count(*) FROM entries e' + w_sub, v_sub).fetchone()[0]) - total
+                    from_sub = self._from_entries(need_body=self._where_needs_body(w_sub))
+                    diff = int(db.execute(f'SELECT count(*) FROM {from_sub}' + w_sub, v_sub).fetchone()[0]) - total
                 if diff > 0:
                     without[str(card.index)] = diff
 
@@ -1223,8 +1424,9 @@ class Our5etoolsCatalog:
                 fkey = 'f_' + f
                 w_f, v_f = _conds_without_field(fkey)
                 f_counts: Counter[str] = Counter()
+                from_f = self._from_entries(need_body=self._where_needs_body(w_f))
                 sql_counts = (
-                    'SELECT ef.facet_value, count(*) FROM entries e '
+                    f'SELECT ef.facet_value, count(*) FROM {from_f} '
                     'CROSS JOIN entry_facets ef ON ef.entry_id = e.id '
                     'WHERE ef.facet_key = ?'
                     + (f' AND ({w_f[7:]})' if w_f else '')
@@ -1266,7 +1468,8 @@ class Our5etoolsCatalog:
                 rs_counts = Counter(r[1] for r in count_rows)
             else:
                 w_rs, v_rs = _conds_without_field('ruleset')
-                rs_counts = Counter(dict(db.execute('SELECT e.ruleset, count(*) FROM entries e' + w_rs + ' GROUP BY e.ruleset', v_rs)))
+                from_rs = self._from_entries(need_body=self._where_needs_body(w_rs))
+                rs_counts = Counter(dict(db.execute(f'SELECT e.ruleset, count(*) FROM {from_rs}' + w_rs + ' GROUP BY e.ruleset', v_rs)))
             rs_group = {
                 'key': 'ruleset',
                 'label': COMMON_LABELS['ruleset'],
@@ -1281,8 +1484,9 @@ class Our5etoolsCatalog:
                 )
             else:
                 w_or, v_or = _conds_without_field('origin')
+                body_join = ' LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid' if (self._has_entry_core and self._where_needs_body(w_or)) else ''
                 or_counts = Counter(dict(db.execute(
-                    "SELECT ef.facet_value, count(*) FROM entry_facets ef JOIN entries e ON e.id=ef.entry_id "
+                    f'SELECT ef.facet_value, count(*) FROM entry_facets ef JOIN {self._entry_table} e ON e.id=ef.entry_id{body_join} '
                     "WHERE ef.facet_key='origin'" + (f' AND ({w_or[7:]})' if w_or else '') + ' GROUP BY ef.facet_value',
                     v_or,
                 )))
@@ -1297,7 +1501,8 @@ class Our5etoolsCatalog:
                 src_counts = Counter(r[2] for r in count_rows if r[2])
             else:
                 w_src, v_src = _conds_without_field('source')
-                src_counts = Counter(dict(db.execute('SELECT e.source_id, count(*) FROM entries e' + w_src + ' GROUP BY e.source_id', v_src)))
+                from_src = self._from_entries(need_body=self._where_needs_body(w_src))
+                src_counts = Counter(dict(db.execute(f'SELECT e.source_id, count(*) FROM {from_src}' + w_src + ' GROUP BY e.source_id', v_src)))
             src_universe = {s for s, c in src_counts.items() if c > 0}
             for v in (*params.get('source', []), *params.get(NOT + 'source', [])):
                 if v and v != otypes.NONE:
@@ -1330,7 +1535,8 @@ class Our5etoolsCatalog:
                 pkg_counts = Counter(r[3] for r in count_rows if r[3])
             else:
                 w_pkg, v_pkg = _conds_without_field('package')
-                pkg_counts = Counter(dict(db.execute('SELECT e.package_id, count(*) FROM entries e' + w_pkg + ' GROUP BY e.package_id', v_pkg)))
+                from_pkg = self._from_entries(need_body=self._where_needs_body(w_pkg))
+                pkg_counts = Counter(dict(db.execute(f'SELECT e.package_id, count(*) FROM {from_pkg}' + w_pkg + ' GROUP BY e.package_id', v_pkg)))
             pkg_universe = {p for p, c in pkg_counts.items() if c > 0}
             for v in (*params.get('package', []), *params.get(NOT + 'package', [])):
                 if v and v != otypes.NONE:
@@ -1377,7 +1583,8 @@ class Our5etoolsCatalog:
                 ):
                     if relax_field in active_fields:
                         w_rel, v_rel = _conds_without_field(relax_field)
-                        rel_cnt = int(db.execute('SELECT count(*) FROM entries e' + w_rel, v_rel).fetchone()[0])
+                        from_rel = self._from_entries(need_body=self._where_needs_body(w_rel))
+                        rel_cnt = int(db.execute(f'SELECT count(*) FROM {from_rel}' + w_rel, v_rel).fetchone()[0])
                         if rel_cnt > 0:
                             elsewhere.append({'field': relax_field, 'label': label, 'count': rel_cnt})
 
@@ -1395,11 +1602,14 @@ class Our5etoolsCatalog:
 
     def works(self) -> list[dict[str, Any]]:
         """Every work with its origin, rules generation and entry count: what the reader's library can include."""
-        self._load_reader_index()
+        reader_roots = self._load_reader_roots()
         with self._db() as db:
             self._ensure_static_cache(db)
-            entry_table = 'entry_core' if self._has_entry_core else 'entries'
-            counts = dict(db.execute(f'SELECT source_id, count(*) FROM {entry_table} GROUP BY source_id'))
+            counts = (
+                self._pages_source_counts
+                if self._pages_source_counts is not None else
+                dict(db.execute(f'SELECT source_id, count(*) FROM {self._entry_table} GROUP BY source_id'))
+            )
             out = []
             for sid, srec in sorted(self._sources_map.items(), key=lambda kv: (kv[1]['name'], kv[0])):
                 package = self._packages_map.get(srec['package_id'])
@@ -1414,7 +1624,7 @@ class Our5etoolsCatalog:
                     'abbreviations': [srec['short_name']] if srec['short_name'] else [],
                     'titles': list(dict.fromkeys(t for t in (srec['name'], data.get('code')) if t)),
                     # The Stella root that opens this work's book, if it has one.
-                    'reader_root': self._reader_roots.get(sid),
+                    'reader_root': reader_roots.get(sid),
                 })
             return out
 
@@ -1448,7 +1658,7 @@ class Our5etoolsCatalog:
     def same_name(self, entry_type: str, folded: str, include_ids: tuple[str, ...] = ()) -> list[dict[str, Any]]:
         """Cheap ranked rows for entries matching a normalized English name (plus explicit IDs)."""
         with self._db() as db:
-            self._ensure_static_cache(db)
+            self._ensure_bases(db)
             ids = set(include_ids)
             if folded and entry_type in otypes.STACKABLE_TYPES:
                 if self._has_name_fold_index:
@@ -1461,7 +1671,7 @@ class Our5etoolsCatalog:
             if not ids:
                 return []
             ordered_ids = list(dict.fromkeys(ids))
-            entry_table = 'entry_core' if self._has_entry_core else 'entries'
+            entry_table = self._entry_table
             out = []
             for start in range(0, len(ordered_ids), 400):
                 batch = ordered_ids[start:start + 400]
@@ -1484,16 +1694,19 @@ class Our5etoolsCatalog:
     def ranked(self, params: dict[str, list[str]], restrict: Any = None, sort_field: str | None = None) -> list[dict[str, Any]]:
         """One cheap row per matching entry: what a library spanning several catalogs sorts, stacks and pages."""
         with self._db() as db:
-            self._ensure_static_cache(db)
+            self._ensure_bases(db)
             params = Query.of(params)
             where, values = self._where(params, restrict)
             latest = _latest_term(params)
             db.create_function('browse_query', 0, lambda: latest)
             if sort_field and sort_field not in otypes.COLUMN_LABELS and sort_field not in otypes.LABELS:
                 sort_field = None
-            value = 'e.cr_num' if sort_field == 'cr' else (f"browse_rank(e.fields_json, '{sort_field}')" if sort_field else 'NULL')
+            need_fields = bool(sort_field and sort_field != 'cr')
+            field_col = self._fields_col('fields_json')
+            value = 'e.cr_num' if sort_field == 'cr' else (f"browse_rank({field_col}, '{sort_field}')" if sort_field else 'NULL')
+            from_sql = self._from_entries(need_fields=need_fields, need_body=self._where_needs_body(where))
             sql = (f'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, e.source_id, e.source_code, im.group_id, {value} AS value '
-                   f'FROM entries e LEFT JOIN identity_members im ON im.entry_id = e.id{where}')
+                   f'FROM {from_sql} LEFT JOIN identity_members im ON im.entry_id = e.id{where}')
             out = []
             for r in db.execute(sql, values):
                 source = self._sources_map.get(r['source_id'])
@@ -1504,41 +1717,44 @@ class Our5etoolsCatalog:
                             'work': r['source_id'] or None, 'base': base, 'base_work': base_work, 'base_name_en': base_name_en})
             return out
 
-    def rows(self, ids: list[str]) -> dict[str, dict[str, Any]]:
-        cols = (
-            'e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
-            'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, '
-            'e.owner_level, e.copy_status, e.fields_json, e.quickref_json, e.conflicts_json, '
-            'e.provenance_json'
-        )
+    def _rows_by_ids(self, db: sqlite3.Connection, ids: list[str]) -> dict[str, dict[str, Any]]:
+        cols = self._row_select_cols()
+        from_sql = self._from_entries(need_fields=True, need_meta=True)
         out: dict[str, dict[str, Any]] = {}
-        ids = list(dict.fromkeys(ids))
+        unique_ids = list(dict.fromkeys(ids))
+        for start in range(0, len(unique_ids), 400):
+            batch = unique_ids[start:start + 400]
+            ph = ','.join('?' for _ in batch)
+            for r in db.execute(f'SELECT {cols} FROM {from_sql} WHERE e.id IN ({ph})', batch):
+                out[r['id']] = self._row_to_entry(r)
+        return out
+
+    def rows(self, ids: list[str]) -> dict[str, dict[str, Any]]:
+        if not ids:
+            return {}
         with self._db() as db:
             self._ensure_static_cache(db)
-            entry_table = 'entry_core' if self._has_entry_core else 'entries'
-            for start in range(0, len(ids), 400):
-                batch = ids[start:start + 400]
-                ph = ','.join('?' for _ in batch)
-                for r in db.execute(f'SELECT {cols} FROM {entry_table} e WHERE e.id IN ({ph})', batch):
-                    out[r['id']] = self._row_to_entry(r)
-        return out
+            return self._rows_by_ids(db, ids)
 
     def schema(self, types: list[str], widened: bool = False) -> dict[str, Any]:
         return otypes.schema_for([t for t in types if t in otypes.TYPES], widened)
 
     def capabilities(self) -> Any:
         from anna.presentation.collections import Capabilities
-        meta = self.meta()
+        with self._db() as db:
+            self._ensure_static_cache(db)
+            held = frozenset(t for t in otypes.TYPE_ORDER if t in self._held_types)
+            sources = frozenset(self._sources_map.keys())
+            packages = frozenset(self._packages_map.keys())
         return Capabilities(
-            conditions=frozenset({'type', 'q', 'typing', 'body', 'ruleset', 'legacy', 'copy_status', 'origin', 'source',
-                                  'package', 'conflict', 'cr_min', 'cr_max'}),
-            facets=frozenset(otypes.LABELS), types=frozenset(meta['type_order']),
-            sources=frozenset(s['id'] for s in meta['sources']), packages=frozenset(p['id'] for p in meta['packages']),
+            conditions=self.CONDITIONS,
+            facets=frozenset(otypes.LABELS), types=held,
+            sources=sources, packages=packages,
             values={'ruleset': frozenset(RULESETS), 'legacy': frozenset(LEGACIES), 'copy_status': frozenset(COPY_STATUSES),
                     'origin': frozenset(ORIGINS)},
             stackable=frozenset(otypes.STACKABLE_TYPES),
             # Identity groups gather recorded reprints only; same-name entries of other works are the library's to stack.
-            same_name_groups=False,
+            same_name_groups=self.same_name_groups,
         )
 
     def signature(self) -> tuple:
@@ -1549,11 +1765,11 @@ class Our5etoolsCatalog:
             raise LookupError('条目不存在')
         with self._db() as db:
             self._ensure_static_cache(db)
+            cols = self._row_select_cols()
+            body_col = self._body_col('body_text')
+            from_sql = self._from_entries(need_fields=True, need_meta=True, need_body=True)
             row = db.execute(
-                'SELECT id, type, raw_kind, name, name_zh, name_en, ruleset, legacy, '
-                'package_id, source_id, source_code, owner_class, owner_subclass, owner_level, '
-                'copy_status, fields_json, quickref_json, conflicts_json, provenance_json, body_text '
-                'FROM entries WHERE id = ?',
+                f'SELECT {cols}, {body_col} AS body_text FROM {from_sql} WHERE e.id = ?',
                 (entry_id,),
             ).fetchone()
             if row is None:
@@ -1577,15 +1793,17 @@ class Our5etoolsCatalog:
             im_row = db.execute('SELECT group_id FROM identity_members WHERE entry_id = ?', (entry_id,)).fetchone()
             members_compact: list[dict[str, Any]] = []
             versions_compare: dict[str, Any] | None = None
-            entry_table = 'entry_core' if self._has_entry_core else 'entries'
+            entry_table = self._entry_table
             if im_row is not None:
                 gid = im_row['group_id']
+                from_mem = f'identity_members im JOIN {entry_table} e ON e.id = im.entry_id'
+                if self._has_entry_core:
+                    if self._has_entry_fields:
+                        from_mem += ' LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid'
+                    if self._has_entry_meta:
+                        from_mem += ' LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid'
                 mem_rows = db.execute(
-                    'SELECT e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
-                    'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, e.owner_level, '
-                    'e.copy_status, e.fields_json, e.quickref_json, e.conflicts_json, e.provenance_json '
-                    f'FROM identity_members im JOIN {entry_table} e ON e.id = im.entry_id '
-                    'WHERE im.group_id = ? '
+                    f'SELECT {cols} FROM {from_mem} WHERE im.group_id = ? '
                     "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, im.is_primary DESC, e.id ASC",
                     (gid,),
                 ).fetchall()
@@ -1669,8 +1887,12 @@ class Our5etoolsCatalog:
         if not entry_id:
             raise LookupError('条目不存在')
         with self._db() as db:
+            self._ensure_static_cache(db)
+            layout_col = self._layout_col('layout_html')
+            prov_col = self._meta_col('provenance_json')
+            from_sql = self._from_entries(need_meta=True, need_layout=True)
             row = db.execute(
-                'SELECT layout_html, provenance_json FROM entries WHERE id = ?',
+                f'SELECT {layout_col} AS layout_html, {prov_col} AS provenance_json FROM {from_sql} WHERE e.id = ?',
                 (entry_id,),
             ).fetchone()
             if row is None:
@@ -1726,6 +1948,42 @@ class Our5etoolsCatalog:
 # 2. Our5etoolsTour
 # ---------------------------------------------------------------------------
 
+def build_subclass_records(
+    db: sqlite3.Connection,
+    sources_by_id: dict[str, dict[str, Any]],
+    entry_table: str = 'entries',
+) -> list[dict[str, Any]]:
+    """Build compact subclass records for the library tour without scanning full entry payloads."""
+    parts_counts = dict(db.execute(
+        f"SELECT r.target_id, count(*) FROM relations r JOIN {entry_table} f ON f.id = r.source_id "
+        "WHERE r.type = 'part_of' AND f.type = 'class_feature' GROUP BY r.target_id"
+    ))
+    stacks = dict(db.execute('SELECT entry_id, group_id FROM identity_members'))
+    copies = {r[0] for r in db.execute("SELECT DISTINCT source_id FROM relations WHERE type = 'copied_from'")}
+    records: list[dict[str, Any]] = []
+    for r in db.execute(
+        'SELECT id, name, name_zh, name_en, owner_class, ruleset, source_id, source_code '
+        f"FROM {entry_table} WHERE type = 'subclass' ORDER BY sort_name, id"
+    ):
+        sid = r['source_id'] or ''
+        srec = sources_by_id.get(sid)
+        records.append({
+            'id': r['id'],
+            'title': r['name_zh'] or r['name'],
+            'name_en': r['name_en'] or '',
+            'owner_class': (r['owner_class'] or '').strip() or None,
+            'ruleset': r['ruleset'] or '待核',
+            'source_ids': [sid] if sid else [],
+            'source_name': (srec['name'] if srec else '') or r['source_code'] or '',
+            'source_short': (srec['short_name'] if srec else '') or r['source_code'] or '',
+            'origin': (srec['origin'] if srec else '') or '社区',
+            'parts_count': int(parts_counts.get(r['id'], 0)),
+            'stack': stacks.get(r['id']),
+            'is_copy': r['id'] in copies,
+        })
+    return records
+
+
 class Our5etoolsTour:
     """The levels of the tour in one our5etools snapshot: its contents, books, packages and entries.
 
@@ -1744,6 +2002,8 @@ class Our5etoolsTour:
         self.data_dir = Path(data_dir).resolve()
         self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
         self.db_path = self.data_dir / 'catalog.sqlite'
+        self.nav_path = self.data_dir / 'nav-nodes.json.gz'
+        self.subclasses_path = self.data_dir / 'tour-subclasses.json.gz'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
         self.curation_path = Path(curation_path).resolve() if curation_path else tour_curation.CURATION
         self.lazy_media = bool(lazy_media)
@@ -1760,7 +2020,6 @@ class Our5etoolsTour:
         self._children: dict[str, list[str]] = defaultdict(list)
         self._label_path: dict[str, str] = {}
         self._by_label_path: dict[str, list[str]] = defaultdict(list)
-        self._entry_locations: dict[str, dict[str, Any]] = {}
         self._books_by_slug: dict[str, dict[str, Any]] = {}
         self._books_by_node: dict[str, str] = {}
         self._books_order: list[str] = []
@@ -1769,7 +2028,7 @@ class Our5etoolsTour:
         self._packs_order: list[str] = []
         self._sources_by_id: dict[str, dict[str, Any]] = {}
         self._choices_by_node: dict[str, list[str]] = defaultdict(list)
-        self._subclass_records: list[dict[str, Any]] = []
+        self._subclass_records: list[dict[str, Any]] | None = None
 
     @property
     def snapshot(self) -> str:
@@ -1777,7 +2036,8 @@ class Our5etoolsTour:
         return self._snapshot
 
     def _ensure_loaded(self) -> None:
-        sig = (_file_sig(self.db_path), _file_sig(self.reader_path), _file_sig(self.curation_path))
+        nav_sig = _file_sig(self.nav_path) or _file_sig(self.reader_path)
+        sig = (_file_sig(self.db_path), nav_sig, _file_sig(self.curation_path))
         with self._lock:
             if sig == self._loaded_sig and self._loaded_sig is not None:
                 return
@@ -1789,10 +2049,14 @@ class Our5etoolsTour:
         curation = tour_curation.load(self.curation_path)
         self._topics = curation['topics']
 
-        # 2. Load reader navigation tree
-        reader = json.loads(self.reader_path.read_text('utf-8')) if self.reader_path.is_file() else {}
+        # 2. Load reader navigation tree from compact nav-nodes.json.gz when present
+        if self.nav_path.is_file():
+            reader = json.loads(gzip.decompress(self.nav_path.read_bytes()).decode('utf-8'))
+        elif self.reader_path.is_file():
+            reader = json.loads(self.reader_path.read_text('utf-8'))
+        else:
+            reader = {}
         self._snapshot = str(reader.get('snapshot') or '')
-        self._entry_locations = reader.get('entry_locations') if isinstance(reader.get('entry_locations'), dict) else {}
         raw_nodes = reader.get('nodes') or []
         self._nodes = {n['id']: n for n in raw_nodes}
         self._children = defaultdict(list)
@@ -1820,8 +2084,10 @@ class Our5etoolsTour:
         self._books_by_slug = {}
         self._books_by_node = {}
         self._books_order = []
+        self._subclass_records = None
 
-        with closing(_connect_ro(self.db_path)) as db:
+        with self.catalog._db() as db:
+            self.catalog._ensure_static_cache(db)
             for r in db.execute('SELECT id, package_id, origin, ruleset, short_name, name, data_json FROM sources'):
                 self._sources_by_id[r['id']] = {
                     'id': r['id'],
@@ -1932,41 +2198,22 @@ class Our5etoolsTour:
                 if pslug:
                     self._packs_by_slug[pslug]['book_slugs'].append(slug)
 
-            # Subclass records for the unified library tour's subclass index.
-            parts_counts = dict(db.execute(
-                "SELECT r.target_id, count(*) FROM relations r JOIN entries f ON f.id = r.source_id "
-                "WHERE r.type = 'part_of' AND f.type = 'class_feature' GROUP BY r.target_id"
-            ))
-            stacks = dict(db.execute('SELECT entry_id, group_id FROM identity_members'))
-            copies = {r[0] for r in db.execute("SELECT DISTINCT source_id FROM relations WHERE type = 'copied_from'")}
-            subclass_records: list[dict[str, Any]] = []
-            for r in db.execute(
-                "SELECT id, name, name_zh, name_en, owner_class, ruleset, source_id, source_code "
-                "FROM entries WHERE type = 'subclass' ORDER BY sort_name, id"
-            ):
-                sid = r['source_id'] or ''
-                srec = self._sources_by_id.get(sid)
-                subclass_records.append({
-                    'id': r['id'],
-                    'title': r['name_zh'] or r['name'],
-                    'name_en': r['name_en'] or '',
-                    'owner_class': (r['owner_class'] or '').strip() or None,
-                    'ruleset': r['ruleset'] or '待核',
-                    'source_ids': [sid] if sid else [],
-                    'source_name': (srec['name'] if srec else '') or r['source_code'] or '',
-                    'source_short': (srec['short_name'] if srec else '') or r['source_code'] or '',
-                    'origin': (srec['origin'] if srec else '') or '社区',
-                    'parts_count': int(parts_counts.get(r['id'], 0)),
-                    'stack': stacks.get(r['id']),
-                    'is_copy': r['id'] in copies,
-                })
-            self._subclass_records = subclass_records
-
     # --- What the library tour asks of a collection ---
 
     def subclass_records(self) -> list[dict[str, Any]]:
         self._ensure_loaded()
-        return self._subclass_records
+        with self._lock:
+            if self._subclass_records is not None:
+                return self._subclass_records
+        if self.subclasses_path.is_file():
+            records = json.loads(gzip.decompress(self.subclasses_path.read_bytes()).decode('utf-8'))
+        else:
+            with self.catalog._db() as db:
+                self.catalog._ensure_static_cache(db)
+                records = build_subclass_records(db, self._sources_by_id, self.catalog._entry_table)
+        with self._lock:
+            self._subclass_records = records
+            return self._subclass_records
 
     def resolve(self, label_path: str) -> tuple[str, str | None]:
         """A curated contents path names exactly one node, or reports why it does not."""
@@ -1980,9 +2227,7 @@ class Our5etoolsTour:
         return sum(divider(self._nodes[c]) is None for c in self._children.get(nid, [])) or None
 
     def _query_count(self, query: dict[str, list[str]]) -> int:
-        with closing(_connect_ro(self.db_path)) as db:
-            where, vals = self.catalog._where(query)
-            return int(db.execute('SELECT count(*) FROM entries e' + where, vals).fetchone()[0])
+        return self.catalog.count(query)
 
     @staticmethod
     def _scope_query(source: str | None, package: str | None) -> dict[str, list[str]]:
@@ -1990,9 +2235,11 @@ class Our5etoolsTour:
         return {'source': [source]} if source else {'package': [package]} if package else {}
 
     def _type_items(self, scope: dict[str, list[str]]) -> list[dict[str, Any]]:
-        with closing(_connect_ro(self.db_path)) as db:
+        with self.catalog._db() as db:
+            self.catalog._ensure_static_cache(db)
             where, vals = self.catalog._where(scope)
-            counts = dict(db.execute('SELECT e.type, count(*) FROM entries e' + where + ' GROUP BY e.type', vals))
+            from_sql = self.catalog._from_entries(need_body=self.catalog._where_needs_body(where))
+            counts = dict(db.execute(f'SELECT e.type, count(*) FROM {from_sql}' + where + ' GROUP BY e.type', vals))
         return [{'id': None, 'kind': 'query', 'title': otypes.TYPES[t], 'type': t, 'count': int(counts[t]),
                  'query': {**scope, 'type': [t]}} for t in otypes.TYPE_ORDER if int(counts.get(t, 0)) > 0]
 
@@ -2194,9 +2441,12 @@ class Our5etoolsTour:
         return ' '.join(lines)
 
     def _subclass_parts(self, db: sqlite3.Connection, entry_id: str) -> list[sqlite3.Row]:
+        entry_table = self.catalog._entry_table
+        body_col = self.catalog._body_col('body_text')
+        body_join = 'LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid ' if self.catalog._has_entry_core else ''
         return db.execute(
-            'SELECT e.id, e.name, e.name_zh, e.ruleset, e.owner_level, e.body_text '
-            'FROM relations r JOIN entries e ON e.id = r.source_id '
+            f'SELECT e.id, e.name, e.name_zh, e.ruleset, e.owner_level, {body_col} AS body_text '
+            f'FROM relations r JOIN {entry_table} e ON e.id = r.source_id {body_join}'
             "WHERE r.target_id = ? AND r.type = 'part_of' AND e.type = 'class_feature' "
             'ORDER BY COALESCE(e.owner_level, 999), e.rowid',
             (entry_id,),
@@ -2223,7 +2473,8 @@ class Our5etoolsTour:
         if d['type'] == 'subclass':
             if d.get('owner_class'):
                 trail.append(d['owner_class'])
-            with closing(_connect_ro(self.db_path)) as db:
+            with self.catalog._db() as db:
+                self.catalog._ensure_static_cache(db)
                 feats = self._subclass_parts(db, entry_id)
             root = self._subclass_root_feature(feats, d['name'], d.get('name_zh') or '')
             if root is not None:
@@ -2262,17 +2513,21 @@ class Our5etoolsTour:
             if class_items:
                 groups.append(self._group('class', class_items))
         elif d['type'] == 'class':
-            with closing(_connect_ro(self.db_path)) as db:
+            with self.catalog._db() as db:
+                self.catalog._ensure_static_cache(db)
+                entry_table = self.catalog._entry_table
+                body_col = self.catalog._body_col('body_text')
+                body_join = 'LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid ' if self.catalog._has_entry_core else ''
                 cfeats = db.execute(
-                    'SELECT e.id, e.name, e.ruleset, e.owner_level, e.body_text '
-                    'FROM relations r JOIN entries e ON e.id = r.source_id '
+                    f'SELECT e.id, e.name, e.ruleset, e.owner_level, {body_col} AS body_text '
+                    f'FROM relations r JOIN {entry_table} e ON e.id = r.source_id {body_join}'
                     "WHERE r.target_id = ? AND r.type = 'part_of' AND e.type = 'class_feature' AND e.owner_subclass = '' "
                     'ORDER BY COALESCE(e.owner_level, 999), e.rowid',
                     (entry_id,),
                 ).fetchall()
                 csubs = db.execute(
                     'SELECT DISTINCT e.id, e.name, e.name_zh, e.ruleset, e.source_id, e.source_code, e.sort_name '
-                    'FROM relations r JOIN entries e ON e.id = r.source_id '
+                    f'FROM relations r JOIN {entry_table} e ON e.id = r.source_id '
                     "WHERE r.target_id = ? AND r.type = 'belongs_to_class' AND e.type = 'subclass'",
                     (entry_id,),
                 ).fetchall()
@@ -2396,18 +2651,23 @@ class Our5etoolsTour:
         self._ensure_loaded()
         if not segment or not ENTRY_SEGMENT_RE.fullmatch(segment):
             return {'status': 'empty'}
-        with closing(_connect_ro(self.db_path)) as db:
-            row = db.execute('SELECT type, name, name_zh FROM entries WHERE id = ?', (segment,)).fetchone()
+        root = None
+        with self.catalog._db() as db:
+            self.catalog._ensure_static_cache(db)
+            row = db.execute(
+                f'SELECT type, name, name_zh FROM {self.catalog._entry_table} WHERE id = ?',
+                (segment,),
+            ).fetchone()
             if row is not None and row['type'] == 'subclass':
                 feats = self._subclass_parts(db, segment)
                 root = self._subclass_root_feature(feats, row['name'], row['name_zh'] or '')
-                if root is not None:
-                    root_layout = self.catalog.layout(root['id'])
-                    if root_layout.get('status') == 'ok' and root_layout.get('html'):
-                        own_layout = self.catalog.layout(segment)
-                        fluff = FLUFF_SECTION_RE.search(own_layout.get('html') or '') if own_layout.get('status') == 'ok' else None
-                        html = root_layout['html'] + (fluff.group(0) if fluff else '')
-                        return {**root_layout, 'html': html}
+        if root is not None:
+            root_layout = self.catalog.layout(root['id'])
+            if root_layout.get('status') == 'ok' and root_layout.get('html'):
+                own_layout = self.catalog.layout(segment)
+                fluff = FLUFF_SECTION_RE.search(own_layout.get('html') or '') if own_layout.get('status') == 'ok' else None
+                html = root_layout['html'] + (fluff.group(0) if fluff else '')
+                return {**root_layout, 'html': html}
         return self.catalog.layout(segment)
 
 
@@ -2435,6 +2695,8 @@ class Our5etoolsReader:
         raw_media = media_base or f'/{self.collection_key}-media/'
         self.media_base = raw_media if raw_media.endswith('/') else (raw_media + '/')
         self.db_path = self.data_dir / 'catalog.sqlite'
+        self.nav_path = self.data_dir / 'nav-nodes.json.gz'
+        self.cached_media_path = self.data_dir / 'cached-media.json'
         self.reader_dir = self.data_dir / 'reader'
         self.reader_path = self.reader_dir / 'anna-reader.json'
         self.media_dir = self.data_dir / 'media'
@@ -2442,13 +2704,31 @@ class Our5etoolsReader:
         self.lazy_media = bool(lazy_media)
         self._unused_source_dir = Path(source_dir).resolve() if source_dir else None
         self._lock = threading.Lock()
+        self._nav_sig: tuple[int, int, int] | None = None
+        self._nav_data: dict[str, Any] = {}
         self._reader_sig: tuple[int, int, int] | None = None
         self._reader_data: dict[str, Any] = {}
+        self._cached_media_sig: tuple[int, int, int] | None = None
+        self._cached_media_list: list[str] = []
         self._remotes_sig: tuple[int, int, int] | None = None
         self._remotes_entries: dict[str, list[str]] = {}
         self._fetch_locks: dict[str, threading.Lock] = {}
         self._fetch_guard = threading.Lock()
         self._negative_cache: dict[str, float] = {}
+
+    def _load_nav(self) -> dict[str, Any]:
+        sig = _file_sig(self.nav_path)
+        if sig is None:
+            return self._load_reader()
+        with self._lock:
+            if sig == self._nav_sig:
+                return self._nav_data
+            data = json.loads(gzip.decompress(self.nav_path.read_bytes()).decode('utf-8'))
+            if data.get('schema') != READER_SCHEMA:
+                raise ReaderError('reader_schema_mismatch', 500)
+            self._nav_data = data
+            self._nav_sig = sig
+            return data
 
     def _load_reader(self) -> dict[str, Any]:
         sig = _file_sig(self.reader_path)
@@ -2487,6 +2767,17 @@ class Our5etoolsReader:
             return self._remotes_entries
 
     def _list_cached_lazy_media(self) -> list[str]:
+        if not self.lazy_media and (sig := _file_sig(self.cached_media_path)) is not None:
+            with self._lock:
+                if sig == self._cached_media_sig:
+                    return list(self._cached_media_list)
+            raw = _json_loads(self.cached_media_path.read_text('utf-8'), None)
+            if isinstance(raw, list):
+                items = [str(x) for x in raw]
+                with self._lock:
+                    self._cached_media_list = items
+                    self._cached_media_sig = sig
+                return list(items)
         media_root = self.media_dir.resolve()
         out: list[str] = []
         for subroot in ('img', 'ext'):
@@ -2502,10 +2793,10 @@ class Our5etoolsReader:
 
     @property
     def snapshot(self) -> str:
-        return str(self._load_reader().get('snapshot') or '')
+        return str(self._load_nav().get('snapshot') or '')
 
     def navigation(self) -> dict[str, Any]:
-        data = self._load_reader()
+        data = self._load_nav()
         return {
             'schema': data['schema'],
             'snapshot': data['snapshot'],
@@ -2538,7 +2829,9 @@ class Our5etoolsReader:
                 exists = False
                 if self.db_path.is_file():
                     with closing(_connect_ro(self.db_path)) as db:
-                        exists = db.execute('SELECT 1 FROM entries WHERE id = ?', (entry,)).fetchone() is not None
+                        has_core = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entry_core'").fetchone() is not None
+                        entry_table = 'entry_core' if has_core else 'entries'
+                        exists = db.execute(f'SELECT 1 FROM {entry_table} WHERE id = ?', (entry,)).fetchone() is not None
                 if exists:
                     raise ReaderError('entry_unlocatable', 422)
                 raise ReaderError('entry_missing', 404)

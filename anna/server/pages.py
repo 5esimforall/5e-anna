@@ -1,6 +1,7 @@
 """Run the site's read-only requests in the GitHub Pages worker."""
 from contextlib import closing
 from functools import cached_property, lru_cache
+import gzip
 import json
 from pathlib import Path, PurePosixPath
 import traceback
@@ -10,7 +11,7 @@ from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
 from anna.presentation.our5etools import load_our5etools_collection
 from anna.presentation.reader import BookReader
-from anna.presentation.tour import Tour
+from anna.presentation.tour import PublishedTour, Tour, expand_tour_nodes, load as load_curation
 from anna.server.app import AnnaHandler, READER_ROUTES
 from anna.server.pages_publications import PATH as PUBLICATIONS, load_publications
 from anna.server.query import CapturedResponse
@@ -35,15 +36,41 @@ def add_cached_media_markers(collection):
 
 
 class PublishedReader(BookReader):
-    def __init__(self, book, db, snapshot):
+    def __init__(self, book, db, snapshot, meta=None):
         self._book = book
         self._snapshot = snapshot
+        self._meta = meta or {}
         self.db = db
         self.entries = None
 
     @property
     def snapshot(self):
         return self._snapshot
+
+    @cached_property
+    def tour_index(self):
+        index_file = self._book / 'tour-index.json.gz'
+        if not index_file.is_file():
+            return None
+        return json.loads(gzip.decompress(index_file.read_bytes()).decode('utf-8'))
+
+    @cached_property
+    def nav_nodes(self):
+        if self.tour_index is not None:
+            return expand_tour_nodes(self.tour_index['nodes'])
+        return self.reader['nodes']
+
+    def navigation(self):
+        if self.tour_index is not None and 'reader_schema' in self._meta and 'default_page' in self._meta:
+            return {
+                'schema': self._meta['reader_schema'],
+                'snapshot': self._snapshot,
+                'nodes': self.nav_nodes,
+                'default_page': self._meta['default_page'],
+                'source_release': self._meta.get('source_release'),
+                'page_base': '/book/',
+            }
+        return super().navigation()
 
     @cached_property
     def reader(self):
@@ -68,10 +95,12 @@ class PublishedSite:
         book = root / 'data/5echm-anna'
         meta_file = book / 'anna-meta.json'
         if meta_file.is_file():
-            snapshot = json.loads(meta_file.read_text(encoding='utf-8'))['snapshot']
+            meta = json.loads(meta_file.read_text(encoding='utf-8'))
+            snapshot = meta['snapshot']
         else:
+            meta = {}
             snapshot = json.loads((book / 'anna-reader.json').read_text(encoding='utf-8'))['snapshot']
-        self.reader = PublishedReader(book, self.db, snapshot)
+        self.reader = PublishedReader(book, self.db, snapshot, meta=meta)
         our5etools = root / 'data/our5etools'
         additional = ()
         relationships = None
@@ -90,10 +119,13 @@ class PublishedSite:
 
     @cached_property
     def tour(self):
-        from anna.presentation.tour import load
-
+        if self.reader.tour_index is not None:
+            return PublishedTour(
+                self.db, self.reader.tour_index, load_curation(self.curation),
+                self.source, nodes=self.reader.nav_nodes,
+            )
         locatable = {entry for entry, target in self.reader.manifest['entries'].items() if target['locatable']}
-        return Tour(self.db, self.reader.reader['nodes'], locatable, load(self.curation), self.source)
+        return Tour(self.db, self.reader.reader['nodes'], locatable, load_curation(self.curation), self.source)
 
     def view(self, segment):
         return self.tour.view(segment)

@@ -19,6 +19,7 @@ import threading
 import anna.catalog.views as browse
 import anna.paths as paths
 from anna.presentation import catalog
+from anna.presentation.collections import _cached_book_connection
 from anna.presentation.layout import span_layout, text_start
 
 # Mirrors anna.source.registry.QUICK_REFERENCE so runtime Tour stays free of build-time HTML parsers.
@@ -223,19 +224,6 @@ class Tour:
         self.db_path = Path(db_path)
         self.source_root = Path(source_root)
         self.locatable = locatable
-        self.nodes = {n['id']: n for n in nodes}
-        self.children = defaultdict(list)
-        for n in nodes:
-            self.children[n['parent_id']].append(n['id'])
-        self.label_path = {}
-        self.by_label_path = defaultdict(list)
-        self.page_nodes = defaultdict(list)
-        for n in nodes:
-            parent = self.label_path.get(n['parent_id'])
-            self.label_path[n['id']] = f"{parent} / {n['label']}" if parent else n['label']
-            self.by_label_path[self.label_path[n['id']]].append(n['id'])
-            if n['path'] and divider(n) is None:
-                self.page_nodes[n['path']].append(n['id'])
         self.entries, self.on_page = {}, defaultdict(list)
         self.parts, self.roots = defaultdict(list), {}
         with closing(catalog.connect(self.db_path)) as db:
@@ -272,6 +260,7 @@ class Tour:
                     for eid in json.loads(raw_data or '{}').get('entry_ids') or ():
                         self.entry_stacks[eid] = gid
             self.page_sources = {path: json.loads(ids or '[]') for path, ids in db.execute('SELECT path, source_ids FROM pages')}
+        self._init_navigation(nodes, curation)
         for path, entries in self.on_page.items():
             entries.sort(key=lambda e: (e.start, -e.end, e.id))
             self.roots[path] = self.nest(entries)
@@ -281,7 +270,22 @@ class Tour:
         self._generic_subclass_titles = self._find_generic_subclass_titles()
         self._subclass_records = self._build_subclass_records()
         # Page texts and query counts are read on demand and shared by every request on this snapshot.
-        self.texts, self.counts, self.cache_lock = {}, {}, threading.Lock()
+        self.texts, self.counts, self.cache_lock = {}, {}, threading.RLock()
+
+    def _init_navigation(self, nodes, curation):
+        self.nodes = {n['id']: n for n in nodes}
+        self.children = defaultdict(list)
+        for n in nodes:
+            self.children[n['parent_id']].append(n['id'])
+        self.label_path = {}
+        self.by_label_path = defaultdict(list)
+        self.page_nodes = defaultdict(list)
+        for n in nodes:
+            parent = self.label_path.get(n['parent_id'])
+            self.label_path[n['id']] = f"{parent} / {n['label']}" if parent else n['label']
+            self.by_label_path[self.label_path[n['id']]].append(n['id'])
+            if n['path'] and divider(n) is None:
+                self.page_nodes[n['path']].append(n['id'])
         self.choices = defaultdict(list)
         # Curated paths that name no single contents node in this book; topics show their status, choices drop out.
         self.unresolved = {}
@@ -294,6 +298,36 @@ class Tour:
                 self.choices[node].extend(keys)
             else:
                 self.unresolved[('choices', where)] = status
+
+    def _db_read(self, fn, *args, **kwargs):
+        try:
+            stat = self.db_path.stat()
+            sig = (str(self.db_path), stat.st_ino, stat.st_size, stat.st_mtime_ns)
+        except OSError:
+            with closing(catalog.connect(self.db_path)) as db:
+                return fn(db, *args, **kwargs)
+        return fn(_cached_book_connection(self.db_path, sig), *args, **kwargs)
+
+    def _is_locatable(self, eid):
+        return eid in self.locatable
+
+    def _entry_source_ids(self, eid):
+        return self.entry_sources.get(eid, [])
+
+    def _parts_len(self, eid):
+        return len(self.parts.get(eid, ()))
+
+    def _page_source_ids(self, path):
+        return self.page_sources.get(path, [])
+
+    def _page_lead_box(self, path):
+        return self.lead(self.page_lead(path))
+
+    def _page_hint(self, path):
+        return first_sentence(self.page_lead(path)) or None
+
+    def _class_spell_count(self, e, query):
+        return self.query_count(query)
 
     def owning_node(self, path):
         """Where the page sits in its own book: the quick-reference index lists pages but never owns them."""
@@ -427,8 +461,7 @@ class Tour:
         with self.cache_lock:
             if path in self.texts:
                 return self.texts[path]
-        with closing(catalog.connect(self.db_path)) as db:
-            row = db.execute('SELECT text FROM pages WHERE path=?', (path,)).fetchone()
+        row = self._db_read(lambda db: db.execute('SELECT text FROM pages WHERE path=?', (path,)).fetchone())
         with self.cache_lock:
             if len(self.texts) > 512:
                 self.texts.clear()
@@ -494,8 +527,7 @@ class Tour:
         if span is None:
             return {'status': 'empty'}
         path, start, stop, owner = span
-        with closing(catalog.connect(self.db_path)) as db:
-            return span_layout(db, path, start, stop, self.source_root, owner)
+        return self._db_read(span_layout, path, start, stop, self.source_root, owner)
 
     def lead(self, text):
         if not text:
@@ -524,7 +556,7 @@ class Tour:
         node = self.nodes[node_id]
         item = {'id': 'n' + node_id, 'kind': 'contents', 'title': node['label'], 'status': node['status']}
         if hint and node['status'] == 'present':
-            item['hint'] = first_sentence(self.page_lead(node['path'])) or None
+            item['hint'] = self._page_hint(node['path'])
         item['count'] = self.below(node_id)
         return item
 
@@ -535,7 +567,7 @@ class Tour:
         if hint and not e.table:
             item['hint'] = first_sentence(self.entry_lead(e)) or None
         item.update({'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type), 'ruleset': e.ruleset, 'table': e.table,
-                     'count': len(self.parts.get(eid, [])) or None})
+                     'count': self._parts_len(eid) or None})
         return item
 
     def query_count(self, params):
@@ -544,8 +576,7 @@ class Tour:
         with self.cache_lock:
             if key in self.counts:
                 return self.counts[key]
-        with closing(catalog.connect(self.db_path)) as db:
-            count = self.count(db, params)
+        count = self._db_read(self.count, params)
         with self.cache_lock:
             self.counts[key] = count
         return count
@@ -621,8 +652,8 @@ class Tour:
         view = {'id': 'n' + node_id, 'kind': 'contents', 'trail': ancestors[::-1], 'title': name or node['label'],
                 'sources': [], 'status': node['status'], 'lead': None, 'read': None, 'anna': None, 'groups': []}
         if node['status'] == 'present':
-            view['sources'] = self.sources_of(self.page_sources.get(node['path'], []))
-            view['lead'] = self.lead(self.page_lead(node['path']))
+            view['sources'] = self.sources_of(self._page_source_ids(node['path']))
+            view['lead'] = self._page_lead_box(node['path'])
         if name is not None:
             # A divider heads the books after it; its own page only explains the group.
             hinted = len(self.shelved(node_id)) <= HINTED_GROUP
@@ -659,8 +690,8 @@ class Tour:
         node = self.owning_node(e.path)
         view = {'id': e.id, 'kind': 'entry', 'trail': self.label_path[node].split(' / ') if node else [], 'title': self.entry_title(e),
                 'ruleset': e.ruleset, 'type': e.type, 'type_label': catalog.TYPES.get(e.type, e.type),
-                'sources': self.sources_of(self.entry_sources.get(e.id, [])), 'status': 'ok', 'lead': self.lead(self.entry_lead(e)),
-                'read': {'entry': e.id} if e.id in self.locatable else None,
+                'sources': self.sources_of(self._entry_source_ids(e.id)), 'status': 'ok', 'lead': self.lead(self.entry_lead(e)),
+                'read': {'entry': e.id} if self._is_locatable(e.id) else None,
                 'anna': {'entry': e.id, 'type': e.type} if e.type != 'section' else None, 'groups': []}
         parts = self.parts.get(e.id, [])
         if parts:
@@ -673,7 +704,7 @@ class Tour:
             view['groups'].append(self.group('feats', [self.entry_item(f) for f in self.feats[e.id]]))
         if e.type == 'class' and e.name_zh:
             query = {'type': ['spell'], 'f_spell_classes': [e.name_zh], **({'ruleset': [e.ruleset]} if e.ruleset in RULESETS else {})}
-            count = self.query_count(query)
+            count = self._class_spell_count(e, query)
             if count:
                 view['groups'].append(self.group('spells', [{'id': None, 'kind': 'query', 'query': query, 'count': count,
                                                              'title': None, 'role': 'spells'}]))
@@ -682,8 +713,262 @@ class Tour:
     # Collections answered by Anna's own query, so counts and order read the same as in the table
 
     def count(self, db, params):
-        where, values = catalog.filters(db, params)
-        return db.execute('SELECT count(*) FROM entries e' + where, values).fetchone()[0]
+        return catalog.count(db, params)
+
+
+def expand_tour_nodes(raw_nodes):
+    """Expand compact Tour index node tuples into dictionary nodes."""
+    if not raw_nodes or isinstance(raw_nodes[0], dict):
+        return list(raw_nodes)
+    return [
+        {'id': n[0], 'parent_id': n[1], 'label': n[2], 'path': n[3], 'fragment': n[4], 'status': n[5]}
+        for n in raw_nodes
+    ]
+
+
+class PublishedTour(Tour):
+    """Lazy SQLite-backed Tour over the Pages snapshot projection.
+
+    Loads compact TOC/relation indexes in memory without reading all 34k entries or 40 MiB pages,
+    and queries entries and page metadata per visited page on demand."""
+
+    def __init__(self, db_path, tour_index, curation, source_root, *, nodes=None):
+        self.db_path = Path(db_path)
+        self.source_root = Path(source_root)
+        self.cache_lock = threading.RLock()
+        self._unlocatable = set(tour_index.get('unlocatable') or ())
+        self.source_names = dict(tour_index.get('sources') or {})
+        self._below = dict(tour_index.get('below') or {})
+        self.parent_class = dict(tour_index.get('parent_class') or {})
+        self.subclasses = defaultdict(list, tour_index.get('subclasses') or {})
+        self.feats = defaultdict(list, tour_index.get('feats') or {})
+        self._generic_subclass_titles = dict(tour_index.get('generic_subclass_titles') or {})
+        self._subclass_records = list(tour_index.get('subclass_records') or ())
+        self._class_spell_counts = dict(tour_index.get('class_spell_counts') or {})
+        self.entries, self.on_page = {}, defaultdict(list)
+        self.parts, self.roots = defaultdict(list), {}
+        self._loaded_pages = set()
+        self._parts_count = {}
+        self._page_info = {}
+        self.entry_sources = {}
+        self.texts, self.counts = {}, {}
+        expanded = nodes if nodes is not None else expand_tour_nodes(tour_index['nodes'])
+        self._init_navigation(expanded, curation)
+
+    @staticmethod
+    def _entry_from_row(row):
+        return Entry(
+            row['id'], row['name'], row['name_zh'], row['name_en'],
+            row['type'], row['ruleset'], row['page_path'],
+            row['start'], row['end'], row['title_end'],
+            row['parent_id'], bool(row['is_primary']), bool(row['has_table']),
+        )
+
+    def _is_locatable(self, eid):
+        return eid not in self._unlocatable
+
+    def _parts_len(self, eid):
+        if eid in self._parts_count:
+            return self._parts_count[eid]
+        return len(self.parts.get(eid, ()))
+
+    def _entry_source_ids(self, eid):
+        with self.cache_lock:
+            if eid in self.entry_sources:
+                return self.entry_sources[eid]
+            sids = [
+                r[0] for r in self._db_read(
+                    lambda db: db.execute('SELECT source_id FROM entry_sources WHERE entry_id=? ORDER BY source_id', (eid,))
+                )
+            ]
+            self.entry_sources[eid] = sids
+            return sids
+
+    def _ensure_page_info(self, paths_iter):
+        with self.cache_lock:
+            missing = [p for p in dict.fromkeys(paths_iter) if p and p not in self._page_info]
+            if not missing:
+                return
+            for start in range(0, len(missing), 400):
+                batch = missing[start:start + 400]
+                ph = ','.join('?' for _ in batch)
+                rows = self._db_read(
+                    lambda db, ph=ph, batch=batch: db.execute(
+                        'SELECT path, source_ids, hint, lead_text, lead_truncated, span_start, span_stop, span_owner '
+                        f'FROM pages_tour_page WHERE path IN ({ph})',
+                        batch,
+                    ).fetchall()
+                )
+                for row in rows:
+                    path = row['path']
+                    self._page_info[path] = {
+                        'sources': json.loads(row['source_ids'] or '[]'),
+                        'hint': row['hint'] or None,
+                        'lead': ({'text': row['lead_text'], 'truncated': bool(row['lead_truncated'])}
+                                 if row['lead_text'] else None),
+                        'span': (path, row['span_start'], row['span_stop'], row['span_owner'] or None),
+                    }
+
+    def _ensure_page(self, path):
+        with self.cache_lock:
+            if not path or path in self._loaded_pages:
+                return
+            rows = self._db_read(
+                lambda db: db.execute(
+                    'SELECT page_path, start, end, id, name, name_zh, name_en, type, ruleset, '
+                    'title_end, parent_id, is_primary, has_table, parts_count '
+                    'FROM pages_tour_entries WHERE page_path=?',
+                    (path,),
+                ).fetchall()
+            )
+            page_entries = []
+            for row in rows:
+                e = self._entry_from_row(row)
+                self.entries[e.id] = e
+                self._parts_count[e.id] = int(row['parts_count'])
+                self.parts.pop(e.id, None)
+                page_entries.append(e)
+            page_entries.sort(key=lambda item: (item.start, -item.end, item.id))
+            self.on_page[path] = page_entries
+            self.roots[path] = self.nest(page_entries)
+            self._loaded_pages.add(path)
+
+    def _ensure_entry(self, eid):
+        with self.cache_lock:
+            e = self.entries.get(eid)
+            if e is not None:
+                if e.path not in self._loaded_pages:
+                    self._ensure_page(e.path)
+                return self.entries.get(eid)
+            row = self._db_read(
+                lambda db: db.execute('SELECT page_path FROM pages_tour_entries WHERE id=?', (eid,)).fetchone()
+            )
+            if row is None:
+                return None
+            self._ensure_page(row[0])
+            return self.entries.get(eid)
+
+    def _ensure_entries_shallow(self, eids):
+        with self.cache_lock:
+            missing = [eid for eid in dict.fromkeys(eids) if eid and eid not in self.entries]
+            if not missing:
+                return
+            for start in range(0, len(missing), 400):
+                batch = missing[start:start + 400]
+                ph = ','.join('?' for _ in batch)
+                rows = self._db_read(
+                    lambda db, ph=ph, batch=batch: db.execute(
+                        'SELECT page_path, start, end, id, name, name_zh, name_en, type, ruleset, '
+                        'title_end, parent_id, is_primary, has_table, parts_count '
+                        f'FROM pages_tour_entries WHERE id IN ({ph})',
+                        batch,
+                    ).fetchall()
+                )
+                for row in rows:
+                    e = self._entry_from_row(row)
+                    self.entries.setdefault(e.id, e)
+                    self._parts_count.setdefault(e.id, int(row['parts_count']))
+
+    def _page_source_ids(self, path):
+        self._ensure_page_info([path])
+        info = self._page_info.get(path)
+        return info['sources'] if info is not None else []
+
+    def _page_lead_box(self, path):
+        self._ensure_page_info([path])
+        info = self._page_info.get(path)
+        return info['lead'] if info is not None else None
+
+    def _page_hint(self, path):
+        self._ensure_page_info([path])
+        info = self._page_info.get(path)
+        return info['hint'] if info is not None else None
+
+    def _class_spell_count(self, e, query):
+        rs = e.ruleset if e.ruleset in RULESETS else ''
+        key = f'{e.name_zh}\0{rs}'
+        if key in self._class_spell_counts:
+            return self._class_spell_counts[key]
+        return self.query_count(query)
+
+    def below(self, node_id):
+        return self._below.get(node_id)
+
+    def page_entry(self, path):
+        self._ensure_page(path)
+        return super().page_entry(path)
+
+    def outline_ids(self, node_id):
+        node = self.nodes[node_id]
+        if node['status'] != 'present' or divider(node) is not None:
+            return []
+        self._ensure_page(node['path'])
+        return super().outline_ids(node_id)
+
+    def page_span(self, path):
+        self._ensure_page_info([path])
+        info = self._page_info.get(path)
+        if info is not None:
+            return info['span']
+        self._ensure_page(path)
+        return super().page_span(path)
+
+    def own_span(self, segment):
+        if not segment:
+            return None
+        if CONTENTS_SEGMENT.fullmatch(segment):
+            node = self.nodes.get(segment[1:])
+            if node is None:
+                raise TourError('node_missing', 404)
+            return self.page_span(node['path']) if node['status'] == 'present' else None
+        if ENTRY_SEGMENT.fullmatch(segment):
+            e = self._ensure_entry(segment)
+            if e is None:
+                raise TourError('node_missing', 404)
+            return self.entry_span(e)
+        raise TourError('invalid_node', 400)
+
+    def level(self, segment):
+        if CONTENTS_SEGMENT.fullmatch(segment):
+            node = segment[1:]
+            if node not in self.nodes:
+                raise TourError('node_missing', 404)
+            return self.contents_view(node)
+        if ENTRY_SEGMENT.fullmatch(segment):
+            e = self._ensure_entry(segment)
+            if e is None:
+                raise TourError('node_missing', 404)
+            return self.entry_view(e)
+        raise TourError('invalid_node', 400)
+
+    def contents_view(self, node_id):
+        node = self.nodes[node_id]
+        paths_needed = [node['path']] if node['status'] == 'present' else []
+        if divider(node) is not None:
+            siblings = self.shelved(node_id)
+            if len(siblings) <= HINTED_GROUP:
+                paths_needed.extend(self.nodes[c]['path'] for c in siblings if self.nodes[c]['status'] == 'present')
+        else:
+            if node['status'] == 'present':
+                self._ensure_page(node['path'])
+            if self.contents_count(node_id) <= HINTED_GROUP:
+                paths_needed.extend(
+                    self.nodes[c]['path'] for c in self.children.get(node_id, [])
+                    if divider(self.nodes[c]) is None and self.nodes[c]['status'] == 'present'
+                )
+        self._ensure_page_info(paths_needed)
+        return super().contents_view(node_id)
+
+    def entry_view(self, e):
+        self._ensure_page(e.path)
+        related = []
+        if e.id in self.parent_class and e.type == 'subclass':
+            related.append(self.parent_class[e.id])
+        related.extend(self.subclasses.get(e.id, ()))
+        related.extend(self.feats.get(e.id, ()))
+        if related:
+            self._ensure_entries_shallow(related)
+        return super().entry_view(e)
 
 
 class TourCache:

@@ -139,6 +139,10 @@ def _clear_book_connections():
 class BookCatalog:
     """Adapt the published 不全书 SQLite projection without changing its entries or evidence."""
 
+    CONDITIONS = frozenset({'type', 'q', 'typing', 'body', 'ruleset', 'legacy', 'status', 'source', 'origin',
+                            'conflict', 'field', 'value', 'cr_min', 'cr_max', 'sections'})
+    same_name_groups = True
+
     db_path: Path
     source_root: Path
 
@@ -153,6 +157,12 @@ class BookCatalog:
 
     def has(self, entry):
         return self._read(catalog.has, entry)
+
+    def known_types(self) -> frozenset[str]:
+        return frozenset(self._read(catalog.held_types))
+
+    def count(self, params, restrict=None) -> int:
+        return self._read(catalog.count, params, restrict)
 
     def same_name(self, entry_type, folded, include_ids=()):
         if not folded or entry_type not in browse.STACKABLE_TYPES:
@@ -170,7 +180,8 @@ class BookCatalog:
             built: dict[tuple[str, str], list[str]] = {}
             kinds = ','.join("'" + k + "'" for k in browse.STACKABLE_TYPES)
             rows = self._read(lambda db: db.execute(
-                f"SELECT id, type, name_en FROM entries WHERE type IN ({kinds}) AND name_en IS NOT NULL AND name_en!=''"
+                f"SELECT id, type, name_en FROM {catalog._entry_table(db)} "
+                f"WHERE type IN ({kinds}) AND name_en IS NOT NULL AND name_en!=''"
             ).fetchall())
             for eid, typ, name_en in rows:
                 f = name_fold(name_en)
@@ -216,14 +227,20 @@ class BookCatalog:
         return browse.schema_for([t for t in types if t in catalog.TYPES], widened)
 
     def capabilities(self):
-        meta = self.meta()
+        sources, held = self._read(
+            lambda db: (
+                frozenset(r[0] for r in db.execute('SELECT id FROM sources')),
+                frozenset(catalog.held_types(db)),
+            )
+        )
         return Capabilities(
-            conditions=frozenset({'type', 'q', 'typing', 'body', 'ruleset', 'legacy', 'status', 'source', 'origin',
-                                  'conflict', 'field', 'value', 'cr_min', 'cr_max', 'sections'}),
-            facets=frozenset(browse.LABELS), types=frozenset(meta['type_order']),
-            sources=frozenset(s['id'] for s in meta['sources']),
+            conditions=self.CONDITIONS,
+            facets=frozenset(browse.LABELS),
+            types=held,
+            sources=sources,
             values={key: frozenset(allowed) for key, (_, allowed) in catalog.COMMON_CHOICES.items()} | {'origin': frozenset(catalog.ORIGINS)},
             stackable=frozenset(browse.STACKABLE_TYPES),
+            same_name_groups=self.same_name_groups,
         )
 
     def signature(self):

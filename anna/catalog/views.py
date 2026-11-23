@@ -202,7 +202,11 @@ def sort_value(raw,field):
 def name_key(text):
     """Name collation: digit runs compare by value (2级 before 10级); case and full/half width are ignored."""
     if not text:return None
-    return re.sub(r'\d+',lambda m:m[0].zfill(8),unicodedata.normalize('NFKC',text).casefold())
+    s = (text if text.isascii() else unicodedata.normalize('NFKC', text)).casefold()
+    return _DIGITS_RE.sub(lambda m:m[0].zfill(8), s) if any(c.isdigit() for c in s) else s
+
+
+_DIGITS_RE = re.compile(r'\d+')
 
 
 # Mixed results list kinds in the order a reader meets them: character options, spells, gear, creatures, then rules.

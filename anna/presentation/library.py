@@ -98,9 +98,15 @@ def version_diffs(config, head, others):
     return out
 
 
+_NON_WORD_RE = re.compile(r'[\W_]+')
+
+
 def name_fold(text: str) -> str:
     """The English name as same-name stacking compares it (case, width and punctuation ignored)."""
-    return re.sub(r'[\W_]+', '', unicodedata.normalize('NFKC', text or '').casefold())
+    if not text:
+        return ''
+    norm = text if text.isascii() else unicodedata.normalize('NFKC', text)
+    return _NON_WORD_RE.sub('', norm.casefold())
 
 
 # --- The reader's scope ---------------------------------------------------------------------------------------
@@ -408,11 +414,21 @@ class Library:
     # What any ready collection can answer: a condition none of them knows is passed on for its catalog to judge.
     @property
     def every_condition(self):
-        return frozenset().union(*(capabilities_of(self.registry.get(k)).conditions for k in self.registry.ready()))
+        out = set()
+        for k in self.registry.ready():
+            c = self.registry.get(k)
+            conds = getattr(c.provider, 'CONDITIONS', None)
+            out.update(conds if conds is not None else capabilities_of(c).conditions)
+        return frozenset(out)
 
     @property
     def known_types(self):
-        return frozenset().union(*(capabilities_of(self.registry.get(k)).types for k in self.registry.ready()))
+        out = set()
+        for k in self.registry.ready():
+            c = self.registry.get(k)
+            known_fn = getattr(c.provider, 'known_types', None)
+            out.update(_fact(c, 'known_types', known_fn) if known_fn is not None else capabilities_of(c).types)
+        return frozenset(out)
 
     @property
     def primary(self):
@@ -426,7 +442,14 @@ class Library:
     def stacking(self) -> bool:
         """Whether the library stacks the versions itself: several collections, or one whose own groups gather
         recorded reprints only, so that its same-name works and homebrew still share a row."""
-        return self.scope.versions == 'stacked' and (self.federated or not capabilities_of(self.primary).same_name_groups)
+        if self.scope.versions != 'stacked':
+            return False
+        if self.federated:
+            return True
+        own_groups = getattr(self.primary.provider, 'same_name_groups', None)
+        if own_groups is None:
+            own_groups = capabilities_of(self.primary).same_name_groups
+        return not own_groups
 
     @property
     def alone(self) -> bool:
@@ -488,6 +511,22 @@ class Library:
         return out
 
     # --- Entries ---
+
+    def count(self, params) -> int:
+        """Count matching versions across the reader's collections without ranking or loading payloads."""
+        params = Query.of(params)
+        total = 0
+        for collection in self.members:
+            local = self._local(collection, params)
+            if not answers(local):
+                continue
+            count_fn = getattr(collection.provider, 'count', None)
+            if count_fn is not None:
+                total += self._answer(count_fn, collection, local)
+            else:
+                result = self._answer(collection.provider.entries, collection, self._presentation(local).updated({'limit': ['1'], 'offset': ['0']}))
+                total += result['versions_total']
+        return total
 
     def entries(self, params) -> dict:
         params = Query.of(params)
@@ -613,9 +652,15 @@ class Library:
             return None if v is None else (0, v) if isinstance(v, (int, float)) else (1, str(v))
 
         def by(items, s, reverse):
-            present = [r for r in items if value(r, s) is not None]
-            present.sort(key=lambda r: value(r, s), reverse=reverse)
-            return present + [r for r in items if value(r, s) is None]
+            present, missing = [], []
+            for r in items:
+                v = value(r, s)
+                if v is None:
+                    missing.append(r)
+                else:
+                    present.append((v, r))
+            present.sort(key=lambda pair: pair[0], reverse=reverse)
+            return [r for _, r in present] + missing
 
         rows.sort(key=lambda r: (browse.name_key(r['name_zh'] or r['name']) or '', r['lib'], r['id']))
         if sort == browse.MATCH:

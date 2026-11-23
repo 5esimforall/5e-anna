@@ -70,6 +70,12 @@ const annaKit = (() => {
     const transport = await import(new URL('pages.js', base).href);
     return transport.request(path, options);
   }
-  return {esc, stored, pages, href, rebaseLinks, hydrateImages, request};
+  function warm() {
+    if (!pages) return;
+    import(new URL('pages.js', base).href)
+      .then(transport => transport.warm())
+      .catch(() => {});
+  }
+  return {esc, stored, pages, href, rebaseLinks, hydrateImages, request, warm};
 })();
 if (typeof module !== 'undefined') module.exports = annaKit;

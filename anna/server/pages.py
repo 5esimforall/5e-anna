@@ -35,9 +35,23 @@ def add_cached_media_markers(collection):
 
 
 class PublishedReader(BookReader):
-    def __init__(self, reader, manifest, db):
-        super().__init__(reader, manifest, None)
+    def __init__(self, book, db, snapshot):
+        self._book = book
+        self._snapshot = snapshot
         self.db = db
+        self.entries = None
+
+    @property
+    def snapshot(self):
+        return self._snapshot
+
+    @cached_property
+    def reader(self):
+        return json.loads((self._book / 'anna-reader.json').read_text(encoding='utf-8'))
+
+    @cached_property
+    def manifest(self):
+        return json.loads((self._book / 'anna-manifest.json').read_text(encoding='utf-8'))
 
     def search(self, keyword, *, title_only=False):
         if self.entries is None:
@@ -52,15 +66,18 @@ class PublishedSite:
         self.source = root / 'source'
         self.curation = root / 'tour/tour.json'
         book = root / 'data/5echm-anna'
-        reader = json.loads((book / 'anna-reader.json').read_text(encoding='utf-8'))
-        manifest = json.loads((book / 'anna-manifest.json').read_text(encoding='utf-8'))
-        self.reader = PublishedReader(reader, manifest, self.db)
+        meta_file = book / 'anna-meta.json'
+        if meta_file.is_file():
+            snapshot = json.loads(meta_file.read_text(encoding='utf-8'))['snapshot']
+        else:
+            snapshot = json.loads((book / 'anna-reader.json').read_text(encoding='utf-8'))['snapshot']
+        self.reader = PublishedReader(book, self.db, snapshot)
         our5etools = root / 'data/our5etools'
         additional = ()
         relationships = None
         if (our5etools / 'manifest.json').is_file():
             add_cached_media_markers(our5etools)
-            collection = load_our5etools_collection(our5etools, curation_path=self.curation)
+            collection = load_our5etools_collection(our5etools, curation_path=self.curation, lazy_reader=True)
             if collection is None:
                 raise ValueError('Published our5etools snapshot is incomplete')
             additional = (collection,)
@@ -110,6 +127,10 @@ class WorkerRequest(CapturedResponse, AnnaHandler):
 @lru_cache(maxsize=1)
 def published_site():
     return PublishedSite(ROOT)
+
+
+def warm():
+    published_site()
 
 
 def handle(path):

@@ -127,12 +127,15 @@ async function initialize({baseUrl}) {
     ]);
     pyodide.unpackArchive(archive, 'zip', {extractDir: PROJECT});
     mountFiles(pyodide.FS, manifest, new URL('./', manifestURL), gunzipSync);
-    return pyodide.runPython(`
+    pyodide.runPython(`
         import sys
         sys.path.insert(0, ${JSON.stringify(PROJECT)})
-        from anna.server.pages import handle
-        handle
+        from anna.server.pages import handle, warm
     `);
+    return {
+        handle: pyodide.globals.get('handle'),
+        warm: pyodide.globals.get('warm'),
+    };
 }
 
 function send(id, status, headers, body) {
@@ -153,6 +156,16 @@ self.addEventListener('message', async ({data}) => {
         }
         return;
     }
+    if (data.type === 'warm') {
+        if (!startup) return;
+        try {
+            const {warm} = await startup;
+            warm();
+        } catch (error) {
+            console.error(error);
+        }
+        return;
+    }
     if (!Object.hasOwn(data, 'id')) return;
     const {id, path} = data;
     try {
@@ -162,7 +175,7 @@ self.addEventListener('message', async ({data}) => {
                 new TextEncoder().encode('{"code":"invalid_request_path"}'));
             return;
         }
-        const handle = await startup;
+        const {handle} = await startup;
         const result = handle(path);
         try {
             const response = result.toJs({dict_converter: Object.fromEntries, create_pyproxies: false});

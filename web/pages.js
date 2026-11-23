@@ -33,6 +33,10 @@ function connect() {
   return current;
 }
 
+export function warm() {
+  connect().postMessage({type:'warm'});
+}
+
 export async function request(path, {signal} = {}) {
   signal?.throwIfAborted();
   const current = connect(), id = ++nextId;

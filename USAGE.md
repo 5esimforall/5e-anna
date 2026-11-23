@@ -456,7 +456,7 @@ make check
 
 5etools-cn 镜像用于构建时对照来源，独立中文版 5etools 资料库仍为预留接口。公开站点包含查询、导览与阅读所需产物。构建审计和原文输入镜像用于维护流程。
 
-[GitHub Pages 工作流](.github/workflows/pages.yml)按 `sources.json` 固定的镜像版本构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
+[GitHub Pages 工作流](.github/workflows/pages.yml)按 `sources.json` 固定的镜像版本构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取 256 KiB 压缩数据分片；不全书的条目与导览排版在构建时预渲染进数据库，工作线程不携带也不运行浏览器端 HTML 解析器，目录与整页阅读清单只在打开 Stella 或导览时按需读取。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
 
 工作流按[源码版本锁](#源码版本锁)检出三个镜像，镜像路径通过环境变量 `WEB_DIR`、`OUR5ETOOLS_DIR` 与 `COUNTERPARTS_DIR` 传入，再依次运行 `make build`、`make test-unit` 与 `make pages`：单元测试读取刚构建的数据，通过后才打包上传。已有构建产物时，`make pages` 校验并复用它们生成静态预览包：
 
@@ -464,6 +464,6 @@ make check
 make pages PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages
 ```
 
-本地和 Pages 的默认首页使用同一套代码读取首屏缓存。缓存与当前资料库不匹配时，本地服务回到实时查询。搜索、分页、条目链接和资料库设置等按各自的请求参数查询。本地通过 HTTP API 查询，Pages 按需启动工作线程。
+本地和 Pages 的默认首页使用同一套代码读取首屏缓存。缓存与当前资料库不匹配时，本地服务回到实时查询。搜索、分页、条目链接和资料库设置等按各自的请求参数查询。本地通过 HTTP API 查询，Pages 在首屏显示后趁浏览器空闲在后台预热工作线程（直接打开深层链接或跳过缓存时按需立即启动）。
 
 不全书原文来自 [DND5eChm/DND5e_chm](https://github.com/DND5eChm/DND5e_chm) 与 [5echm_web](https://github.com/DND5eChm/5echm_web)，发布包包含上游许可证。链接版在原文上添加引用和定位层，供 Anna 与 Stella 互通。

@@ -1297,6 +1297,11 @@ async function init(){
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
+    if(annaKit.pages&&!params.has('entry')){
+      const startWarm=()=>annaKit.warm();
+      if(typeof requestIdleCallback==='function')requestIdleCallback(startWarm,{timeout:1500});
+      else setTimeout(startWarm,300);
+    }
   }catch(e){
     const error=$('#error');error.hidden=false;error.textContent=e.message;
     $('#result-count').textContent='服务未就绪';

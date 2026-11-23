@@ -483,6 +483,12 @@ def _our_bundle(stage, work, root, source, rewrite_html):
     with closing(sqlite3.connect(projection.as_uri() + '?mode=ro', uri=True)) as conn:
         pages = {row[0] for row in conn.execute('SELECT page_path FROM book_pages')}
         metadata = dict(conn.execute('SELECT key,value FROM metadata'))
+        located_in_db = {
+            row[0] for row in conn.execute(
+                "SELECT id, json_extract(provenance_json, '$.reader_location') "
+                "FROM entry_core WHERE json_extract(provenance_json, '$.reader_location') IS NOT NULL"
+            ) if json.loads(row[1])
+        }
     if pages != reader['pages'].keys() or reader['default_page'] not in pages or any(
         PurePosixPath(name).suffix.lower() not in HTML_SUFFIXES for name in pages
     ):
@@ -507,7 +513,18 @@ def _our_bundle(stage, work, root, source, rewrite_html):
     cached_file = work / 'cached-media.json'
     cached_file.write_bytes(_json(cached))
     (stage / 'our5etools-attribution.json').write_bytes(_json(_our_attribution(attribution)))
+    roots = {}
+    for root_item in reader.get('roots') or ():
+        if isinstance(root_item, dict) and root_item.get('source_id') and root_item.get('id'):
+            roots.setdefault(root_item['source_id'], root_item['id'])
+    extra_locations = {
+        eid: loc for eid, loc in (reader.get('entry_locations') or {}).items()
+        if eid not in located_in_db
+    }
+    reader_index_file = work / 'our5etools-reader-index.json'
+    reader_index_file.write_bytes(_json({'roots': roots, 'entry_locations': extra_locations}))
     files = {'catalog.sqlite': projection, OUR5ETOOLS_READER: reader_path,
+             'reader-index.json': reader_index_file,
              'summary.json': summary_path, 'cached-media.json': cached_file}
     public_manifest = {key: manifest[key] for key in ('schema', 'collection', 'snapshot', 'git_commit',
                                                        'input_sha256', 'built_at', 'counts', 'reader')}
@@ -616,8 +633,13 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
         )
         manifest_path = work / 'default-manifest.json'
         manifest_path.write_bytes(_json(default_manifest))
+        meta_path = work / 'default-meta.json'
+        meta_path.write_bytes(_json({
+            'reader_schema': default_manifest['reader_schema'],
+            'snapshot': default_reader_data['snapshot'],
+        }))
         files = {DEFAULT_DB: default_projection, f'{DEFAULT_BOOK}/anna-manifest.json': manifest_path,
-                 f'{DEFAULT_BOOK}/anna-reader.json': default_reader}
+                 f'{DEFAULT_BOOK}/anna-meta.json': meta_path, f'{DEFAULT_BOOK}/anna-reader.json': default_reader}
         collection = None
         if our5etools_data is not None:
             companion = Path(our5etools_data).resolve()

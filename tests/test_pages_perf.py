@@ -17,8 +17,9 @@ from anna.presentation import catalog
 from anna.presentation.collections import BookCatalog, Collection, CollectionRegistry, DEFAULT, _clear_book_connections
 from anna.presentation.layout import entry_layout, span_layout
 from anna.presentation.library import Library, Scope, name_fold
-from anna.presentation.our5etools import Our5etoolsCatalog
+from anna.presentation.our5etools import Our5etoolsCatalog, load_our5etools_collection
 from anna.publish.pages_data import CHUNK_SIZE, _project_db, _project_our_db, export_pages_data
+from anna.server.pages import PublishedSite
 from anna.source.html import Document
 
 
@@ -541,6 +542,176 @@ class Phase3ClusteringAndShardingTests(unittest.TestCase):
                 if stats and stats[2]:
                     span_ratio = (stats[1] - stats[0] + 1) / stats[2]
                     self.assertLessEqual(span_ratio, 1.2, f'idx_entry_core_id span ratio {span_ratio:.2f}')
+
+
+class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
+    def test_published_site_lazy_loads_5echm_reader_and_manifest(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            source, orig = _make_5echm_fixture(root)
+            book = root / 'book'
+            (book / 'topics').mkdir(parents=True)
+            shutil.copyfile(source / 'topics' / 'spells.htm', book / 'topics' / 'spells.htm')
+            db_sha = sha256(orig.read_bytes()).hexdigest()
+            page_sha = sha256((book / 'topics' / 'spells.htm').read_bytes()).hexdigest()
+            reader = {
+                'schema': 6,
+                'snapshot': 'snap-fixture',
+                'nodes': [{'id': '1', 'parent_id': '', 'label': 'Spells', 'path': 'topics/spells.htm', 'fragment': '', 'status': 'present'}],
+                'default_page': 'topics/spells.htm',
+                'pages': {'topics/spells.htm': {'title': 'Spells'}},
+                'presentation_resources': [],
+                'source_release': None,
+            }
+            reader_bytes = json.dumps(reader).encode('utf-8')
+            (book / 'anna-reader.json').write_bytes(reader_bytes)
+            manifest = {
+                'reader_schema': 6,
+                'database_sha256': db_sha,
+                'outputs': {
+                    'anna-reader.json': sha256(reader_bytes).hexdigest(),
+                    'topics/spells.htm': page_sha,
+                },
+                'entries': {
+                    'ver_1': {'path': 'topics/spells.htm', 'fragment': '', 'locatable': True},
+                    'ver_2': {'path': 'topics/spells.htm', 'fragment': '', 'locatable': True},
+                    'ver_3': {'path': 'topics/spells.htm', 'fragment': '', 'locatable': True},
+                },
+            }
+            (book / 'anna-manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            curation = root / 'tour.json'
+            curation.write_text(json.dumps({
+                'schema': 2,
+                'sections': [{
+                    'key': 'rules',
+                    'label': {'zh': '规则', 'en': 'Rules'},
+                    'topics': [{'key': 'spells', 'label': {'zh': '法术', 'en': 'Spells'}, 'contents': {'5echm': 'Spells'}}],
+                }],
+                'choices': {'5echm': {}},
+            }), encoding='utf-8')
+
+            out = root / 'pages-out'
+            export_pages_data(out, db=orig, book=book, source=source, curation=curation, gzip_shards=False)
+            manifest_idx = json.loads((out / 'pages-data' / 'index.json').read_text(encoding='utf-8'))
+            self.assertIn('data/5echm-anna/anna-meta.json', manifest_idx)
+
+            site_root = root / 'site-data'
+            for rel, meta in manifest_idx.items():
+                target_file = site_root / rel
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                cnt = (meta['size'] + meta['chunkSize'] - 1) // meta['chunkSize']
+                with target_file.open('wb') as dst:
+                    for i in range(cnt):
+                        dst.write((out / 'pages-data' / rel / f'{i}.bin').read_bytes())
+
+            opened = []
+            orig_open = Path.open
+
+            def spy_open(path_self, *args, **kwargs):
+                opened.append(path_self.as_posix())
+                return orig_open(path_self, *args, **kwargs)
+
+            try:
+                with patch.object(Path, 'open', spy_open):
+                    site = PublishedSite(site_root)
+                    for route in ('/api/meta', '/api/entries?type=spell', '/api/entry?id=ver_1',
+                                  '/api/entry-layout?id=ver_1', '/api/library?works=1'):
+                        status, _, _ = site.handle(route)
+                        self.assertEqual(status, 200, route)
+                    self.assertFalse(any(p.endswith('anna-reader.json') for p in opened), opened)
+                    self.assertFalse(any(p.endswith('anna-manifest.json') for p in opened), opened)
+
+                    # Opening Stella loads anna-reader.json lazily on demand
+                    s_reader, _, _ = site.handle('/api/reader')
+                    self.assertEqual(s_reader, 200)
+                    self.assertTrue(any(p.endswith('anna-reader.json') for p in opened), opened)
+
+                # Fresh site: query endpoints stay lazy, then /api/tour loads both manifest and reader lazily
+                opened.clear()
+                _clear_book_connections()
+                with patch.object(Path, 'open', spy_open):
+                    site2 = PublishedSite(site_root)
+                    self.assertEqual(site2.handle('/api/entry?id=ver_1')[0], 200)
+                    self.assertFalse(any(p.endswith('anna-reader.json') or p.endswith('anna-manifest.json') for p in opened), opened)
+                    s_tour, _, _ = site2.handle('/api/tour')
+                    self.assertEqual(s_tour, 200)
+                    self.assertTrue(any(p.endswith('anna-reader.json') for p in opened), opened)
+                    self.assertTrue(any(p.endswith('anna-manifest.json') for p in opened), opened)
+            finally:
+                _clear_book_connections()
+
+    @unittest.skipUnless((OUR5ETOOLS_DATA / 'manifest.json').is_file(), 'Build our5etools collection first')
+    def test_our5etools_lazy_reader_and_compact_reader_index(self):
+        with tempfile.TemporaryDirectory() as td:
+            o5e_dir = Path(td).resolve() / 'our5etools'
+            (o5e_dir / 'reader').mkdir(parents=True)
+            for name in ('manifest.json', 'summary.json', 'catalog.sqlite'):
+                (o5e_dir / name).symlink_to(OUR5ETOOLS_DATA / name)
+            (o5e_dir / 'reader' / 'anna-reader.json').symlink_to(OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json')
+
+            reader_raw = json.loads((OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json').read_text(encoding='utf-8'))
+            roots = {}
+            for item in reader_raw.get('roots') or ():
+                if isinstance(item, dict) and item.get('source_id') and item.get('id'):
+                    roots.setdefault(item['source_id'], item['id'])
+            with closing(sqlite3.connect((OUR5ETOOLS_DATA / 'catalog.sqlite').as_uri() + '?mode=ro', uri=True)) as conn:
+                unlocated_eid = conn.execute(
+                    "SELECT id FROM entries WHERE json_extract(provenance_json, '$.reader_location') IS NULL LIMIT 1"
+                ).fetchone()[0]
+                located_eid = conn.execute(
+                    "SELECT id FROM entries WHERE json_extract(provenance_json, '$.reader_location') IS NOT NULL LIMIT 1"
+                ).fetchone()[0]
+            (o5e_dir / 'reader-index.json').write_text(
+                json.dumps({'roots': roots, 'entry_locations': {}}, ensure_ascii=False, separators=(',', ':')),
+                encoding='utf-8',
+            )
+
+            opened = []
+            orig_open = Path.open
+
+            def spy_open(path_self, *args, **kwargs):
+                opened.append(path_self.as_posix())
+                return orig_open(path_self, *args, **kwargs)
+
+            collection = None
+            try:
+                with patch.object(Path, 'open', spy_open):
+                    collection = load_our5etools_collection(o5e_dir, lazy_reader=True)
+                    self.assertIsNotNone(collection)
+                    works = collection.provider.works()
+                    self.assertTrue(any(w.get('reader_root') for w in works))
+                    d1 = collection.provider.detail(located_eid)
+                    self.assertIsNotNone(d1['reader_location'])
+                    d2 = collection.provider.detail(unlocated_eid)
+                    self.assertIsNone(d2['reader_location'])
+                    self.assertFalse(any(p.endswith('anna-reader.json') for p in opened), opened)
+                    self.assertTrue(any(p.endswith('reader-index.json') for p in opened), opened)
+
+                    # Opening Stella or Tour lazily reads anna-reader.json and works
+                    nav = collection.reader.navigation()
+                    self.assertTrue(nav['nodes'])
+                    tour_view = collection.tour.view('n' + nav['roots'][0]['id'])
+                    self.assertTrue(tour_view)
+                    self.assertTrue(any(p.endswith('anna-reader.json') for p in opened), opened)
+            finally:
+                if collection is not None and collection.provider is not None:
+                    collection.provider.close()
+
+    def test_frontend_request_order_and_idle_warmup_wiring(self):
+        detail_js = (paths.PROJECT / 'web' / 'detail.js').read_text(encoding='utf-8')
+        open_idx = detail_js.index('async function openEntry(')
+        entry_idx = detail_js.index("api('/api/entry?id='", open_idx)
+        layout_idx = detail_js.index('layoutOf(id)', open_idx)
+        self.assertLess(entry_idx, layout_idx)
+
+        pages_js = (paths.PROJECT / 'web' / 'pages.js').read_text(encoding='utf-8')
+        self.assertIn('export function warm()', pages_js)
+        kit_js = (paths.PROJECT / 'web' / 'kit.js').read_text(encoding='utf-8')
+        self.assertIn('request, warm', kit_js)
+        worker_js = (paths.PROJECT / 'web' / 'pages-worker.js').read_text(encoding='utf-8')
+        self.assertIn("data.type === 'warm'", worker_js)
+        app_js = (paths.PROJECT / 'web' / 'app.js').read_text(encoding='utf-8')
+        self.assertIn('annaKit.warm()', app_js)
 
 
 if __name__ == '__main__':

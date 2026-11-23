@@ -424,6 +424,7 @@ class Our5etoolsCatalog:
         self.lazy_media = bool(lazy_media)
         self.db_path = self.data_dir / 'catalog.sqlite'
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
+        self.reader_index_path = self.data_dir / 'reader-index.json'
         self.summary_path = self.data_dir / 'summary.json'
         self._lock = threading.Lock()
         self._local = threading.local()
@@ -439,7 +440,7 @@ class Our5etoolsCatalog:
         self._unfiltered_facets_cache: dict[str, Any] | None = None
         self._entry_locations: dict[str, dict[str, Any]] = {}
         self._reader_roots: dict[str, str] = {}
-        self._reader_sig: tuple[int, int, int] | None = None
+        self._reader_sig: tuple[str, tuple[int, int, int] | None] | None = None
 
     def _connect(self) -> sqlite3.Connection:
         sig = _file_sig(self.db_path)
@@ -537,21 +538,30 @@ class Our5etoolsCatalog:
             self._cache_sig = sig
 
     def _load_reader_index(self) -> None:
-        """Entry locations and each work's book root from the built reader, reloaded when it changes."""
-        sig = _file_sig(self.reader_path)
+        """Entry locations and each work's book root from the compact index or full reader, reloaded on change."""
+        index_sig = _file_sig(self.reader_index_path)
+        reader_sig = _file_sig(self.reader_path) if index_sig is None else None
+        sig: tuple[str, tuple[int, int, int] | None] | None = (
+            ('index', index_sig) if index_sig is not None else (('reader', reader_sig) if reader_sig is not None else None)
+        )
         with self._lock:
             if sig == self._reader_sig and sig is not None:
                 return
             locations: dict[str, dict[str, Any]] = {}
             roots: dict[str, str] = {}
             if sig is not None:
+                target = self.reader_index_path if sig[0] == 'index' else self.reader_path
                 try:
-                    raw = json.loads(self.reader_path.read_text('utf-8'))
+                    raw = json.loads(target.read_text('utf-8'))
                     locs = raw.get('entry_locations')
                     locations = locs if isinstance(locs, dict) else {}
-                    for root in raw.get('roots') or []:
-                        if isinstance(root, dict) and root.get('source_id') and root.get('id'):
-                            roots.setdefault(root['source_id'], root['id'])
+                    raw_roots = raw.get('roots')
+                    if isinstance(raw_roots, dict):
+                        roots = {str(k): str(v) for k, v in raw_roots.items() if k and v}
+                    elif isinstance(raw_roots, list):
+                        for root in raw_roots:
+                            if isinstance(root, dict) and root.get('source_id') and root.get('id'):
+                                roots.setdefault(root['source_id'], root['id'])
                 except (OSError, ValueError):
                     locations, roots = {}, {}
             self._entry_locations, self._reader_roots, self._reader_sig = locations, roots, sig
@@ -2763,6 +2773,7 @@ def _load_5etools_family_collection(
     zh: str,
     en: str,
     lazy_media: bool = False,
+    lazy_reader: bool = False,
 ) -> Collection | None:
     """Load one 5etools-family collection when its published artifacts match ``collection_key``."""
     root = Path(data_dir).resolve()
@@ -2773,18 +2784,30 @@ def _load_5etools_family_collection(
         return None
     try:
         manifest = json.loads(manifest_path.read_text('utf-8'))
-        reader_json = json.loads(reader_path.read_text('utf-8'))
     except (OSError, ValueError):
         return None
-    if reader_json.get('schema') != READER_SCHEMA:
+    if manifest.get('collection') != collection_key:
         return None
-    if manifest.get('collection') != collection_key or reader_json.get('collection') != collection_key:
-        return None
-
-    snapshot = str(reader_json.get('snapshot') or manifest.get('snapshot') or '')
-    raw_book = str(reader_json.get('page_base') or f'/{collection_key}-book/')
+    reader_meta = manifest.get('reader')
+    if lazy_reader and isinstance(reader_meta, dict):
+        if reader_meta.get('schema') != READER_SCHEMA:
+            return None
+        if reader_meta.get('collection') not in (None, collection_key):
+            return None
+        snapshot = str(reader_meta.get('snapshot') or manifest.get('snapshot') or '')
+        raw_book = str(reader_meta.get('page_base') or f'/{collection_key}-book/')
+        raw_media = str(reader_meta.get('media_base') or f'/{collection_key}-media/')
+    else:
+        try:
+            reader_json = json.loads(reader_path.read_text('utf-8'))
+        except (OSError, ValueError):
+            return None
+        if reader_json.get('schema') != READER_SCHEMA or reader_json.get('collection') != collection_key:
+            return None
+        snapshot = str(reader_json.get('snapshot') or manifest.get('snapshot') or '')
+        raw_book = str(reader_json.get('page_base') or f'/{collection_key}-book/')
+        raw_media = str(reader_json.get('media_base') or f'/{collection_key}-media/')
     book_base = raw_book if raw_book.endswith('/') else (raw_book + '/')
-    raw_media = str(reader_json.get('media_base') or f'/{collection_key}-media/')
     media_base = raw_media if raw_media.endswith('/') else (raw_media + '/')
     return Collection(
         collection_key, zh, en,
@@ -2804,11 +2827,13 @@ def load_our5etools_collection(
     curation_path: Path | str | None = None,
     *,
     lazy_media: bool = False,
+    lazy_reader: bool = False,
 ) -> Collection | None:
     """Load the read-only our5etools Collection when built artifacts are complete; else return None."""
     return _load_5etools_family_collection(
         data_dir, source_dir, curation_path,
-        collection_key=COLLECTION_KEY, zh=COLLECTION_ZH, en=COLLECTION_EN, lazy_media=lazy_media,
+        collection_key=COLLECTION_KEY, zh=COLLECTION_ZH, en=COLLECTION_EN,
+        lazy_media=lazy_media, lazy_reader=lazy_reader,
     )
 
 
@@ -2818,10 +2843,11 @@ def load_fivetools_collection(
     curation_path: Path | str | None = None,
     *,
     lazy_media: bool = False,
+    lazy_reader: bool = False,
 ) -> Collection | None:
     """Load the reserved standalone 5etools Collection when built separately; else return None."""
     return _load_5etools_family_collection(
         data_dir, source_dir, curation_path,
         collection_key=FIVETOOLS_COLLECTION_KEY, zh=FIVETOOLS_COLLECTION_KEY, en=FIVETOOLS_COLLECTION_KEY,
-        lazy_media=lazy_media,
+        lazy_media=lazy_media, lazy_reader=lazy_reader,
     )

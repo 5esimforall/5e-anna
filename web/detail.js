@@ -256,9 +256,10 @@ async function openEntry(id,update=true,tab='body',fromResult=false,from=null) {
   // a reader that was closed starts empty rather than showing the entry it last held.
   if(!wasOpen||!content.querySelector('.reader-head')){content.innerHTML=`<p class="reader-message" role="status">${esc(ui.loading)}</p>`;content.scrollTop=0;}
   updateReaderNavigation();
-  const layout=layoutOf(id);
   try {
-    const e=await api('/api/entry?id='+encodeURIComponent(id));if(gen!==detailGeneration)return;
+    const entryRequest=api('/api/entry?id='+encodeURIComponent(id));
+    const layout=layoutOf(id);
+    const e=await entryRequest;if(gen!==detailGeneration)return;
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
     currentEntry=e;renderDetail(tab);content.scrollTop=0;

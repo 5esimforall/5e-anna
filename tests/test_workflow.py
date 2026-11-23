@@ -134,6 +134,8 @@ class WorkflowTests(unittest.TestCase):
                 steps.append('clone ' + Path(line.split('"')[1]).name)
             elif 'scripts/build_icons.py' in line:
                 steps.append('icons')
+            elif 'scripts/sources.py' in line and ' check ' in line:
+                steps.append('check pins')
             elif line.startswith('test -f data/extracted/catalog.sqlite'):
                 steps.append('require built library')
             elif 'our5etools: skipped' in line:
@@ -143,7 +145,9 @@ class WorkflowTests(unittest.TestCase):
         return steps, result.stdout
 
     def test_each_stage_target_prints_only_its_commands(self):
-        five_echm = ['clone web mirror', 'clone counterparts mirror', 'icons', 'catalog.build', 'server.linked_book']
+        five_echm = ['clone web mirror', 'clone counterparts mirror', 'icons', 'check pins', 'catalog.build',
+                     'server.linked_book']
+        our5etools = ['check pins', 'our5etools.build']
         pages = ['require built library', 'server.pages_build']
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
@@ -151,12 +155,12 @@ class WorkflowTests(unittest.TestCase):
             expected = {
                 ('5echm',): five_echm,
                 ('linked',): ['server.linked_book'],
-                ('our5etools', mirror): ['our5etools.build'],
+                ('our5etools', mirror): our5etools,
                 ('home',): ['server.home'],
                 ('pages',): pages,
-                ('build', mirror): five_echm + ['our5etools.build', 'server.home'],
-                ('build', 'pages', mirror): five_echm + ['our5etools.build', 'server.home'] + pages,
-                ('our5etools', 'home', 'pages', mirror): ['our5etools.build', 'server.home'] + pages,
+                ('build', mirror): five_echm + our5etools + ['server.home'],
+                ('build', 'pages', mirror): five_echm + our5etools + ['server.home'] + pages,
+                ('our5etools', 'home', 'pages', mirror): our5etools + ['server.home'] + pages,
             }
             for args, steps in expected.items():
                 with self.subTest(args=args):
@@ -164,7 +168,7 @@ class WorkflowTests(unittest.TestCase):
             steps, output = self.stage_steps(root, '5echm')
             self.assertIn(f'-m anna.catalog.build --counterparts "{root / "counterparts mirror"}"', output)
             steps, output = self.stage_steps(root, '5echm', 'NO_COUNTERPARTS=1')
-            self.assertEqual(steps, ['clone web mirror', 'icons', 'catalog.build', 'server.linked_book'])
+            self.assertEqual(steps, ['clone web mirror', 'icons', 'check pins', 'catalog.build', 'server.linked_book'])
             self.assertIn('-m anna.catalog.build --no-counterparts', output)
             self.assertNotIn('counterparts mirror', output)
             steps, output = self.stage_steps(root, 'our5etools', mirror, f'OUR5ETOOLS_IMG_DIR={root / "img"}')
@@ -326,7 +330,7 @@ class WorkflowTests(unittest.TestCase):
             result=self.make(PROJECT,'-n',command)
             self.assertNotEqual(result.returncode,0)
         self.assertFalse((PROJECT/'scripts/serve_5echm.py').exists())
-        self.assertEqual({p.name for p in (PROJECT/'scripts').glob('*.py')},{'build_icons.py','clean.py'})
+        self.assertEqual({p.name for p in (PROJECT/'scripts').glob('*.py')},{'build_icons.py','clean.py','sources.py'})
         from anna.server import query
         self.assertFalse(hasattr(query,'main'))
 

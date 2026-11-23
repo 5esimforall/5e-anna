@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 40
     env:
       PAGES_OUTPUT: output/pages
+      WEB_DIR: ${{ runner.temp }}/5echm-web
+      OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
+      COUNTERPARTS_DIR: ${{ runner.temp }}/5etools-cn
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -26,30 +29,31 @@ jobs:
           cache: pip
       - id: pages
         uses: actions/configure-pages@v5
-      - name: Build and package Anna and Stella
-        env:
-          BASE_PATH: ${{ steps.pages.outputs.base_path }}
-          WEB_DIR: ${{ runner.temp }}/5echm-web
-          OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
-          COUNTERPARTS_DIR: ${{ runner.temp }}/5etools-cn
-          BOOK_REVISION: c1425c8e90804766689a0db7ec416833f3fc3046
-          OUR5ETOOLS_REVISION: e475d00b50ea1e8bca0dd8f8c1767e4205660a11
-          COUNTERPARTS_REVISION: bdf81fee890db59847b8b1c44b79aaf220f65400
+      - name: Fetch the sources pinned in sources.json
         run: |
+          lock() { python scripts/sources.py get "$@"; }
           git init "$WEB_DIR"
-          git -C "$WEB_DIR" fetch --depth 1 https://github.com/DND5eChm/5echm_web.git "$BOOK_REVISION"
+          git -C "$WEB_DIR" fetch --depth 1 "$(lock web repo)" "$(lock web revision)"
           git -C "$WEB_DIR" checkout --detach FETCH_HEAD
           git init "$OUR5ETOOLS_DIR"
-          git -C "$OUR5ETOOLS_DIR" fetch --depth 1 https://github.com/KuroNeko233333/KuroNeko233333.github.io.git "$OUR5ETOOLS_REVISION"
+          git -C "$OUR5ETOOLS_DIR" fetch --depth 1 "$(lock our5etools repo)" "$(lock our5etools revision)"
           git -C "$OUR5ETOOLS_DIR" checkout --detach FETCH_HEAD
           test -d "$OUR5ETOOLS_DIR/data"
           test -f "$OUR5ETOOLS_DIR/__api/books.json"
-          git clone --depth 1 --filter=blob:none --no-checkout https://github.com/tjliqy/5etools-cn.git "$COUNTERPARTS_DIR"
-          git -C "$COUNTERPARTS_DIR" sparse-checkout set --cone data
-          git -C "$COUNTERPARTS_DIR" fetch --depth 1 --filter=blob:none origin "$COUNTERPARTS_REVISION"
+          git clone --depth 1 --filter=blob:none --no-checkout "$(lock counterparts repo)" "$COUNTERPARTS_DIR"
+          git -C "$COUNTERPARTS_DIR" sparse-checkout set --cone $(lock counterparts sparse)
+          git -C "$COUNTERPARTS_DIR" fetch --depth 1 --filter=blob:none origin "$(lock counterparts revision)"
           git -C "$COUNTERPARTS_DIR" checkout --detach FETCH_HEAD
+      - name: Build Anna and Stella
+        run: |
           python -m pip install -r requirements.txt
-          make build pages "PAGES_BASE=${BASE_PATH%/}/"
+          make build
+      - name: Run unit tests against the build
+        run: make test-unit
+      - name: Package for Pages
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+        run: make pages "PAGES_BASE=${BASE_PATH%/}/"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ env.PAGES_OUTPUT }}

@@ -1,15 +1,20 @@
 # anna owns the workflow; the sibling mirrors remain independent repositories.
+PROJECT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 # Machine-specific paths and defaults live in the untracked local.mk; command-line variables still override them.
 -include local.mk
+# sources.json pins each mirror's repository, branch and revision; local builds and the Pages workflow read it.
+# Its values are read only by the recipes that need them.
+SOURCES_LOCK ?= $(PROJECT)/sources.json
+SOURCES = python3 "$(PROJECT)/scripts/sources.py" --lock "$(SOURCES_LOCK)"
 WEB_DIR ?= ../5echm-web
 WEB_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(WEB_DIR)")
-REPO ?= https://github.com/DND5eChm/5echm_web.git
-BRANCH ?= pages
-# The counterparts mirror is 5etools-cn, compared with anna's entries; only its data/ directory is checked out.
+REPO ?= $(shell $(SOURCES) get web repo)
+BRANCH ?= $(shell $(SOURCES) get web branch)
+# The counterparts mirror is 5etools-cn, compared with anna's entries; only the lock's sparse paths are checked out.
 COUNTERPARTS_DIR ?= ../5etools-cn
 COUNTERPARTS_PATH := $(shell python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$(COUNTERPARTS_DIR)")
-COUNTERPARTS_REPO ?= https://github.com/tjliqy/5etools-cn.git
-COUNTERPARTS_BRANCH ?= main
+COUNTERPARTS_REPO ?= $(shell $(SOURCES) get counterparts repo)
+COUNTERPARTS_BRANCH ?= $(shell $(SOURCES) get counterparts branch)
 # our5etools and the reserved standalone 5etools collection are libraries anna serves, unlike the counterparts mirror.
 OUR5ETOOLS_DIR ?= ../our5etools
 OUR5ETOOLS_IMG_DIR ?=
@@ -55,7 +60,7 @@ _clone-web:
 _clone-counterparts:
 	@if [ ! -e "$(COUNTERPARTS_PATH)" ]; then \
 		git clone --depth 1 --filter=blob:none --sparse --branch "$(COUNTERPARTS_BRANCH)" "$(COUNTERPARTS_REPO)" "$(COUNTERPARTS_PATH)" && \
-		git -C "$(COUNTERPARTS_PATH)" sparse-checkout set data; \
+		git -C "$(COUNTERPARTS_PATH)" sparse-checkout set $(shell $(SOURCES) get counterparts sparse); \
 	elif [ ! -d "$(COUNTERPARTS_PATH)/data" ]; then \
 		echo "5etools-cn has no data directory; refusing to overwrite: $(COUNTERPARTS_PATH)" >&2; exit 1; \
 	fi
@@ -65,6 +70,7 @@ update: clone
 	@git -C "$(WEB_PATH)" log -1 --format='source updated to %h  %ad  %s' --date=iso
 	@git -C "$(COUNTERPARTS_PATH)" pull --ff-only
 	@git -C "$(COUNTERPARTS_PATH)" log -1 --format='5etools-cn updated to %h  %ad  %s' --date=iso
+	@$(SOURCES) record web="$(WEB_PATH)" counterparts="$(COUNTERPARTS_PATH)" our5etools="$(OUR5ETOOLS_PATH)"
 
 status:
 	@if [ -d "$(WEB_PATH)/.git" ] || [ -f "$(WEB_PATH)/.git" ]; then \
@@ -100,6 +106,7 @@ status:
 	else \
 		echo "our5etools data: not built yet (run make our5etools)"; \
 	fi
+	@$(SOURCES) status web="$(WEB_PATH)" counterparts="$(COUNTERPARTS_PATH)" our5etools="$(OUR5ETOOLS_PATH)"
 
 clean:
 	@python3 scripts/clean.py
@@ -116,6 +123,7 @@ build: 5echm $(if $(OUR5ETOOLS_MIRROR),our5etools,_skip-our5etools) home
 5echm: _catalog linked
 
 _catalog: _clone-web $(if $(COUNTERPARTS_ENABLED),_clone-counterparts) icons
+	@$(SOURCES) check web="$(WEB_PATH)" $(if $(COUNTERPARTS_ENABLED),counterparts="$(COUNTERPARTS_PATH)")
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build $(COUNTERPART_ARGS)
 
 linked:
@@ -126,6 +134,7 @@ our5etools:
 	$(error our5etools: no mirror with data/ and __api/books.json at $(OUR5ETOOLS_PATH); set OUR5ETOOLS_DIR in local.mk or on the command line)
 else
 our5etools:
+	@$(SOURCES) check our5etools="$(OUR5ETOOLS_PATH)"
 	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
 endif
 

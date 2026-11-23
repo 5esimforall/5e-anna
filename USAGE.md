@@ -6,7 +6,7 @@
 
 | 命令 | 用途 |
 | --- | --- |
-| `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
+| `make clone` | 原文或 5etools-cn 对照镜像缺失时按 `sources.json` 的仓库与分支下载；已有镜像保持不变 |
 | `make build` | 构建不全书数据库与链接版，有 our5etools 镜像时一并构建，最后生成首页缓存。可只运行其中的阶段，见[构建阶段](#构建阶段) |
 | `make pages` | 把已构建的资料库打包为静态站点；`make build pages` 先重建再打包 |
 | `make our5etools-audit` | 核查 `data/our5etools/` 的不变量并生成 `data/our5etools/audit.md` |
@@ -19,8 +19,8 @@
 | `make audit` | 审计不全书数据库与生成统计；存在 `data/our5etools/manifest.json` 时同步执行 `our5etools-audit` |
 | `make audit-links` | 从原文逐处复核字段、表列及骰值伤害的引用落点 |
 | `make check` | 运行测试与审计 |
-| `make update` | 显式拉取原文与 5etools-cn 更新；之后运行 `make build` 更新数据 |
-| `make status` | 查看原文、5etools-cn、our5etools 镜像及构建产物状态 |
+| `make update` | 显式拉取原文与 5etools-cn 更新，并把各镜像的新版本写入 `sources.json`；之后运行 `make build` 更新数据 |
+| `make status` | 查看原文、5etools-cn、our5etools 镜像及构建产物状态，以及各镜像是否处于 `sources.json` 固定的版本 |
 | `make clean` | 删除本地生成数据、报告和图标；保留依赖环境、源码、独立输入与共享镜像 |
 | `make distclean` | 在 `make clean` 之外删除 Python 虚拟环境、Node 依赖和浏览器测试缓存 |
 
@@ -61,7 +61,7 @@ OUR5ETOOLS_IMG_DIR ?= /路径/5etools-img
 
 [our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `COUNTERPARTS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make our5etools`。
 
-构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
+构建时缺失的镜像会自动下载；已有镜像不会自动更新，由 `make update` 显式拉取，见[源码版本锁](#源码版本锁)。`make clean` 只清理本项目，不删除共享镜像。
 
 Stella 全文搜索索引作为 `book_search` 表直接随 `make build` 写入 `catalog.sqlite`，并按原文路径、目录与 HTML 内容指纹（`book_search_signature`）校验；若启动服务后原文发生未重建修改，会自动退回目录即时扫描。默认优先使用 anna 的 `.venv/bin/python`，未创建时使用 `python3`；可用 `PYTHON=/绝对路径/解释器` 覆盖。`ANNA_PORT` 配置查询、阅读与正文资源共用的端口，仅本机访问。
 
@@ -76,12 +76,35 @@ make browser-setup
 make check
 ```
 
+## 源码版本锁
+
+本地构建与 GitHub Pages 需要读取同一份原文快照。仓库根目录的 `sources.json` 为每个镜像记录仓库地址、分支与固定版本，5etools-cn 另记稀疏检出的目录。Makefile 的 `REPO`、`BRANCH`、`COUNTERPARTS_REPO` 与 `COUNTERPARTS_BRANCH` 默认取自这里，Pages 工作流按其中的版本检出镜像：
+
+```json
+{
+  "schema": 1,
+  "mirrors": {
+    "web": {"repo": "https://github.com/DND5eChm/5echm_web.git", "branch": "pages", "revision": "c1425c8e…"},
+    "counterparts": {"repo": "https://github.com/tjliqy/5etools-cn.git", "branch": "main", "revision": "bdf81fee…", "sparse": ["data"]},
+    "our5etools": {"repo": "https://github.com/KuroNeko233333/KuroNeko233333.github.io.git", "branch": "main", "revision": "e475d00b…"}
+  }
+}
+```
+
+键名对应镜像的路径参数：`web` 对应 `WEB_DIR`，`counterparts` 对应 `COUNTERPARTS_DIR`，`our5etools` 对应 `OUR5ETOOLS_DIR`。`revision` 写完整的 40 位提交号；文件缺失或格式无效时，读取它的命令报错停止。版本锁只记录和比较版本，不移动镜像：
+
+- `make status` 逐个说明镜像 HEAD 是否与固定版本一致。`make 5echm` 与 `make our5etools` 遇到不一致时给出警告并照常构建，读取的是镜像的当前内容。
+- `make update` 在各自分支上快进拉取原文与 5etools-cn，再把三个镜像的 HEAD 写入 `sources.json`；our5etools 镜像只读取 HEAD，不拉取。HEAD 不在镜像的 `origin/<分支>` 上时（例如尚未推送的本地提交），Pages 无法获取它，原固定版本保持不变。
+- 更新后的 `sources.json` 是一项可审阅的改动：运行 `make build` 与 `make test-unit` 确认新快照，再提交并推送，Pages 随即构建同一快照。`make clone` 新下载的镜像停留在分支最新提交，可能领先于固定版本，`make status` 会如实显示。
+
+`make update` 只更新镜像与版本锁，之后运行 `make build` 才更新数据库、库内全文索引和链接版。
+
 ## 清理与重建
 
 清理前停止正在运行的 anna 服务。两级清理都直接删除，不备份，也不遍历指向项目外的符号链接；`assets/branding/` 原图、`annotations/` 结构化标注输入与 `local.mk` 保留。
 
 - `make clean` 删除 `data/`、`output/`、中断构建目录、项目内的 Python 缓存和由人物原图导出的界面图标，之后执行 `make build` 恢复图标、查询库与链接版。
-- `make distclean` 另外删除 `.venv/`、`node_modules/` 和 `.cache/`（npm 与 Chromium 缓存），之后按上节重新安装依赖；只有运行浏览器测试才需要 `make browser-setup`。
+- `make distclean` 另外删除 `.venv/`、`node_modules/` 和 `.cache/`（npm 与 Chromium 缓存），之后按[路径与环境](#路径与环境)末尾重新安装依赖；只有运行浏览器测试才需要 `make browser-setup`。
 
 生成文件和历史测试报告不提交 Git。
 
@@ -401,9 +424,9 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 
 5etools-cn 镜像用于构建时对照来源，独立中文版 5etools 资料库仍为预留接口。公开站点包含查询、导览与阅读所需产物。构建审计和原文输入镜像用于维护流程。
 
-[GitHub Pages 工作流](.github/workflows/pages.yml)从固定的原文镜像提交构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
+[GitHub Pages 工作流](.github/workflows/pages.yml)按 `sources.json` 固定的镜像版本构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
 
-工作流用 `make build pages` 重建并打包，镜像路径通过环境变量 `WEB_DIR`、`OUR5ETOOLS_DIR` 与 `COUNTERPARTS_DIR` 传入。已有构建产物时，`make pages` 校验并复用它们生成静态预览包：
+工作流按[源码版本锁](#源码版本锁)检出三个镜像，镜像路径通过环境变量 `WEB_DIR`、`OUR5ETOOLS_DIR` 与 `COUNTERPARTS_DIR` 传入，再依次运行 `make build`、`make test-unit` 与 `make pages`：单元测试读取刚构建的数据，通过后才打包上传。已有构建产物时，`make pages` 校验并复用它们生成静态预览包：
 
 ```sh
 make pages PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages

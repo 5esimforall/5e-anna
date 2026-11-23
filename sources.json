@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "mirrors": {
+    "web": {
+      "repo": "https://github.com/DND5eChm/5echm_web.git",
+      "branch": "pages",
+      "revision": "c1425c8e90804766689a0db7ec416833f3fc3046"
+    },
+    "counterparts": {
+      "repo": "https://github.com/tjliqy/5etools-cn.git",
+      "branch": "main",
+      "revision": "bdf81fee890db59847b8b1c44b79aaf220f65400",
+      "sparse": [
+        "data"
+      ]
+    },
+    "our5etools": {
+      "repo": "https://github.com/KuroNeko233333/KuroNeko233333.github.io.git",
+      "branch": "main",
+      "revision": "e475d00b50ea1e8bca0dd8f8c1767e4205660a11"
+    }
+  }
+}

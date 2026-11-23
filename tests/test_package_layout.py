@@ -27,7 +27,7 @@ class PackageLayoutTests(unittest.TestCase):
                     if isinstance(node,ast.ImportFrom) and node.level==0:
                         self.assertNotIn(node.module,{'build','paths','review_store','html_extract','serve'})
         self.assertEqual(output.getvalue(),'')
-        self.assertEqual(sorted(p.name for p in (PROJECT/'scripts').glob('*.py')),['build_icons.py','clean.py'])
+        self.assertEqual(sorted(p.name for p in (PROJECT/'scripts').glob('*.py')),['build_icons.py','clean.py','sources.py'])
 
     def test_module_commands_expose_help(self):
         commands=('catalog.build','catalog.audit','catalog.query','source.search',

@@ -67,12 +67,12 @@ class CleanTests(unittest.TestCase):
         for target, command in (('clean', 'python3 scripts/clean.py'),
                                 ('distclean', 'python3 scripts/clean.py --dependencies')):
             with self.subTest(target=target):
-                result = subprocess.run(['make', '-n', target, 'WEB_DIR=/external/source'], cwd=PROJECT,
+                result = subprocess.run(['make', '--no-print-directory', '-n', target, 'WEB_DIR=/external/source'], cwd=PROJECT,
                                         text=True, capture_output=True, check=True)
                 self.assertEqual(result.stdout.strip(), command)
 
     def test_build_regenerates_icons_before_catalog_and_linked_book(self):
-        result = subprocess.run(['make', '-n', 'build'], cwd=PROJECT,
+        result = subprocess.run(['make', '--no-print-directory', '-n', 'build'], cwd=PROJECT,
                                 text=True, capture_output=True, check=True)
         self.assertLess(result.stdout.index('scripts/build_icons.py'), result.stdout.index('-m anna.catalog.build'))
         self.assertIn('-m anna.publish.linked_book', result.stdout)

@@ -712,8 +712,11 @@ class Our5etoolsRealCorpusInventoryAndSemanticsTests(unittest.TestCase):
         return db
 
     def test_inventory_files_exclusions_and_packages(self):
-        self.assertEqual(self.inv_json['total_files'], 2048)
-        self.assertEqual(len(self.inv_json['files']), 2048)
+        self.assertEqual(self.inv_json['total_files'], len(self.inv_json['files']))
+        # The pinned e475d00 tree has 2045 tracked files (2038 non-repo_helper); local worktrees may hold extra repo helpers.
+        self.assertGreaterEqual(self.inv_json['total_files'], 2045)
+        non_helpers = [f for f in self.inv_json['files'] if f['disposition'] != 'repo_helper']
+        self.assertEqual(len(non_helpers), 2038)
         excluded_prefixes = ('search/', 'data/generated/', 'homebrew/_bundle/', 'homebrew/_indexes/')
         for f in self.inv_json['files']:
             p = f['path']

@@ -3,6 +3,7 @@ from pathlib import Path
 import sqlite3
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from anna.source.html import Document
@@ -55,6 +56,16 @@ class LinkedBuildTests(unittest.TestCase):
         conn.execute('INSERT INTO metadata VALUES(?,?)',('reference_coverage','{}'))
         conn.commit();conn.close();d.close()
         return source,db
+    def test_command_line_reads_web_and_db_and_writes_book(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);source,db=self.fixture(root);out=root/'linked book'
+            project=Path(__file__).resolve().parents[1]
+            result=subprocess.run([sys.executable,'-m','anna.server.linked_book','--web',str(source),'--db',str(db),
+                                   '--book',str(out)],cwd=project,text=True,capture_output=True,timeout=60)
+            self.assertEqual(result.returncode,0,result.stderr)
+            manifest=json.loads((out/'anna-manifest.json').read_text())
+            self.assertEqual(Path(manifest['source_root']),source.resolve())
+
     def test_copy_bindings_references_and_rebuild(self):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);source,db=self.fixture(root);out=root/'book'

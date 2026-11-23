@@ -30,10 +30,10 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (PROJECT/'scripts').glob('*.py')),['build_icons.py','clean.py','sources.py'])
 
     def test_module_commands_expose_help(self):
-        commands=('catalog.build','catalog.audit','catalog.query','source.search',
+        commands=('catalog.build','catalog.audit','catalog.query','catalog.reference_coverage','source.search',
                   'review.repository',
                   'our5etools.build','our5etools.audit',
-                  'server.linked_book','server.app')
+                  'server.linked_book','server.home','server.pages_build','server.app')
         for command in commands:
             with self.subTest(command=command):
                 result=subprocess.run([sys.executable,'-m','anna.'+command,'--help'],cwd=PROJECT,
@@ -41,6 +41,23 @@ class PackageLayoutTests(unittest.TestCase):
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertIn('usage:',result.stdout)
                 self.assertNotIn('RuntimeWarning',result.stderr)
+
+    def test_retired_flag_spellings_are_rejected(self):
+        # Each input keeps one name across commands: --web, --our5etools, --counterparts, --db, --book,
+        # --our5etools-data. --source remains only the book-source filter of catalog.query.
+        retired=(('catalog.build','--source'),('catalog.reference_coverage','--catalog'),
+                 ('source.search','--source'),('server.linked_book','--source'),('server.linked_book','--output'),
+                 ('server.app','--source'),('server.app','--our5etools-source'),
+                 ('our5etools.build','--source'),('our5etools.build','--output'),('our5etools.audit','--data'))
+        for command,flag in retired:
+            with self.subTest(command=command,flag=flag):
+                result=subprocess.run([sys.executable,'-m','anna.'+command,flag,'retired'],cwd=PROJECT,
+                                      text=True,capture_output=True,timeout=20)
+                self.assertEqual(result.returncode,2,result.stderr)
+                self.assertIn(f'unrecognized arguments: {flag}',result.stderr)
+        result=subprocess.run([sys.executable,'-m','anna.catalog.query','--help'],cwd=PROJECT,
+                              text=True,capture_output=True,timeout=20)
+        self.assertIn('book name, ID, or abbreviation',result.stdout)
 
     def test_fingerprints_follow_package_not_maintenance_scripts(self):
         self.assertIn('source/pages.py',store.EXTRACTION_MODULES)

@@ -199,13 +199,13 @@ def report(db,catalog,book,output,baseline=None):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--catalog',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
+    parser.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
     parser.add_argument('--book',type=Path,default=PROJECT/'data/5echm-anna')
     parser.add_argument('--output',type=Path,default=PROJECT/'output/reference-coverage')
     parser.add_argument('--baseline',type=Path,help='核对同一快照上的所有旧点击是否保留原范围及目标')
     args=parser.parse_args()
-    with closing(sqlite3.connect(args.catalog.resolve().as_uri()+'?mode=ro',uri=True)) as db:
-        return report(db,args.catalog,args.book,args.output,args.baseline)
+    with closing(sqlite3.connect(args.db.resolve().as_uri()+'?mode=ro',uri=True)) as db:
+        return report(db,args.db,args.book,args.output,args.baseline)
 
 
 if __name__=='__main__':

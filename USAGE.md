@@ -26,6 +26,21 @@
 
 不带目标运行 `make` 会显示本页位置。下文的 `python -m anna.…` 开发维护命令在仓库根目录运行。
 
+各命令用同一个参数名指代同一份输入。Makefile 把路径作为参数传给命令；直接运行命令且未传参数时，镜像路径取自同名环境变量，其余取项目内的默认位置：
+
+| 参数 | 含义 | 未传时 |
+| --- | --- | --- |
+| `--web` | 5echm-web 原文镜像 | 环境变量 `WEB_DIR`，否则同级的 `5echm-web/` |
+| `--counterparts` | 5etools-cn 对照镜像 | 环境变量 `COUNTERPARTS_DIR`，否则同级的 `5etools-cn/` |
+| `--our5etools` | our5etools 镜像 | 环境变量 `OUR5ETOOLS_DIR`，否则同级的 `our5etools/` |
+| `--db` | 不全书查询库 | `data/extracted/catalog.sqlite` |
+| `--book` | 不全书链接版目录 | `data/5echm-anna/` |
+| `--our5etools-data` | our5etools 资料库目录，由 `anna.our5etools.build` 写入，其他命令读取 | `data/our5etools/` |
+| `--5etools-data` | 预留的独立 5etools 资料库目录 | `data/5etools/` |
+| `--output` | 命令自身的报告或产物，其他命令不读取 | 见各命令的 `--help` |
+
+`--source` 只表示书籍来源筛选，见于 `anna.catalog.query` 与 `anna.review.repository candidates`。
+
 ## 构建阶段
 
 构建由几个阶段组成，每个阶段是一个 make 目标。`make build` 依次运行 `5echm`、`our5etools` 和 `home`；our5etools 镜像缺少 `data/` 或 `__api/books.json` 时跳过这一阶段并给出提示。只需更新部分产物时，在一条命令里按顺序写出所需阶段，例如 `make our5etools home`。阶段严格按书写顺序执行，后一阶段读取前一阶段发布的产物。
@@ -59,7 +74,7 @@ OUR5ETOOLS_IMG_DIR ?= /路径/5etools-img
 
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。`COUNTERPARTS_DIR=/路径`（以及 `COUNTERPARTS_REPO`、`COUNTERPARTS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；它们可以写在 make 参数、`local.mk` 或环境变量中。直接运行 `python -m anna.catalog.build` 时用 `--counterparts /路径` 或环境变量 `COUNTERPARTS_DIR`。用 `NO_COUNTERPARTS=1` 跳过对照时，构建摘要记为 `skipped`。
 
-[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `COUNTERPARTS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make our5etools`。
+[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `COUNTERPARTS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA`（CLI `--our5etools-data`）指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make our5etools`。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新，由 `make update` 显式拉取，见[源码版本锁](#源码版本锁)。`make clean` 只清理本项目，不删除共享镜像。
 
@@ -377,12 +392,12 @@ make our5etools
 make our5etools-audit
 
 # 直接调用模块命令行
-.venv/bin/python -m anna.our5etools.build --source /绝对路径/our5etools --output data/our5etools [--img-dir /绝对路径/5etools-img] [--collection our5etools] [--quiet]
-.venv/bin/python -m anna.our5etools.audit --data data/our5etools --output data/our5etools/audit.md [--json]
+.venv/bin/python -m anna.our5etools.build --our5etools /绝对路径/our5etools --our5etools-data data/our5etools [--img-dir /绝对路径/5etools-img] [--collection our5etools] [--quiet]
+.venv/bin/python -m anna.our5etools.audit --our5etools-data data/our5etools --output data/our5etools/audit.md [--json]
 
 # 启动服务（默认完全离线自包含；加 LAZY_MEDIA=1 / --lazy-media 或 ANNA_LAZY_MEDIA=1 开启远端配图按需懒加载与本地落盘缓存）
 make up [LAZY_MEDIA=1]
-.venv/bin/python -m anna.server.app --port 8000 --our5etools-data data/our5etools [--5etools-data data/5etools] [--lazy-media] [--watch]
+.venv/bin/python -m anna.server.app --port 8000 --web ../5echm-web --our5etools-data data/our5etools [--5etools-data data/5etools] [--lazy-media] [--watch]
 ```
 
 构建过程先校验源镜像（`data/`、`__api/books.json`、`homebrew/_recipes/all.json`），再写入同级临时目录 `<output>.tmp.<pid>`；其中随包打包源镜像全部本地媒体至 `media/`，并保留此前已懒加载缓存的 `media/img/` 与 `media/ext/` 图像。全部表、阅读章节、媒体清单与文件校验通过后，经 `.prev` 原子替换目标目录并在成功后清理备份。任意阶段失败时删除临时目录，保留既有 `data/our5etools/` 快照不受破坏。相同源镜像重复构建保持幂等（相同 `snapshot`，`delta` 零增删）。`make upper`（`--watch`）在 `data/our5etools/manifest.json` 或预留 `data/5etools/manifest.json` 更新并稳定后自动热重载对应资料库。

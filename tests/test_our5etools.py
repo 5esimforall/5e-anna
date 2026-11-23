@@ -400,6 +400,17 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
         self.assertTrue(any('Vampire.webp' in m for m in media_summary['remote_media']))
         self.assertFalse(any('Vampire.webp' in m for m in media_summary['local_media']))
 
+    def test_command_line_names_the_mirror_and_the_data_directory(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = _make_mini_repo(root)
+            out = root / 'our data'
+            self.assertEqual(build.main(['--our5etools', str(src), '--our5etools-data', str(out), '--quiet']), 0)
+            self.assertEqual(json.loads((out / 'manifest.json').read_text())['counts']['entries'], 5)
+            with patch('sys.stdout', io.StringIO()):
+                self.assertEqual(audit.main(['--our5etools-data', str(out), '--output', str(root / 'report.md')]), 0)
+            self.assertTrue((root / 'report.md').is_file())
+
     def test_mini_build_idempotency_rollback_and_audit(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -409,7 +420,7 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
             # 1. Initial build -> audit exit 0
             m1 = build.build(source=src, output=out, quiet=True)
             self.assertEqual(m1['counts']['entries'], 5)  # 3 spells + 1 monster + 1 book
-            self.assertEqual(audit.main(['--data', str(out)]), 0)
+            self.assertEqual(audit.main(['--our5etools-data', str(out)]), 0)
             self.assertTrue((out / 'audit.md').is_file())
 
             # 2. Idempotent rebuild -> identical snapshot and empty delta
@@ -426,7 +437,7 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
             self.assertEqual((out / 'manifest.json').read_bytes(), sentinel)
             leftovers = [p.name for p in root.iterdir() if '.tmp.' in p.name or '.prev.' in p.name]
             self.assertEqual(leftovers, [])
-            self.assertEqual(audit.main(['--data', str(out)]), 0)
+            self.assertEqual(audit.main(['--our5etools-data', str(out)]), 0)
 
             # 4. Corrupted invariant -> audit exit 1
             db = sqlite3.connect(out / 'catalog.sqlite')
@@ -436,7 +447,7 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
             )
             db.commit()
             db.close()
-            self.assertEqual(audit.main(['--data', str(out)]), 1)
+            self.assertEqual(audit.main(['--our5etools-data', str(out)]), 1)
 
     def test_self_contained_bundle_and_opt_in_lazy_media(self):
         import email.message
@@ -605,8 +616,8 @@ class Our5etoolsUnitSemanticsAndRenderTests(unittest.TestCase):
             m_5e = build.build(source=src, output=out_5e, collection_key='5etools', quiet=True)
             self.assertEqual(m_our['collection'], 'our5etools')
             self.assertEqual(m_5e['collection'], '5etools')
-            self.assertEqual(audit.main(['--data', str(out_our)]), 0)
-            self.assertEqual(audit.main(['--data', str(out_5e)]), 0)
+            self.assertEqual(audit.main(['--our5etools-data', str(out_our)]), 0)
+            self.assertEqual(audit.main(['--our5etools-data', str(out_5e)]), 0)
 
             # Collection loaders strictly enforce matching manifest/reader collection key.
             self.assertIsNone(load_our5etools_collection(out_5e))

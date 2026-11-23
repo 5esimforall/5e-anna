@@ -1795,16 +1795,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description='Build the our5etools SQLite catalog, Stella reader pages, and audit artifacts.',
     )
     parser.add_argument(
-        '--source',
+        '--our5etools',
         type=Path,
         default=OUR5ETOOLS,
         help=f'Path to the local our5etools mirror (default: {OUR5ETOOLS}).',
     )
     parser.add_argument(
-        '--output',
+        '--our5etools-data',
         type=Path,
         default=OUR5ETOOLS_DATA,
-        help=f'Output data directory (default: {OUR5ETOOLS_DATA}).',
+        help=f'Data directory to publish (default: {OUR5ETOOLS_DATA}).',
     )
     parser.add_argument(
         '--img-dir',
@@ -1828,8 +1828,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     manifest = build(
-        source=args.source,
-        output=args.output,
+        source=args.our5etools,
+        output=args.our5etools_data,
         img_dir=args.img_dir,
         collection_key=args.collection,
         quiet=args.quiet,
@@ -1837,7 +1837,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.quiet:
         print(json.dumps({
             'snapshot': manifest['snapshot'],
-            'output': str(args.output.resolve()),
+            'output': str(args.our5etools_data.resolve()),
             'counts': manifest['counts'],
             'checks': manifest['checks'],
             'elapsed_seconds': manifest['elapsed_seconds'],

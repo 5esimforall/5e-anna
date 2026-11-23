@@ -124,10 +124,10 @@ build: 5echm $(if $(OUR5ETOOLS_MIRROR),our5etools,_skip-our5etools) home
 
 _catalog: _clone-web $(if $(COUNTERPARTS_ENABLED),_clone-counterparts) icons
 	@$(SOURCES) check web="$(WEB_PATH)" $(if $(COUNTERPARTS_ENABLED),counterparts="$(COUNTERPARTS_PATH)")
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build $(COUNTERPART_ARGS)
+	@"$(PYTHON)" -m anna.catalog.build --web "$(WEB_PATH)" $(COUNTERPART_ARGS)
 
 linked:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
+	@"$(PYTHON)" -m anna.server.linked_book --web "$(WEB_PATH)"
 
 ifeq ($(OUR5ETOOLS_MIRROR),)
 our5etools:
@@ -135,23 +135,23 @@ our5etools:
 else
 our5etools:
 	@$(SOURCES) check our5etools="$(OUR5ETOOLS_PATH)"
-	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
+	@"$(PYTHON)" -m anna.our5etools.build --our5etools "$(OUR5ETOOLS_PATH)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
 endif
 
 _skip-our5etools:
 	@echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"
 
 home:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.home --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
+	@"$(PYTHON)" -m anna.server.home --web "$(WEB_PATH)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 # Pages packages the libraries `make up` would serve, with a home cache encoded from the packaged site.
 pages:
 	@test -f data/extracted/catalog.sqlite && test -f data/5echm-anna/anna-manifest.json || \
 		{ echo "pages: no built 5echm library in data/; run make build first" >&2; exit 1; }
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.pages_build --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(PAGES_OUR5ETOOLS) --home-cache
+	@"$(PYTHON)" -m anna.server.pages_build --web "$(WEB_PATH)" --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(PAGES_OUR5ETOOLS) --home-cache
 
 our5etools-audit:
-	@"$(PYTHON)" -m anna.our5etools.audit --data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"
+	@"$(PYTHON)" -m anna.our5etools.audit --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"
 
 test: test-unit test-browser
 
@@ -170,10 +170,10 @@ audit-links:
 check: test audit
 
 up:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
+	@"$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --web "$(WEB_PATH)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 upper:
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
+	@"$(PYTHON)" -m anna.server.app --port "$(ANNA_PORT)" --watch --web "$(WEB_PATH)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 # Browser tests use one dedicated localhost port and stop automatically.
 browser-setup:

@@ -312,13 +312,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('keyword', nargs='?', default='', help='Search query string')
     parser.add_argument('--db', type=Path, default=PROJECT / 'data/extracted/catalog.sqlite')
-    parser.add_argument('--source', type=Path, default=WEB)
+    parser.add_argument('--web', type=Path, default=WEB)
     parser.add_argument('--limit', type=int, default=20)
     parser.add_argument('--page', type=int, default=1)
     parser.add_argument('--regex', action='store_true')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
-    entries = load_index(args.db, args.source, quiet=True)
+    entries = load_index(args.db, args.web, quiet=True)
     if not args.keyword:
         print(json.dumps({'indexed_pages': len(entries)}, ensure_ascii=False))
         return

@@ -115,9 +115,10 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--web', type=Path, default=WEB)
     parser.add_argument('--base', default='/5e-anna/')
     parser.add_argument('--our5etools-data', type=Path)
     parser.add_argument('--home-cache', action='store_true')
     args = parser.parse_args()
-    build(args.output.resolve(), WEB, DB, BOOK, args.base, our5etools_data=args.our5etools_data,
+    build(args.output.resolve(), args.web, DB, BOOK, args.base, our5etools_data=args.our5etools_data,
           home_cache=args.home_cache)

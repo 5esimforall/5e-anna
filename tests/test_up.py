@@ -128,7 +128,7 @@ class ServerTests(unittest.TestCase):
                 code="import anna.server.app as up; up.main()"
                 project=Path(__file__).resolve().parents[1]
                 with (root/'log').open('w+') as log:
-                    process=subprocess.Popen([sys.executable,'-c',code,'--source',str(source),'--db',str(db),'--book',str(book),'--port','0'],cwd=project,stdout=log,stderr=log)
+                    process=subprocess.Popen([sys.executable,'-c',code,'--web',str(source),'--db',str(db),'--book',str(book),'--port','0'],cwd=project,stdout=log,stderr=log)
                     try:
                         deadline=time.monotonic()+10
                         output=''

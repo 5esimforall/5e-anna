@@ -590,7 +590,7 @@ def publish(stage,dest):
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--source',type=Path,default=DEFAULT_WEB);ap.add_argument('--output',type=Path,default=PROJECT/'data/extracted')
+    ap.add_argument('--web',type=Path,default=DEFAULT_WEB,help='5echm-web mirror to extract');ap.add_argument('--output',type=Path,default=PROJECT/'data/extracted')
     ap.add_argument('--annotations',type=Path,default=DEFAULT_ANNOTATIONS)
     ap.add_argument('--counterparts',type=Path,default=DEFAULT_COUNTERPARTS,help='5etools-cn mirror compared with the extracted entries')
     ap.add_argument('--no-counterparts',action='store_true',help='skip the 5etools-cn comparison; the summary records it as skipped')
@@ -599,8 +599,8 @@ def main():
     counterparts=None if args.no_counterparts else args.counterparts
     if counterparts and not (counterparts/'data').is_dir():
         raise SystemExit(f'5etools-cn mirror missing: {counterparts}; run make clone to download it, or pass --no-counterparts to skip the comparison')
-    started=time.monotonic();extraction_at_start=extraction_hash();b=Build(args.source)
-    paths=sorted(p.relative_to(args.source).as_posix() for p in (args.source/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
+    started=time.monotonic();extraction_at_start=extraction_hash();b=Build(args.web)
+    paths=sorted(p.relative_to(args.web).as_posix() for p in (args.web/'topics').rglob('*') if p.suffix.lower() in {'.htm','.html'})
     total=len(paths)
     b.registry.register_orphans([p for p in paths if page_role(p)=='document'])
     b.index_pass()

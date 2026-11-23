@@ -686,11 +686,11 @@ def main():
     parser.add_argument('--port', type=int, default=8000)
     parser.add_argument('--db', type=Path, default=catalog.DB)
     parser.add_argument('--book', type=Path, default=BOOK)
-    parser.add_argument('--source', type=Path, default=WEB)
+    parser.add_argument('--web', type=Path, default=WEB)
     parser.add_argument('--our5etools-data', type=Path, default=OUR5ETOOLS_DATA)
     parser.add_argument('--5etools-data', dest='fivetools_data', type=Path, default=FIVETOOLS_DATA,
                         help='reserved standalone 5etools snapshot directory (default: data/5etools)')
-    parser.add_argument('--our5etools-source', type=Path, default=None,
+    parser.add_argument('--our5etools', type=Path, default=None,
                         help=argparse.SUPPRESS)
     parser.add_argument('--lazy-media', action='store_true', default=lazy_default,
                         help='lazily fetch and locally cache unbundled remote images on demand')
@@ -698,7 +698,7 @@ def main():
     args = parser.parse_args()
     server, thread, stop = None, None, threading.Event()
     try:
-        bundle = load_bundle(args.source, args.db, args.book)
+        bundle = load_bundle(args.web, args.db, args.book)
         cols = []
         our5etools_col = _try_load_our5etools(args.our5etools_data, lazy_media=args.lazy_media)
         if our5etools_col is not None:
@@ -710,7 +710,7 @@ def main():
         server = create_server(
             args.db, args.book, bundle.manifest, args.port, watch=args.watch, bundle=bundle,
             additional_collections=additional,
-            our5etools_data=args.our5etools_data, our5etools_source=args.our5etools_source,
+            our5etools_data=args.our5etools_data, our5etools_source=args.our5etools,
             our5etools_lazy_media=args.lazy_media,
             fivetools_data=args.fivetools_data, fivetools_lazy_media=args.lazy_media,
         )

@@ -58,7 +58,8 @@ class WorkflowTests(unittest.TestCase):
         for command in ('up', 'upper'):
             result = self.make(WORKSPACE, '-n', command, 'WEB_DIR=custom mirror', 'ANNA_PORT=8123')
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f'WEB_DIR="{WORKSPACE / "custom mirror"}"', result.stdout)
+            self.assertIn(f'-m anna.server.app --port "8123"', result.stdout)
+            self.assertIn(f'--web "{WORKSPACE / "custom mirror"}"', result.stdout)
             self.assertIn('-m anna.server.app', result.stdout)
             self.assertIn('--port "8123"', result.stdout)
             self.assertNotIn('git pull', result.stdout)
@@ -112,11 +113,11 @@ class WorkflowTests(unittest.TestCase):
             self.our5etools_mirror(root / 'local mirror')
             result = companion()
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f'--source "{root / "local mirror"}"', result.stdout)
+            self.assertIn(f'--our5etools "{root / "local mirror"}"', result.stdout)
             self.our5etools_mirror(root / 'override')
             override = companion(f'OUR5ETOOLS_DIR={root / "override"}')
             self.assertEqual(override.returncode, 0, override.stderr)
-            self.assertIn(f'--source "{root / "override"}"', override.stdout)
+            self.assertIn(f'--our5etools "{root / "override"}"', override.stdout)
             self.assertNotIn('local mirror', override.stdout)
 
     def stage_steps(self, root, *args):
@@ -166,14 +167,20 @@ class WorkflowTests(unittest.TestCase):
                 with self.subTest(args=args):
                     self.assertEqual(self.stage_steps(root, *args)[0], steps)
             steps, output = self.stage_steps(root, '5echm')
-            self.assertIn(f'-m anna.catalog.build --counterparts "{root / "counterparts mirror"}"', output)
+            self.assertIn(f'-m anna.catalog.build --web "{root / "web mirror"}" '
+                          f'--counterparts "{root / "counterparts mirror"}"', output)
+            self.assertIn(f'-m anna.server.linked_book --web "{root / "web mirror"}"', output)
+            self.assertNotIn('WEB_DIR=', output)
             steps, output = self.stage_steps(root, '5echm', 'NO_COUNTERPARTS=1')
             self.assertEqual(steps, ['clone web mirror', 'icons', 'check pins', 'catalog.build', 'server.linked_book'])
-            self.assertIn('-m anna.catalog.build --no-counterparts', output)
+            self.assertIn(f'-m anna.catalog.build --web "{root / "web mirror"}" --no-counterparts', output)
             self.assertNotIn('counterparts mirror', output)
             steps, output = self.stage_steps(root, 'our5etools', mirror, f'OUR5ETOOLS_IMG_DIR={root / "img"}')
-            self.assertIn(f'--source "{root / "our mirror"}" --output "{root / "our data"}" --img-dir "{root / "img"}"',
-                          output)
+            self.assertIn(f'-m anna.our5etools.build --our5etools "{root / "our mirror"}" '
+                          f'--our5etools-data "{root / "our data"}" --img-dir "{root / "img"}"', output)
+            self.assertNotIn('OUR5ETOOLS_DIR=', output)
+            for stage in ('home', 'pages'):
+                self.assertIn(f'--web "{root / "web mirror"}"', self.stage_steps(root, stage)[1])
 
     def test_pages_packages_the_built_libraries_with_its_own_home_cache(self):
         with tempfile.TemporaryDirectory() as td:

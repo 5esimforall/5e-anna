@@ -1301,7 +1301,7 @@ def build_parser() -> argparse.ArgumentParser:
         description='核查已构建的 our5etools 数据集不变量并生成中文审计报告。',
     )
     parser.add_argument(
-        '--data',
+        '--our5etools-data',
         type=Path,
         default=OUR5ETOOLS_DATA,
         help=f'已构建的 our5etools 数据目录（默认：{OUR5ETOOLS_DATA}）',
@@ -1310,7 +1310,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--output',
         type=Path,
         default=None,
-        help='输出 Markdown 审计报告路径（默认：<data>/audit.md）',
+        help='输出 Markdown 审计报告路径（默认：<our5etools-data>/audit.md）',
     )
     parser.add_argument(
         '--json',
@@ -1322,7 +1322,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    data_dir = Path(args.data).expanduser().resolve()
+    data_dir = Path(args.our5etools_data).expanduser().resolve()
     out_path = Path(args.output).expanduser().resolve() if args.output else (data_dir / 'audit.md')
 
     report = audit_data(data_dir)

@@ -149,5 +149,5 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
     return manifest,report
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,default=WEB);p.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite');p.add_argument('--output',type=Path,default=BOOK)
-    a=p.parse_args();build_book(a.source,a.db,a.output)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--web',type=Path,default=WEB);p.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite');p.add_argument('--book',type=Path,default=BOOK)
+    a=p.parse_args();build_book(a.web,a.db,a.book)

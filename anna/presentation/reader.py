@@ -4,7 +4,7 @@ from hashlib import sha256
 import re
 
 from bs4 import BeautifulSoup
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 from anna.presentation.collections import SearchHits
 from anna.source.html import resolve_link
@@ -43,6 +43,11 @@ def source_release(source):
     if len(versions) != 1:
         return None
     return {'version': versions.pop(), 'path': path}
+
+
+def fingerprint(path):
+    """Digest one file as the linked-book manifest records its inputs, database and outputs."""
+    return sha256(Path(path).read_bytes()).hexdigest()
 
 
 def content_file(path):

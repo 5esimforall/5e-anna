@@ -75,7 +75,7 @@ class CleanTests(unittest.TestCase):
         result = subprocess.run(['make', '-n', 'build'], cwd=PROJECT,
                                 text=True, capture_output=True, check=True)
         self.assertLess(result.stdout.index('scripts/build_icons.py'), result.stdout.index('-m anna.catalog.build'))
-        self.assertIn('-m anna.server.linked_book', result.stdout)
+        self.assertIn('-m anna.publish.linked_book', result.stdout)
 
 
 if __name__ == '__main__':

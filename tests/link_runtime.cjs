@@ -39,7 +39,7 @@ const context=vm.createContext({document,window,CSS,Highlight,StaticRange,CSSSty
   MutationObserver:class {constructor(cb){callbacks.mutation=cb}observe(){}},console:{warn:(...v)=>warnings.push(v)}});
 vm.runInContext(fs.readFileSync(__dirname+'/../web/link-labels.js','utf8'),context);
 assert.equal(vm.runInContext('JSON.stringify(Object.keys(annaLinkLabels.zh)) === JSON.stringify(Object.keys(annaLinkLabels.en))',context),true);
-vm.runInContext(fs.readFileSync(__dirname+'/../book/links.js','utf8'),context);
+vm.runInContext(fs.readFileSync(__dirname+'/../web/book/links.js','utf8'),context);
 function flush(){while(raf.length)raf.shift()()}
 renderPhases.length=0;
 flush();

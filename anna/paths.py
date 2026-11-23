@@ -7,5 +7,6 @@ WEB = Path(os.environ.get('WEB_DIR') or PROJECT.parent / '5echm-web').expanduser
 # The counterparts mirror is 5etools-cn, compared with anna's entries as a second, independently curated catalog.
 COUNTERPARTS = Path(os.environ.get('COUNTERPARTS_DIR') or PROJECT.parent / '5etools-cn').expanduser().resolve()
 OUR5ETOOLS = Path(os.environ.get('OUR5ETOOLS_DIR') or PROJECT.parent / 'our5etools').expanduser().resolve()
+BOOK = PROJECT / 'data' / '5echm-anna'
 OUR5ETOOLS_DATA = PROJECT / 'data' / 'our5etools'
 FIVETOOLS_DATA = PROJECT / 'data' / '5etools'

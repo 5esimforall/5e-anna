@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from anna.source.html import Document
 from anna.review.store import load_annotations
-from anna.server.linked_book import text_slice,inject,build_book,fingerprint,MARKER
-from anna.presentation.reader import build_navigation,page_data,ReaderError
+from anna.publish.linked_book import text_slice,inject,build_book,MARKER
+from anna.presentation.reader import build_navigation,fingerprint,page_data,ReaderError
 
 class DOMBindingTests(unittest.TestCase):
     def test_offsets_unicode_whitespace_and_markup(self):
@@ -60,7 +60,7 @@ class LinkedBuildTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root=Path(td);source,db=self.fixture(root);out=root/'linked book'
             project=Path(__file__).resolve().parents[1]
-            result=subprocess.run([sys.executable,'-m','anna.server.linked_book','--web',str(source),'--db',str(db),
+            result=subprocess.run([sys.executable,'-m','anna.publish.linked_book','--web',str(source),'--db',str(db),
                                    '--book',str(out)],cwd=project,text=True,capture_output=True,timeout=60)
             self.assertEqual(result.returncode,0,result.stderr)
             manifest=json.loads((out/'anna-manifest.json').read_text())

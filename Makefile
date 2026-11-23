@@ -127,7 +127,7 @@ _catalog: _clone-web $(if $(COUNTERPARTS_ENABLED),_clone-counterparts) icons
 	@"$(PYTHON)" -m anna.catalog.build --web "$(WEB_PATH)" $(COUNTERPART_ARGS)
 
 linked:
-	@"$(PYTHON)" -m anna.server.linked_book --web "$(WEB_PATH)"
+	@"$(PYTHON)" -m anna.publish.linked_book --web "$(WEB_PATH)"
 
 ifeq ($(OUR5ETOOLS_MIRROR),)
 our5etools:
@@ -142,13 +142,13 @@ _skip-our5etools:
 	@echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"
 
 home:
-	@"$(PYTHON)" -m anna.server.home --web "$(WEB_PATH)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
+	@"$(PYTHON)" -m anna.publish.home --web "$(WEB_PATH)" --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
 
 # Pages packages the libraries `make up` would serve, with a home cache encoded from the packaged site.
 pages:
 	@test -f data/extracted/catalog.sqlite && test -f data/5echm-anna/anna-manifest.json || \
 		{ echo "pages: no built 5echm library in data/; run make build first" >&2; exit 1; }
-	@"$(PYTHON)" -m anna.server.pages_build --web "$(WEB_PATH)" --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(PAGES_OUR5ETOOLS) --home-cache
+	@"$(PYTHON)" -m anna.publish.pages_build --web "$(WEB_PATH)" --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(PAGES_OUR5ETOOLS) --home-cache
 
 our5etools-audit:
 	@"$(PYTHON)" -m anna.our5etools.audit --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"

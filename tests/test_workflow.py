@@ -147,21 +147,21 @@ class WorkflowTests(unittest.TestCase):
 
     def test_each_stage_target_prints_only_its_commands(self):
         five_echm = ['clone web mirror', 'clone counterparts mirror', 'icons', 'check pins', 'catalog.build',
-                     'server.linked_book']
+                     'publish.linked_book']
         our5etools = ['check pins', 'our5etools.build']
-        pages = ['require built library', 'server.pages_build']
+        pages = ['require built library', 'publish.pages_build']
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
             mirror = f'OUR5ETOOLS_DIR={self.our5etools_mirror(root / "our mirror")}'
             expected = {
                 ('5echm',): five_echm,
-                ('linked',): ['server.linked_book'],
+                ('linked',): ['publish.linked_book'],
                 ('our5etools', mirror): our5etools,
-                ('home',): ['server.home'],
+                ('home',): ['publish.home'],
                 ('pages',): pages,
-                ('build', mirror): five_echm + our5etools + ['server.home'],
-                ('build', 'pages', mirror): five_echm + our5etools + ['server.home'] + pages,
-                ('our5etools', 'home', 'pages', mirror): our5etools + ['server.home'] + pages,
+                ('build', mirror): five_echm + our5etools + ['publish.home'],
+                ('build', 'pages', mirror): five_echm + our5etools + ['publish.home'] + pages,
+                ('our5etools', 'home', 'pages', mirror): our5etools + ['publish.home'] + pages,
             }
             for args, steps in expected.items():
                 with self.subTest(args=args):
@@ -169,10 +169,10 @@ class WorkflowTests(unittest.TestCase):
             steps, output = self.stage_steps(root, '5echm')
             self.assertIn(f'-m anna.catalog.build --web "{root / "web mirror"}" '
                           f'--counterparts "{root / "counterparts mirror"}"', output)
-            self.assertIn(f'-m anna.server.linked_book --web "{root / "web mirror"}"', output)
+            self.assertIn(f'-m anna.publish.linked_book --web "{root / "web mirror"}"', output)
             self.assertNotIn('WEB_DIR=', output)
             steps, output = self.stage_steps(root, '5echm', 'NO_COUNTERPARTS=1')
-            self.assertEqual(steps, ['clone web mirror', 'icons', 'check pins', 'catalog.build', 'server.linked_book'])
+            self.assertEqual(steps, ['clone web mirror', 'icons', 'check pins', 'catalog.build', 'publish.linked_book'])
             self.assertIn(f'-m anna.catalog.build --web "{root / "web mirror"}" --no-counterparts', output)
             self.assertNotIn('counterparts mirror', output)
             steps, output = self.stage_steps(root, 'our5etools', mirror, f'OUR5ETOOLS_IMG_DIR={root / "img"}')
@@ -224,7 +224,7 @@ class WorkflowTests(unittest.TestCase):
                     self.assertNotIn('anna.our5etools.build', result.stdout)
                     # The full build skips the library instead of failing.
                     steps, output = self.stage_steps(root, 'build', f'OUR5ETOOLS_DIR={mirror}')
-                    self.assertEqual(steps[-2:], ['skip our5etools', 'server.home'])
+                    self.assertEqual(steps[-2:], ['skip our5etools', 'publish.home'])
                     self.assertNotIn('anna.our5etools.build', output)
 
     def test_counterparts_mirror_follows_environment(self):
@@ -257,7 +257,7 @@ class WorkflowTests(unittest.TestCase):
                 self.assertIn(command, result.stdout)
         result = self.make(WORKSPACE, '-n', 'build', 'pages')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertLess(result.stdout.index('-m anna.server.home'), result.stdout.index('-m anna.server.pages_build'))
+        self.assertLess(result.stdout.index('-m anna.publish.home'), result.stdout.index('-m anna.publish.pages_build'))
         result = self.make(WORKSPACE, '-n', 'retired-target')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('No rule to make target', result.stderr)

@@ -958,8 +958,8 @@ def build(
         assets_dir.mkdir(parents=True, exist_ok=True)
         (assets_dir / 'our5etools-book.css').write_text(_OUR5ETOOLS_BOOK_CSS, encoding='utf-8')
         for src_rel, dest_name in (
-            ('book/links.js', 'links.js'),
-            ('book/topic.js', 'topic.js'),
+            ('web/book/links.js', 'links.js'),
+            ('web/book/topic.js', 'topic.js'),
             ('web/link-labels.js', 'link-labels.js'),
         ):
             src_asset = PROJECT / src_rel

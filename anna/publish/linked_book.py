@@ -13,15 +13,12 @@ import tempfile
 from urllib.parse import quote
 from anna.source.html import Document
 from anna.source.pages import read_page
-from anna.paths import PROJECT, WEB
+from anna.paths import BOOK, PROJECT, WEB
 from anna.presentation import contracts
 from anna.review.store import require_current_annotations, load_annotations
-from anna.presentation.reader import SCHEMA, build_navigation, content_file, strip_reader_scripts
+from anna.presentation.reader import SCHEMA, build_navigation, content_file, fingerprint, strip_reader_scripts
 
-BOOK=PROJECT/'data/5echm-anna'
 MARKER=b'<!-- anna-link-layer -->'
-
-def fingerprint(path):return sha256(Path(path).read_bytes()).hexdigest()
 
 def pointer(doc,node,offset):
     path=[];n=node
@@ -125,8 +122,8 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
                                           {'definitions':definitions,'references':references,'reader':context},encoding))
             doc.close()
         assets=stage/'anna-assets';assets.mkdir(exist_ok=True)
-        shutil.copyfile(PROJECT/'book/links.js',assets/'links.js')
-        shutil.copyfile(PROJECT/'book/topic.js',assets/'topic.js')
+        shutil.copyfile(PROJECT/'web/book/links.js',assets/'links.js')
+        shutil.copyfile(PROJECT/'web/book/topic.js',assets/'topic.js')
         shutil.copyfile(PROJECT/'web/link-labels.js',assets/'link-labels.js')
         (stage/'anna-reader.json').write_text(json.dumps(reader,ensure_ascii=False,separators=(',',':')))
         for p in stage.rglob('*'):

@@ -14,8 +14,8 @@ from urllib.parse import unquote, urlsplit
 PROJECT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(PROJECT))
 from anna.source.html import Document
-from anna.server.linked_book import BOOK,inject,text_slice
-from anna.paths import WEB
+from anna.publish.linked_book import inject,text_slice
+from anna.paths import BOOK,WEB
 from anna.presentation.collections import BookCatalog, Collection
 from anna.presentation.our5etools import load_our5etools_collection
 import anna.server.app as up

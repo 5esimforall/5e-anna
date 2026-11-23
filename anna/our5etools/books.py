@@ -1767,7 +1767,7 @@ def _utf16_len(text: str) -> int:
 
 
 def _dom_pointer(body: Tag, text_node: NavigableString, char_offset: int) -> list[Any]:
-    """Compute `[childIndices, utf16_offset]` from `document.body`, matching `book/links.js`."""
+    """Compute `[childIndices, utf16_offset]` from `document.body`, matching `web/book/links.js`."""
     path: list[int] = []
     node: Any = text_node
     while node is not body:
@@ -1821,7 +1821,7 @@ def _range_spec_for_element(body: Tag, element: Tag) -> dict[str, Any] | None:
 
 
 def _verify_dom_binding(body: Tag, spec: dict[str, Any] | None) -> bool:
-    """Verify a binding spec using the exact `book/links.js` `resolve()` + `range().toString()` rules."""
+    """Verify a binding spec using the exact `web/book/links.js` `resolve()` + `range().toString()` rules."""
     if not spec:
         return False
 
@@ -1960,7 +1960,7 @@ def _extract_plain_search_text(raw_html: str) -> str:
 
 
 def _inject_link_layer(raw_html_bytes: bytes, payload: dict[str, Any], content_base: str = CONTENT_BASE) -> bytes:
-    """Append `<!-- anna-link-layer -->...` after `</html>`, matching `anna/server/linked_book.py`."""
+    """Append `<!-- anna-link-layer -->...` after `</html>`, matching `anna/publish/linked_book.py`."""
     base = (content_base if content_base.endswith('/') else (content_base + '/')).encode('ascii')
     data = json.dumps(payload, ensure_ascii=True, separators=(',', ':')).replace('<', '\\u003c')
     addition = (

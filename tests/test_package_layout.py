@@ -33,7 +33,7 @@ class PackageLayoutTests(unittest.TestCase):
         commands=('catalog.build','catalog.audit','catalog.query','catalog.reference_coverage','source.search',
                   'review.repository',
                   'our5etools.build','our5etools.audit',
-                  'server.linked_book','server.home','server.pages_build','server.app')
+                  'publish.linked_book','publish.home','publish.pages_build','server.app')
         for command in commands:
             with self.subTest(command=command):
                 result=subprocess.run([sys.executable,'-m','anna.'+command,'--help'],cwd=PROJECT,
@@ -46,7 +46,7 @@ class PackageLayoutTests(unittest.TestCase):
         # Each input keeps one name across commands: --web, --our5etools, --counterparts, --db, --book,
         # --our5etools-data. --source remains only the book-source filter of catalog.query.
         retired=(('catalog.build','--source'),('catalog.reference_coverage','--catalog'),
-                 ('source.search','--source'),('server.linked_book','--source'),('server.linked_book','--output'),
+                 ('source.search','--source'),('publish.linked_book','--source'),('publish.linked_book','--output'),
                  ('server.app','--source'),('server.app','--our5etools-source'),
                  ('our5etools.build','--source'),('our5etools.build','--output'),('our5etools.audit','--data'))
         for command,flag in retired:
@@ -85,6 +85,16 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(digest(value),sha256(expected.encode()).hexdigest())
         from anna.server import query
         self.assertFalse(hasattr(query,'main'))
+
+    def test_server_runs_without_publish(self):
+        # The HTTP server and the Pages worker serve published snapshots; building them is anna.publish's job.
+        for file in sorted((PROJECT/'anna/server').glob('*.py')):
+            tree=ast.parse(file.read_text())
+            for node in ast.walk(tree):
+                modules=[node.module or ''] if isinstance(node,ast.ImportFrom) else \
+                        [alias.name for alias in node.names] if isinstance(node,ast.Import) else []
+                for module in modules:
+                    self.assertFalse(module=='anna.publish' or module.startswith('anna.publish.'),(file,module))
 
     def test_source_html_is_domain_free(self):
         from anna.catalog.types import TYPE_LABELS

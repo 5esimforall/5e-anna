@@ -7,12 +7,11 @@ import shutil
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from anna.paths import PROJECT, WEB
+from anna.paths import BOOK, PROJECT, WEB
 from anna.presentation.catalog import DB
 from anna.server.home import mark_home
-from anna.server.linked_book import BOOK
-from anna.server.pages_assets import stage_browser_runtime
-from anna.server.pages_data import PAGES_LIMIT, export_pages_data
+from anna.publish.pages_assets import stage_browser_runtime
+from anna.publish.pages_data import PAGES_LIMIT, export_pages_data
 
 DOCUMENTS = {
     '/': ('index.html', 'index.html'),

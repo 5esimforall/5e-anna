@@ -5,7 +5,7 @@ import unittest
 
 from anna.presentation.reader import build_navigation, source_release, content_file, strip_reader_scripts, WINCHM_NAVIGATION
 from anna.source.html import Document
-from anna.server.linked_book import text_slice
+from anna.publish.linked_book import text_slice
 
 
 class SourceReleaseTests(unittest.TestCase):

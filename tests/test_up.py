@@ -15,7 +15,8 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 import anna.server.app as up
 from anna.server.app import validate_bundle,create_server
-from anna.server.linked_book import build_book,fingerprint
+from anna.presentation.reader import fingerprint
+from anna.publish.linked_book import build_book
 from anna.source.html import Document
 import test_linked_book as fixtures
 

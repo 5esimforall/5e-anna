@@ -14,9 +14,8 @@ import threading
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from anna.server import home
-from anna.server.linked_book import BOOK, fingerprint
-from anna.paths import FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
-from anna.presentation.reader import SCHEMA, BookReader, ReaderError
+from anna.paths import BOOK, FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
+from anna.presentation.reader import SCHEMA, BookReader, ReaderError, fingerprint
 from anna.review.store import load_annotations
 import anna.server.query as serve
 from anna.presentation import catalog

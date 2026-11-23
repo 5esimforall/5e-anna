@@ -21,7 +21,8 @@ from anna.review.store import (
     require_current_annotations,
 )
 from anna.serialization import digest
-from anna.server.linked_book import MARKER, build_book, fingerprint
+from anna.presentation.reader import fingerprint
+from anna.publish.linked_book import MARKER, build_book
 from anna.source.html import Document
 
 

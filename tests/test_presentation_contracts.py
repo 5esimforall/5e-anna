@@ -26,7 +26,7 @@ from anna.presentation.collections import (
     OUR5ETOOLS,
 )
 from anna.presentation.layout import entry_layout
-from anna.server.linked_book import inject, text_slice
+from anna.publish.linked_book import inject, text_slice
 from anna.server.query import Handler
 from anna.source.html import Document
 

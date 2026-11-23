@@ -11,7 +11,7 @@ import re
 import sqlite3
 
 from anna.paths import PROJECT
-from anna.server.linked_book import text_slice
+from anna.publish.linked_book import text_slice
 from anna.source.html import Document, split_name
 from anna.source.pages import read_page
 

@@ -28,7 +28,7 @@ from anna.presentation.expression import Query
 from anna.presentation.reader import SCHEMA
 from anna.presentation.tour import load as load_curation
 from anna.server.app import create_server
-from anna.server.linked_book import build_book
+from anna.publish.linked_book import build_book
 
 try:
     from tests import test_linked_book as linked_fixtures

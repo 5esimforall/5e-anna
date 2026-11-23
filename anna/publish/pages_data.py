@@ -350,7 +350,7 @@ def _our_bundle(stage, work, root, source, rewrite_html):
     for name in sorted(FALLBACK_BOOK_ASSETS):
         asset = f'anna-assets/{name}'
         if asset not in assets:
-            fallback = PROJECT / ('web' if name == 'link-labels.js' else 'book')
+            fallback = PROJECT / ('web' if name == 'link-labels.js' else 'web/book')
             _copy_asset(stage, _input(fallback, name), 'our5etools-book/' + asset, rewrite_html)
     if source is None:
         source = Path(manifest['source_root']).resolve()

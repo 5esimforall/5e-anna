@@ -2477,9 +2477,9 @@ class Our5etoolsReader:
         if candidate.is_relative_to(reader_root) and candidate.is_file():
             return candidate, _mime_for(candidate)
 
-        # Fallback for shared Stella client scripts under PROJECT/book/
+        # Fallback for shared Stella client scripts under PROJECT/web/book/
         if len(posix.parts) == 2 and posix.parts[0] == 'anna-assets' and posix.parts[1] in FALLBACK_BOOK_ASSETS:
-            book_root = (paths.PROJECT / 'book').resolve()
+            book_root = (paths.PROJECT / 'web' / 'book').resolve()
             fallback = (book_root / posix.parts[1]).resolve()
             if fallback.is_relative_to(book_root) and fallback.is_file():
                 return fallback, _mime_for(fallback)

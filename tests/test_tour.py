@@ -19,7 +19,7 @@ from anna.presentation.library import parse_scope
 from anna.presentation.library_tour import LibraryTour
 from anna.presentation.tour import Tour, TourError, clip, first_sentence, load
 from anna.server.app import _try_load_our5etools, create_server, load_bundle
-from anna.server.linked_book import BOOK, build_book
+from anna.publish.linked_book import build_book
 import test_linked_book as linked_fixtures
 
 SCHEMA = '''
@@ -554,13 +554,13 @@ class RouteTests(unittest.TestCase):
                 server.shutdown(); server.server_close(); thread.join()
 
 
-@unittest.skipUnless(catalog.DB.exists() and (BOOK / 'anna-reader.json').exists(), 'Build the dataset first')
+@unittest.skipUnless(catalog.DB.exists() and (paths.BOOK / 'anna-reader.json').exists(), 'Build the dataset first')
 class CorpusTests(unittest.TestCase):
     """The curated tour against the published corpus: every starting point names exactly one place in each book it names."""
 
     @classmethod
     def setUpClass(cls):
-        cls.bundle = load_bundle(paths.WEB, catalog.DB, BOOK)
+        cls.bundle = load_bundle(paths.WEB, catalog.DB, paths.BOOK)
         cls.our5etools = _try_load_our5etools(paths.OUR5ETOOLS_DATA)
         cls.registry = CollectionRegistry(BookCatalog(cls.bundle.db, cls.bundle.source), (cls.our5etools,) if cls.our5etools else (),
                                           book_tour=cls.bundle.book_tour, book_reader=cls.bundle.book_reader, book_snapshot=cls.bundle.snapshot)

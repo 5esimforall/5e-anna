@@ -31,7 +31,7 @@ import anna.catalog.views as browse
 import anna.our5etools.types as otypes
 
 
-CHUNK_SIZE = 1024 * 1024
+CHUNK_SIZE = 256 * 1024
 MAX_CHUNKS = 4096
 PAGES_LIMIT = 1_000_000_000
 DEFAULT_DB = 'data/extracted/catalog.sqlite'
@@ -63,7 +63,7 @@ def _read_json(file):
 def _file_hash(file):
     digest = sha256()
     with file.open('rb') as f:
-        for block in iter(lambda: f.read(CHUNK_SIZE), b''):
+        for block in iter(lambda: f.read(1024 * 1024), b''):
             digest.update(block)
     return digest.hexdigest()
 
@@ -169,6 +169,8 @@ def _prerender_layouts(conn, original, source, *, reader_nodes=None, locatable=N
                                       gzip.compress(_json(payload), compresslevel=3, mtime=0)))
         finally:
             doc.close()
+    entry_rows.sort(key=lambda row: row[0])
+    tour_rows.sort(key=lambda row: row[0])
     conn.executemany('INSERT INTO pages_entry_layout VALUES (?, ?)', entry_rows)
     conn.executemany('INSERT INTO pages_tour_layout VALUES (?, ?)', tour_rows)
 
@@ -176,15 +178,15 @@ def _prerender_layouts(conn, original, source, *, reader_nodes=None, locatable=N
 def _project_entries(conn):
     # Keeping detail JSON out of the main table lets SQLite skip it for rankings, facets and counts.
     conn.execute('''CREATE TABLE entry_core (
-        id TEXT PRIMARY KEY, entity_id TEXT REFERENCES entities(id), name TEXT, name_zh TEXT, name_en TEXT,
+        id TEXT NOT NULL, entity_id TEXT REFERENCES entities(id), name TEXT, name_zh TEXT, name_en TEXT,
         type TEXT, page_path TEXT REFERENCES pages(path), start INTEGER, end INTEGER, ruleset TEXT,
         legacy TEXT, classification_status TEXT, fields TEXT
     )''')
     fields = 'id,entity_id,name,name_zh,name_en,type,page_path,start,end,ruleset,legacy,classification_status,fields'
     conn.execute(f'INSERT INTO entry_core (rowid,{fields}) SELECT rowid,{fields} FROM original.entries ORDER BY rowid')
-    conn.execute('CREATE TABLE entry_data (id TEXT PRIMARY KEY REFERENCES entry_core(id), data TEXT NOT NULL)')
-    conn.execute('INSERT INTO entry_data SELECT id,data FROM original.entries ORDER BY rowid')
-    conn.execute('CREATE VIEW entries AS SELECT e.*, d.data FROM entry_core e LEFT JOIN entry_data d ON d.id=e.id')
+    conn.execute('CREATE TABLE entry_data (entry_rowid INTEGER PRIMARY KEY, data TEXT NOT NULL)')
+    conn.execute('INSERT INTO entry_data SELECT rowid, data FROM original.entries ORDER BY rowid')
+    conn.execute('CREATE VIEW entries AS SELECT e.*, d.data FROM entry_core e LEFT JOIN entry_data d ON d.entry_rowid=e.rowid')
 
 
 def _project_db(original, target, source, *, align_works=False, reader_nodes=None, locatable=None, curation=None):
@@ -197,6 +199,36 @@ def _project_db(original, target, source, *, align_works=False, reader_nodes=Non
             if table == 'entries':
                 _project_entries(conn)
                 continue
+            if table == 'pages':
+                conn.execute(re.sub(r'\bpath\s+TEXT\s+PRIMARY\s+KEY\b', 'path TEXT NOT NULL', definitions['pages'], flags=re.I))
+                conn.execute('INSERT INTO pages SELECT * FROM original.pages ORDER BY path')
+                continue
+            if table == 'entry_sources':
+                conn.execute('''CREATE TABLE entry_sources (
+                    entry_id TEXT NOT NULL REFERENCES entry_core(id),
+                    source_id TEXT NOT NULL REFERENCES sources(id),
+                    PRIMARY KEY (entry_id, source_id)
+                ) WITHOUT ROWID''')
+                conn.execute('INSERT INTO entry_sources SELECT entry_id, source_id FROM original.entry_sources ORDER BY entry_id, source_id')
+                continue
+            if table == 'relations':
+                conn.execute('''CREATE TABLE relations (
+                    id TEXT NOT NULL,
+                    subject_id TEXT NOT NULL REFERENCES entry_core(id),
+                    predicate TEXT NOT NULL,
+                    object_id TEXT REFERENCES entry_core(id),
+                    target_label TEXT NOT NULL,
+                    target_locator TEXT,
+                    evidence TEXT,
+                    status TEXT,
+                    PRIMARY KEY (subject_id, predicate, target_label, id)
+                ) WITHOUT ROWID''')
+                conn.execute(
+                    "INSERT INTO relations (id, subject_id, predicate, object_id, target_label, target_locator, evidence, status) "
+                    "SELECT id, subject_id, COALESCE(predicate, ''), object_id, COALESCE(target_label, ''), target_locator, evidence, status "
+                    'FROM original.relations ORDER BY subject_id, predicate, target_label, id'
+                )
+                continue
             conn.execute(definitions[table].replace('REFERENCES entries(', 'REFERENCES entry_core('))
             if table == 'metadata':
                 value, = conn.execute("SELECT value FROM original.metadata WHERE key='summary'").fetchone()
@@ -205,8 +237,10 @@ def _project_db(original, target, source, *, align_works=False, reader_nodes=Non
                 conn.execute('INSERT INTO metadata VALUES (?, ?)', ('summary', _json(summary).decode('utf-8')))
             else:
                 conn.execute(f'INSERT INTO "{table}" SELECT * FROM original."{table}" ORDER BY rowid')
+        conn.execute('CREATE UNIQUE INDEX pages_path_idx ON pages(path)')
+        conn.execute('CREATE UNIQUE INDEX entry_core_id_idx ON entry_core(id)')
         for kind, table, name, sql in schema:
-            if kind != 'index' or table not in DEFAULT_TABLES:
+            if kind != 'index' or table not in DEFAULT_TABLES or name == 'relation_subject_idx':
                 continue
             if table == 'entries':
                 sql = sql.replace(' ON entries(', ' ON entry_core(')
@@ -225,7 +259,7 @@ def _project_db(original, target, source, *, align_works=False, reader_nodes=Non
         conn.execute(
             'INSERT OR IGNORE INTO identity_candidate_members (entry_id, group_id, status) '
             'SELECT j.value, g.group_id, g.status FROM identity_candidates g, '
-            f"json_each(g.data, '$.entry_ids') j WHERE g.type IN ({kinds})"
+            f"json_each(g.data, '$.entry_ids') j WHERE g.type IN ({kinds}) ORDER BY j.value"
         )
         conn.execute('CREATE INDEX identity_candidate_group_idx ON identity_candidate_members(group_id)')
         if conn.execute('PRAGMA foreign_key_check').fetchone():
@@ -245,6 +279,7 @@ def _build_name_fold_index(conn, stackable_types):
         folded = name_fold(name_en)
         if folded:
             rows.append((typ, folded, eid))
+    rows.sort()
     conn.executemany('INSERT OR IGNORE INTO name_fold_index VALUES (?, ?, ?)', rows)
 
 
@@ -253,7 +288,7 @@ def _project_our_entries(conn):
     columns = conn.execute('PRAGMA original.table_info(entries)').fetchall()
     payloads = {'body_text': 'entry_body', 'search_body': 'entry_body', 'layout_html': 'entry_layout'}
     core = [(name, kind, required, pk) for _, name, kind, required, _, pk in columns if name not in payloads]
-    declarations = [f'{name} {kind}' + (' PRIMARY KEY' if pk else '') + (' NOT NULL' if required else '')
+    declarations = [f'{name} {kind}' + (' NOT NULL' if required or pk else '')
                     for name, kind, required, pk in core]
     conn.execute('CREATE TABLE entry_core (' + ', '.join(declarations) + ')')
     names = 'rowid, ' + ', '.join(name for name, *_ in core)
@@ -272,16 +307,32 @@ def _project_our_db(original, target):
     with closing(sqlite3.connect(target, uri=True)) as conn, conn:
         schema = _db_schema(conn, original)
         definitions = {table: sql for kind, table, _, sql in schema if kind == 'table'}
+        without_rowid_order = {
+            'entry_facets': 'entry_id, facet_key, facet_value',
+            'entry_sources': 'entry_id, source_id',
+            'identity_members': 'entry_id',
+        }
         for table in OUR5ETOOLS_TABLES:
             if table not in definitions:
                 raise ValueError(f'Missing our5etools table {table}. Rebuild the data before exporting.')
             if table == 'entries':
                 _project_our_entries(conn)
                 continue
+            if table in without_rowid_order:
+                sql = definitions[table].rstrip().rstrip(';')
+                if not sql.upper().endswith('WITHOUT ROWID'):
+                    sql += ' WITHOUT ROWID'
+                conn.execute(sql)
+                conn.execute(f'INSERT INTO "{table}" SELECT * FROM original."{table}" ORDER BY {without_rowid_order[table]}')
+                continue
             conn.execute(definitions[table])
+            if table == 'relations':
+                conn.execute('INSERT INTO relations SELECT * FROM original.relations ORDER BY source_id, type, target_id')
+                continue
             where = (" WHERE key IN ('schema','reader_schema','snapshot','built_at','collection','summary')"
                      if table == 'metadata' else '')
             conn.execute(f'INSERT INTO "{table}" SELECT * FROM original."{table}"{where} ORDER BY rowid')
+        conn.execute('CREATE UNIQUE INDEX idx_entry_core_id ON entry_core(id)')
         for kind, table, _, sql in schema:
             if kind == 'index' and table in OUR5ETOOLS_TABLES:
                 conn.execute(re.sub(r'\bON\s+entries\s*\(', 'ON entry_core(', sql, flags=re.I) if table == 'entries' else sql)

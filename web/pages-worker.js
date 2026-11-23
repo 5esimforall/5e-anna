@@ -2,7 +2,7 @@
    The adapter receives the logical site path and returns (status, headers, body: bytes). */
 const PROJECT = '/anna-pages';
 const CACHE_BYTES = 128 * 1024 * 1024;
-const CACHE_ENTRIES = 256;
+const CACHE_ENTRIES = 2048;
 // Emscripten's WASI errno values for the pinned Pyodide build.
 const EIO = 29;
 const EROFS = 69;

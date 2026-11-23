@@ -3,6 +3,7 @@ from contextlib import closing
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -17,7 +18,7 @@ from anna.presentation.collections import BookCatalog, Collection, CollectionReg
 from anna.presentation.layout import entry_layout, span_layout
 from anna.presentation.library import Library, Scope, name_fold
 from anna.presentation.our5etools import Our5etoolsCatalog
-from anna.publish.pages_data import _project_db, _project_our_db, export_pages_data
+from anna.publish.pages_data import CHUNK_SIZE, _project_db, _project_our_db, export_pages_data
 from anna.source.html import Document
 
 
@@ -457,6 +458,89 @@ class Phase2PrerenderTests(unittest.TestCase):
                 checked += 1
                 if checked >= 8:
                     break
+
+
+class Phase3ClusteringAndShardingTests(unittest.TestCase):
+    def test_shard_and_worker_cache_constants(self):
+        self.assertEqual(CHUNK_SIZE, 256 * 1024)
+        worker_js = (paths.PROJECT / 'web' / 'pages-worker.js').read_text(encoding='utf-8')
+        match = re.search(r'const\s+CACHE_ENTRIES\s*=\s*(\d+)\s*;', worker_js)
+        self.assertIsNotNone(match)
+        self.assertEqual(int(match.group(1)), 2048)
+
+    def test_5echm_clustered_tables_fk_and_query_plans(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            source, orig = _make_5echm_fixture(root)
+            proj = root / 'proj.sqlite'
+            _project_db(orig, proj, source)
+
+            with closing(catalog.connect(proj)) as c:
+                self.assertEqual(c.execute('PRAGMA foreign_key_check').fetchall(), [])
+                indexes = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+                self.assertIn('pages_path_idx', indexes)
+                self.assertIn('entry_core_id_idx', indexes)
+                self.assertNotIn('relation_subject_idx', indexes)
+                for tbl in ('entry_sources', 'relations'):
+                    with self.assertRaises(sqlite3.OperationalError):
+                        c.execute(f'SELECT rowid FROM {tbl}')
+
+                plan_data = [r[3] for r in c.execute("EXPLAIN QUERY PLAN SELECT data FROM entries WHERE id=?", ('ver_1',))]
+                joined = ' | '.join(plan_data)
+                self.assertIn('COVERING INDEX entry_core_id_idx', joined)
+                self.assertIn('INTEGER PRIMARY KEY', joined)
+
+                plan_has = [r[3] for r in c.execute("EXPLAIN QUERY PLAN SELECT 1 FROM entries WHERE id=?", ('ver_1',))]
+                self.assertFalse(any('entry_data' in step for step in plan_has), plan_has)
+
+                plan_rel = [r[3] for r in c.execute(
+                    'EXPLAIN QUERY PLAN SELECT predicate, object_id, target_label, status '
+                    'FROM relations WHERE subject_id=? ORDER BY predicate, target_label',
+                    ('ver_1',),
+                )]
+                joined_rel = ' | '.join(plan_rel)
+                self.assertIn('PRIMARY KEY', joined_rel)
+                self.assertFalse(any('TEMP B-TREE' in step for step in plan_rel), plan_rel)
+
+                plan_layout = [r[3] for r in c.execute(
+                    'EXPLAIN QUERY PLAN SELECT l.payload_gzip FROM entry_core e '
+                    'LEFT JOIN pages_entry_layout l ON l.entry_rowid=e.rowid WHERE e.id=?',
+                    ('ver_1',),
+                )]
+                joined_layout = ' | '.join(plan_layout)
+                self.assertIn('COVERING INDEX entry_core_id_idx', joined_layout)
+                self.assertIn('INTEGER PRIMARY KEY', joined_layout)
+
+    @unittest.skipUnless((OUR5ETOOLS_DATA / 'manifest.json').is_file(), 'Build our5etools collection first')
+    def test_our5etools_clustered_tables_plans_and_packed_index(self):
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td).resolve() / 'o5e.sqlite'
+            _project_our_db(OUR5ETOOLS_DATA / 'catalog.sqlite', proj)
+
+            with closing(sqlite3.connect(proj.as_uri() + '?mode=ro', uri=True)) as c:
+                self.assertEqual(c.execute('PRAGMA foreign_key_check').fetchall(), [])
+                for tbl in ('entry_facets', 'entry_sources', 'identity_members'):
+                    with self.assertRaises(sqlite3.OperationalError):
+                        c.execute(f'SELECT rowid FROM {tbl}')
+
+                plan = [r[3] for r in c.execute(
+                    'EXPLAIN QUERY PLAN SELECT layout_html, provenance_json FROM entries WHERE id=?',
+                    ('o5e_fixture',),
+                )]
+                joined = ' | '.join(plan)
+                self.assertIn('idx_entry_core_id', joined)
+                self.assertIn('INTEGER PRIMARY KEY', joined)
+                self.assertFalse(any('entry_body' in step for step in plan), plan)
+
+                try:
+                    stats = c.execute(
+                        "SELECT min(pageno), max(pageno), count(*) FROM dbstat WHERE name='idx_entry_core_id'"
+                    ).fetchone()
+                except sqlite3.OperationalError:
+                    stats = None
+                if stats and stats[2]:
+                    span_ratio = (stats[1] - stats[0] + 1) / stats[2]
+                    self.assertLessEqual(span_ratio, 1.2, f'idx_entry_core_id span ratio {span_ratio:.2f}')
 
 
 if __name__ == '__main__':

@@ -18,9 +18,6 @@ jobs:
     timeout-minutes: 40
     env:
       PAGES_OUTPUT: output/pages
-      WEB_DIR: ${{ runner.temp }}/5echm-web
-      OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
-      COUNTERPARTS_DIR: ${{ runner.temp }}/5etools-cn
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -30,7 +27,16 @@ jobs:
       - id: pages
         uses: actions/configure-pages@v5
       - name: Fetch the sources pinned in sources.json
+        env:
+          WEB_DIR: ${{ runner.temp }}/5echm-web
+          OUR5ETOOLS_DIR: ${{ runner.temp }}/our5etools
+          COUNTERPARTS_DIR: ${{ runner.temp }}/5etools-cn
         run: |
+          {
+            echo "WEB_DIR=$WEB_DIR"
+            echo "OUR5ETOOLS_DIR=$OUR5ETOOLS_DIR"
+            echo "COUNTERPARTS_DIR=$COUNTERPARTS_DIR"
+          } >> "$GITHUB_ENV"
           lock() { python scripts/sources.py get "$@"; }
           git init "$WEB_DIR"
           git -C "$WEB_DIR" fetch --depth 1 "$(lock web repo)" "$(lock web revision)"

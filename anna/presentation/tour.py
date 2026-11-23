@@ -20,7 +20,9 @@ import anna.catalog.views as browse
 import anna.paths as paths
 from anna.presentation import catalog
 from anna.presentation.layout import span_layout, text_start
-from anna.source.registry import QUICK_REFERENCE
+
+# Mirrors anna.source.registry.QUICK_REFERENCE so runtime Tour stays free of build-time HTML parsers.
+QUICK_REFERENCE = '本书速查'
 
 CURATION = paths.PROJECT / 'tour' / 'tour.json'
 SCHEMA = 2

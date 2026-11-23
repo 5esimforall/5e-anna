@@ -1,4 +1,5 @@
 """Stage the read-only query data and book assets for a static Pages export."""
+from collections import defaultdict
 from contextlib import closing
 import gzip
 from hashlib import sha256
@@ -14,13 +15,18 @@ from urllib.parse import urlsplit
 from anna.paths import PROJECT
 from anna.presentation import catalog
 from anna.presentation.catalog import TYPES
-from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
+from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT, _clear_book_connections
+from anna.presentation.layout import (
+    _span_ref_layers, render_entry_layout, render_span_layout, text_start, tour_span_key,
+)
 from anna.presentation.library import name_fold
 from anna.presentation.our5etools import FALLBACK_BOOK_ASSETS, load_our5etools_collection
-from anna.presentation.tour import load as load_curation
+from anna.presentation.tour import Tour, load as load_curation
 from anna.server import home
 from anna.server.pages import PublishedSite
 from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
+from anna.source.html import Document
+from anna.source.pages import decode_page
 import anna.catalog.views as browse
 import anna.our5etools.types as otypes
 
@@ -38,8 +44,8 @@ WEB_SUFFIXES = {'.css', '.js', '.gif', '.ico', '.jpg', '.jpeg', '.png', '.svg', 
                 '.mp3', '.ogg', '.opus', '.wav', '.mp4', '.webm', '.woff', '.woff2', '.otf', '.ttf'}
 LOCAL_URL = re.compile(rb'''(?P<quote>["'])file:(?://|\\\\)[^"'<>\r\n]*(?P=quote)|file:(?://|\\\\)[^\s"'<>`)]*''', re.IGNORECASE)
 
-DEFAULT_TABLES = ('metadata', 'sources', 'pages', 'entities', 'entries', 'entry_sources', 'facts',
-                  'relations', 'identity_candidates', 'book_search', 'effective_references')
+DEFAULT_TABLES = ('metadata', 'sources', 'pages', 'entities', 'entries', 'entry_sources',
+                  'relations', 'identity_candidates', 'book_search')
 OUR5ETOOLS_TABLES = ('metadata', 'entries', 'entry_sources', 'entry_facets', 'sources', 'packages',
                      'identity_groups', 'identity_members', 'relations', 'book_pages', 'book_search')
 FONT_NOTICE_ROOTS = ('fonts/', '__ours/fonts/', '__brewrepo/_font/')
@@ -89,22 +95,82 @@ def _scrub_local_urls(raw):
     return LOCAL_URL.sub(replacement, raw)
 
 
-def _source_rows(source, conn):
-    for name, digest, text in conn.execute('SELECT path, sha256, text FROM pages ORDER BY path'):
+def _prerender_layouts(conn, original, source, *, reader_nodes=None, locatable=None, curation=None):
+    conn.execute('CREATE TABLE pages_entry_layout (entry_rowid INTEGER PRIMARY KEY, payload_gzip BLOB NOT NULL)')
+    conn.execute('CREATE TABLE pages_tour_layout (span_key TEXT PRIMARY KEY, payload_gzip BLOB NOT NULL) WITHOUT ROWID')
+
+    entries_by_page = defaultdict(list)
+    for rowid, eid, page_path, data_json in conn.execute(
+        'SELECT rowid, id, page_path, data FROM original.entries ORDER BY rowid'
+    ):
+        entries_by_page[page_path].append((rowid, eid, data_json))
+
+    facts_by_entry = defaultdict(list)
+    for eid, field, value, evidence, rule, status in conn.execute(
+        'SELECT entry_id, field, value, evidence, rule, status FROM original.facts ORDER BY id'
+    ):
+        if field not in browse.METADATA_FIELDS:
+            facts_by_entry[eid].append((field, value, evidence, rule, status))
+
+    refs_by_page = defaultdict(list)
+    if conn.execute("SELECT 1 FROM original.sqlite_master WHERE type='table' AND name='effective_references'").fetchone():
+        for page_path, start, end, target_id in conn.execute(
+            'SELECT page_path, start, end, target_id FROM original.effective_references '
+            'WHERE target_id IS NOT NULL AND end > start ORDER BY page_path, start, id'
+        ):
+            refs_by_page[page_path].append((start, end, target_id))
+
+    tour_spans_by_page = defaultdict(list)
+    if reader_nodes is not None and curation is not None:
+        tour = Tour(original, reader_nodes, locatable or set(), load_curation(curation), source)
+        seen_spans = set()
+        for node in reader_nodes:
+            if node['status'] == 'present':
+                path, start, stop, owner = tour.page_span(node['path'])
+                key = (path, start, stop, owner)
+                if key not in seen_spans:
+                    seen_spans.add(key)
+                    tour_spans_by_page[path].append((start, stop, owner))
+        for entry in tour.entries.values():
+            path, start, stop, owner = tour.entry_span(entry)
+            key = (path, start, stop, owner)
+            if key not in seen_spans:
+                seen_spans.add(key)
+                tour_spans_by_page[path].append((start, stop, owner))
+
+    entry_rows = []
+    tour_rows = []
+    for name, digest, text, parse_status in conn.execute('SELECT path, sha256, text, parse_status FROM original.pages ORDER BY path'):
         file = _input(source, name)
         raw = file.read_bytes()
         if sha256(raw).hexdigest() != digest:
             raise ValueError(f'Stale source page in Pages export: {name}')
+        if parse_status == 'excluded' and not text and not entries_by_page.get(name):
+            continue
         public = _scrub_local_urls(raw)
-        if public != raw:
-            from anna.source.html import Document
-            doc = Document(name, public)
-            try:
-                if text and doc.text != text:
+        html_text, _, _ = decode_page(public)
+        doc = Document(name, html_text)
+        try:
+            if doc.text != text:
+                if public != raw:
                     raise ValueError(f'Local URL is part of indexed source text: {name}')
-            finally:
-                doc.close()
-        yield name, sha256(public).hexdigest(), gzip.compress(public, compresslevel=3, mtime=0)
+                raise ValueError(f'Stale source page in Pages export: {name}')
+            page_refs = refs_by_page.get(name, ())
+            for rowid, eid, data_json in entries_by_page.get(name, ()):
+                entry = json.loads(data_json)
+                ref_layers = _span_ref_layers(page_refs, text_start(entry), entry['end'], eid)
+                payload = render_entry_layout(doc, entry, facts_by_entry.get(eid, ()), ref_layers)
+                entry_rows.append((rowid, gzip.compress(_json(payload), compresslevel=3, mtime=0)))
+            for start, stop, owner in tour_spans_by_page.get(name, ()):
+                ref_layers = _span_ref_layers(page_refs, start, stop, owner)
+                payload = render_span_layout(doc, name, start, stop, ref_layers)
+                if payload['status'] == 'ok':
+                    tour_rows.append((tour_span_key(name, start, stop, owner),
+                                      gzip.compress(_json(payload), compresslevel=3, mtime=0)))
+        finally:
+            doc.close()
+    conn.executemany('INSERT INTO pages_entry_layout VALUES (?, ?)', entry_rows)
+    conn.executemany('INSERT INTO pages_tour_layout VALUES (?, ?)', tour_rows)
 
 
 def _project_entries(conn):
@@ -115,13 +181,13 @@ def _project_entries(conn):
         legacy TEXT, classification_status TEXT, fields TEXT
     )''')
     fields = 'id,entity_id,name,name_zh,name_en,type,page_path,start,end,ruleset,legacy,classification_status,fields'
-    conn.execute(f'INSERT INTO entry_core SELECT {fields} FROM original.entries ORDER BY rowid')
+    conn.execute(f'INSERT INTO entry_core (rowid,{fields}) SELECT rowid,{fields} FROM original.entries ORDER BY rowid')
     conn.execute('CREATE TABLE entry_data (id TEXT PRIMARY KEY REFERENCES entry_core(id), data TEXT NOT NULL)')
     conn.execute('INSERT INTO entry_data SELECT id,data FROM original.entries ORDER BY rowid')
     conn.execute('CREATE VIEW entries AS SELECT e.*, d.data FROM entry_core e LEFT JOIN entry_data d ON d.id=e.id')
 
 
-def _project_db(original, target, source, *, align_works=False):
+def _project_db(original, target, source, *, align_works=False, reader_nodes=None, locatable=None, curation=None):
     with closing(sqlite3.connect(target, uri=True)) as conn, conn:
         schema = _db_schema(conn, original)
         definitions = {table: sql for kind, table, _, sql in schema if kind == 'table'}
@@ -137,12 +203,6 @@ def _project_db(original, target, source, *, align_works=False):
                 summary = json.loads(value)
                 summary.pop('counterparts', None)
                 conn.execute('INSERT INTO metadata VALUES (?, ?)', ('summary', _json(summary).decode('utf-8')))
-            elif table == 'effective_references':
-                # Layout uses resolved targets and their offsets. Reader bindings are already in the generated HTML.
-                conn.execute('''INSERT INTO effective_references (id,page_path,start,end,target_id,data)
-                                SELECT id,page_path,start,end,target_id,
-                                       json_object('target_id',target_id,'start',start,'end',end)
-                                FROM original.effective_references WHERE target_id IS NOT NULL ORDER BY rowid''')
             else:
                 conn.execute(f'INSERT INTO "{table}" SELECT * FROM original."{table}" ORDER BY rowid')
         for kind, table, name, sql in schema:
@@ -150,17 +210,14 @@ def _project_db(original, target, source, *, align_works=False):
                 continue
             if table == 'entries':
                 sql = sql.replace(' ON entries(', ' ON entry_core(')
-            if table != 'effective_references' or name == 'effective_reference_page_idx':
-                conn.execute(sql)
+            conn.execute(sql)
         if align_works and 'counterpart_sources' in definitions:
             # The library uses reconciled source codes to align the two translations of a work.
             conn.execute('CREATE TABLE counterpart_sources (source_id TEXT, code TEXT, status TEXT, '
                          'PRIMARY KEY(source_id, code)) WITHOUT ROWID')
             conn.execute("INSERT INTO counterpart_sources SELECT source_id, code, status "
                          "FROM original.counterpart_sources WHERE status = '上下文推得' AND code != ''")
-        conn.execute('CREATE TABLE pages_source (path TEXT PRIMARY KEY, sha256 TEXT NOT NULL, '
-                     'html_gzip BLOB NOT NULL)')
-        conn.executemany('INSERT INTO pages_source VALUES (?, ?, ?)', _source_rows(source, conn))
+        _prerender_layouts(conn, original, source, reader_nodes=reader_nodes, locatable=locatable, curation=curation)
         _build_name_fold_index(conn, browse.STACKABLE_TYPES)
         conn.execute('CREATE TABLE identity_candidate_members ('
                      'entry_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, status TEXT NOT NULL) WITHOUT ROWID')
@@ -276,7 +333,7 @@ def _default_book(stage, db, book, rewrite_html):
             _copy_asset(stage, _input(book, name), 'book/' + name, rewrite_html, expected=expected)
     entries = {entry_id: {key: entry[key] for key in ('path', 'fragment', 'locatable')}
                for entry_id, entry in manifest['entries'].items()}
-    return {'reader_schema': manifest['reader_schema'], 'entries': entries}, reader_file
+    return {'reader_schema': manifest['reader_schema'], 'entries': entries}, reader_file, reader
 
 
 def _our_attribution(attribution):
@@ -490,19 +547,28 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
         work = Path(temp)
         stage = work / 'stage'
         stage.mkdir()
-        default_manifest, default_reader = _default_book(stage, db, book, rewrite_html)
-        default_projection = work / 'default.sqlite'
-        _project_db(db, default_projection, source, align_works=our5etools_data is not None)
-        manifest_path = work / 'default-manifest.json'
-        manifest_path.write_bytes(_json(default_manifest))
-        files = {DEFAULT_DB: default_projection, f'{DEFAULT_BOOK}/anna-manifest.json': manifest_path,
-                 f'{DEFAULT_BOOK}/anna-reader.json': default_reader}
+        default_manifest, default_reader, default_reader_data = _default_book(stage, db, book, rewrite_html)
         if our5etools_data is None:
             public_curation = work / 'tour.json'
             _public_curation(curation, public_curation)
         else:
             public_curation = curation
             load_curation(public_curation)
+        locatable = {eid for eid, entry in default_manifest['entries'].items() if entry['locatable']}
+        default_projection = work / 'default.sqlite'
+        _project_db(
+            db, default_projection, source,
+            align_works=our5etools_data is not None,
+            reader_nodes=default_reader_data['nodes'],
+            locatable=locatable,
+            curation=public_curation,
+        )
+        manifest_path = work / 'default-manifest.json'
+        manifest_path.write_bytes(_json(default_manifest))
+        files = {DEFAULT_DB: default_projection, f'{DEFAULT_BOOK}/anna-manifest.json': manifest_path,
+                 f'{DEFAULT_BOOK}/anna-reader.json': default_reader}
+        collection = None
+        if our5etools_data is not None:
             companion = Path(our5etools_data).resolve()
             companion_source = Path(our5etools_source).resolve() if our5etools_source is not None else None
             files.update(_our_bundle(stage, work, companion, companion_source, rewrite_html))
@@ -510,14 +576,19 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
             if collection is None:
                 raise ValueError('Could not read the validated our5etools collection for work alignment')
             registry = CollectionRegistry(BookCatalog(default_projection, source), (collection,),
-                                          book_snapshot=_read_json(default_reader)['snapshot'])
+                                          book_snapshot=default_reader_data['snapshot'])
             relationships = work / 'publications.json'
             build_publications(relationships, registry)
             files[PUBLICATIONS] = relationships
         files[CURATION] = public_curation
-        if home_cache:
-            _write_home_cache(stage, work, files)
-        _shard(stage / 'pages-data', files, chunk_size, gzip_shards)
+        try:
+            if home_cache:
+                _write_home_cache(stage, work, files)
+            _shard(stage / 'pages-data', files, chunk_size, gzip_shards)
+        finally:
+            _clear_book_connections()
+            if collection is not None and collection.provider is not None:
+                collection.provider.close()
         bytes_written = sum(file.stat().st_size for file in stage.rglob('*') if file.is_file())
         if bytes_written + existing_bytes > size_limit:
             raise ValueError(f'Pages output is {bytes_written + existing_bytes:,} bytes, over the {size_limit:,}-byte limit')

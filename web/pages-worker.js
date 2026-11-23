@@ -127,7 +127,6 @@ async function initialize({baseUrl}) {
     ]);
     pyodide.unpackArchive(archive, 'zip', {extractDir: PROJECT});
     mountFiles(pyodide.FS, manifest, new URL('./', manifestURL), gunzipSync);
-    await pyodide.loadPackage(['beautifulsoup4', 'html5lib']);
     return pyodide.runPython(`
         import sys
         sys.path.insert(0, ${JSON.stringify(PROJECT)})

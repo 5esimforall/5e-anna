@@ -3,12 +3,9 @@ from datetime import datetime
 from hashlib import sha256
 import re
 
-from bs4 import BeautifulSoup
 from pathlib import Path, PurePosixPath
 
 from anna.presentation.collections import SearchHits
-from anna.source.html import resolve_link
-from anna.source.pages import Toc
 import anna.source.search as search
 
 SCHEMA = 6
@@ -24,6 +21,8 @@ TOPIC_RESOURCES = (
 
 def source_release(source):
     """Read the printed collection release, not a Git date or a rules edition."""
+    from bs4 import BeautifulSoup
+
     path = 'topics/写在前面.html'
     file = source / path
     if not file.is_file():
@@ -94,6 +93,9 @@ def is_winchm_navigation(script):
 
 def strip_reader_scripts(raw, page):
     """Retire source-shell script loaders without shifting DOM range node indexes."""
+    from bs4 import BeautifulSoup
+    from anna.source.html import resolve_link
+
     def replace(match):
         tag = BeautifulSoup(match.group(0).decode('ascii', errors='replace'), 'html.parser').script
         target = resolve_link(page, tag.get('src', '')) if tag else None
@@ -107,6 +109,9 @@ def strip_reader_scripts(raw, page):
 
 
 def build_navigation(source, pages):
+    from anna.source.html import resolve_link
+    from anna.source.pages import Toc
+
     toc = Toc(source)
     path = source / 'webhelpcontents.htm'
     if path.is_file():

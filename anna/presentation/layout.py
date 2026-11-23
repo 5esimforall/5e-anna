@@ -11,11 +11,7 @@ import gzip
 import html
 import json
 
-from bs4 import Comment, Doctype, NavigableString, Tag
-
 from anna.catalog.views import METADATA_FIELDS
-from anna.source.pages import decode_page, read_page
-from anna.source.html import IGNORED, Document
 
 # Source tags map onto a small, inert vocabulary; anything else is unwrapped, never copied.
 TAGS = {
@@ -47,6 +43,9 @@ def attribute(value):
 
 def render(doc, start, end, layers):
     """Serialize the DOM intersecting [start, end); layers are (a, b, kind, payload) text ranges."""
+    from bs4 import Comment, Doctype, NavigableString, Tag
+    from anna.source.html import IGNORED
+
     spans = {id(node):(a,b) for a,b,node in doc.text_nodes}
     out = []
     omitted = set()
@@ -167,21 +166,24 @@ def text_start(entry):
     return entry['title_end'] if entry['start']<entry.get('title_end',entry['start'])<entry['end'] else entry['start']
 
 
+def _has_table(db, name):
+    return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def tour_span_key(path, start, end, owner=None):
+    return f'{path}\0{start}\0{end}\0{owner or ""}'
+
+
 def open_page(db, path, source_root):
     """The source page as the build read it, or why it cannot be laid out: missing, or changed since the build."""
+    from anna.source.html import Document
+    from anna.source.pages import read_page
+
     page = db.execute('SELECT text, sha256 FROM pages WHERE path=?',(path,)).fetchone()
     source = source_root/path
-    if not page:return None,'missing'
-    expected_sha = page[1]
-    if source.is_file():
-        raw, _, sha = read_page(source)
-    else:
-        packed = db.execute("SELECT 1 FROM sqlite_master WHERE name='pages_source'").fetchone()
-        original = db.execute('SELECT html_gzip,sha256 FROM pages_source WHERE path=?', (path,)).fetchone() if packed else None
-        if not original:return None,'missing'
-        data, expected_sha = original
-        raw, _, sha = decode_page(gzip.decompress(data))
-    if sha!=expected_sha:return None,'stale'
+    if not page or not source.is_file():return None,'missing'
+    raw, _, sha = read_page(source)
+    if sha != page[1]:return None,'stale'
     doc = Document(path,raw)
     if doc.text!=page[0]:
         doc.close();return None,'stale'
@@ -190,7 +192,7 @@ def open_page(db, path, source_root):
 
 def reference_layers(db, path, start, end, owner=None):
     """Resolved references within a range, each pointing at an entry other than the one being read."""
-    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():return []
+    if not _has_table(db, 'effective_references'):return []
     layers = []
     for (data,) in db.execute('SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id',(path,start,end)):
         r = json.loads(data)
@@ -198,48 +200,85 @@ def reference_layers(db, path, start, end, owner=None):
     return layers
 
 
-def span_layout(db, path, start, end, source_root, owner=None):
-    """A range of one page as the book sets it, with resolved references marked and no field notes."""
-    doc,status = open_page(db,path,source_root)
-    if doc is None:return {'status':status,'path':path}
-    try:
-        body = render(doc,start,end,reference_layers(db,path,start,end,owner))
-    finally:
-        doc.close()
+def _span_ref_layers(refs, start, end, owner=None):
+    return [(r_start, r_end, 'ref', target_id) for r_start, r_end, target_id in refs
+            if r_start >= start and r_end <= end and target_id and target_id != owner and r_end > r_start]
+
+
+def render_span_layout(doc, path, start, end, ref_layers):
+    body = render(doc, start, end, ref_layers)
     return {'status':'ok','path':path,'html':body} if body.strip() else {'status':'empty','path':path}
 
 
+def span_layout(db, path, start, end, source_root, owner=None):
+    """A range of one page as the book sets it, with resolved references marked and no field notes."""
+    if _has_table(db, 'pages_tour_layout'):
+        row = db.execute('SELECT payload_gzip FROM pages_tour_layout WHERE span_key=?',
+                         (tour_span_key(path, start, end, owner),)).fetchone()
+        if row is not None:
+            return json.loads(gzip.decompress(row[0]))
+        return {'status':'empty','path':path}
+    doc,status = open_page(db,path,source_root)
+    if doc is None:return {'status':status,'path':path}
+    try:
+        return render_span_layout(doc, path, start, end, reference_layers(db,path,start,end,owner))
+    finally:
+        doc.close()
+
+
+def render_entry_layout(doc, entry, facts_rows, ref_layers):
+    path = entry['page_path']
+    start, end = entry['start'], entry['end']
+    body_start = text_start(entry)
+    facts = []
+    for field, value, evidence, rule, status in facts_rows:
+        if field in METADATA_FIELDS:
+            continue
+        ev = json.loads(evidence)
+        span = ev.get('span') if ev.get('path') == path else None
+        located = bool(span and start <= span[0] < span[1] <= end and doc.text[span[0]:span[1]].strip())
+        facts.append({'field':field,'value':json.loads(value),'rule':rule,'status':status,'span':span if located else None})
+    layers = [(f['span'][0], f['span'][1], 'note', f) for f in facts if f['span']]
+    layers += ref_layers
+    body = render(doc, body_start, end, layers)
+    if not body.strip():
+        return {'status':'empty','path':path}
+    # A type's leading notes come first; the rest follow reading order, each at its first located span,
+    # and fields read elsewhere come last.
+    lead = LEADING_NOTES.get(entry['type'], ())
+    notes = {}
+    for f in facts:
+        note = notes.setdefault(f['field'], {'field':f['field'],'status':f['status'],'located':False,'position':None})
+        if f['status'] == '原文明示':
+            note['status'] = '原文明示'
+        if f['span']:
+            note['located'] = True
+            note['position'] = f['span'][0] if note['position'] is None else min(note['position'], f['span'][0])
+    rank = lambda field: lead.index(field) if field in lead else len(lead)
+    ordered = sorted(notes.values(), key=lambda n: (rank(n['field']), n['position'] is None, n['position'] or 0, n['field']))
+    return {'status':'ok','path':path,'html':body,'notes':[{k:n[k] for k in ('field','status','located')} for n in ordered]}
+
+
 def entry_layout(db, entry_id, source_root):
+    if _has_table(db, 'pages_entry_layout'):
+        entry_table = 'entry_core' if _has_table(db, 'entry_core') else 'entries'
+        row = db.execute(
+            f'SELECT l.payload_gzip FROM {entry_table} e '
+            'LEFT JOIN pages_entry_layout l ON l.entry_rowid=e.rowid WHERE e.id=?',
+            (entry_id,),
+        ).fetchone()
+        if not row:
+            raise LookupError('条目不存在')
+        if row[0] is not None:
+            return json.loads(gzip.decompress(row[0]))
     row = db.execute('SELECT data FROM entries WHERE id=?',(entry_id,)).fetchone()
     if not row:raise LookupError('条目不存在')
     e = json.loads(row[0]);path = e['page_path']
     doc,status = open_page(db,path,source_root)
     if doc is None:return {'status':status,'path':path}
     try:
-        start,end = e['start'],e['end']
-        body_start = text_start(e)
-        facts = []
-        for field,value,evidence,rule,status in db.execute('SELECT field,value,evidence,rule,status FROM facts WHERE entry_id=? ORDER BY id',(entry_id,)):
-            if field in METADATA_FIELDS:continue
-            ev = json.loads(evidence);span = ev.get('span') if ev.get('path')==path else None
-            located = bool(span and start<=span[0]<span[1]<=end and doc.text[span[0]:span[1]].strip())
-            facts.append({'field':field,'value':json.loads(value),'rule':rule,'status':status,'span':span if located else None})
-        layers = [(f['span'][0],f['span'][1],'note',f) for f in facts if f['span']]
-        layers += reference_layers(db,path,body_start,end,entry_id)
-        body = render(doc,body_start,end,layers)
+        facts_rows = db.execute('SELECT field,value,evidence,rule,status FROM facts WHERE entry_id=? ORDER BY id', (entry_id,))
+        ref_layers = reference_layers(db, path, text_start(e), e['end'], entry_id)
+        return render_entry_layout(doc, e, facts_rows, ref_layers)
     finally:
         doc.close()
-    if not body.strip():return {'status':'empty','path':path}
-    # A type's leading notes come first; the rest follow reading order, each at its first located span,
-    # and fields read elsewhere come last.
-    lead = LEADING_NOTES.get(e['type'],())
-    notes = {}
-    for f in facts:
-        note = notes.setdefault(f['field'],{'field':f['field'],'status':f['status'],'located':False,'position':None})
-        if f['status']=='原文明示':note['status']='原文明示'
-        if f['span']:
-            note['located'] = True
-            note['position'] = f['span'][0] if note['position'] is None else min(note['position'],f['span'][0])
-    rank = lambda field:lead.index(field) if field in lead else len(lead)
-    ordered = sorted(notes.values(),key=lambda n:(rank(n['field']),n['position'] is None,n['position'] or 0,n['field']))
-    return {'status':'ok','path':path,'html':body,'notes':[{k:n[k] for k in ('field','status','located')} for n in ordered]}

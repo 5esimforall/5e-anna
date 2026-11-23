@@ -1,7 +1,6 @@
 """Stage the pinned browser runtime and its licenses beside the website."""
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
-import json
 from urllib.request import urlopen
 
 PYODIDE = 'https://cdn.jsdelivr.net/pyodide/v314.0.8/full/'
@@ -32,18 +31,8 @@ def download(path, url, expected):
 
 def stage_browser_runtime(target):
     target.mkdir()
-    lock = target / 'pyodide-lock.json'
-    download(lock, PYODIDE + lock.name, CORE[lock.name])
-    packages = json.loads(lock.read_text(encoding='utf-8'))['packages']
-    assets = {name: (PYODIDE + name, digest) for name, digest in CORE.items() if name != lock.name}
+    assets = {name: (PYODIDE + name, digest) for name, digest in CORE.items()}
     assets.update(ADDITIONAL)
-    pending = ['beautifulsoup4', 'html5lib']
-    while pending:
-        package = packages[pending.pop()]
-        name = package['file_name']
-        if name not in assets:
-            assets[name] = (PYODIDE + name, package['sha256'])
-            pending.extend(package['depends'])
     with ThreadPoolExecutor(max_workers=6) as pool:
         downloads = [pool.submit(download, target / name, url, digest) for name, (url, digest) in assets.items()]
         for task in downloads:

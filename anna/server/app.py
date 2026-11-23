@@ -70,7 +70,7 @@ def validate_bundle(source, db, book):
         raise ValueError("Stella's linked book not found; run make build")
     m = json.loads(manifest_path.read_text())
     if m.get('reader_schema') != SCHEMA:
-        raise ValueError("Stella's reader data needs updating; run make build COLLECTION=linked")
+        raise ValueError("Stella's reader data needs updating; run make linked")
     annotated = m.get('annotation_snapshot')
     if not annotated or load_annotations(annotated['path'])[1] != annotated['sha256']:
         raise ValueError('Annotation log does not match the published snapshot; run make build')

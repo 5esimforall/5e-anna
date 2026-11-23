@@ -8,7 +8,7 @@ GitHub Pages 提供 [Anna 查询](https://5esimforall.github.io/5e-anna/)、[导
 
 ```sh
 make build             # 从原文快照生成数据库与链接版（存在 our5etools 镜像时同步构建）
-make build COLLECTION=our5etools  # 只构建 our5etools
+make our5etools        # 只构建 our5etools
 make up                # 在 8000 启动查询、导览与阅读服务，Ctrl-C 停止
 ```
 
@@ -21,7 +21,7 @@ make up                # 在 8000 启动查询、导览与阅读服务，Ctrl-C 
 - 原文镜像位于同级的 `5echm-web/`，是独立的 Git 仓库，也供其他冒险项目引用；anna 只读取，不修改其内容。
 - 镜像缺失时自动下载。已有镜像不会在启动或构建时更新：先运行 `make update` 拉取原文，再运行 `make build` 重建数据。
 - 对照镜像位于同级的 `5etools-cn/`，取自 [5etools-cn](https://github.com/tjliqy/5etools-cn)，只检出 `data/`。构建时用它核对不全书条目的身份、字段与重印关系，结论只作旁证，见[来源对照](USAGE.md#来源对照5etools-cn)；它与原文一同由 `make clone` 下载、`make update` 更新，既不混入 `our5etools`，也不直接作为独立的 `5etools` 资料库对外服务。
-- our5etools 本地镜像默认位于同级的 `our5etools/`，其他位置由 `OUR5ETOOLS_DIR` 或不提交的 `local.mk` 指定，仅在构建阶段读取；`make build COLLECTION=our5etools` 将查询库、Stella 章节与全部本地媒体统一打包进完全自包含的 `data/our5etools/`（含 `data/our5etools/media/`），运行时不再访问源镜像，并可用 `LAZY_MEDIA=1`（`--lazy-media`）按需开启远端配图懒加载与本地落盘缓存。各库构建与切换方式见[our5etools 资料库](USAGE.md#our5etools-资料库)。
+- our5etools 本地镜像默认位于同级的 `our5etools/`，其他位置由 `OUR5ETOOLS_DIR` 或不提交的 `local.mk` 指定，仅在构建阶段读取；`make our5etools` 将查询库、Stella 章节与全部本地媒体统一打包进完全自包含的 `data/our5etools/`（含 `data/our5etools/media/`），运行时不再访问源镜像，并可用 `LAZY_MEDIA=1`（`--lazy-media`）按需开启远端配图懒加载与本地落盘缓存。各库构建与切换方式见[our5etools 资料库](USAGE.md#our5etools-资料库)。
 - `Makefile` 是工作流程的唯一实现。上层 DnD 目录的 `Makefile` 把全部目标转调到本项目，本机路径写在本项目的 `local.mk`。
 
 ## 源码组织

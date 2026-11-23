@@ -1,4 +1,4 @@
-# anna owns the workflow; the sibling mirror remains an independent repository.
+# anna owns the workflow; the sibling mirrors remain independent repositories.
 # Machine-specific paths and defaults live in the untracked local.mk; command-line variables still override them.
 -include local.mk
 WEB_DIR ?= ../5echm-web
@@ -24,40 +24,20 @@ LAZY_MEDIA_FLAG := $(if $(filter $(TRUE_VALUES),$(LAZY_MEDIA)),--lazy-media,)
 ANNA_PORT ?= 8000
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 
-COLLECTION ?= all
 NO_COUNTERPARTS ?= 0
-PAGES ?= 0
 PAGES_BASE ?= /5e-anna/
 PAGES_OUTPUT ?= output/pages
-HOME_CACHE ?= 1
-REUSE ?= 0
-PAGES_ENABLED := $(filter $(TRUE_VALUES),$(PAGES))
-REUSE_ENABLED := $(filter $(TRUE_VALUES),$(REUSE))
-HOME_CACHE_FLAG := $(if $(filter $(TRUE_VALUES),$(HOME_CACHE)),--home-cache,)
 COUNTERPARTS_ENABLED := $(if $(filter $(TRUE_VALUES),$(NO_COUNTERPARTS)),,yes)
 COUNTERPART_ARGS := $(if $(COUNTERPARTS_ENABLED),--5etools "$(5ETOOLS_PATH)",--no-counterparts)
-BUILD_CATALOG := $(filter all 5echm,$(COLLECTION))
-
-ifeq ($(and $(filter 1,$(words $(COLLECTION))),$(filter all 5echm our5etools linked,$(COLLECTION))),)
-BUILD_ERROR := COLLECTION must be all, 5echm, our5etools, or linked
-else ifeq ($(PAGES_ENABLED),)
-ifneq ($(REUSE_ENABLED),)
-BUILD_ERROR := REUSE requires PAGES=1
-endif
-endif
-
-ifeq ($(COLLECTION),our5etools)
-BUILD_COMPANION := yes
-else ifeq ($(COLLECTION),all)
-ifeq ($(REUSE_ENABLED),)
-BUILD_COMPANION := $(shell test -d "$(OUR5ETOOLS_PATH)/data" && test -f "$(OUR5ETOOLS_PATH)/__api/books.json" && printf yes)
-else
-BUILD_COMPANION := $(shell test -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" && printf yes)
-endif
-endif
+# The mirror is an external input, so whether it can be built is known when make starts.
+OUR5ETOOLS_MIRROR := $(shell test -d "$(OUR5ETOOLS_PATH)/data" && test -f "$(OUR5ETOOLS_PATH)/__api/books.json" && printf yes)
+# Built libraries appear while make runs (make build pages), so pages looks for them when its recipe starts.
+PAGES_OUR5ETOOLS = $(if $(shell test -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" && printf yes),--our5etools-data "$(OUR5ETOOLS_DATA_PATH)",)
 
 .DEFAULT_GOAL := usage
-.PHONY: usage clone _clone-web _clone-counterparts update status clean distclean build test audit audit-links check up upper our5etools-audit test-unit test-browser browser-setup icons
+.PHONY: usage clone _clone-web _clone-counterparts update status clean distclean build 5echm _catalog linked our5etools _skip-our5etools home pages test audit audit-links check up upper our5etools-audit test-unit test-browser browser-setup icons
+# Stages run in the order they are named; each one reads what the earlier ones published.
+.NOTPARALLEL:
 
 # Commands and variables are documented in USAGE.md; keep the list in one place.
 usage:
@@ -118,7 +98,7 @@ status:
 	@if [ -f "$(OUR5ETOOLS_DATA_PATH)/manifest.json" ]; then \
 		printf 'our5etools data: %s\n' "$$(du -sh "$(OUR5ETOOLS_DATA_PATH)" | cut -f1 | tr -d ' ')"; \
 	else \
-		echo "our5etools data: not built yet (run make build COLLECTION=our5etools)"; \
+		echo "our5etools data: not built yet (run make our5etools)"; \
 	fi
 
 clean:
@@ -130,42 +110,36 @@ distclean:
 icons:
 	@"$(PYTHON)" scripts/build_icons.py
 
-ifneq ($(BUILD_ERROR),)
-build:
-	$(error $(BUILD_ERROR))
+# Build stages. `make build` runs every library and the home cache; name stages to run only those.
+build: 5echm $(if $(OUR5ETOOLS_MIRROR),our5etools,_skip-our5etools) home
+
+5echm: _catalog linked
+
+_catalog: _clone-web $(if $(COUNTERPARTS_ENABLED),_clone-counterparts) icons
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build $(COUNTERPART_ARGS)
+
+linked:
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
+
+ifeq ($(OUR5ETOOLS_MIRROR),)
+our5etools:
+	$(error our5etools: no mirror with data/ and __api/books.json at $(OUR5ETOOLS_PATH); set OUR5ETOOLS_DIR in local.mk or on the command line)
 else
-ifeq ($(REUSE_ENABLED),)
-ifneq ($(BUILD_CATALOG),)
-build: _clone-web $(if $(COUNTERPARTS_ENABLED),_clone-counterparts)
-endif
-ifneq ($(BUILD_CATALOG)$(PAGES_ENABLED),)
-build: icons
-endif
+our5etools:
+	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
 endif
 
-build:
-ifeq ($(REUSE_ENABLED),)
-ifneq ($(BUILD_CATALOG),)
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.catalog.build $(COUNTERPART_ARGS)
-endif
-ifneq ($(filter all 5echm linked,$(COLLECTION)),)
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.linked_book
-endif
-ifneq ($(BUILD_COMPANION),)
-	@OUR5ETOOLS_DIR="$(OUR5ETOOLS_PATH)" "$(PYTHON)" -m anna.our5etools.build --source "$(OUR5ETOOLS_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)" $(if $(OUR5ETOOLS_IMG_DIR),--img-dir "$(OUR5ETOOLS_IMG_DIR)",)
-else ifeq ($(COLLECTION),all)
+_skip-our5etools:
 	@echo "our5etools: skipped (set OUR5ETOOLS_DIR to build our5etools collection)"
-endif
-endif
-ifneq ($(HOME_CACHE_FLAG),)
-ifeq ($(REUSE_ENABLED),)
+
+home:
 	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.home --our5etools-data "$(OUR5ETOOLS_DATA_PATH)" --5etools-data "$(5ETOOLS_DATA_PATH)" $(LAZY_MEDIA_FLAG)
-endif
-endif
-ifneq ($(PAGES_ENABLED),)
-	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.pages_build --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(if $(BUILD_COMPANION),--our5etools-data "$(OUR5ETOOLS_DATA_PATH)",) $(HOME_CACHE_FLAG)
-endif
-endif
+
+# Pages packages the libraries `make up` would serve, with a home cache encoded from the packaged site.
+pages:
+	@test -f data/extracted/catalog.sqlite && test -f data/5echm-anna/anna-manifest.json || \
+		{ echo "pages: no built 5echm library in data/; run make build first" >&2; exit 1; }
+	@WEB_DIR="$(WEB_PATH)" "$(PYTHON)" -m anna.server.pages_build --base "$(PAGES_BASE)" --output "$(PAGES_OUTPUT)" $(PAGES_OUR5ETOOLS) --home-cache
 
 our5etools-audit:
 	@"$(PYTHON)" -m anna.our5etools.audit --data "$(OUR5ETOOLS_DATA_PATH)" --output "$(OUR5ETOOLS_DATA_PATH)/audit.md"

@@ -1,6 +1,7 @@
 """Workflow and search migration regressions; all mutations use temporary fixtures."""
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -89,23 +90,131 @@ class WorkflowTests(unittest.TestCase):
                                     text=True, capture_output=True, check=True)
             self.assertEqual(Path(result.stdout.strip()), (Path(td) / 'custom mirror').resolve())
 
+    @staticmethod
+    def our5etools_mirror(path, books=True):
+        (path / 'data').mkdir(parents=True)
+        if books:
+            (path / '__api').mkdir()
+            (path / '__api/books.json').write_text('[]')
+        return path
+
     def test_local_settings_supply_defaults_that_command_line_overrides(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td).resolve()
             env = {k: v for k, v in os.environ.items() if k != 'OUR5ETOOLS_DIR'}
 
-            def companion_source(*args):
-                result = self.make(root, '-f', str(PROJECT / 'Makefile'), '-n', 'build',
-                                   'COLLECTION=our5etools', *args, env=env)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                return result.stdout
+            def companion(*args):
+                return self.make(root, '-f', str(PROJECT / 'Makefile'), '-n', 'our5etools', *args, env=env)
 
-            self.assertIn(f'--source "{root.parent / "our5etools"}"', companion_source())
+            # Without local.mk the default is the sibling mirror, which this fixture does not have.
+            self.assertIn(f'at {root.parent / "our5etools"};', companion().stderr)
             (root / 'local.mk').write_text(f'OUR5ETOOLS_DIR ?= {root / "local mirror"}\n')
-            self.assertIn(f'--source "{root / "local mirror"}"', companion_source())
-            override = companion_source(f'OUR5ETOOLS_DIR={root / "override"}')
-            self.assertIn(f'--source "{root / "override"}"', override)
-            self.assertNotIn('local mirror', override)
+            self.our5etools_mirror(root / 'local mirror')
+            result = companion()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f'--source "{root / "local mirror"}"', result.stdout)
+            self.our5etools_mirror(root / 'override')
+            override = companion(f'OUR5ETOOLS_DIR={root / "override"}')
+            self.assertEqual(override.returncode, 0, override.stderr)
+            self.assertIn(f'--source "{root / "override"}"', override.stdout)
+            self.assertNotIn('local mirror', override.stdout)
+
+    def stage_steps(self, root, *args):
+        """Run `make -n` with fixture mirrors and reduce the printed recipe to one name per stage step."""
+        env = {k: v for k, v in os.environ.items() if k not in {'WEB_DIR', 'OUR5ETOOLS_DIR', '5ETOOLS_DIR'}}
+        result = self.make(PROJECT, '-n', *args, f'WEB_DIR={root / "web mirror"}',
+                           f'5ETOOLS_DIR={root / "counterparts mirror"}',
+                           f'OUR5ETOOLS_DATA={root / "our data"}', f'PAGES_OUTPUT={root / "site"}',
+                           'PAGES_BASE=/fixture/', env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        steps = []
+        for line in result.stdout.splitlines():
+            module = re.search(r' -m anna\.(\S+)', line)
+            if line.startswith('if [ ! -e '):
+                steps.append('clone ' + Path(line.split('"')[1]).name)
+            elif 'scripts/build_icons.py' in line:
+                steps.append('icons')
+            elif line.startswith('test -f data/extracted/catalog.sqlite'):
+                steps.append('require built library')
+            elif 'our5etools: skipped' in line:
+                steps.append('skip our5etools')
+            elif module:
+                steps.append(module[1])
+        return steps, result.stdout
+
+    def test_each_stage_target_prints_only_its_commands(self):
+        five_echm = ['clone web mirror', 'clone counterparts mirror', 'icons', 'catalog.build', 'server.linked_book']
+        pages = ['require built library', 'server.pages_build']
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            mirror = f'OUR5ETOOLS_DIR={self.our5etools_mirror(root / "our mirror")}'
+            expected = {
+                ('5echm',): five_echm,
+                ('linked',): ['server.linked_book'],
+                ('our5etools', mirror): ['our5etools.build'],
+                ('home',): ['server.home'],
+                ('pages',): pages,
+                ('build', mirror): five_echm + ['our5etools.build', 'server.home'],
+                ('build', 'pages', mirror): five_echm + ['our5etools.build', 'server.home'] + pages,
+                ('our5etools', 'home', 'pages', mirror): ['our5etools.build', 'server.home'] + pages,
+            }
+            for args, steps in expected.items():
+                with self.subTest(args=args):
+                    self.assertEqual(self.stage_steps(root, *args)[0], steps)
+            steps, output = self.stage_steps(root, '5echm')
+            self.assertIn(f'-m anna.catalog.build --5etools "{root / "counterparts mirror"}"', output)
+            steps, output = self.stage_steps(root, '5echm', 'NO_COUNTERPARTS=1')
+            self.assertEqual(steps, ['clone web mirror', 'icons', 'catalog.build', 'server.linked_book'])
+            self.assertIn('-m anna.catalog.build --no-counterparts', output)
+            self.assertNotIn('counterparts mirror', output)
+            steps, output = self.stage_steps(root, 'our5etools', mirror, f'OUR5ETOOLS_IMG_DIR={root / "img"}')
+            self.assertIn(f'--source "{root / "our mirror"}" --output "{root / "our data"}" --img-dir "{root / "img"}"',
+                          output)
+
+    def test_pages_packages_the_built_libraries_with_its_own_home_cache(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            steps, output = self.stage_steps(root, 'pages')
+            self.assertIn(f'--base "/fixture/" --output "{root / "site"}"', output)
+            self.assertIn('--home-cache', output)
+            self.assertNotIn('--our5etools-data', output)
+            # A built our5etools library is packaged; the check runs when the pages recipe starts.
+            (root / 'our data').mkdir()
+            (root / 'our data/manifest.json').write_text('{}')
+            steps, output = self.stage_steps(root, 'pages')
+            self.assertIn(f'--our5etools-data "{root / "our data"}" --home-cache', output)
+
+    def test_pages_without_built_artifacts_stops_before_packaging(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            for built in ((), ('data/extracted/catalog.sqlite',)):
+                for name in built:
+                    (root / name).parent.mkdir(parents=True, exist_ok=True)
+                    (root / name).write_bytes(b'fixture')
+                with self.subTest(built=built):
+                    # PYTHON=false keeps a missing guard from starting a real Pages build.
+                    result = self.make(root, '-f', str(PROJECT / 'Makefile'), 'pages',
+                                       f'PAGES_OUTPUT={root / "site"}', 'PYTHON=false')
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('pages: no built 5echm library in data/; run make build first', result.stderr)
+                    self.assertNotIn('pages_build', result.stdout + result.stderr)
+                    self.assertFalse((root / 'site').exists())
+
+    def test_our5etools_stage_requires_a_complete_mirror(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            partial = self.our5etools_mirror(root / 'partial', books=False)
+            for mirror in (root / 'missing', partial):
+                with self.subTest(mirror=mirror.name):
+                    result = self.make(PROJECT, '-n', 'our5etools', f'OUR5ETOOLS_DIR={mirror}')
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn(f'our5etools: no mirror with data/ and __api/books.json at {mirror};',
+                                  result.stderr)
+                    self.assertNotIn('anna.our5etools.build', result.stdout)
+                    # The full build skips the library instead of failing.
+                    steps, output = self.stage_steps(root, 'build', f'OUR5ETOOLS_DIR={mirror}')
+                    self.assertEqual(steps[-2:], ['skip our5etools', 'server.home'])
+                    self.assertNotIn('anna.our5etools.build', output)
 
     def test_workspace_forwards_every_target_and_reports_unknown_ones(self):
         wrapper = WORKSPACE / 'Makefile'
@@ -118,6 +227,9 @@ class WorkflowTests(unittest.TestCase):
                 result = self.make(WORKSPACE, '-n', target)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn(command, result.stdout)
+        result = self.make(WORKSPACE, '-n', 'build', 'pages')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(result.stdout.index('-m anna.server.home'), result.stdout.index('-m anna.server.pages_build'))
         result = self.make(WORKSPACE, '-n', 'retired-target')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('No rule to make target', result.stderr)
@@ -183,7 +295,7 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(sentinel.read_text(), 'keep')
 
     def test_only_explicit_update_pulls(self):
-        for command in ('up', 'upper', 'build'):
+        for command in ('up', 'upper', 'build', '5echm', 'pages'):
             result = self.make(PROJECT, '-n', command)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertNotIn('git pull', result.stdout)

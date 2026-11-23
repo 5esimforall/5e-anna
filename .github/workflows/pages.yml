@@ -49,7 +49,7 @@ jobs:
           git -C "$COMPARISON_DIR" fetch --depth 1 --filter=blob:none origin "$COMPARISON_REVISION"
           git -C "$COMPARISON_DIR" checkout --detach FETCH_HEAD
           python -m pip install -r requirements.txt
-          make build PAGES=1 HOME_CACHE=1 "PAGES_BASE=${BASE_PATH%/}/" "5ETOOLS_DIR=$COMPARISON_DIR"
+          make build pages "PAGES_BASE=${BASE_PATH%/}/" "5ETOOLS_DIR=$COMPARISON_DIR"
       - uses: actions/upload-pages-artifact@v4
         with:
           path: ${{ env.PAGES_OUTPUT }}

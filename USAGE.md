@@ -7,7 +7,8 @@
 | 命令 | 用途 |
 | --- | --- |
 | `make clone` | 原文或 5etools-cn 对照镜像缺失时下载；已有镜像保持不变 |
-| `make build` | 构建不全书数据库与链接版，有 our5etools 镜像时一并构建。可选择资料库、Pages 输出和首页缓存，见[构建选项](#构建选项) |
+| `make build` | 构建不全书数据库与链接版，有 our5etools 镜像时一并构建，最后生成首页缓存。可只运行其中的阶段，见[构建阶段](#构建阶段) |
+| `make pages` | 把已构建的资料库打包为静态站点；`make build pages` 先重建再打包 |
 | `make our5etools-audit` | 核查 `data/our5etools/` 的不变量并生成 `data/our5etools/audit.md` |
 | `make up` | 启动单端口查询、导览、阅读与正文资源服务（存在 `data/our5etools/manifest.json` 时自动挂载 `our5etools` 资料库；`data/5etools/` 预留给独立中文版 `5etools`；可用 `LAZY_MEDIA=1` 开启远端配图按需懒加载缓存） |
 | `make upper` | 开发用：同上，不全书或 our5etools 重建完成后自动校验并热重载 |
@@ -25,20 +26,27 @@
 
 不带目标运行 `make` 会显示本页位置。下文的 `python -m anna.…` 开发维护命令在仓库根目录运行。
 
-## 构建选项
+## 构建阶段
+
+构建由几个阶段组成，每个阶段是一个 make 目标。`make build` 依次运行 `5echm`、`our5etools` 和 `home`；our5etools 镜像缺少 `data/` 或 `__api/books.json` 时跳过这一阶段并给出提示。只需更新部分产物时，在一条命令里按顺序写出所需阶段，例如 `make our5etools home`。阶段严格按书写顺序执行，后一阶段读取前一阶段发布的产物。
+
+| 阶段 | 作用 |
+| --- | --- |
+| `make 5echm` | 下载缺失的原文与对照镜像，生成界面图标，重建不全书查询库与链接版 |
+| `make linked` | 用已有不全书数据库重建链接版 |
+| `make our5etools` | 重建 our5etools 查询库、章节和随包媒体；找不到镜像时报错停止 |
+| `make home` | 重建本地首页缓存 `data/home.json`，内容为资料库摘要、元数据、筛选计数和首批 150 行 |
+| `make pages` | 校验已构建的资料库快照并打包为静态站点；尚未构建不全书时报错停止 |
 
 | 参数 | 用途 |
 | --- | --- |
-| `COLLECTION=all` | 默认重建不全书，有 our5etools 镜像时一并重建 |
-| `COLLECTION=5echm` | 重建不全书查询库与链接版 |
-| `COLLECTION=our5etools` | 重建 our5etools 查询库、章节和随包媒体 |
-| `COLLECTION=linked` | 用已有不全书数据库重建链接版 |
-| `NO_COUNTERPARTS=1` | 跳过 5etools-cn 来源对照 |
-| `PAGES=1` | 同时输出静态站点。用 `PAGES_BASE` 设置托管路径，`PAGES_OUTPUT` 指定尚不存在的输出目录（默认 `output/pages`） |
-| `REUSE=1` | 与 `PAGES=1` 一起使用，打包现有产物并校验快照 |
-| `HOME_CACHE=1` | 默认生成首页缓存，本地和 Pages 都使用。缓存包含资料库摘要、元数据、筛选计数和首批 150 行。用 `HOME_CACHE=0` 跳过生成 |
+| `NO_COUNTERPARTS=1` | `5echm` 跳过 5etools-cn 来源对照 |
+| `PAGES_BASE` | 静态站点的托管路径，默认 `/5e-anna/` |
+| `PAGES_OUTPUT` | 静态站点的输出目录，须尚不存在，默认 `output/pages` |
 
-Pages 以不全书为基础。`COLLECTION=all` 同时打包已选用的 our5etools。用 `COLLECTION=our5etools PAGES=1` 只重建 our5etools 并复用已有的不全书产物。
+`make pages` 打包 `make up` 会提供的资料库：以不全书为基础，存在 `data/our5etools/manifest.json` 时一并打包 our5etools。站点自带首页缓存，用与 `make home` 相同的编码从打包后的站点数据生成，因此本地与 Pages 的首屏来自同一套逻辑。重建后发布用 `make build pages`；只重建 our5etools 并复用已有的不全书产物用 `make our5etools home pages`。
+
+## 路径与环境
 
 默认原文位于项目同级的 `5echm-web/`。用 `WEB_DIR=/路径` 指定其他镜像，相对路径以执行 `make` 的目录为基准。
 
@@ -51,7 +59,7 @@ OUR5ETOOLS_IMG_DIR ?= /路径/5etools-img
 
 [来源对照](#来源对照5etools-cn)所用的 5etools-cn 镜像默认位于 anna 同级的 `5etools-cn/`，只检出 `data/`。make 参数 `5ETOOLS_DIR=/路径`（以及 `5ETOOLS_REPO`、`5ETOOLS_BRANCH`）指定其他位置或来源，相对路径同样相对于执行 make 的目录；上层 Makefile 只换算 `WEB_DIR`，在上层运行时 `5ETOOLS_DIR` 请写绝对路径。以数字开头的名称不能用 shell 直接赋值或 `export`，请写在 make 参数中，或用 `env 5ETOOLS_DIR=… python3 …` 传给脚本。用 `NO_COUNTERPARTS=1` 跳过对照时，构建摘要记为 `skipped`。
 
-[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make build COLLECTION=our5etools`。
+[our5etools 资料库](#our5etools-资料库)是独立的社区中文资料库（键名 `our5etools`），与默认不全书（`5echm`）、预留的独立中文版 `5etools` 接口（键名 `5etools`、`5ETOOLS_DATA ?= data/5etools`）以及仅稀疏检出 `data/` 作旁证的 `5ETOOLS_DIR`（`5etools-cn` 对照镜像）分开管理。本地镜像默认位于 anna 同级的 `our5etools/`，其他位置通过 `OUR5ETOOLS_DIR=/路径` 或 `local.mk` 指定，可选通过 `OUR5ETOOLS_IMG_DIR=/路径`（CLI `--img-dir`）打包离线 `5etools-img` 图像目录至 `data/our5etools/media/img/`，通过 `OUR5ETOOLS_DATA` 指定输出目录（默认 `data/our5etools`）。构建产物完全自包含，运行时只读取 `data/our5etools/`，不再依赖或访问 `OUR5ETOOLS_DIR`。默认构建在镜像包含 `data/` 和 `__api/books.json` 时加入 our5etools。只构建这套资料库时使用 `make our5etools`。
 
 构建时缺失的镜像会自动下载；已有镜像不会自动更新。`make update` 只更新两个镜像，之后运行 `make build` 才更新数据库、库内全文索引和链接版。`make clean` 只清理本项目，不删除两个共享镜像。
 
@@ -304,7 +312,7 @@ make build
 
 上述规则应用于满足证据条件的页面，不依赖样本名称或路径白名单。回归样例由 `tests/browser/links.spec.cjs` 覆盖。
 
-未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make build COLLECTION=linked` 会拒绝沿用过期的概念发现依据。
+未命中结构规则的边界、定义句和缺少规则语境的词面匹配仍保留待核；跨来源等价关系、缩写与别名的人工审核以及审核后的迭代扩展尚未实现。扫描全部页面不等于语义覆盖完整。`make audit` 检查发现记录的范围、候选身份、状态与目标一致性和覆盖计数，不能替代语义审核。修改样式约定或导航目录后需要重新执行 `make build`；仅执行 `make linked` 会拒绝沿用过期的概念发现依据。
 
 ## 来源对照（5etools-cn）
 
@@ -342,7 +350,7 @@ make build
 
 ```sh
 # 使用 Makefile（可用 OUR5ETOOLS_DIR / OUR5ETOOLS_IMG_DIR / OUR5ETOOLS_DATA / 5ETOOLS_DATA 覆盖默认路径）
-make build COLLECTION=our5etools
+make our5etools
 make our5etools-audit
 
 # 直接调用模块命令行
@@ -395,10 +403,10 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 
 [GitHub Pages 工作流](.github/workflows/pages.yml)从固定的原文镜像提交构建两库的查询与阅读产物，每次推送 `main` 或手动运行时部署。浏览器通过 Web Worker 执行同一套查询与阅读逻辑，按需读取压缩数据分片。工作流预先计算跨库作品对应关系，按两套资料库的快照绑定并随站点发布。Pages 读取这份结果，本机服务仍按当前加载的资料库计算。
 
-工作流用 `make build PAGES=1 HOME_CACHE=1` 重建并打包。已有构建产物时，可校验并复用它们生成静态预览包。
+工作流用 `make build pages` 重建并打包。已有构建产物时，`make pages` 校验并复用它们生成静态预览包：
 
 ```sh
-make build PAGES=1 REUSE=1 HOME_CACHE=1 PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages
+make pages PAGES_BASE=/5e-anna/ PAGES_OUTPUT=output/pages
 ```
 
 本地和 Pages 的默认首页使用同一套代码读取首屏缓存。缓存与当前资料库不匹配时，本地服务回到实时查询。搜索、分页、条目链接和资料库设置等按各自的请求参数查询。本地通过 HTTP API 查询，Pages 按需启动工作线程。
@@ -483,7 +491,7 @@ python3 -m anna.catalog.query --type spell --field school=塑能 --csv > evocati
 
 `entry_marked`＝条目标旧；`source_archived`＝整书归档；`unmarked`＝未见标记，不代表新版。实体身份暂按定位区分，同名与同文匹配仅生成候选，不自动合并。未分类段落和原始表格保留在数据库中；恢复的断链仍保留原链接。
 
-新环境的依赖安装见[构建选项](#构建选项)末尾；单元测试用 `make test-unit`。结构审计只读数据库，校验表结构、外键与统计一致性，`make audit` 会运行它，需要传参时直接调用：
+新环境的依赖安装见[路径与环境](#路径与环境)末尾；单元测试用 `make test-unit`。结构审计只读数据库，校验表结构、外键与统计一致性，`make audit` 会运行它，需要传参时直接调用：
 
 ```sh
 .venv/bin/python -m anna.catalog.audit

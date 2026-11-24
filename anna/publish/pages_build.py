@@ -9,7 +9,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 from anna.paths import BOOK, PROJECT, WEB
 from anna.presentation.catalog import DB
-from anna.server.home import mark_home
+from anna.server.home import mark_home, mark_home_scopes
 from anna.publish.pages_assets import stage_browser_runtime
 from anna.publish.pages_data import PAGES_LIMIT, export_pages_data
 
@@ -99,13 +99,25 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
             else f"{entries_index['buckets']}:{entries_index['encoding']}"
         )
         pages_attrs = f'data-anna-pages data-anna-entries="{entries_attr}"'.encode('ascii')
-        home = next(stage.glob('home.*.json')).name if home_cache else None
+        home_default = None
+        home_scopes = {}
+        if home_cache:
+            home_index = stage / 'home-index.json'
+            if home_index.is_file():
+                total -= home_index.stat().st_size
+                info = json.loads(home_index.read_text(encoding='utf-8'))
+                home_index.unlink()
+                home_default = info.get('default')
+                home_scopes = info.get('scopes') or {}
+            else:
+                home_default = next(stage.glob('home.*.json')).name
         for source_name, target_name in DOCUMENTS.values():
             target = stage / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
             html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', b'<html ' + pages_attrs, 1)
-            if home and source_name == 'index.html':
-                html = mark_home(html, home)
+            if home_default and source_name == 'index.html':
+                html = mark_home(html, home_default)
+                html = mark_home_scopes(html, home_scopes)
             target.write_bytes(rebase_links(html, lambda url: mount_url(url, base)))
         with ZipFile(stage / 'pages-runtime.zip', 'w', ZIP_DEFLATED) as runtime:
             for module in sorted((PROJECT / 'anna').rglob('*.py')):

@@ -521,15 +521,26 @@ class AnnaHandler(serve.Handler):
             return
         url = urlsplit(self.path)
         if url.path == '/' or url.path.startswith('/home.') and url.path.endswith('.json'):
-            cache = home.local_cache(self.collection_registry()) if self.server.bundle_intact(self.current) else None
+            if self.server.bundle_intact(self.current):
+                registry = self.collection_registry()
+                cache = home.local_cache(registry)
+                scope_names, scope_payloads = home.local_scope_caches(registry)
+            else:
+                cache = None
+                scope_names, scope_payloads = {}, {}
             if url.path != '/':
                 if cache and url.path == '/' + cache[0]:
                     self.send(cache[1])
+                elif (scoped := scope_payloads.get(url.path[1:])) is not None:
+                    self.send(scoped)
                 else:
                     self.send_error(404)
                 return
             if cache:
-                self.send(home.mark_home((serve.WEB / 'index.html').read_bytes(), cache[0]), 'text/html; charset=utf-8')
+                html = home.mark_home((serve.WEB / 'index.html').read_bytes(), cache[0])
+                if scope_names:
+                    html = home.mark_home_scopes(html, scope_names)
+                self.send(html, 'text/html; charset=utf-8')
                 return
         if url.path.startswith('/book/'):
             self.serve_book(url.path[len('/book'):])

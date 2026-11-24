@@ -83,7 +83,7 @@ const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions','lair_actions','has_local_audio']);
 const COMMON=new Set(['ruleset','source','origin','package','status','legacy','conflict','sections']);
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
-let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, panelShape='', focusSections=false;
+let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, facetsController=null, panelShape='', focusSections=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
 const sourceURL=(path,start=0,end=0)=>annaKit.href('/source?'+new URLSearchParams({path,start,end})+'#evidence');
 const sourceOf=id=>metadata?.sources?.find(s=>s.id===id);
@@ -137,7 +137,8 @@ let libraryTimer;
 async function reloadLibrary(){
   clearTimeout(libraryTimer);
   // The rows on screen belong to the previous library; they dim at once, as for any new table.
-  request?.abort();generation++;ready=false;awaitResults('正在读取筛选…');
+  request?.abort();facetsController?.abort();facetsController=null;suggestionController?.abort();suggestionController=null;
+  generation++;ready=false;awaitResults('正在读取筛选…');
   try{
     const meta=await api('/api/meta');
     metadata=meta;Object.assign(fieldNames,metadata.fields);showLibrary();panelShape='';
@@ -698,28 +699,33 @@ const facetsURL=()=>'/api/facets?'+address({omit:['entry','sort','dir']});
 
 // Counts follow every condition, so they refresh beside each query; a late response never replaces a newer one.
 async function refreshFacets(){
-  const gen=++facetGeneration;
+  facetsController?.abort();
+  const controller=facetsController=new AbortController(),gen=++facetGeneration;
   const cards=lineParams().cards;
-  try{const data=await api(facetsURL());if(gen===facetGeneration){facetCards=cards;applyFacets(data);}}catch{/* The results report query errors; counts keep their last values. */}
+  try{const data=await api(facetsURL(),controller.signal);if(gen===facetGeneration){facetCards=cards;applyFacets(data);}}
+  catch(e){if(e.name==='AbortError')return;/* The results report query errors; counts keep their last values. */}
+  finally{if(facetsController===controller)facetsController=null;}
 }
 // New types change the table itself: its columns, fields and sorts arrive before the rows are read.
 // Conditions the new table cannot answer stay on the bar, with a note saying which types they leave out.
 let tableRejected=false;
 async function changeTable(){
+  facetsController?.abort();
+  const controller=facetsController=new AbortController();
   const gen=++panelGeneration,fgen=++facetGeneration;request?.abort();generation++;ready=false;tableRejected=false;tableTypes=tableKey();
   awaitResults('正在读取筛选…');$('.table-wrap').scrollTop=0;$('.table-wrap').scrollLeft=0;renderQuery();
   const cards=lineParams().cards;
   try{
-    const data=await api(facetsURL());if(gen!==panelGeneration||fgen!==facetGeneration)return;
+    const data=await api(facetsURL(),controller.signal);if(gen!==panelGeneration||fgen!==facetGeneration)return;
     facetCards=cards;applyFacets(data);
     if(params.has('sort')&&![...schema.sorts,'match'].includes(params.get('sort')))params.delete('sort');
     historyUpdate(true);sync();ready=true;await load();
   }catch(e){
-    if(gen!==panelGeneration)return;
+    if(e.name==='AbortError'||gen!==panelGeneration)return;
     if(e.status===400){tableRejected=true;rejectQuery(e.message);$('#columns').replaceChildren();}
     else{failResults(e.message,'读取失败');$('#columns').replaceChildren();}
     $('#results').setAttribute('aria-busy','false');
-  }
+  }finally{if(facetsController===controller)facetsController=null;}
 }
 // A query the server cannot run shows why below the bar; the results wait, empty, for the fix.
 function rejectQuery(message){
@@ -899,7 +905,7 @@ const searchTerms=()=>[...new Set(valuesOf('q'))];
 const bodyTerms=()=>valuesOf('body');
 let draft='';
 const searching=()=>valuesOf('q').length>0||!!draft;
-function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;$('#q').value='';closeSuggestions();}
+function clearDraft(){draft='';suggestionGroups=null;suggestionGeneration++;suggestionController?.abort();suggestionController=null;$('#q').value='';closeSuggestions();}
 let composingSearch=false;
 // Results that follow each keystroke replace the rows without fading, so the list does not flicker while typing.
 let typedQuery=false;
@@ -925,11 +931,15 @@ function queueSearch(){
   timer=setTimeout(()=>{typedQuery=true;changed(true);refreshSuggestionCounts();},160);
 }
 // Suggestions count with the probe where the caret stands: each value says what placing it there would match.
-let suggestionGroups=null,suggestionGeneration=0;
+let suggestionGroups=null,suggestionGeneration=0,suggestionController=null;
 async function refreshSuggestionCounts(){
+  suggestionController?.abort();
+  const controller=suggestionController=new AbortController();
   const gen=++suggestionGeneration,query=address({probe:true,omit:['entry','sort','dir']});
-  try{const data=await api('/api/facets?'+query);if(gen!==suggestionGeneration)return;suggestionGroups=readGroups(data);
-    if(!$('#suggestions').hidden){const keep=activeSuggestion;renderSuggestions();if(keep<suggestions.length){activeSuggestion=0;moveSuggestion(keep);}}}catch{/* Suggestions keep their last counts. */}
+  try{const data=await api('/api/facets?'+query,controller.signal);if(gen!==suggestionGeneration)return;suggestionGroups=readGroups(data);
+    if(!$('#suggestions').hidden){const keep=activeSuggestion;renderSuggestions();if(keep<suggestions.length){activeSuggestion=0;moveSuggestion(keep);}}}
+  catch(e){if(e.name==='AbortError')return;/* Suggestions keep their last counts. */}
+  finally{if(suggestionController===controller)suggestionController=null;}
 }
 $('#q').addEventListener('compositionstart',()=>{composingSearch=true;clearTimeout(timer);});
 $('#q').addEventListener('compositionend',()=>{composingSearch=false;queueSearch();});

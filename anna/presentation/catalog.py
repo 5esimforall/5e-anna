@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Catalog response models, filtering and exports over the published SQLite snapshot."""
 from __future__ import annotations
-from collections import Counter
+from collections import Counter, OrderedDict
 import csv
+from functools import lru_cache
+import gzip
 import io
 import json
+import os
+from pathlib import Path
 import re
 import sqlite3
-from pathlib import Path
+import threading
 import anna.catalog.views as browse
 from anna.presentation import contracts, expression
 from anna.presentation.expression import Query
@@ -118,11 +122,18 @@ def attribute_clause(params):
     return ['EXISTS(SELECT 1 FROM json_each(e.fields,?) f WHERE CAST(f.value AS TEXT)=?)'],['$.'+field,{'true':'1','false':'0'}.get(value,value)]
 
 
-def base_clause(params, restrict=None):
+def base_clause(params, restrict=None, *, non_section_max=None):
     """Untyped sections join the results only on request; with the library scope this bounds every query and count."""
     clauses, values = restriction_clause(restrict)
     attribute, attributed = attribute_clause(params)
-    return ' AND '.join(["e.type!='section'" if first(params,'sections')!='1' else '1', *clauses, *attribute]), values+attributed
+    if first(params, 'sections') != '1':
+        if non_section_max is not None:
+            head, head_vals = 'e.rowid<=?', [non_section_max]
+        else:
+            head, head_vals = "e.type!='section'", []
+    else:
+        head, head_vals = '1', []
+    return ' AND '.join([head, *clauses, *attribute]), head_vals + values + attributed
 
 
 def unclassified_matches(db, params, restrict=None):
@@ -135,10 +146,18 @@ def unclassified_matches(db, params, restrict=None):
     scope, scoped = restriction_clause(restrict)
     attribute, attributed = attribute_clause(query)
     sql, values = expression.sql(query.where, card_condition)
-    from_sql = _query_from(db, sql)
+    non_section_max = (
+        _meta_int(db, 'pages_non_section_max_rowid')
+        if 'e.data' not in sql and not attributed and _has_table(db, 'entry_core')
+        else None
+    )
+    sec_clause = 'e.rowid>?' if non_section_max is not None else "e.type='section'"
+    sec_vals = [non_section_max] if non_section_max is not None else []
+    clauses_sql = ' AND '.join([sec_clause, *scope, *attribute, sql])
+    from_sql, (clauses_sql,) = _from_and_bind(db, clauses_sql)
     return db.execute(
-        f'SELECT count(*) FROM {from_sql} WHERE ' + ' AND '.join(["e.type='section'", *scope, *attribute, sql]),
-        scoped + attributed + values,
+        f'SELECT count(*) FROM {from_sql} WHERE {clauses_sql}',
+        sec_vals + scoped + attributed + values,
     ).fetchone()[0]
 
 
@@ -148,39 +167,82 @@ def bounded(query):
     return query
 
 
-def filters(db, params, restrict=None):
+def filters(db, params, restrict=None, *, extra_sql=''):
     """The WHERE clause for the query's conditions as written, within the library scope."""
     query = bounded(Query.of(params))
-    base, scoped = base_clause(query, restrict)
     sql, values = expression.sql(query.where, card_condition)
-    return f' WHERE {base} AND {sql}', scoped+values
+    attr_field = first(query, 'field') if first(query, 'value') else ''
+    uses_data = 'e.data' in sql or 'e.data' in extra_sql
+    non_section_max = None
+    if not uses_data and not attr_field and _has_table(db, 'entry_core'):
+        non_section_max = _meta_int(db, 'pages_non_section_max_rowid')
+    base, scoped = base_clause(query, restrict, non_section_max=non_section_max)
+    return f' WHERE {base} AND {sql}', scoped + values
+
+
+_ASCII_LOWER = str.maketrans('ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')
+
+
+def _ascii_lower(text: str) -> str:
+    return text.translate(_ASCII_LOWER)
+
+
+def simple_rank_filter(query, allowed_types, allowed_rulesets, *, restrict=None, max_sources=155):
+    """Validate and extract simple AND-joined filters for in-memory rank-index execution, or return None.
+
+    Handles unrestricted TRUE / FALSE and AllOf of non-negated ``type``, ``ruleset``, ``source``,
+    ``q`` and ``typing`` cards when there is no attribute filter (``field``/``value``) and
+    ``sections != '1'``.
+    """
+    if first(query, 'sections') == '1' or first(query, 'value') or query.probing:
+        return None
+    node = expression.settle(query.where)
+    if node == expression.FALSE:
+        return set(), set(), set(), []
+    types = None
+    rulesets = set(restrict.rulesets) if restrict is not None and restrict.rulesets is not None else None
+    sources = set(restrict.sources) if restrict is not None and restrict.sources is not None else None
+    terms: list[str] = []
+    if node != expression.TRUE:
+        parts = node.parts if isinstance(node, expression.AllOf) else (node,)
+        for card in parts:
+            if not isinstance(card, expression.Card) or card.negated or card.base not in {'type', 'ruleset', 'source', 'q', 'typing'}:
+                return None
+            if card.base == 'type':
+                vals = list(dict.fromkeys(card.values))
+                if any(v not in allowed_types for v in vals):
+                    return None
+                val_set = set(vals)
+                types = val_set if types is None else (types & val_set)
+            elif card.base == 'ruleset':
+                vals = list(dict.fromkeys(card.values))
+                if any(v not in allowed_rulesets for v in vals):
+                    return None
+                val_set = set(vals)
+                rulesets = val_set if rulesets is None else (rulesets & val_set)
+            elif card.base == 'source':
+                vals = list(dict.fromkeys(card.values))
+                if len(vals) > max_sources:
+                    return None
+                val_set = set(vals)
+                sources = val_set if sources is None else (sources & val_set)
+            elif card.base in {'q', 'typing'}:
+                for val in card.values:
+                    stripped = val.strip()
+                    if stripped:
+                        terms.append(_ascii_lower(stripped))
+    return types, rulesets, sources, terms
 
 
 def simple_type_ruleset_filter(query, allowed_types, allowed_rulesets, restrict=None):
     """Return (types_or_None, rulesets_or_None) when ``query`` and ``restrict`` only constrain
     non-negated ``type`` and ``ruleset`` cards, or ``None`` if full SQL evaluation is needed."""
-    if restrict is not None and restrict.sources is not None:
+    simple = simple_rank_filter(query, allowed_types, allowed_rulesets, restrict=restrict)
+    if simple is None:
         return None
-    node = expression.settle(query.where)
-    if node == expression.FALSE:
-        return set(), set()
-    types = None
-    rulesets = set(restrict.rulesets) if restrict is not None and restrict.rulesets is not None else None
-    if node != expression.TRUE:
-        parts = node.parts if isinstance(node, expression.AllOf) else (node,)
-        for card in parts:
-            if not isinstance(card, expression.Card) or card.negated or card.base not in {'type', 'ruleset'}:
-                return None
-            if card.base == 'type':
-                if any(v not in allowed_types for v in card.values):
-                    return None
-                vals = set(card.values)
-                types = vals if types is None else (types & vals)
-            else:
-                if any(v not in allowed_rulesets for v in card.values):
-                    return None
-                vals = set(card.values)
-                rulesets = vals if rulesets is None else (rulesets & vals)
+    types, rulesets, sources, terms = simple
+    if sources is not None or terms:
+        return None
     return types, rulesets
 
 
@@ -200,7 +262,7 @@ def count(db, params, restrict=None):
                     if t != 'section' and (types is None or t in types) and (rulesets is None or r in rulesets)
                 )
     where, values = filters(db, query, restrict)
-    from_sql = _query_from(db, where)
+    from_sql, (where,) = _from_and_bind(db, where)
     return int(db.execute(f'SELECT count(*) FROM {from_sql}{where}', values).fetchone()[0])
 
 
@@ -249,70 +311,153 @@ def facets(db, params, restrict=None):
         return {'schema': config, 'groups': [type_group, rs_group, or_group, src_group],
                 'total': pre['total'], 'scope_total': pre['total'], 'without': {}}
     line = query.cards()
-    columns = [expression.sql(card,card_condition) for card in line]
-    selected = ''.join(f', ({sql}) AS c{card.index}' for card,(sql,_) in zip(line,columns))
+    single_type_card = (
+        len(line) == 1
+        and line[0].base == 'type'
+        and not line[0].negated
+        and not query.probing
+        and restrict is None
+        and first(query, 'sections') != '1'
+        and not first(query, 'value')
+        and bool(types)
+        and (pre := _meta_json(db, 'pages_unfiltered_facets')) is not None
+    )
+    if not single_type_card:
+        pre = None
+    columns = [] if single_type_card else [expression.sql(card, card_condition) for card in line]
+    selected = '' if single_type_card else ''.join(f', ({sql}) AS c{card.index}' for card, (sql, _) in zip(line, columns))
     origin_of = dict(db.execute('SELECT id, origin FROM sources'))
-    domain = [*config['facets'],*config['flags']]
-    counted = ['type',*('f_'+f for f in domain),'ruleset','origin','source']
-    counts = {k:Counter() for k in counted}
-    universe = {k:set() for k in counted}
+    domain = [*config['facets'], *config['flags']]
+    counted = ['type', *('f_' + f for f in domain), 'ruleset', 'origin', 'source']
+    counts = {k: Counter() for k in counted}
+    universe = {k: set() for k in counted}
     unknown_cover = Counter()
     total = scope_total = always = 0
     without = Counter()
-    # One test per distinct tree; a field without cards of its own counts under the query itself.
-    tests = {}
-    meets = lambda card: (lambda row,name=f'c{card.index}': bool(row[name]))
-    def check(node):
-        tests.setdefault(node, expression.test(node, meets))
-        return node
     where = query.where
-    matches = check(where)
-    gains = [(str(card.index),check(expression.without(where,card.index))) for card in line]
-    in_scope = check(expression.relax(where,lambda c: c.field!='type'))
-    if query.probing:
-        placed = check(expression.substitute(query.tree,lambda c: expression.TRUE if c is expression.PROBE else c))
-        unplaced = check(expression.substitute(query.tree,lambda c: expression.FALSE if c is expression.PROBE else c))
+    if not single_type_card:
+        tests = {}
+        meets = lambda card: (lambda row, name=f'c{card.index}': bool(row[name]))
+        def check(node):
+            tests.setdefault(node, expression.test(node, meets))
+            return node
+        matches = check(where)
+        gains = [(str(card.index), check(expression.without(where, card.index))) for card in line]
+        in_scope = check(expression.relax(where, lambda c: c.field != 'type'))
+        if query.probing:
+            placed = check(expression.substitute(query.tree, lambda c: expression.TRUE if c is expression.PROBE else c))
+            unplaced = check(expression.substitute(query.tree, lambda c: expression.FALSE if c is expression.PROBE else c))
+        else:
+            aside = {key: check(expression.relax(where, lambda c, key=key: c.field == key)) for key in counted}
+    has_core = _has_table(db, 'entry_core')
+    has_split_fields = has_core and _has_table(db, 'entry_fields')
+    use_single_src = _meta_int(db, 'pages_single_source') == 1 and _has_column(db, 'entry_core', 'primary_source_id')
+    source_expr = ('e.primary_source_id AS sources' if use_single_src else
+                   "(SELECT group_concat(es.source_id, char(31)) FROM entry_sources es WHERE es.entry_id=e.id) AS sources")
+    extra_clause = f' AND e.type IN ({",".join("?" for _ in types)})' if single_type_card else ''
+    extra_vals = list(types) if single_type_card else []
+    non_section_max = (
+        _meta_int(db, 'pages_non_section_max_rowid')
+        if has_core and 'e.data' not in selected and not first(query, 'value')
+        else None
+    )
+    base, scoped = base_clause(query, restrict, non_section_max=non_section_max)
+    from_sql, (selected_sql, base_sql) = _from_and_bind(db, selected, base)
+    if has_split_fields and 'entry_fields' not in from_sql:
+        if not domain:
+            fields_expr = 'NULL AS fields'
+            case_vals = []
+        elif types and not query.probing and not expression.open_types(where):
+            ph = ','.join('?' for _ in types)
+            fields_expr = f'CASE WHEN e.type IN ({ph}) THEN (SELECT ef2.fields FROM entry_fields ef2 WHERE ef2.entry_rowid=e.rowid) END AS fields'
+            # Place CASE bindings before WHERE bindings.
+            case_vals = list(types)
+        else:
+            from_sql += ' LEFT JOIN entry_fields ef ON ef.entry_rowid=e.rowid'
+            fields_expr = 'ef.fields AS fields'
+            case_vals = []
     else:
-        aside = {key:check(expression.relax(where,lambda c,key=key: c.field==key)) for key in counted}
-    base, scoped = base_clause(query, restrict)
-    from_sql = _query_from(db, selected, base)
-    rows = db.execute('SELECT e.type, e.fields, e.ruleset, e.legacy, e.classification_status, '
-        "(SELECT group_concat(es.source_id, char(31)) FROM entry_sources es WHERE es.entry_id=e.id) AS sources"+selected+
-        f' FROM {from_sql} WHERE '+base, [v for _,values in columns for v in values]+scoped)
-    for row in rows:
-        result = {node:t(row) for node,t in tests.items()}
-        if not any(result.values()): continue
+        fields_expr = ('ef.fields' if 'entry_fields ef' in from_sql else 'e.fields') + ' AS fields'
+        case_vals = []
+
+    rows_cur = db.execute(
+        f'SELECT e.type, {fields_expr}, e.ruleset, e.legacy, e.classification_status, {source_expr}{selected_sql} '
+        f'FROM {from_sql} WHERE {base_sql}{extra_clause}',
+        case_vals + [v for _, values in columns for v in values] + scoped + extra_vals,
+    )
+    for row in rows_cur:
+        if single_type_card:
+            scope_total += 1
+            total += 1
+            parsed = None
+            raw_src = row['sources']
+            source_ids = (raw_src.split('\x1f') if '\x1f' in raw_src else [raw_src]) if raw_src else []
+            for key in counted[1:]:
+                if key.startswith('f_'):
+                    parsed = parsed or json.loads(row['fields'])
+                    vals = browse.normalized(parsed, key[2:])
+                elif key == 'source':
+                    vals = source_ids
+                elif key == 'origin':
+                    vals = list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
+                else:
+                    vals = [row[{'status': 'classification_status'}.get(key, key)]]
+                universe[key].update(vals)
+                counts[key].update(vals)
+            for f in domain:
+                parsed = parsed or json.loads(row['fields'])
+                unknown_cover[f] += browse.normalized(parsed, f) != [browse.UNKNOWN]
+            continue
+        result = {node: t(row) for node, t in tests.items()}
+        if not any(result.values()):
+            continue
         parsed = None
-        source_ids = row['sources'].split('\x1f') if row['sources'] else []
+        raw_src = row['sources']
+        source_ids = (raw_src.split('\x1f') if '\x1f' in raw_src else [raw_src]) if raw_src else []
         def values(key):
             nonlocal parsed
-            if key=='type': return [row['type']]
+            if key == 'type':
+                return [row['type']]
             if key.startswith('f_'):
                 parsed = parsed or json.loads(row['fields'])
-                return browse.normalized(parsed,key[2:])
-            if key=='source': return source_ids
-            if key=='origin': return list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
-            return [row[{'status':'classification_status'}.get(key,key)]]
+                return browse.normalized(parsed, key[2:])
+            if key == 'source':
+                return source_ids
+            if key == 'origin':
+                return list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
+            return [row[{'status': 'classification_status'}.get(key, key)]]
         if result[in_scope]:
             scope_total += 1
-            for key in counted[1:]: universe[key].update(values(key))
-            for f in domain: unknown_cover[f] += values('f_'+f)!=[browse.UNKNOWN]
-        if result[matches]: total += 1
+            for key in counted[1:]:
+                universe[key].update(values(key))
+            for f in domain:
+                unknown_cover[f] += values('f_' + f) != [browse.UNKNOWN]
+        if result[matches]:
+            total += 1
         else:
-            for name,t in gains:
-                if result[t]: without[name] += 1
+            for name, t in gains:
+                if result[t]:
+                    without[name] += 1
         if query.probing:
-            if result[unplaced]: always += 1
+            if result[unplaced]:
+                always += 1
             elif result[placed]:
-                for key in counted: counts[key].update(values(key))
+                for key in counted:
+                    counts[key].update(values(key))
         else:
             for key in counted:
-                if result[aside[key]]: counts[key].update(values(key))
+                if result[aside[key]]:
+                    counts[key].update(values(key))
+    if single_type_card:
+        counts['type'].update(pre['type'])
+        diff = pre['total'] - total
+        if diff > 0:
+            without[str(line[0].index)] = diff
     for key in counted:
         # A chosen value stays listed even when nothing in scope holds it, so it can be unchosen.
-        universe[key].update(v for v in [*params.get(key,[]),*params.get(NOT+key,[])] if v!=browse.NONE)
+        universe[key].update(v for v in [*params.get(key, []), *params.get(NOT + key, [])] if v != browse.NONE)
     universe['type'] = held_types(db)
-    sources = {r['id']:json.loads(r['data']) for r in db.execute('SELECT id, data FROM sources')}
+    sources = {r['id']: json.loads(r['data']) for r in db.execute('SELECT id, data FROM sources')}
     def group(key):
         if key=='type':
             options = [{'value':t,'label':TYPES[t]} for t in browse.TYPE_ORDER if t in universe['type']]
@@ -345,6 +490,147 @@ def stack_members(alias='m'):
             f"json_each(g.data,'$.entry_ids') j WHERE g.type IN ({kinds}))")
 
 
+_RANK_LOCK = threading.Lock()
+_STACKED_RANKINGS: OrderedDict = OrderedDict()
+_TYPE_ORDER_RANK = {t: i for i, t in enumerate(browse.TYPE_ORDER)}
+
+
+def _db_signature(db):
+    rows_list = db.execute('PRAGMA database_list').fetchall()
+    file_path = rows_list[0]['file'] if rows_list and rows_list[0]['file'] else ''
+    if not file_path:
+        return None
+    try:
+        st = os.stat(file_path)
+    except OSError:
+        return None
+    return (file_path, st.st_ino, st.st_size, st.st_mtime_ns)
+
+
+@lru_cache(maxsize=4)
+def _load_rank_index_cached(rank_path: str, rank_sig: tuple, db_sig: tuple | None):
+    raw = json.loads(gzip.decompress(Path(rank_path).read_bytes()).decode('utf-8'))
+    types_lut = raw['types']
+    paths_lut = raw['paths']
+    sources_lut = raw['sources']
+    statuses_lut = raw['statuses']
+    origins = raw['origins']
+    parsed = []
+    for row in raw['rows']:
+        eid, ti, name, nz, name_en, rs, gid, sti, pi, start, src_val = row
+        name_zh = name if nz is None else nz
+        if isinstance(src_val, list):
+            sids = tuple(sources_lut[i] for i in src_val)
+            work = sids[0] if sids else None
+        elif src_val >= 0:
+            sid = sources_lut[src_val]
+            sids = (sid,)
+            work = sid
+        else:
+            sids = ()
+            work = None
+        parsed.append({
+            'id': eid,
+            'type': types_lut[ti],
+            'name': name,
+            'name_zh': name_zh,
+            'name_en': name_en,
+            'ruleset': rs,
+            'stack': gid,
+            'status': statuses_lut[sti] if sti >= 0 else None,
+            'path': paths_lut[pi] if pi >= 0 else '',
+            'start': start or 0,
+            'work': work,
+            'sources': frozenset(sids),
+            'origin': origins.get(work) or '待核',
+            'lower_name': _ascii_lower(name),
+        })
+    return parsed
+
+
+def load_rank_index(db):
+    rows_list = db.execute('PRAGMA database_list').fetchall()
+    file_path = rows_list[0]['file'] if rows_list and rows_list[0]['file'] else ''
+    if not file_path:
+        return None
+    rank_file = Path(file_path).with_name('rank-index.json.gz')
+    try:
+        r_st = rank_file.stat()
+    except OSError:
+        return None
+    return _load_rank_index_cached(str(rank_file), (r_st.st_ino, r_st.st_size, r_st.st_mtime_ns), _db_signature(db))
+
+
+def _filter_rank_index(index_rows, types, rulesets, sources, terms):
+    if types == set() or rulesets == set() or sources == set():
+        return []
+    out = []
+    for r in index_rows:
+        if types is not None and r['type'] not in types:
+            continue
+        if rulesets is not None and r['ruleset'] not in rulesets:
+            continue
+        if sources is not None and not (r['sources'] & sources):
+            continue
+        if terms:
+            lname = r['lower_name']
+            if any(term not in lname for term in terms):
+                continue
+        out.append(r)
+    return out
+
+
+def _sort_rank_rows(matched_rows, params, default_sort):
+    sort = browse.sort_key(params, default_sort)
+    direction = first(params, 'dir', 'asc')
+    if direction not in {'asc', 'desc'}:
+        raise ValueError('无效排序方向')
+    reverse = direction == 'desc'
+    if sort == browse.MATCH:
+        latest = browse.latest_term(params)
+        base_sorted = _sort_rank_rows(matched_rows, {'sort': [default_sort]}, default_sort)
+        if base_sorted is None:
+            return None
+        # In browse.order_sql, MATCH compares match_rank, then length, then default_sort ASC.
+        return sorted(
+            base_sorted,
+            key=lambda r: (
+                browse.match_rank(r['name_zh'], r['name_en'], r['name'], latest) * (-1 if reverse else 1),
+                len(r['name_zh'] or r['name']),
+            ),
+        )
+    if sort == 'type':
+        key_fn = lambda r: _TYPE_ORDER_RANK.get(r['type'], len(browse.TYPE_ORDER))
+        tie_fn = lambda r: (r['name'], r['id'])
+    elif sort == 'name':
+        key_fn = lambda r: browse.name_key(r['name_zh'] or r['name'])
+        tie_fn = lambda r: (r['name'], r['id'])
+    elif sort == 'name_en':
+        key_fn = lambda r: browse.name_key(r['name_en'] or None)
+        tie_fn = lambda r: (r['name'], r['id'])
+    elif sort == 'ruleset':
+        key_fn = lambda r: r['ruleset']
+        tie_fn = lambda r: (r['name'], r['id'])
+    elif sort == 'source':
+        key_fn = lambda r: r['path']
+        tie_fn = lambda r: (r['start'], r['name'], r['id'])
+    else:
+        return None
+    present = []
+    missing = []
+    for r in matched_rows:
+        k = key_fn(r)
+        if k is None:
+            missing.append(r)
+        else:
+            present.append((k, r))
+    # Sort tie-breaker forward first, then apply stable primary key sort in requested direction.
+    present.sort(key=lambda item: tie_fn(item[1]))
+    present.sort(key=lambda item: item[0], reverse=reverse)
+    missing.sort(key=tie_fn)
+    return [item[1] for item in present] + missing
+
+
 # Results load in batches as the list scrolls; one request may restore up to RESTORE_LIMIT rows at once.
 BATCH, RESTORE_LIMIT = 150, 1500
 
@@ -357,9 +643,38 @@ def result_window(params):
     return offset,limit
 
 
+def _query_cache_key(db, params, versions, prefer, restrict):
+    db_sig = _db_signature(db)
+    if db_sig is None:
+        return None
+    q_clean = Query(
+        params.tree,
+        {k: v for k, v in params.options.items() if k not in {'offset', 'limit', 'entry', 'tab'}},
+    ).key()
+    return (db_sig, q_clean, versions, prefer, restrict)
+
+
+_DIRECT_SORTS = frozenset({'type', 'name', 'name_en', 'ruleset', 'source'})
+
+
+def _try_rank_order(db, params, config, restrict):
+    sort_now = browse.sort_key(params, config['default_sort'])
+    if sort_now not in _DIRECT_SORTS and not (sort_now == browse.MATCH and config['default_sort'] in _DIRECT_SORTS):
+        return None
+    allowed_types = set(TYPES) - {'section'}
+    allowed_rulesets = set(COMMON_CHOICES['ruleset'][1])
+    simple = simple_rank_filter(params, allowed_types, allowed_rulesets, restrict=restrict)
+    if simple is None:
+        return None
+    rank_rows = load_rank_index(db)
+    if rank_rows is None:
+        return None
+    return _sort_rank_rows(_filter_rank_index(rank_rows, *simple), params, config['default_sort'])
+
+
 def query(db, params, export=False, restrict=None):
     params = Query.of(params)
-    where, values = filters(db,params,restrict)
+    where, values = filters(db, params, restrict)
     names = bool(browse.search_terms(params) or browse.typing_term(params))
     def section_hint(total):
         if export or first(params,'sections')=='1' or total or not names:return 0
@@ -373,62 +688,126 @@ def query(db, params, export=False, restrict=None):
     if versions not in {'stacked','each'}:raise ValueError('无效版本显示方式')
     prefer = first(params,'prefer','5r')
     if prefer not in browse.RULESET_PREFERENCES:raise ValueError('无效规则版本偏好')
-    from_sql = _query_from(db, where)
+    from_sql, (where_sql, order_sql) = _from_and_bind(db, where, order)
     # Export always lists every matching version as its own row.
     if export or versions=='each':
-        total = db.execute(f'SELECT count(*) FROM {from_sql}{where}',values).fetchone()[0]
         if not export:
-            ids = [r[0] for r in db.execute(f'SELECT e.id FROM {from_sql}{where} ORDER BY {order} LIMIT ? OFFSET ?', values+[limit,offset])]
+            ordered = _try_rank_order(db, params, config, restrict)
+            if ordered is not None:
+                total = len(ordered)
+                ids = [r['id'] for r in ordered[offset:offset + limit]]
+                fetched = rows(db, ids) if ids else {}
+                result_rows = [fetched[i] for i in ids if i in fetched]
+                return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':offset,'rows':result_rows,'schema':config,
+                        'section_matches':section_hint(total)}
+        total = db.execute(f'SELECT count(*) FROM {from_sql}{where_sql}',values).fetchone()[0]
+        if not export:
+            ids = [r[0] for r in db.execute(f'SELECT e.id FROM {from_sql}{where_sql} ORDER BY {order_sql} LIMIT ? OFFSET ?', values+[limit,offset])]
             fetched = rows(db, ids) if ids else {}
             result_rows = [fetched[i] for i in ids if i in fetched]
             return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':offset,'rows':result_rows,'schema':config,
                     'section_matches':section_hint(total)}
         use_split = _has_table(db, 'entry_core') and 'e.data' not in where
-        export_from = 'entry_core e LEFT JOIN entry_data d ON d.entry_rowid=e.rowid' if use_split else 'entries e'
-        export_col = 'd.data' if use_split else 'e.data'
-        sql = f'SELECT {export_col} FROM {export_from}{where} ORDER BY {order}'
+        if use_split:
+            need_export_fields = _has_table(db, 'entry_fields') and ('e.fields' in where or 'e.fields' in order)
+            export_from = 'entry_core e LEFT JOIN entry_data d ON d.entry_rowid=e.rowid' + (
+                ' LEFT JOIN entry_fields ef ON ef.entry_rowid=e.rowid' if need_export_fields else ''
+            )
+            export_col = 'd.data'
+            export_where = where.replace('e.fields', 'ef.fields') if need_export_fields else where
+            export_order = order.replace('e.fields', 'ef.fields') if need_export_fields else order
+        else:
+            export_from, export_col, export_where, export_order = 'entries e', 'e.data', where, order
+        sql = f'SELECT {export_col} FROM {export_from}{export_where} ORDER BY {export_order}'
         export_rows = [browse.enrich(contracts.entry(json.loads(r[0]))) for r in db.execute(sql,values)]
         return {'total':total,'versions_total':total,'versions':versions,'prefer':prefer,'offset':0,'rows':export_rows,'schema':config,
                 'section_matches':0}
-    # Stacking happens inside the matched set: filters decide which versions exist, then each
-    # candidate group shows its preferred-ruleset version at that version's sorted position.
-    first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
-    if _has_table(db, 'identity_candidate_members'):
-        matched = db.execute(
-            'WITH matched AS (SELECT e.id, COALESCE(m.group_id, e.id) AS stack, m.status, '
-            'ROW_NUMBER() OVER (ORDER BY '+order+') AS pos, CASE e.ruleset WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END AS preference '
-            f'FROM {from_sql} LEFT JOIN identity_candidate_members m ON m.entry_id=e.id{where}) '
-            'SELECT id, stack, status, pos, ROW_NUMBER() OVER (PARTITION BY stack ORDER BY preference, pos) AS rank FROM matched',
-            [first_choice,second_choice]+values).fetchall()
-    else:
-        matched = db.execute('WITH '+stack_members()+', matched AS (SELECT e.id, COALESCE(m.stack, e.id) AS stack, m.status, '
-            'ROW_NUMBER() OVER (ORDER BY '+order+') AS pos, CASE e.ruleset WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END AS preference '
-            f'FROM {from_sql} LEFT JOIN m ON m.entry_id=e.id{where}) '
-            'SELECT id, stack, status, pos, ROW_NUMBER() OVER (PARTITION BY stack ORDER BY preference, pos) AS rank FROM matched',
-            [first_choice,second_choice]+values).fetchall()
-    heads = sorted((r for r in matched if r['rank']==1), key=lambda r:r['pos'])
+
+    # Stacking happens inside the matched set: check ranking cache and compact rank-index first.
+    cache_key = _query_cache_key(db, params, versions, prefer, restrict)
+    cached_ranking = None
+    if cache_key is not None:
+        with _RANK_LOCK:
+            cached_ranking = _STACKED_RANKINGS.get(cache_key)
+            if cached_ranking is not None:
+                _STACKED_RANKINGS.move_to_end(cache_key)
+
+    if cached_ranking is None:
+        first_choice, second_choice = browse.RULESET_PREFERENCES[prefer]
+        ordered = _try_rank_order(db, params, config, restrict)
+        if ordered is not None:
+            pref_map = {first_choice: 0, second_choice: 1}
+            groups = {}
+            for pos, r in enumerate(ordered):
+                skey = r['stack'] or r['id']
+                groups.setdefault(skey, []).append((pref_map.get(r['ruleset'], 2), pos, r['id'], r['status']))
+            heads_list = []
+            members_by_stack = {}
+            for skey, items in groups.items():
+                items.sort(key=lambda item: (item[0], item[1]))
+                heads_list.append((items[0][1], items[0][2], skey, items[0][3]))
+                members_by_stack[skey] = [item[2] for item in items]
+            heads_list.sort(key=lambda item: item[0])
+            cached_ranking = {
+                'heads': [(eid, skey, status) for _, eid, skey, status in heads_list],
+                'members': members_by_stack,
+                'versions_total': len(ordered),
+            }
+
+        if cached_ranking is None:
+            if _has_table(db, 'identity_candidate_members'):
+                matched = db.execute(
+                    'WITH matched AS (SELECT e.id, COALESCE(m.group_id, e.id) AS stack, m.status, '
+                    'ROW_NUMBER() OVER (ORDER BY '+order_sql+') AS pos, CASE e.ruleset WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END AS preference '
+                    f'FROM {from_sql} LEFT JOIN identity_candidate_members m ON m.entry_id=e.id{where_sql}) '
+                    'SELECT id, stack, status, pos, ROW_NUMBER() OVER (PARTITION BY stack ORDER BY preference, pos) AS rank FROM matched',
+                    [first_choice,second_choice]+values).fetchall()
+            else:
+                matched = db.execute('WITH '+stack_members()+', matched AS (SELECT e.id, COALESCE(m.stack, e.id) AS stack, m.status, '
+                    'ROW_NUMBER() OVER (ORDER BY '+order_sql+') AS pos, CASE e.ruleset WHEN ? THEN 0 WHEN ? THEN 1 ELSE 2 END AS preference '
+                    f'FROM {from_sql} LEFT JOIN m ON m.entry_id=e.id{where_sql}) '
+                    'SELECT id, stack, status, pos, ROW_NUMBER() OVER (PARTITION BY stack ORDER BY preference, pos) AS rank FROM matched',
+                    [first_choice,second_choice]+values).fetchall()
+            heads_raw = sorted((r for r in matched if r['rank']==1), key=lambda r:r['pos'])
+            members_map = {}
+            for r in sorted(matched, key=lambda r:(r['stack'], r['rank'])):
+                members_map.setdefault(r['stack'], []).append(r['id'])
+            cached_ranking = {
+                'heads': [(r['id'], r['stack'], r['status']) for r in heads_raw],
+                'members': members_map,
+                'versions_total': len(matched),
+            }
+
+        if cache_key is not None:
+            with _RANK_LOCK:
+                _STACKED_RANKINGS[cache_key] = cached_ranking
+                while len(_STACKED_RANKINGS) > 12:
+                    _STACKED_RANKINGS.popitem(last=False)
+
+    heads = cached_ranking['heads']
+    members = cached_ranking['members']
     total = len(heads)
     shown = heads[offset:offset+limit]
-    stacks = {r['stack']:r for r in shown}
-    members = {}
-    for r in sorted((r for r in matched if r['stack'] in stacks), key=lambda r:(r['stack'],r['rank'])):
-        members.setdefault(r['stack'],[]).append(r['id'])
-    ids = [i for ids in members.values() for i in ids]
+    ids = [i for _, skey, _ in shown for i in members[skey]]
     data = rows(db, ids) if ids else {}
     out_rows = []
-    for head in shown:
-        row = data[head['id']]
-        stacked = [data[i] for i in members[head['stack']]]
+    for head_id, skey, status in shown:
+        row = data[head_id]
+        stacked = [data[i] for i in members[skey]]
         row['versions'] = [{k:v.get(k) for k in VERSION_FIELDS} for v in stacked]
-        row['stack'] = {'id':head['stack'],'status':head['status']} if head['status'] else None
+        row['stack'] = {'id':skey,'status':status} if status else None
         row['version_diffs'] = browse.version_diffs(config,row,stacked[1:])
         out_rows.append(row)
-    return {'total':total,'versions_total':len(matched),'versions':versions,'prefer':prefer,'offset':offset,'rows':out_rows,'schema':config,
+    return {'total':total,'versions_total':cached_ranking['versions_total'],'versions':versions,'prefer':prefer,'offset':offset,'rows':out_rows,'schema':config,
             'section_matches':section_hint(total)}
 
 
 def _has_table(db, name):
     return db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def _has_column(db, table, column):
+    return any(r[1] == column for r in db.execute(f'PRAGMA table_info("{table}")'))
 
 
 def _entry_table(db):
@@ -437,8 +816,17 @@ def _entry_table(db):
 
 def _query_from(db, *fragments):
     if _has_table(db, 'entry_core') and not any('e.data' in fragment for fragment in fragments):
+        if _has_table(db, 'entry_fields') and any('e.fields' in fragment for fragment in fragments):
+            return 'entry_core e LEFT JOIN entry_fields ef ON ef.entry_rowid=e.rowid'
         return 'entry_core e'
     return 'entries e'
+
+
+def _from_and_bind(db, *fragments):
+    from_sql = _query_from(db, *fragments)
+    if 'entry_fields ef' in from_sql:
+        return from_sql, tuple(f.replace('e.fields', 'ef.fields') for f in fragments)
+    return from_sql, fragments
 
 
 def _meta_json(db, key):
@@ -446,6 +834,13 @@ def _meta_json(db, key):
         return None
     row = db.execute('SELECT value FROM metadata WHERE key=?', (key,)).fetchone()
     return json.loads(row[0]) if row is not None and row[0] else None
+
+
+def _meta_int(db, key):
+    if not _has_table(db, 'metadata'):
+        return None
+    row = db.execute('SELECT value FROM metadata WHERE key=?', (key,)).fetchone()
+    return int(row[0]) if row is not None and row[0] else None
 
 
 def held_types(db):
@@ -499,22 +894,39 @@ def works(db):
 # One cheap row per matching version, in this catalog's own order: what a library spanning several
 # catalogs needs to sort, stack and page the versions before reading the shown rows in full.
 def ranked(db, params, restrict=None, sort_field=None):
-    params = Query.of(params)
+    params = bounded(Query.of(params))
+    if sort_field is None:
+        allowed_types = set(TYPES) - {'section'}
+        allowed_rulesets = set(COMMON_CHOICES['ruleset'][1])
+        simple = simple_rank_filter(params, allowed_types, allowed_rulesets, restrict=restrict)
+        if simple is not None and (rank_rows := load_rank_index(db)) is not None:
+            return [
+                {
+                    'id': r['id'], 'type': r['type'], 'name': r['name'], 'name_zh': r['name_zh'],
+                    'name_en': r['name_en'], 'ruleset': r['ruleset'], 'stack': r['stack'], 'value': None,
+                    'source_key': (r['path'], r['start']), 'origin': r['origin'], 'work': r['work'],
+                    'base': None, 'base_work': None, 'base_name_en': None,
+                }
+                for r in _filter_rank_index(rank_rows, *simple)
+            ]
     where, values = filters(db, params, restrict)
     latest = browse.latest_term(params)
-    db.create_function('browse_query',0,lambda:latest)
+    db.create_function('browse_query', 0, lambda: latest)
     origin_of = dict(db.execute('SELECT id, origin FROM sources'))
     value = f"browse_rank(e.fields,'{sort_field}')" if sort_field else 'NULL'
-    from_sql = _query_from(db, where)
+    from_sql, (where, value) = _from_and_bind(db, where, value)
+    work_col = (
+        'e.primary_source_id AS work'
+        if _has_table(db, 'entry_core') and _has_column(db, 'entry_core', 'primary_source_id')
+        else '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work'
+    )
     if _has_table(db, 'identity_candidate_members'):
         sql = (f'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.group_id AS stack, {value} AS value, '
-               'e.page_path AS path, e.start AS start, '
-               '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
+               f'e.page_path AS path, e.start AS start, {work_col} '
                f'FROM {from_sql} LEFT JOIN identity_candidate_members m ON m.entry_id=e.id{where}')
     else:
         sql = ('WITH '+stack_members()+f', ranked AS (SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.stack, {value} AS value, '
-               'e.page_path AS path, e.start AS start, '
-               '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
+               f'e.page_path AS path, e.start AS start, {work_col} '
                f'FROM {from_sql} LEFT JOIN m ON m.entry_id=e.id{where}) SELECT * FROM ranked')
     # The book records no entry as a copy of another, so no version here names a base.
     return [{'id':r['id'],'type':r['type'],'name':r['name'],'name_zh':r['name_zh'],'name_en':r['name_en'],'ruleset':r['ruleset'],
@@ -545,16 +957,22 @@ def same_name(db, entry_type, folded, include_ids=()):
         return []
     ordered_ids = list(dict.fromkeys(ids))
     has_members = _has_table(db, 'identity_candidate_members')
+    has_primary_src = table == 'entry_core' and _has_column(db, 'entry_core', 'primary_source_id')
+    origin_of = dict(db.execute('SELECT id, origin FROM sources')) if has_primary_src else None
     out = []
     for start in range(0, len(ordered_ids), 400):
         batch = ordered_ids[start:start + 400]
         ph = ','.join('?' for _ in batch)
+        src_cols = (
+            'e.primary_source_id AS work'
+            if has_primary_src else
+            '(SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin, '
+            '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work'
+        )
         if has_members:
             sql = (
                 'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.group_id AS stack, '
-                'e.page_path AS path, e.start AS start, '
-                '(SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin, '
-                '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
+                f'e.page_path AS path, e.start AS start, {src_cols} '
                 f'FROM {table} e LEFT JOIN identity_candidate_members m ON m.entry_id=e.id '
                 f'WHERE e.id IN ({ph})'
             )
@@ -562,18 +980,18 @@ def same_name(db, entry_type, folded, include_ids=()):
             sql = (
                 'WITH ' + stack_members() + ' '
                 'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, m.stack AS stack, '
-                'e.page_path AS path, e.start AS start, '
-                '(SELECT s.origin FROM entry_sources es JOIN sources s ON s.id=es.source_id WHERE es.entry_id=e.id LIMIT 1) AS origin, '
-                '(SELECT es.source_id FROM entry_sources es WHERE es.entry_id=e.id LIMIT 1) AS work '
+                f'e.page_path AS path, e.start AS start, {src_cols} '
                 f'FROM {table} e LEFT JOIN m ON m.entry_id=e.id '
                 f'WHERE e.id IN ({ph})'
             )
         for r in db.execute(sql, batch):
+            work = r['work']
+            origin = (origin_of.get(work) or '待核') if has_primary_src else (r['origin'] or '待核')
             out.append({
                 'id': r['id'], 'type': r['type'], 'name': r['name'], 'name_zh': r['name_zh'],
                 'name_en': r['name_en'], 'ruleset': r['ruleset'], 'stack': r['stack'], 'value': None,
-                'source_key': (r['path'] or '', r['start'] or 0), 'origin': r['origin'] or '待核',
-                'work': r['work'], 'base': None, 'base_work': None, 'base_name_en': None,
+                'source_key': (r['path'] or '', r['start'] or 0), 'origin': origin,
+                'work': work, 'base': None, 'base_work': None, 'base_name_en': None,
             })
     return out
 

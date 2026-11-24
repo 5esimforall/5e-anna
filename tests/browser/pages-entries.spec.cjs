@@ -60,9 +60,10 @@ test('Pages mode opens entries from static gzip bucket without hitting worker, a
   // to delegate non-entry routes to fetch() instead of starting pages-worker.js, while keeping pages-entries.js 100% real!
   const realPagesJs = fs.readFileSync(path.join(webDir, 'pages.js'), 'utf-8');
   const testPagesJs = realPagesJs.replace(
-    'const current = connect(), id = ++nextId;',
-    'if (path.startsWith("/api/entry?") || path.startsWith("/api/entry-layout?")) await fetch("/__worker_entry_fallback");\n  return fetch(path, {signal});\n  const current = connect(), id = ++nextId;'
+    'connect();\n  const id = ++nextId, priority = priorityOf(path);',
+    'if (path.startsWith("/api/entry?") || path.startsWith("/api/entry-layout?")) await fetch("/__worker_entry_fallback");\n  return fetch(path, {signal});\n  connect();\n  const id = ++nextId, priority = priorityOf(path);'
   );
+  expect(testPagesJs).not.toBe(realPagesJs);
 
   await page.route('**/*', async route => {
     const u = new URL(route.request().url());
@@ -197,4 +198,57 @@ test('Pages mode opens entries from static gzip bucket without hitting worker, a
   // Clicking the patched versions tab renders the version table cleanly.
   await page.locator('#tab-versions').click();
   await expect(page.locator('#detail-panel .version-table')).toBeVisible();
+});
+
+test('Multi-scope static home cache serves dual-library homepage with 0 worker loads', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900});
+  const libData = await (await page.request.get(`${anna}/api/library`)).json();
+  const metaData = await (await page.request.get(`${anna}/api/meta`)).json();
+  const facetsData = await (await page.request.get(`${anna}/api/facets`)).json();
+  const entriesData = await (await page.request.get(`${anna}/api/entries?offset=0&limit=150`)).json();
+
+  const homeDefault = 'home.1111111111111111.json';
+  const homeScoped = 'home.2222222222222222.json';
+  const scopedPayload = JSON.stringify({
+    '/api/library': libData,
+    '/api/meta?libraries=5echm,demo': metaData,
+    '/api/facets?libraries=5echm,demo': facetsData,
+    '/api/entries?offset=0&limit=150&libraries=5echm,demo': entriesData,
+  });
+
+  const seen = {defaultHome: 0, scopedHome: 0, worker: 0};
+  await page.route('**/*', async route => {
+    const u = new URL(route.request().url());
+    if (u.pathname === '/') {
+      const resp = await route.fetch();
+      const html = (await resp.text()).replace(
+        '<html',
+        `<html data-anna-pages data-anna-entries="1" data-anna-home="${homeDefault}" data-anna-home-scopes="5echm,demo=${homeScoped}"`,
+      );
+      return route.fulfill({status: resp.status(), headers: resp.headers(), body: html});
+    }
+    if (u.pathname === `/${homeDefault}`) {
+      seen.defaultHome++;
+      return route.abort();
+    }
+    if (u.pathname === `/${homeScoped}`) {
+      seen.scopedHome++;
+      return route.fulfill({status: 200, contentType: 'application/json', body: scopedPayload});
+    }
+    if (u.pathname === '/pages-worker.js') {
+      seen.worker++;
+      return route.abort();
+    }
+    return route.continue();
+  });
+
+  await page.addInitScript(() => {
+    localStorage.setItem('anna.library', JSON.stringify({order: ['5echm', 'demo'], enabled: ['5echm', 'demo']}));
+  });
+  await page.goto(`${anna}/`);
+  await expect(page.locator('#results')).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('#results .entry-name').first()).toBeVisible();
+  expect(seen.scopedHome).toBe(1);
+  expect(seen.defaultHome).toBe(0);
+  expect(seen.worker).toBe(0);
 });

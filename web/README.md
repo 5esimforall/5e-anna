@@ -210,13 +210,14 @@ URL 保存查询、筛选、排序和条目身份；资料库与版本显示方�
 | 串行同步冷分片扇出 | Emscripten/SQLite 要求同步 `read`，每次冷分片触发阻塞式同步 `XMLHttpRequest` 与 `gunzipSync`。两库投影共计 `801.6 MiB`（`5echm` 287.5 MiB / 1,151 分片，`our5etools` 514.1 MiB / 2,057 分片），`pages-worker.js` 的 128 MiB 缓存仅容约 16%。垂直分表与按构建顺序分配的 `rowid` 使每次新条目点查跨多张大表，冷点击需串行命中 5–14 个冷分片（冷工作线程首次点击达 30 个），无阻塞时单库新条目约 0.56–1.63 s，双库约 1.5–2.0 s |
 | 单线程工作线程队头阻塞 | 所有查询、筛选与条目请求共用一个单线程工作线程，且 `AbortSignal` 无法打断进行中的同步 XHR。页面刚载入预热（15–20 s）、滚动触及底部 `loadMore`（`offset=150` 在单库命中 143 个冷分片，实测约 56 s）或双库首屏绕过静态首页缓存（命中 318 个冷分片，实测 >40 s）时，条目点击会被长时间堵在队列之后 |
 
-为此，静态导出改由主线程直接异步读取预打包的条目分桶，使条目打开摆脱多表串行分片与工作线程队列：
+为解决这两层瓶颈，静态导出与查询链分两批推进：
 
-- `anna/publish/pages_data.py`（`_export_entry_buckets`）用 UTF-8 FNV-1a 32 位哈希把两库全部条目的详情（含 `collection`）与预渲染排版打包为 `pages-entries/{000..fff}.bin`（按每桶至多 32 条取 2 的幂分桶，95,925 条全量导出为 4,096 个 gzip 分桶、共 `109.06 MiB`，平均每桶 `27.3 KiB`），并在构建阶段预计算可叠放条目的 `has_extra_versions` 标记。`pages_build.py` 在 HTML 根节点写入 `data-anna-entries`，首次点击无需先拉 `index.json`。
-- `web/pages-entries.js` 拦截 `/api/entry` 与 `/api/entry-layout`，用同一 `Math.imul` FNV-1a 哈希算出桶地址，合并同一桶的并发请求并做 96 桶 LRU 缓存，通过浏览器原生 `DecompressionStream('gzip')`（不支持时回退至 `pages-engine/fflate.mjs`）解码；缺失条目直接返回 404，异常或不可解析范围回退到 `pages-worker.js`。
-- 跨库与自定义资料范围下的「版本对照」采用非阻塞异步补全：仅当 `has_extra_versions` 为真且当前资料库范围需要库层叠放（非默认单库、未关闭去重）时，响应带 `X-Anna-Entry-Versions-Pending: 1`；`detail.js` 先用分桶内容立即呈现完整正文与排版，再在后台请求轻量的 `/api/entry-versions`（只查 `id`、`type`、`name_en` 与 `name_fold_index`／版本组，跳过正文、排版、关系与来源扫描），到达后原地更新版本胶囊、栏目条、差异对照条与「版本对照」面板，不重绘 `.layout-reading` 也不重置滚动位置。
+- **条目直取与非阻塞版本对照**：`anna/publish/pages_data.py`（`_export_entry_buckets`）按 UTF-8 FNV-1a 32 位哈希把两库全部条目的详情（含 `collection`）与预渲染排版打包为 `pages-entries/{000..fff}.bin`（每桶至多 32 条取 2 的幂，95,925 条全量导出为 4,096 个 gzip 分桶、`117.53 MiB`），并预计算 `has_extra_versions`。`pages_build.py` 在 HTML 根节点写入 `data-anna-entries`，`web/pages-entries.js` 拦截 `/api/entry` 与 `/api/entry-layout`、合并同桶并发请求并保留 96 桶 LRU 缓存；跨库或自定义范围内 `detail.js` 先即时呈现正文与排版，再异步请求轻量的 `/api/entry-versions` 原地补齐版本胶囊与「版本对照」，不重置滚动位置。
+- **多范围静态首页缓存**：`anna/server/home.py` 与 `anna/publish/pages_data.py` 为默认单库之外的高频组合（`5echm,our5etools`、`our5etools`、`our5etools,5echm`）同步生成 `home.*.json` 并写入根节点 `data-anna-home-scopes`（本机由 `data/home-scopes.json` 提供）；`web/kit.js` 与 `web/home.js` 解码 `%2C` 并归一化参数顺序，使多资料库默认首页同样绕过工作线程（0 个冷分片，替代原先的 318 分片 / >40 s 冷启动）。
+- **投影库聚集、压缩分表与紧凑排序索引**：`anna/publish/pages_data.py` 按默认展示顺序重排两库 `entry_core` 并分离热冷载荷——不全书（`287.16 MiB` / 1,149 分片）将非未分类段落集中至前 `16,365` 个 `rowid`（结合 `pages_non_section_max_rowid` 跳过 18,080 条段落行）、拆分 `entry_fields`、内联 `primary_source_id` 并在存在筛选时配合 `pages_single_source` 跳过 `entry_sources`；our5etools 从 `514.1 MiB` / 2,057 分片缩减至 `419.92 MiB` / 1,680 分片，将 `quickref_json` 并入 `entry_fields`（列表不再触发 `entry_meta`）、正文检索字段拆为 `entry_search_body`、`body_text` 与 `layout_html` 以 gzip 存于 `entry_body_text` / `entry_layout` 并保留 `pages_type_facets`；两库另导出字典编码的 `rank-index.json.gz`（不全书 `0.78 MiB` / 4 分片，our5etools `1.74 MiB` / 7 分片），配合 `catalog.query()` 的堆叠排序 LRU 缓存跳过重复全表窗口计算。全量 `make pages` 产物总计 `839.93 MiB`（`880,730,109 B`，低于 1,000,000,000 B 上限），`pages-data/` 共 `2,932` 分片（低于 4,096 上限）。
+- **工作线程优先级队列与过时请求取消**：`web/pages.js` 在主线程维护单一在途请求的优先级队列（`entry-versions`/`meta`/`library`/`entry` 最高，`entries`/`tour`/`reader` 居中，`facets` 最低），在派发前移除已中止请求、丢弃已中止在途请求的过期响应，并将 `warm()` 延后到队列空闲；`web/app.js` 在筛选与建议更新时通过 `AbortController` 取消过期请求。
 
-剩余的列表翻页、双库首屏查询、工作线程排队竞争以及投影库体积／聚集优化方向记录在[路线图](../ROADMAP.md#待完成的工作)。
+在 Node.js Pyodide VFS 256 KiB 离线冷分片剖析器对真实 `pages-data/` 的隔离实测中，不全书冷 `loadMore`（`offset=150`）从 143 个分片降至 24 个冷分片（后续 `offset=300` 仅 22 个 / `776 KiB`），单库 `type=spell` 为 35 个（列表）+ 2 个（筛选）分片；双库（`5echm,our5etools`）首页为 0 个工作线程分片，冷 `loadMore`（`offset=150`）命中 48 个冷分片（后续 `offset=300` 仅 3 个 / `129 KiB`），冷 `type=spell` 为 63 个（列表）+ 2 个（筛选）分片，冷 `q=Fireball` 列表为 42 个分片，冷 `/api/entry-versions`（Fireball）为 12 个分片。
 
 ## 品牌、标题与两位向导
 

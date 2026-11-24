@@ -20,6 +20,17 @@ const annaKit = (() => {
   const pages = root?.hasAttribute('data-anna-pages') ?? false;
   // Keep deep links on the normal transport even if app.js later rewrites their address.
   const home = root?.hasAttribute('data-anna-home') && !location.search && !location.hash && root.getAttribute('data-anna-home');
+  const homeScopes = new Map();
+  if (home && root?.hasAttribute('data-anna-home-scopes')) {
+    for (const pair of (root.getAttribute('data-anna-home-scopes') || '').split(';')) {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const scope = pair.slice(0, eq).trim(), file = pair.slice(eq + 1).trim();
+      if (/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(scope) && /^home\.[a-f0-9]{16}\.json$/.test(file)) {
+        homeScopes.set(scope, file);
+      }
+    }
+  }
   const base = pages || home ? new URL('.', document.currentScript.src) : null;
   function href(path) {
     if (!pages || !/^\/(?!\/)/.test(path)) return path;
@@ -56,13 +67,20 @@ const annaKit = (() => {
       .then(media => media.hydrateImages(root, {measure}))
       .catch(() => {});
   }
+  function homeArtifact() {
+    if (!home || location.search || location.hash) return null;
+    const p = typeof annaLibrary === 'undefined' ? [] : annaLibrary.params();
+    if (!p.length) return home;
+    if (p.length === 1 && p[0][0] === 'libraries') return homeScopes.get(p[0][1]) || null;
+    return null;
+  }
   async function request(path, options) {
     const signal = options?.signal;
     signal?.throwIfAborted();
-    if (home && !location.search && !location.hash && !annaLibrary.params().length &&
-        (options?.method === undefined || /^GET$/i.test(options.method))) {
+    const artifact = homeArtifact();
+    if (artifact && (options?.method === undefined || /^GET$/i.test(options.method))) {
       const cache = await import(new URL('home.js', base).href).catch(() => null);
-      const response = await cache?.request(path, home, signal);
+      const response = await cache?.request(path, artifact, signal);
       signal?.throwIfAborted();
       if (response) return response;
     }

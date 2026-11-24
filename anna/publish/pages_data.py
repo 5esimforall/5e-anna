@@ -106,7 +106,7 @@ def _prerender_layouts(conn, original, source, *, tour=None):
 
     entries_by_page = defaultdict(list)
     for rowid, eid, page_path, data_json in conn.execute(
-        'SELECT rowid, id, page_path, data FROM original.entries ORDER BY rowid'
+        'SELECT e.rowid, e.id, e.page_path, d.data FROM entry_core e JOIN entry_data d ON d.entry_rowid = e.rowid ORDER BY e.rowid'
     ):
         entries_by_page[page_path].append((rowid, eid, data_json))
 
@@ -180,20 +180,61 @@ def _prerender_layouts(conn, original, source, *, tour=None):
 
 
 def _project_entries(conn):
-    # Keeping detail JSON out of the main table lets SQLite skip it for rankings, facets and counts.
+    # Cluster non-section rows in UI display order before sections and split field JSON from entry_core.
     conn.execute('''CREATE TABLE entry_core (
         id TEXT NOT NULL, entity_id TEXT REFERENCES entities(id), name TEXT, name_zh TEXT, name_en TEXT,
         type TEXT, page_path TEXT REFERENCES pages(path), start INTEGER, end INTEGER, ruleset TEXT,
-        legacy TEXT, classification_status TEXT, fields TEXT
+        legacy TEXT, classification_status TEXT, primary_source_id TEXT REFERENCES sources(id)
     )''')
-    fields = 'id,entity_id,name,name_zh,name_en,type,page_path,start,end,ruleset,legacy,classification_status,fields'
-    conn.execute(f'INSERT INTO entry_core (rowid,{fields}) SELECT rowid,{fields} FROM original.entries ORDER BY rowid')
+    conn.execute('CREATE TABLE entry_fields (entry_rowid INTEGER PRIMARY KEY, fields TEXT)')
     conn.execute('CREATE TABLE entry_data (entry_rowid INTEGER PRIMARY KEY, data TEXT NOT NULL)')
-    conn.execute('INSERT INTO entry_data SELECT rowid, data FROM original.entries ORDER BY rowid')
-    conn.execute('CREATE VIEW entries AS SELECT e.*, d.data FROM entry_core e LEFT JOIN entry_data d ON d.entry_rowid=e.rowid')
+
+    sources_by_entry = defaultdict(list)
+    for eid, sid in conn.execute('SELECT entry_id, source_id FROM original.entry_sources ORDER BY entry_id, source_id'):
+        sources_by_entry[eid].append(sid)
+    single_source = all(len(v) <= 1 for v in sources_by_entry.values())
+
+    section_rank = len(browse.TYPE_ORDER)
+    type_rank_map = {t: i for i, t in enumerate(browse.TYPE_ORDER) if t != 'section'}
+    rows = []
+    for row in conn.execute(
+        'SELECT id, entity_id, name, name_zh, name_en, type, page_path, start, end, ruleset, '
+        'legacy, classification_status, fields, data FROM original.entries ORDER BY rowid'
+    ):
+        eid, _, name, name_zh, _, typ = row[:6]
+        t_rank = section_rank if typ == 'section' else type_rank_map.get(typ, section_rank - 1)
+        sort_key = (t_rank, browse.name_key(name_zh or name) or '', name or '', eid)
+        primary_src = sources_by_entry[eid][0] if sources_by_entry.get(eid) else None
+        rows.append((sort_key, row[:12] + (primary_src,), row[12], row[13]))
+    rows.sort(key=lambda item: item[0])
+
+    core_rows = []
+    field_rows = []
+    data_rows = []
+    non_section_max = 0
+    for idx, (_, core_vals, fields_json, data_json) in enumerate(rows, start=1):
+        if core_vals[5] != 'section':
+            non_section_max = idx
+        core_rows.append((idx, *core_vals))
+        field_rows.append((idx, fields_json))
+        data_rows.append((idx, data_json))
+
+    core_cols = ('id,entity_id,name,name_zh,name_en,type,page_path,start,end,ruleset,'
+                 'legacy,classification_status,primary_source_id')
+    conn.executemany(f'INSERT INTO entry_core (rowid,{core_cols}) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', core_rows)
+    conn.executemany('INSERT INTO entry_fields VALUES (?, ?)', field_rows)
+    conn.executemany('INSERT INTO entry_data VALUES (?, ?)', data_rows)
+    conn.execute(
+        f'CREATE VIEW entries AS SELECT {", ".join("e." + c.strip() for c in core_cols.split(","))}, '
+        'f.fields, d.data FROM entry_core e '
+        'LEFT JOIN entry_fields f ON f.entry_rowid=e.rowid '
+        'LEFT JOIN entry_data d ON d.entry_rowid=e.rowid'
+    )
+    return non_section_max, single_source
 
 
-def _write_default_metadata_and_tour(conn, tour, reader_nodes, tour_index_path):
+def _write_default_metadata_and_tour(conn, tour, reader_nodes, tour_index_path, *,
+                                     non_section_max=None, single_source=False, rank_index_path=None):
     """Store precomputed catalog counts/facets and lazy per-page Tour tables in the projected DB."""
     source_counts = dict(conn.execute(
         "SELECT es.source_id, count(*) FROM entry_sources es JOIN entry_core e ON e.id=es.entry_id "
@@ -218,7 +259,7 @@ def _write_default_metadata_and_tour(conn, tour, reader_nodes, tour_index_path):
     sources_by_entry = defaultdict(list)
     for eid, sid in conn.execute(
         "SELECT es.entry_id, es.source_id FROM entry_sources es "
-        "JOIN entry_core e ON e.id=es.entry_id WHERE e.type!='section'"
+        "JOIN entry_core e ON e.id=es.entry_id WHERE e.type!='section' ORDER BY es.entry_id, es.source_id"
     ):
         sources_by_entry[eid].append(sid)
     for sids in sources_by_entry.values():
@@ -231,11 +272,18 @@ def _write_default_metadata_and_tour(conn, tour, reader_nodes, tour_index_path):
         'origin': unfiltered_origin,
         'source': source_counts,
     }
-    conn.executemany('INSERT INTO metadata VALUES (?, ?)', [
+    meta_rows = [
         ('pages_source_counts', _json(source_counts).decode('utf-8')),
         ('pages_type_ruleset_counts', _json(type_ruleset_counts).decode('utf-8')),
         ('pages_unfiltered_facets', _json(unfiltered_facets).decode('utf-8')),
-    ])
+        ('pages_single_source', '1' if single_source else '0'),
+    ]
+    if non_section_max is not None:
+        meta_rows.append(('pages_non_section_max_rowid', str(non_section_max)))
+    conn.executemany('INSERT INTO metadata VALUES (?, ?)', meta_rows)
+
+    if rank_index_path is not None:
+        _write_default_rank_index(conn, rank_index_path, origin_of, sources_by_entry)
     if tour is None:
         return
 
@@ -312,16 +360,81 @@ def _write_default_metadata_and_tour(conn, tour, reader_nodes, tour_index_path):
     tour_index_path.write_bytes(gzip.compress(_json(index_payload), compresslevel=6, mtime=0))
 
 
+def _make_interner():
+    arr = []
+    idx = {}
+
+    def intern(value):
+        if value is None or value == '':
+            return -1
+        hit = idx.get(value)
+        if hit is None:
+            hit = len(arr)
+            arr.append(value)
+            idx[value] = hit
+        return hit
+
+    return arr, intern
+
+
+def _write_default_rank_index(conn, rank_index_path, origin_of, sources_by_entry):
+    types_lut, it = _make_interner()
+    paths_lut, ip = _make_interner()
+    sources_lut, isrc = _make_interner()
+    statuses_lut, istat = _make_interner()
+    rows = []
+    for eid, typ, name, name_zh, name_en, ruleset, page_path, start, gid, status in conn.execute(
+        "SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, e.page_path, e.start, "
+        "m.group_id, m.status FROM entry_core e "
+        "LEFT JOIN identity_candidate_members m ON m.entry_id = e.id "
+        "WHERE e.type != 'section' ORDER BY e.rowid"
+    ):
+        sids = sources_by_entry.get(eid) or []
+        if not sids:
+            src_val = -1
+        elif len(sids) == 1:
+            src_val = isrc(sids[0])
+        else:
+            src_val = [isrc(s) for s in sids]
+        nz = None if name_zh == name else name_zh
+        rows.append([
+            eid,
+            it(typ),
+            name or '',
+            nz,
+            name_en or '',
+            ruleset or '',
+            gid,
+            istat(status),
+            ip(page_path),
+            start,
+            src_val,
+        ])
+    origins = {sid: (origin_of.get(sid) or '待核') for sid in sources_lut}
+    payload = {
+        'schema': 1,
+        'types': types_lut,
+        'paths': paths_lut,
+        'sources': sources_lut,
+        'statuses': statuses_lut,
+        'origins': origins,
+        'rows': rows,
+    }
+    rank_index_path.write_bytes(gzip.compress(_json(payload), compresslevel=6, mtime=0))
+
+
 def _project_db(original, target, source, *, align_works=False, reader_nodes=None, locatable=None, curation=None,
-                tour_index_path=None):
+                tour_index_path=None, rank_index_path=None):
     with closing(sqlite3.connect(target, uri=True)) as conn, conn:
         schema = _db_schema(conn, original)
         definitions = {table: sql for kind, table, _, sql in schema if kind == 'table'}
+        non_section_max = None
+        single_source = False
         for table in DEFAULT_TABLES:
             if table not in definitions:
                 raise ValueError(f'Missing table {table} in {original.name}. Rebuild the data before exporting.')
             if table == 'entries':
-                _project_entries(conn)
+                non_section_max, single_source = _project_entries(conn)
                 continue
             if table == 'pages':
                 conn.execute(re.sub(r'\bpath\s+TEXT\s+PRIMARY\s+KEY\b', 'path TEXT NOT NULL', definitions['pages'], flags=re.I))
@@ -388,7 +501,10 @@ def _project_db(original, target, source, *, align_works=False, reader_nodes=Non
             f"json_each(g.data, '$.entry_ids') j WHERE g.type IN ({kinds}) ORDER BY j.value"
         )
         conn.execute('CREATE INDEX identity_candidate_group_idx ON identity_candidate_members(group_id)')
-        _write_default_metadata_and_tour(conn, tour, reader_nodes, tour_index_path)
+        _write_default_metadata_and_tour(
+            conn, tour, reader_nodes, tour_index_path,
+            non_section_max=non_section_max, single_source=single_source, rank_index_path=rank_index_path,
+        )
         if conn.execute('PRAGMA foreign_key_check').fetchone():
             raise ValueError(f'Invalid foreign keys in projected {original.name}')
         conn.execute('ANALYZE main')
@@ -411,39 +527,126 @@ def _build_name_fold_index(conn, stackable_types):
 
 
 def _project_our_entries(conn):
-    # Separate hot list columns from field, provenance, body and layout payloads so SQLite scans stay compact.
+    # Cluster rows in UI default display order (TYPE_ORDER, sort_name, id) and compress cold layout/body blobs.
     columns = conn.execute('PRAGMA original.table_info(entries)').fetchall()
-    payloads = {
+    payload_tables = {
         'fields_json': 'entry_fields',
-        'quickref_json': 'entry_meta',
+        'quickref_json': 'entry_fields',
         'provenance_json': 'entry_meta',
-        'body_text': 'entry_body',
-        'search_body': 'entry_body',
+        'body_text': 'entry_body_text',
+        'search_body': 'entry_search_body',
         'layout_html': 'entry_layout',
     }
-    core = [(name, kind, required, pk) for _, name, kind, required, _, pk in columns if name not in payloads]
+    core = [(name, kind, required, pk) for _, name, kind, required, _, pk in columns if name not in payload_tables]
     declarations = [f'{name} {kind}' + (' NOT NULL' if required or pk else '')
                     for name, kind, required, pk in core]
+    declarations.append('build_order INTEGER NOT NULL')
     conn.execute('CREATE TABLE entry_core (' + ', '.join(declarations) + ')')
-    names = 'rowid, ' + ', '.join(name for name, *_ in core)
-    conn.execute(f'INSERT INTO entry_core ({names}) SELECT {names} FROM original.entries ORDER BY rowid')
-    conn.execute('CREATE TABLE entry_fields (entry_rowid INTEGER PRIMARY KEY, fields_json TEXT NOT NULL)')
-    conn.execute('CREATE TABLE entry_meta (entry_rowid INTEGER PRIMARY KEY, quickref_json TEXT NOT NULL, provenance_json TEXT NOT NULL)')
-    conn.execute('CREATE TABLE entry_body (entry_rowid INTEGER PRIMARY KEY, body_text TEXT NOT NULL, search_body TEXT NOT NULL)')
-    conn.execute('CREATE TABLE entry_layout (entry_rowid INTEGER PRIMARY KEY, layout_html TEXT NOT NULL)')
-    conn.execute('INSERT INTO entry_fields SELECT rowid, fields_json FROM original.entries ORDER BY rowid')
-    conn.execute('INSERT INTO entry_meta SELECT rowid, quickref_json, provenance_json FROM original.entries ORDER BY rowid')
-    conn.execute('INSERT INTO entry_body SELECT rowid, body_text, search_body FROM original.entries ORDER BY rowid')
-    conn.execute('INSERT INTO entry_layout SELECT rowid, layout_html FROM original.entries ORDER BY rowid')
-    fields = ', '.join(f'{payloads.get(name, "entry_core")}.{name}' for _, name, *_ in columns)
+    conn.execute('CREATE TABLE entry_fields (entry_rowid INTEGER PRIMARY KEY, fields_json TEXT NOT NULL, quickref_json TEXT NOT NULL)')
+    conn.execute('CREATE TABLE entry_meta (entry_rowid INTEGER PRIMARY KEY, provenance_json TEXT NOT NULL)')
+    conn.execute('CREATE TABLE entry_body_text (entry_rowid INTEGER PRIMARY KEY, body_gzip BLOB NOT NULL)')
+    conn.execute('CREATE TABLE entry_search_body (entry_rowid INTEGER PRIMARY KEY, search_body TEXT NOT NULL)')
+    conn.execute('CREATE TABLE entry_layout (entry_rowid INTEGER PRIMARY KEY, layout_gzip BLOB NOT NULL)')
+
+    o_type_rank = {t: i for i, t in enumerate(otypes.TYPE_ORDER)}
+    fallback_rank = len(otypes.TYPE_ORDER)
+    core_names = [name for name, *_ in core]
+    core_select = ', '.join(core_names)
+    rows_raw = conn.execute(
+        f'SELECT rowid, {core_select}, fields_json, quickref_json, provenance_json, body_text, search_body, layout_html '
+        'FROM original.entries ORDER BY rowid'
+    ).fetchall()
+    n_core = len(core_names)
+    id_pos = core_names.index('id') + 1
+    type_pos = core_names.index('type') + 1
+    sort_pos = core_names.index('sort_name') + 1
+
+    rows_raw.sort(key=lambda r: (o_type_rank.get(r[type_pos], fallback_rank), r[sort_pos] or '', r[id_pos]))
+
+    core_rows = []
+    field_rows = []
+    meta_rows = []
+    body_rows = []
+    search_rows = []
+    layout_rows = []
+    for new_rowid, row in enumerate(rows_raw, start=1):
+        orig_rowid = row[0]
+        core_vals = row[1:1 + n_core]
+        fields_json, quickref_json, provenance_json, body_text, search_body, layout_html = row[1 + n_core:]
+        core_rows.append((new_rowid, *core_vals, orig_rowid))
+        field_rows.append((new_rowid, fields_json, quickref_json))
+        meta_rows.append((new_rowid, provenance_json))
+        body_rows.append((new_rowid, gzip.compress((body_text or '').encode('utf-8'), compresslevel=3, mtime=0)))
+        search_rows.append((new_rowid, search_body or ''))
+        layout_rows.append((new_rowid, gzip.compress((layout_html or '').encode('utf-8'), compresslevel=3, mtime=0)))
+
+    all_core_cols = ', '.join(core_names) + ', build_order'
+    placeholders = ','.join('?' for _ in range(n_core + 2))
+    conn.executemany(f'INSERT INTO entry_core (rowid, {all_core_cols}) VALUES ({placeholders})', core_rows)
+    conn.executemany('INSERT INTO entry_fields VALUES (?, ?, ?)', field_rows)
+    conn.executemany('INSERT INTO entry_meta VALUES (?, ?)', meta_rows)
+    conn.executemany('INSERT INTO entry_body_text VALUES (?, ?)', body_rows)
+    conn.executemany('INSERT INTO entry_search_body VALUES (?, ?)', search_rows)
+    conn.executemany('INSERT INTO entry_layout VALUES (?, ?)', layout_rows)
+
+    view_expr = {
+        'fields_json': 'entry_fields.fields_json',
+        'quickref_json': 'entry_fields.quickref_json',
+        'provenance_json': 'entry_meta.provenance_json',
+        'body_text': 'CAST(entry_body_text.body_gzip AS TEXT) AS body_text',
+        'search_body': 'entry_search_body.search_body',
+        'layout_html': 'CAST(entry_layout.layout_gzip AS TEXT) AS layout_html',
+    }
+    fields = ', '.join(view_expr.get(name, f'entry_core.{name}') for _, name, *_ in columns)
     conn.execute(f'''CREATE VIEW entries AS SELECT {fields}, entry_core.rowid AS rowid FROM entry_core
                     LEFT JOIN entry_fields ON entry_fields.entry_rowid=entry_core.rowid
                     LEFT JOIN entry_meta ON entry_meta.entry_rowid=entry_core.rowid
-                    LEFT JOIN entry_body ON entry_body.entry_rowid=entry_core.rowid
+                    LEFT JOIN entry_body_text ON entry_body_text.entry_rowid=entry_core.rowid
+                    LEFT JOIN entry_search_body ON entry_search_body.entry_rowid=entry_core.rowid
                     LEFT JOIN entry_layout ON entry_layout.entry_rowid=entry_core.rowid''')
 
 
-def _project_our_db(original, target):
+def _write_our_rank_index(conn, rank_index_path):
+    types_lut, it = _make_interner()
+    sources_lut, isrc = _make_interner()
+    codes_lut, icd = _make_interner()
+    origin_of = {r[0]: (r[1] or '社区') for r in conn.execute('SELECT id, origin FROM sources')}
+    bases = {
+        r[0]: [r[1], r[2], r[3]]
+        for r in conn.execute('SELECT source_id, target_id, base_source_id, base_name_en FROM pages_copied_bases ORDER BY source_id, target_id')
+    }
+    rows = []
+    for eid, typ, name, name_zh, name_en, ruleset, sid, code, gid in conn.execute(
+        'SELECT e.id, e.type, e.name, e.name_zh, e.name_en, e.ruleset, e.source_id, e.source_code, im.group_id '
+        'FROM entry_core e LEFT JOIN identity_members im ON im.entry_id = e.id '
+        'ORDER BY e.rowid'
+    ):
+        nz = None if name_zh == name else name_zh
+        rows.append([
+            eid,
+            it(typ),
+            name or '',
+            nz,
+            name_en or '',
+            ruleset or '待核',
+            isrc(sid),
+            icd(code),
+            gid,
+        ])
+    origins = {sid: origin_of.get(sid, '社区') for sid in sources_lut}
+    payload = {
+        'schema': 1,
+        'types': types_lut,
+        'sources': sources_lut,
+        'codes': codes_lut,
+        'origins': origins,
+        'bases': bases,
+        'rows': rows,
+    }
+    rank_index_path.write_bytes(gzip.compress(_json(payload), compresslevel=6, mtime=0))
+
+
+def _project_our_db(original, target, *, rank_index_path=None):
     with closing(sqlite3.connect(target, uri=True)) as conn, conn:
         schema = _db_schema(conn, original)
         definitions = {table: sql for kind, table, _, sql in schema if kind == 'table'}
@@ -495,6 +698,13 @@ def _project_our_db(original, target):
         or_counts = dict(conn.execute(
             "SELECT facet_value, count(*) FROM entry_facets WHERE facet_key='origin' GROUP BY facet_value"
         ))
+        type_facets = {}
+        for typ, fk, fv, cnt in conn.execute(
+            'SELECT e.type, ef.facet_key, ef.facet_value, count(*) '
+            'FROM entry_core e JOIN entry_facets ef ON ef.entry_id = e.id '
+            'GROUP BY e.type, ef.facet_key, ef.facet_value'
+        ):
+            type_facets.setdefault(typ, {}).setdefault(fk, {})[fv] = int(cnt)
         type_ruleset_counts = [
             [r[0], r[1], r[2]]
             for r in conn.execute(
@@ -505,6 +715,7 @@ def _project_our_db(original, target):
         conn.executemany('INSERT INTO metadata VALUES (?, ?)', [
             ('pages_source_counts', _json(src_counts).decode('utf-8')),
             ('pages_type_ruleset_counts', _json(type_ruleset_counts).decode('utf-8')),
+            ('pages_type_facets', _json(type_facets).decode('utf-8')),
             ('pages_unfiltered_facets', _json({
                 'total': total,
                 'type': type_counts,
@@ -514,6 +725,8 @@ def _project_our_db(original, target):
                 'origin': or_counts,
             }).decode('utf-8')),
         ])
+        if rank_index_path is not None:
+            _write_our_rank_index(conn, rank_index_path)
         if conn.execute('PRAGMA foreign_key_check').fetchone():
             raise ValueError('Invalid foreign keys in the projected our5etools catalog')
         conn.execute('ANALYZE main')
@@ -646,7 +859,8 @@ def _our_bundle(stage, work, root, source, rewrite_html):
     if manifest['collection'] != 'our5etools' or manifest['reader']['schema'] != reader['schema']:
         raise ValueError('our5etools reader does not match its manifest')
     projection = work / 'our5etools.sqlite'
-    _project_our_db(db, projection)
+    rank_index_file = work / 'our5etools-rank-index.json.gz'
+    _project_our_db(db, projection, rank_index_path=rank_index_file)
     with closing(sqlite3.connect(projection.as_uri() + '?mode=ro', uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         pages = {row[0] for row in conn.execute('SELECT page_path FROM book_pages')}
@@ -717,6 +931,7 @@ def _our_bundle(stage, work, root, source, rewrite_html):
         'reader-index.json': reader_index_file,
         'nav-nodes.json.gz': nav_file,
         'tour-subclasses.json.gz': subclasses_file,
+        'rank-index.json.gz': rank_index_file,
         'summary.json': summary_path,
         'cached-media.json': cached_file,
     }
@@ -787,8 +1002,17 @@ def _write_home_cache(stage, work, files):
         mounted = root / name
         mounted.parent.mkdir(parents=True, exist_ok=True)
         mounted.symlink_to(file)
-    payload = home.encode_home(PublishedSite(root).handle)
-    (stage / home.filename(payload)).write_bytes(payload)
+    site = PublishedSite(root)
+    payload = home.encode_home(site.handle)
+    default_name = home.filename(payload)
+    (stage / default_name).write_bytes(payload)
+    scopes = {}
+    for libs in home.extra_scopes(site.registry.ready()):
+        scoped = home.encode_home(site.handle, libs)
+        name = home.filename(scoped)
+        (stage / name).write_bytes(scoped)
+        scopes[','.join(libs)] = name
+    (stage / 'home-index.json').write_bytes(_json({'default': default_name, 'scopes': scopes}))
 
 
 def entry_bucket_index(entry_id: str, buckets: int) -> int:
@@ -883,7 +1107,7 @@ def _collect_our_entry_records(db_path, media_dir, extra_locations):
         for mr in conn.execute(
             'SELECT im.group_id, e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
             'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, '
-            'e.owner_level, e.copy_status, efld.fields_json, em.quickref_json, e.conflicts_json, em.provenance_json '
+            'e.owner_level, e.copy_status, efld.fields_json, efld.quickref_json, e.conflicts_json, em.provenance_json '
             'FROM identity_members im '
             'JOIN entry_core e ON e.id = im.entry_id '
             'LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid '
@@ -903,18 +1127,19 @@ def _collect_our_entry_records(db_path, media_dir, extra_locations):
         for row in conn.execute(
             'SELECT e.id, e.type, e.raw_kind, e.name, e.name_zh, e.name_en, e.ruleset, e.legacy, '
             'e.package_id, e.source_id, e.source_code, e.owner_class, e.owner_subclass, '
-            'e.owner_level, e.copy_status, efld.fields_json, em.quickref_json, e.conflicts_json, '
-            'em.provenance_json, eb.body_text, el.layout_html '
+            'e.owner_level, e.copy_status, efld.fields_json, efld.quickref_json, e.conflicts_json, '
+            'em.provenance_json, ebt.body_gzip, el.layout_gzip '
             'FROM entry_core e '
             'LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid '
             'LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid '
-            'LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid '
+            'LEFT JOIN entry_body_text ebt ON ebt.entry_rowid = e.rowid '
             'LEFT JOIN entry_layout el ON el.entry_rowid = e.rowid '
             'ORDER BY e.rowid'
         ):
             eid = row['id']
             entry = build_entry_row(row, sources_map, OUR5ETOOLS_KEY)
-            entry['body'] = (row['body_text'] or '').strip()
+            raw_body = gzip.decompress(row['body_gzip']).decode('utf-8') if row['body_gzip'] is not None else ''
+            entry['body'] = raw_body.strip()
             entry['field_order'] = otypes.field_order(entry)
             sids = entry_sources_map.get(eid)
             if sids:
@@ -935,7 +1160,7 @@ def _collect_our_entry_records(db_path, media_dir, extra_locations):
             entry['reader_location'] = loc
             entry['collection'] = OUR5ETOOLS_KEY
 
-            html_body = row['layout_html'] or ''
+            html_body = gzip.decompress(row['layout_gzip']).decode('utf-8') if row['layout_gzip'] is not None else ''
             media = entry['provenance'].get('media_summary')
             if not html_body:
                 layout_dict = {'status': 'empty', 'media': media}
@@ -1047,6 +1272,7 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
         locatable = {eid for eid, entry in default_manifest['entries'].items() if entry['locatable']}
         default_projection = work / 'default.sqlite'
         tour_index_path = work / 'tour-index.json.gz'
+        default_rank_path = work / 'default-rank-index.json.gz'
         _project_db(
             db, default_projection, source,
             align_works=our5etools_data is not None,
@@ -1054,6 +1280,7 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
             locatable=locatable,
             curation=public_curation,
             tour_index_path=tour_index_path,
+            rank_index_path=default_rank_path,
         )
         manifest_path = work / 'default-manifest.json'
         manifest_path.write_bytes(_json(default_manifest))
@@ -1064,7 +1291,9 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
             'default_page': default_reader_data.get('default_page', ''),
             'source_release': default_reader_data.get('source_release'),
         }))
-        files = {DEFAULT_DB: default_projection, f'{DEFAULT_BOOK}/anna-manifest.json': manifest_path,
+        files = {DEFAULT_DB: default_projection,
+                 'data/extracted/rank-index.json.gz': default_rank_path,
+                 f'{DEFAULT_BOOK}/anna-manifest.json': manifest_path,
                  f'{DEFAULT_BOOK}/anna-meta.json': meta_path, f'{DEFAULT_BOOK}/tour-index.json.gz': tour_index_path,
                  f'{DEFAULT_BOOK}/anna-reader.json': default_reader}
         collection = None

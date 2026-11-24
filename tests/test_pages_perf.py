@@ -27,7 +27,7 @@ from anna.presentation.tour import PublishedTour, Tour, load as load_curation
 from anna.publish.pages_assets import stage_browser_runtime
 from anna.publish.pages_build import build as build_pages
 from anna.publish.pages_data import (
-    CHUNK_SIZE, _collect_our_entry_records, _project_db, _project_our_db,
+    CHUNK_SIZE, _collect_our_entry_records, _project_db, _project_our_db, _write_home_cache,
     choose_entry_buckets, entry_bucket_index, export_pages_data,
 )
 from anna.server.pages import PublishedSite
@@ -889,6 +889,15 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
                 (proj_dir / 'nav-nodes.json.gz').write_bytes(
                     gzip.compress(json.dumps(nav_payload, ensure_ascii=False, separators=(',', ':')).encode('utf-8'), mtime=0)
                 )
+                r_roots = {
+                    item['source_id']: item['id']
+                    for item in (reader_raw.get('roots') or ())
+                    if isinstance(item, dict) and item.get('source_id') and item.get('id')
+                }
+                (proj_dir / 'reader-index.json').write_text(
+                    json.dumps({'roots': r_roots, 'entry_locations': reader_raw.get('entry_locations') or {}}, ensure_ascii=False, separators=(',', ':')),
+                    encoding='utf-8',
+                )
 
                 with closing(sqlite3.connect((proj_dir / 'catalog.sqlite').as_uri() + '?mode=ro', uri=True)) as conn:
                     conn.row_factory = sqlite3.Row
@@ -909,10 +918,11 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
                     manifest['types'] = held_types
                     (proj_dir / 'manifest.json').write_text(json.dumps(manifest, ensure_ascii=False), encoding='utf-8')
 
-                    # Query plan checks: never materialize VIEW or join entry_body unnecessarily
+                    # Query plan checks: never materialize VIEW or join entry_body_text / entry_layout unnecessarily
                     for sql, bind in (
                         ("EXPLAIN QUERY PLAN SELECT ef.facet_value, count(*) FROM entry_facets ef JOIN entry_core e ON e.id=ef.entry_id WHERE ef.facet_key='origin' GROUP BY ef.facet_value", ()),
-                        ("EXPLAIN QUERY PLAN SELECT el.layout_html, em.provenance_json FROM entry_core e LEFT JOIN entry_meta em ON em.entry_rowid=e.rowid LEFT JOIN entry_layout el ON el.entry_rowid=e.rowid WHERE e.id=?", ('o5e_fixture',)),
+                        ("EXPLAIN QUERY PLAN SELECT efld.fields_json, efld.quickref_json FROM entry_core e LEFT JOIN entry_fields efld ON efld.entry_rowid=e.rowid WHERE e.id=?", ('o5e_fixture',)),
+                        ("EXPLAIN QUERY PLAN SELECT el.layout_gzip, em.provenance_json FROM entry_core e LEFT JOIN entry_meta em ON em.entry_rowid=e.rowid LEFT JOIN entry_layout el ON el.entry_rowid=e.rowid WHERE e.id=?", ('o5e_fixture',)),
                         ("EXPLAIN QUERY PLAN SELECT r.source_id, e.id FROM relations r JOIN entry_core e ON e.id=r.source_id WHERE r.target_id=? AND r.type='belongs_to_class' AND e.type='subclass'", ('cls_1',)),
                     ):
                         plan = [r[3] for r in conn.execute(sql, bind)]
@@ -920,6 +930,9 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
                         self.assertNotIn('MATERIALIZE', joined, plan)
                         self.assertNotIn('entry_body', joined, plan)
                         self.assertNotIn('SCAN entry_core', joined, plan)
+                        if 'entry_fields' in sql:
+                            self.assertNotIn('entry_meta', joined, plan)
+                            self.assertNotIn('entry_layout', joined, plan)
 
                     spell_eid = conn.execute("SELECT id FROM entry_core WHERE type='spell' LIMIT 1").fetchone()[0]
                     sub_eid = conn.execute("SELECT id FROM entry_core WHERE type='subclass' LIMIT 1").fetchone()[0]
@@ -962,10 +975,13 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
                         {'type': ['spell'], 'sort': ['spell_level'], 'limit': ['5']},
                     ):
                         self.assertEqual(proj_cat.entries(qparams), orig_cat.entries(qparams), qparams)
-                    self.assertEqual(proj_cat.ranked({'type': ['spell']}), orig_cat.ranked({'type': ['spell']}))
                     self.assertEqual(
-                        proj_cat.ranked({'type': ['spell']}, sort_field='spell_level'),
-                        orig_cat.ranked({'type': ['spell']}, sort_field='spell_level'),
+                        sorted(proj_cat.ranked({'type': ['spell']}), key=lambda r: r['id']),
+                        sorted(orig_cat.ranked({'type': ['spell']}), key=lambda r: r['id']),
+                    )
+                    self.assertEqual(
+                        sorted(proj_cat.ranked({'type': ['spell']}, sort_field='spell_level'), key=lambda r: r['id']),
+                        sorted(orig_cat.ranked({'type': ['spell']}, sort_field='spell_level'), key=lambda r: r['id']),
                     )
                     self.assertEqual(proj_cat.layout(spell_eid), orig_cat.layout(spell_eid))
                     self.assertEqual(proj_cat.layout(sub_eid), orig_cat.layout(sub_eid))
@@ -1414,6 +1430,511 @@ assert.equal(recovered.status, 200);
 
 assert.equal(await request('/api/entry?id=ver_extra&versions=bogus'), null);
 assert.equal(await request('/api/entry?id=ver_extra&libraries=bad!'), null);
+"""
+        proc = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
+
+class Phase6ListQueryAndMultiScopeHomeTests(unittest.TestCase):
+    @staticmethod
+    def _make_rich_5echm_fixture(root: Path):
+        source, orig = _make_5echm_fixture(root)
+        with closing(sqlite3.connect(orig)) as c:
+            r1 = c.execute("SELECT start, end, data FROM entries WHERE id='ver_1'").fetchone()
+            base_d = json.loads(r1[2])
+            # Missing name_en spell (exercises missing-key sort ordering vs SQLite NULLS LAST)
+            d_miss = {**base_d, 'id': 'ver_miss', 'name': '无英法术', 'name_zh': '无英法术', 'name_en': '',
+                      'ruleset': '5e', 'fields': {'spell_level': 2}, 'field_conflicts': []}
+            c.execute(
+                "INSERT INTO entries VALUES ('ver_miss','ent_miss','无英法术','无英法术','','spell','topics/spells.htm',?,?, '5e','unmarked','原文明示','{\"spell_level\":2}',?)",
+                (r1[0], r1[1], json.dumps(d_miss)),
+            )
+            c.execute("INSERT INTO entry_sources VALUES ('ver_miss','src2')")
+            # Conflicted spell (exercises conflict=1 fallback to SQLite entries view)
+            d_conf = {**base_d, 'id': 'ver_conf', 'name': '冲突法术 Conflict', 'name_zh': '冲突法术', 'name_en': 'Conflict',
+                      'ruleset': '5r', 'fields': {'spell_level': 4}, 'field_conflicts': ['spell_level']}
+            c.execute(
+                "INSERT INTO entries VALUES ('ver_conf','ent_conf','冲突法术 Conflict','冲突法术','Conflict','spell','topics/spells.htm',?,?, '5r','unmarked','原文明示','{\"spell_level\":4}',?)",
+                (r1[0], r1[1], json.dumps(d_conf)),
+            )
+            c.execute("INSERT INTO entry_sources VALUES ('ver_conf','src1')")
+            # Magic item (exercises type ordering & multi-type facets)
+            d_item = {**base_d, 'id': 'item_1', 'name': '魔杖 Wand', 'name_zh': '魔杖', 'name_en': 'Wand',
+                      'type': 'magic_item', 'ruleset': '5r', 'fields': {'rarity': '非普通'}, 'field_conflicts': []}
+            c.execute(
+                "INSERT INTO entries VALUES ('item_1','ent_item','魔杖 Wand','魔杖','Wand','magic_item','topics/spells.htm',?,?, '5r','unmarked','原文明示','{\"rarity\":\"非普通\"}',?)",
+                (r1[0], r1[1], json.dumps(d_item)),
+            )
+            c.execute("INSERT INTO entry_sources VALUES ('item_1','src1')")
+            # Untyped section (exercises non_section_max_rowid boundary, sections=1, and unclassified_matches)
+            d_sec = {**base_d, 'id': 'sec_1', 'name': '法术章节导言', 'name_zh': '法术章节导言', 'name_en': '',
+                     'type': 'section', 'ruleset': '5r', 'classification_status': '未分类段落',
+                     'fields': {'spell_level': 3}, 'field_conflicts': []}
+            c.execute(
+                "INSERT INTO entries VALUES ('sec_1','ent_sec','法术章节导言','法术章节导言','','section','topics/spells.htm',?,?, '5r','unmarked','未分类段落','{\"spell_level\":3}',?)",
+                (0, 10, json.dumps(d_sec)),
+            )
+            c.execute("INSERT INTO entry_sources VALUES ('sec_1','src1')")
+            c.execute("INSERT INTO entities VALUES ('ent_miss','ok'), ('ent_conf','ok'), ('ent_item','ok'), ('ent_sec','ok')")
+            c.commit()
+        return source, orig
+
+    def test_5echm_rank_index_cache_and_exhaustive_query_parity(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            source, orig = self._make_rich_5echm_fixture(root)
+            proj = root / 'proj.sqlite'
+            rank_path = root / 'rank-index.json.gz'
+            _project_db(orig, proj, source, rank_index_path=rank_path)
+            self.assertTrue(rank_path.is_file())
+
+            with closing(catalog.connect(orig)) as c_orig, closing(catalog.connect(proj)) as c_proj:
+                max_row = catalog._meta_int(c_proj, 'pages_non_section_max_rowid')
+                self.assertIsNotNone(max_row)
+                self.assertEqual(catalog._meta_int(c_proj, 'pages_single_source'), 1)
+                self.assertEqual(
+                    c_proj.execute('SELECT count(*) FROM entry_core WHERE rowid <= ? AND type=\'section\'', (max_row,)).fetchone()[0],
+                    0,
+                )
+                self.assertEqual(
+                    c_proj.execute('SELECT count(*) FROM entry_core WHERE rowid > ? AND type!=\'section\'', (max_row,)).fetchone()[0],
+                    0,
+                )
+
+                # Exhaustive query parity across sorts, directions, versions, search MATCH, export, restrictions
+                query_cases = [
+                    {},
+                    {'type': ['spell']},
+                    {'type': ['spell'], 'sort': ['spell_level']},
+                    {'type': ['spell'], 'sort': ['spell_level'], 'dir': ['desc']},
+                    {'type': ['spell'], 'q': ['Fireball']},
+                    {'type': ['spell'], 'q': ['Fireball'], 'dir': ['desc']},
+                    {'q': ['火球']},
+                    {'q': ['火球'], 'dir': ['desc']},
+                    {'typing': ['火']},
+                    {'conflict': ['1']},
+                    {'body': ['动作']},
+                    {'sections': ['1']},
+                    {'type': ['spell'], 'field': ['spell_level'], 'value': ['3'], 'q': ['法术章节导言']},
+                    {'field': ['spell_level'], 'value': ['3'], 'q': ['不存在']},
+                    {'prefer': ['5e']},
+                ]
+                for base_p in query_cases:
+                    self.assertEqual(catalog.query(c_proj, base_p), catalog.query(c_orig, base_p), base_p)
+                    each_p = {**base_p, 'versions': ['each']}
+                    self.assertEqual(catalog.query(c_proj, each_p), catalog.query(c_orig, each_p), each_p)
+
+                for sort_name in ('type', 'name', 'name_en', 'ruleset', 'source'):
+                    for direction in ('asc', 'desc'):
+                        for ver_mode in ('stacked', 'each'):
+                            p = {'sort': [sort_name], 'dir': [direction], 'versions': [ver_mode]}
+                            self.assertEqual(catalog.query(c_proj, p), catalog.query(c_orig, p), p)
+
+                for export_p in (
+                    {},
+                    {'type': ['spell'], 'f_spell_level': ['3'], 'sort': ['spell_level']},
+                    {'conflict': ['1']},
+                    {'body': ['动作']},
+                ):
+                    self.assertEqual(catalog.query(c_proj, export_p, export=True), catalog.query(c_orig, export_p, export=True), export_p)
+
+                for rest in (
+                    None,
+                    Restriction(rulesets=frozenset({'5r'})),
+                    Restriction(sources=frozenset({'src1'})),
+                    Restriction(sources=frozenset({'src2'})),
+                    Restriction(sources=frozenset()),
+                ):
+                    for fp in ({}, {'type': ['spell']}, {'type': ['spell'], 'q': ['火']}, {'q': ['火']}):
+                        self.assertEqual(catalog.query(c_proj, fp, restrict=rest), catalog.query(c_orig, fp, restrict=rest), (fp, rest))
+                        self.assertEqual(catalog.facets(c_proj, fp, restrict=rest), catalog.facets(c_orig, fp, restrict=rest), (fp, rest))
+                    self.assertEqual(
+                        sorted(catalog.ranked(c_proj, {'type': ['spell']}, restrict=rest), key=lambda r: r['id']),
+                        sorted(catalog.ranked(c_orig, {'type': ['spell']}, restrict=rest), key=lambda r: r['id']),
+                        rest,
+                    )
+                    self.assertEqual(
+                        sorted(catalog.ranked(c_proj, {'type': ['spell']}, restrict=rest, sort_field='spell_level'), key=lambda r: r['id']),
+                        sorted(catalog.ranked(c_orig, {'type': ['spell']}, restrict=rest, sort_field='spell_level'), key=lambda r: r['id']),
+                        rest,
+                    )
+
+                with self.assertRaises(ValueError):
+                    catalog.ranked(c_proj, {'q': ['x' * 201]})
+
+                # Trace checks: rank-index fast path avoids scanning entry_core; facets avoids entry_sources
+                catalog.load_rank_index(c_proj)
+                traced = []
+                c_proj.set_trace_callback(traced.append)
+                try:
+                    _ = catalog.ranked(c_proj, {'type': ['spell']}, restrict=Restriction(sources=frozenset({'src1'})))
+                    self.assertFalse(any('FROM entry_core' in s or 'FROM entries' in s for s in traced), traced)
+
+                    traced.clear()
+                    _ = catalog.query(c_proj, {'offset': ['0'], 'limit': ['2']})
+                    self.assertFalse(
+                        any(('FROM entry_core' in s or 'FROM entries' in s) and 'WHERE e.id IN' not in s for s in traced),
+                        traced,
+                    )
+
+                    traced.clear()
+                    _ = catalog.facets(c_proj, {'type': ['spell']})
+                    facets_sql = '\n'.join(traced)
+                    self.assertNotIn('entry_sources', facets_sql, traced)
+                    self.assertIn('e.primary_source_id', facets_sql)
+                    self.assertIn(f'e.rowid<={max_row}', facets_sql)
+
+                    # Stacked ranking LRU cache avoids re-running CTE across offset pages
+                    catalog._STACKED_RANKINGS.clear()
+                    traced.clear()
+                    _ = catalog.query(c_proj, {'type': ['spell'], 'q': ['火'], 'limit': ['1']})
+                    self.assertTrue(any('WITH matched AS' in s for s in traced), traced)
+                    traced.clear()
+                    _ = catalog.query(c_proj, {'type': ['spell'], 'q': ['火'], 'offset': ['1'], 'limit': ['1']})
+                    self.assertFalse(any('WITH matched AS' in s for s in traced), traced)
+                finally:
+                    c_proj.set_trace_callback(None)
+
+                # Rewriting proj invalidates _STACKED_RANKINGS cleanly
+                proj2 = root / 'proj2.sqlite'
+                shutil.copyfile(proj, proj2)
+                proj2.replace(proj)
+                with closing(catalog.connect(proj)) as c_proj_new:
+                    traced2 = []
+                    c_proj_new.set_trace_callback(traced2.append)
+                    try:
+                        res_rebuilt = catalog.query(c_proj_new, {'type': ['spell'], 'q': ['火'], 'offset': ['1'], 'limit': ['1']})
+                    finally:
+                        c_proj_new.set_trace_callback(None)
+                    self.assertTrue(any('WITH matched AS' in s for s in traced2), traced2)
+                    self.assertEqual(res_rebuilt, catalog.query(c_orig, {'type': ['spell'], 'q': ['火'], 'offset': ['1'], 'limit': ['1']}))
+
+    @unittest.skipUnless((OUR5ETOOLS_DATA / 'manifest.json').is_file(), 'Build our5etools collection first')
+    def test_our5etools_rank_index_and_type_facets_optimization(self):
+        orig_cat = Our5etoolsCatalog(OUR5ETOOLS_DATA)
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                proj_dir = Path(td).resolve() / 'o5e'
+                (proj_dir / 'reader').mkdir(parents=True)
+                for name in ('manifest.json', 'summary.json'):
+                    shutil.copyfile(OUR5ETOOLS_DATA / name, proj_dir / name)
+                shutil.copyfile(OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json', proj_dir / 'reader' / 'anna-reader.json')
+                _project_our_db(
+                    OUR5ETOOLS_DATA / 'catalog.sqlite',
+                    proj_dir / 'catalog.sqlite',
+                    rank_index_path=proj_dir / 'rank-index.json.gz',
+                )
+                proj_cat = Our5etoolsCatalog(proj_dir)
+                try:
+                    with closing(sqlite3.connect((proj_dir / 'catalog.sqlite').as_uri() + '?mode=ro', uri=True)) as c:
+                        spell_id = c.execute("SELECT id FROM entry_core WHERE type='spell' LIMIT 1").fetchone()[0]
+                        src_id = c.execute("SELECT source_id FROM entry_core WHERE type='spell' LIMIT 1").fetchone()[0]
+                        fireball_id = c.execute("SELECT id FROM entry_core WHERE type='spell' AND name_en='Fireball' LIMIT 1").fetchone()[0]
+
+                    for qp, rest in (
+                        ({}, None),
+                        ({'type': ['spell']}, None),
+                        ({'q': ['Fireball']}, None),
+                        ({'ruleset': ['5r']}, None),
+                        ({'type': ['spell']}, Restriction(rulesets=frozenset({'5r'}))),
+                        ({'type': ['spell']}, Restriction(sources=frozenset({src_id}))),
+                        ({'type': ['spell']}, Restriction(sources=frozenset())),
+                    ):
+                        self.assertEqual(
+                            sorted(proj_cat.ranked(qp, restrict=rest), key=lambda r: r['id']),
+                            sorted(orig_cat.ranked(qp, restrict=rest), key=lambda r: r['id']),
+                            (qp, rest),
+                        )
+                    for bad_qp in ({'type': ['invalid']}, {'ruleset': ['bogus']}):
+                        with self.assertRaises(ValueError):
+                            proj_cat.ranked(bad_qp)
+
+                    # List rows never carry provenance on either original or projected
+                    e_proj = proj_cat.entries({'type': ['spell'], 'q': ['Fireball'], 'limit': ['5']})
+                    e_orig = orig_cat.entries({'type': ['spell'], 'q': ['Fireball'], 'limit': ['5']})
+                    self.assertEqual(e_proj, e_orig)
+                    self.assertTrue(e_proj['rows'])
+                    self.assertNotIn('provenance', e_proj['rows'][0])
+
+                    # Trace queries to verify entry_meta and entry_facets skipping
+                    proj_cat.meta()
+                    proj_cat.facets({'type': ['spell']})
+                    traced = []
+                    db_p = proj_cat._connect()
+                    db_p.set_trace_callback(traced.append)
+                    try:
+                        _ = proj_cat.rows([spell_id])
+                        _ = proj_cat.versions(fireball_id)
+                        _ = proj_cat.facets({'type': ['spell']})
+                        _ = proj_cat.ranked({'type': ['spell'], 'q': ['Fireball']}, restrict=Restriction(sources=frozenset({src_id})))
+                    finally:
+                        db_p.set_trace_callback(None)
+                    sql_log = '\n'.join(traced)
+                    self.assertNotIn('entry_meta', sql_log, traced)
+                    self.assertNotIn('entry_facets', sql_log, traced)
+                finally:
+                    proj_cat.close()
+                    _clear_book_connections()
+        finally:
+            orig_cat.close()
+            _clear_book_connections()
+
+    def test_pages_build_multi_scope_home_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            source, orig = _make_5echm_fixture(root)
+            book = root / 'book'
+            (book / 'topics').mkdir(parents=True)
+            shutil.copyfile(source / 'topics' / 'spells.htm', book / 'topics' / 'spells.htm')
+            db_sha = sha256(orig.read_bytes()).hexdigest()
+            page_sha = sha256((book / 'topics' / 'spells.htm').read_bytes()).hexdigest()
+            reader = {
+                'schema': 6,
+                'snapshot': 'snap-fixture',
+                'nodes': [{'id': '1', 'parent_id': '', 'label': 'Spells', 'path': 'topics/spells.htm', 'fragment': '', 'status': 'present'}],
+                'default_page': 'topics/spells.htm',
+                'pages': {'topics/spells.htm': {'title': 'Spells'}},
+                'presentation_resources': [],
+                'source_release': None,
+            }
+            reader_bytes = json.dumps(reader).encode('utf-8')
+            (book / 'anna-reader.json').write_bytes(reader_bytes)
+            manifest = {
+                'reader_schema': 6,
+                'database_sha256': db_sha,
+                'outputs': {'anna-reader.json': sha256(reader_bytes).hexdigest(), 'topics/spells.htm': page_sha},
+                'entries': {eid: {'path': 'topics/spells.htm', 'fragment': '', 'locatable': True} for eid in ('ver_1', 'ver_2', 'ver_3')},
+            }
+            (book / 'anna-manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            curation = root / 'tour.json'
+            curation.write_text(json.dumps({
+                'schema': 2,
+                'sections': [{'key': 'rules', 'label': {'zh': '规则', 'en': 'Rules'},
+                              'topics': [{'key': 'spells', 'label': {'zh': '法术', 'en': 'Spells'}, 'contents': {'5echm': 'Spells'}}]}],
+                'choices': {'5echm': {}},
+            }), encoding='utf-8')
+
+            # 1. _write_home_cache generates scoped home.*.json + home-index.json when two libraries are ready
+            fake_stage = root / 'fake-stage'
+            fake_work = root / 'fake-work'
+            fake_stage.mkdir()
+            fake_work.mkdir()
+
+            class FakeSite:
+                def __init__(self, _root):
+                    self.registry = type('Reg', (), {'ready': staticmethod(lambda: ('5echm', 'our5etools'))})()
+
+                @staticmethod
+                def handle(route):
+                    return 200, {}, json.dumps({'route': route}).encode('utf-8')
+
+            with patch('anna.publish.pages_data.PublishedSite', FakeSite):
+                _write_home_cache(fake_stage, fake_work, {})
+            home_idx = json.loads((fake_stage / 'home-index.json').read_text(encoding='utf-8'))
+            self.assertEqual(set(home_idx['scopes']), {'5echm,our5etools', 'our5etools', 'our5etools,5echm'})
+            self.assertTrue((fake_stage / home_idx['default']).is_file())
+            for fname in home_idx['scopes'].values():
+                self.assertTrue((fake_stage / fname).is_file())
+
+            # 2. pages_build.build(home_cache=True) stamps data-anna-home + data-anna-home-scopes and removes home-index.json
+            def fake_export(stage, *args, **kwargs):
+                written = export_pages_data(stage, *args, curation=curation, **{k: v for k, v in kwargs.items() if k != 'home_cache'}, home_cache=True)
+                scoped_payload = b'{"ok":true}'
+                scoped_name = f'home.{sha256(scoped_payload).hexdigest()[:16]}.json'
+                (stage / scoped_name).write_bytes(scoped_payload)
+                idx_file = stage / 'home-index.json'
+                idx_data = json.loads(idx_file.read_text(encoding='utf-8'))
+                idx_data['scopes'] = {'5echm,our5etools': scoped_name, 'our5etools': scoped_name}
+                old_size = idx_file.stat().st_size
+                idx_file.write_bytes(json.dumps(idx_data).encode('utf-8'))
+                return written + len(scoped_payload) + (idx_file.stat().st_size - old_size)
+
+            built = root / 'built-pages'
+            with patch('anna.publish.pages_build.stage_browser_runtime', lambda target: target.mkdir(parents=True, exist_ok=True)), \
+                 patch('anna.publish.pages_build.export_pages_data', fake_export):
+                build_pages(built, source, orig, book, '/5e-anna/', home_cache=True)
+            self.assertFalse((built / 'home-index.json').exists())
+            index_html = (built / 'index.html').read_text(encoding='utf-8')
+            self.assertIn('data-anna-home="home.', index_html)
+            self.assertIn('data-anna-home-scopes="5echm,our5etools=home.', index_html)
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js is required to test web/home.js and web/pages.js')
+    def test_home_js_and_pages_js_node_unit(self):
+        home_url = (paths.PROJECT / 'web' / 'home.js').resolve().as_uri()
+        pages_url = (paths.PROJECT / 'web' / 'pages.js').resolve().as_uri()
+        script = f"""
+import assert from 'node:assert/strict';
+import {{ request as homeRequest }} from {json.dumps(home_url)};
+import {{ request as pagesRequest, warm as pagesWarm, resetState }} from {json.dumps(pages_url)};
+
+// --- Part 1: web/home.js multi-scope path canonicalization, validation & abort ---
+const scopeFile = 'home.0123456789abcdef.json';
+const validPayload = {{
+  '/api/library': {{collections: [{{id: '5echm'}}, {{id: 'our5etools'}}]}},
+  '/api/meta?libraries=5echm,our5etools': {{fields: {{}}, types: {{}}, collections: []}},
+  '/api/facets?libraries=5echm,our5etools': {{schema: {{columns: [], flags: [], sorts: []}}, groups: [{{options: []}}], scope_total: 10}},
+  '/api/entries?offset=0&limit=150&libraries=5echm,our5etools': {{rows: [], total: 10}},
+}};
+let homeFetchCalls = 0;
+let releaseDelayed;
+const delayedGate = new Promise(resolve => {{ releaseDelayed = resolve; }});
+globalThis.fetch = async (url) => {{
+  homeFetchCalls++;
+  if (String(url).includes('deadbeef')) {{
+    await delayedGate;
+    return Response.json(validPayload);
+  }}
+  return Response.json(validPayload);
+}};
+
+// Encoded comma %2C and reversed query param order hit canonical cached route once
+const h1 = await homeRequest('/api/library', scopeFile);
+const h2 = await homeRequest('/api/meta?libraries=5echm%2Cour5etools', scopeFile);
+const h3 = await homeRequest('/api/facets?libraries=5echm,our5etools', scopeFile);
+const h4 = await homeRequest('/api/entries?libraries=5echm%2Cour5etools&limit=150&offset=0', scopeFile);
+assert.equal(homeFetchCalls, 1);
+for (const r of [h1, h2, h3, h4]) {{
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get('X-Anna-Home-Cache'), '1');
+}}
+
+// Reject invalid routes, extra/duplicate params, bad filename, bad libraries
+for (const badPath of [
+  '/api/library?libraries=5echm',
+  '/api/meta?libraries=5echm,our5etools&libraries=5echm',
+  '/api/meta?libraries=5echm&extra=1',
+  '/api/meta?libraries=bad!',
+  '/api/entries?offset=150&limit=150&libraries=5echm,our5etools',
+  '/api/entries?offset=0&limit=50&libraries=5echm,our5etools',
+  '/api/entries?offset=0&limit=150&libraries=5echm,our5etools&type=spell',
+  'https://evil.invalid/api/meta',
+]) {{
+  assert.equal(await homeRequest(badPath, scopeFile), undefined, badPath);
+}}
+assert.equal(await homeRequest('/api/library', 'not-a-home.json'), undefined);
+
+// AbortSignal rejects waiting caller cleanly without breaking a second caller on the same delayed fetch
+const acHome = new AbortController();
+const delayedFile = 'home.deadbeefdeadbeef.json';
+const pAbort = homeRequest('/api/library', delayedFile, acHome.signal);
+const pKeep = homeRequest('/api/library', delayedFile);
+acHome.abort(new DOMException('cancel home', 'AbortError'));
+await assert.rejects(pAbort, {{name: 'AbortError'}});
+releaseDelayed();
+const kept = await pKeep;
+assert.equal(kept.status, 200);
+
+// --- Part 2: web/pages.js priority queue, abort cancellation, deferred warm, error cleanup ---
+const workers = [];
+class MockWorker {{
+  constructor() {{
+    this.listeners = new Map();
+    this.posted = [];
+    this.terminated = false;
+    workers.push(this);
+  }}
+  addEventListener(type, fn) {{
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(fn);
+  }}
+  postMessage(msg) {{
+    this.posted.push(msg);
+  }}
+  terminate() {{
+    this.terminated = true;
+  }}
+  emit(type, payload) {{
+    for (const fn of this.listeners.get(type) || []) fn(payload);
+  }}
+}}
+globalThis.Worker = MockWorker;
+resetState();
+const flush = () => new Promise(r => setTimeout(r, 0));
+
+// 1. Priority ordering: active blocks queue, then P0 (entry-versions) preempts P1 (entries) preempts P2 (facets)
+const pFirst = pagesRequest('/api/entries?offset=0&limit=20');
+await flush();
+const w = workers[0];
+assert.equal(w.posted.length, 2); // init + first request
+assert.equal(w.posted[1].path, '/api/entries?offset=0&limit=20');
+
+const pFacets = pagesRequest('/api/facets?type=spell');
+const pEntriesQueued = pagesRequest('/api/entries?offset=20&limit=20');
+const pVersions = pagesRequest('/api/entry-versions?id=ver_1');
+const acQueued = new AbortController();
+const pCancelledBeforeSend = pagesRequest('/api/facets?type=feat', {{signal: acQueued.signal}});
+await flush();
+pagesWarm(); // Must defer while queue & active are non-empty
+assert.equal(w.posted.length, 2); // Still waiting on active pFirst!
+
+// Abort queued job before dispatch
+acQueued.abort(new DOMException('stale facet', 'AbortError'));
+await assert.rejects(pCancelledBeforeSend, {{name: 'AbortError'}});
+
+const completeActive = (bodyObj) => {{
+  const reqMsg = w.posted[w.posted.length - 1];
+  const bytes = new TextEncoder().encode(JSON.stringify(bodyObj));
+  w.emit('message', {{data: {{id: reqMsg.id, status: 200, headers: {{'Content-Type': 'application/json'}}, body: bytes}}}});
+  return reqMsg;
+}};
+
+// Finish pFirst -> worker must receive entry-versions (Priority 0) BEFORE entries (Priority 1)!
+completeActive({{step: 1}});
+assert.equal(await pFirst.then(r => r.json()).then(d => d.step), 1);
+assert.equal(w.posted.length, 3);
+assert.equal(w.posted[2].path, '/api/entry-versions?id=ver_1');
+
+completeActive({{step: 2}});
+assert.equal(await pVersions.then(r => r.json()).then(d => d.step), 2);
+assert.equal(w.posted.length, 4);
+assert.equal(w.posted[3].path, '/api/entries?offset=20&limit=20');
+
+completeActive({{step: 3}});
+assert.equal(await pEntriesQueued.then(r => r.json()).then(d => d.step), 3);
+assert.equal(w.posted.length, 5);
+assert.equal(w.posted[4].path, '/api/facets?type=spell');
+
+// Aborted queued facet job must NEVER have been posted to worker
+assert.equal(w.posted.some(m => m.path === '/api/facets?type=feat'), false);
+
+// Finish last job -> deferred warm() now fires
+completeActive({{step: 4}});
+assert.equal(await pFacets.then(r => r.json()).then(d => d.step), 4);
+assert.equal(w.posted.length, 6);
+assert.deepEqual(w.posted[5], {{type: 'warm'}});
+
+// 2. Active abort drops late reply and pumps next queued job; worker error rejects pending & removes abort listeners
+let removedAbort = 0;
+const acActive = new AbortController();
+const origRemove = acActive.signal.removeEventListener.bind(acActive.signal);
+acActive.signal.removeEventListener = (...args) => {{ removedAbort++; return origRemove(...args); }};
+const pActiveAborted = pagesRequest('/api/entries?type=spell', {{signal: acActive.signal}});
+await flush();
+const pFollow = pagesRequest('/api/meta');
+await flush();
+const abortedId = w.posted[6].id;
+acActive.abort(new DOMException('abort active', 'AbortError'));
+await assert.rejects(pActiveAborted, {{name: 'AbortError'}});
+assert.equal(removedAbort, 1);
+
+// Worker replies late to abortedId -> response ignored, next queued job (pFollow) pumped!
+w.emit('message', {{data: {{id: abortedId, status: 200, headers: {{}}, body: new Uint8Array()}}}});
+assert.equal(w.posted.length, 8);
+assert.equal(w.posted[7].path, '/api/meta');
+
+// Worker error while pFollow (with signal) + pTail (with signal) are active/queued -> cleans listeners & rejects both
+const acErr = new AbortController();
+let removedErr = 0;
+const origErrRemove = acErr.signal.removeEventListener.bind(acErr.signal);
+acErr.signal.removeEventListener = (...args) => {{ removedErr++; return origErrRemove(...args); }};
+const pTailErr = pagesRequest('/api/facets?type=creature', {{signal: acErr.signal}});
+await flush();
+w.emit('error', {{message: 'worker crashed'}});
+assert.equal(w.terminated, true);
+await assert.rejects(pFollow, /worker crashed/);
+await assert.rejects(pTailErr, /worker crashed/);
+assert.equal(removedErr, 1);
+resetState();
 """
         proc = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=20)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

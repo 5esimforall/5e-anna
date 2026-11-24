@@ -138,58 +138,74 @@ async function initialize({baseUrl}) {
     };
 }
 
-function send(id, status, headers, body) {
-    self.postMessage({id, status, headers, body}, [body.buffer]);
-}
+function bindPort(port) {
+    function send(id, status, headers, body) {
+        port.postMessage({id, status, headers, body}, [body.buffer]);
+    }
 
-self.addEventListener('message', async ({data}) => {
-    if (!data || typeof data !== 'object') return;
-    if (data.type === 'init') {
-        if (startup) return;
-        startup = initialize(data);
-        try {
-            await startup;
-            self.postMessage({type: 'ready'});
-        } catch (error) {
-            console.error(error);
-            self.postMessage({type: 'error', error: String(error.message ?? error)});
-        }
-        return;
-    }
-    if (data.type === 'warm') {
-        if (!startup) return;
-        try {
-            const {warm} = await startup;
-            warm();
-        } catch (error) {
-            console.error(error);
-        }
-        return;
-    }
-    if (!Object.hasOwn(data, 'id')) return;
-    const {id, path} = data;
-    try {
-        if (!startup) throw new Error('Initialize the Pages worker before sending requests');
-        if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) {
-            send(id, 400, {'Content-Type': 'application/json; charset=utf-8'},
-                new TextEncoder().encode('{"code":"invalid_request_path"}'));
+    port.addEventListener('message', async ({data}) => {
+        if (!data || typeof data !== 'object') return;
+        if (data.type === 'init') {
+            if (!startup) {
+                startup = initialize(data).catch(error => {
+                    startup = null;
+                    throw error;
+                });
+            }
+            try {
+                await startup;
+                port.postMessage({type: 'ready'});
+            } catch (error) {
+                console.error(error);
+                port.postMessage({type: 'error', error: String(error.message ?? error)});
+            }
             return;
         }
-        const {handle} = await startup;
-        const result = handle(path);
-        try {
-            const response = result.toJs({dict_converter: Object.fromEntries, create_pyproxies: false});
-            const [status, headers, body] = response;
-            if (!Number.isInteger(status) || status < 200 || status > 599 || !(body instanceof Uint8Array)) {
-                throw new Error('Invalid response from anna.server.pages.handle');
+        if (data.type === 'warm') {
+            if (!startup) return;
+            try {
+                const {warm} = await startup;
+                warm();
+            } catch (error) {
+                console.error(error);
             }
-            send(id, status, headers, body);
-        } finally {
-            result.destroy();
+            return;
         }
-    } catch (error) {
-        console.error(error);
-        send(id, 500, {'Content-Type': 'application/json; charset=utf-8'},
-            new TextEncoder().encode('{"code":"pages_runtime_error"}'));
-    }
-});
+        if (!Object.hasOwn(data, 'id')) return;
+        const {id, path} = data;
+        try {
+            if (!startup) throw new Error('Initialize the Pages worker before sending requests');
+            if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) {
+                send(id, 400, {'Content-Type': 'application/json; charset=utf-8'},
+                    new TextEncoder().encode('{"code":"invalid_request_path"}'));
+                return;
+            }
+            const {handle} = await startup;
+            const result = handle(path);
+            try {
+                const response = result.toJs({dict_converter: Object.fromEntries, create_pyproxies: false});
+                const [status, headers, body] = response;
+                if (!Number.isInteger(status) || status < 200 || status > 599 || !(body instanceof Uint8Array)) {
+                    throw new Error('Invalid response from anna.server.pages.handle');
+                }
+                send(id, status, headers, body);
+            } finally {
+                result.destroy();
+            }
+        } catch (error) {
+            console.error(error);
+            send(id, 500, {'Content-Type': 'application/json; charset=utf-8'},
+                new TextEncoder().encode('{"code":"pages_runtime_error"}'));
+        }
+    });
+}
+
+if (typeof SharedWorkerGlobalScope !== 'undefined' && self instanceof SharedWorkerGlobalScope) {
+    self.addEventListener('connect', event => {
+        const port = event.ports[0];
+        bindPort(port);
+        port.start();
+    });
+} else {
+    bindPort(self);
+}

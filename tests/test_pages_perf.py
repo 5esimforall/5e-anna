@@ -1941,6 +1941,154 @@ resetState();
         proc = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=20)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
 
+    @unittest.skipUnless(shutil.which('node'), 'Node.js is required to test web/pages.js SharedWorker fallback')
+    def test_pages_js_shared_worker_and_fallback(self):
+        pages_url = (paths.PROJECT / 'web' / 'pages.js').resolve().as_uri()
+        script = f"""
+import assert from 'node:assert/strict';
+import {{ request as pagesRequest, resetState }} from {json.dumps(pages_url)};
+
+const flush = () => new Promise(r => setTimeout(r, 0));
+const sharedWorkers = [];
+const dedicatedWorkers = [];
+
+class MockPort {{
+  constructor() {{
+    this.listeners = new Map();
+    this.posted = [];
+    this.started = false;
+    this.closed = false;
+  }}
+  addEventListener(type, fn) {{
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(fn);
+  }}
+  postMessage(msg) {{ this.posted.push(msg); }}
+  start() {{ this.started = true; }}
+  close() {{ this.closed = true; }}
+  emit(type, payload) {{
+    for (const fn of this.listeners.get(type) || []) fn(payload);
+  }}
+}}
+
+class MockSharedWorker {{
+  constructor(url, options) {{
+    this.url = String(url);
+    this.options = options;
+    this.listeners = new Map();
+    this.port = new MockPort();
+    sharedWorkers.push(this);
+  }}
+  addEventListener(type, fn) {{
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(fn);
+  }}
+  emit(type, payload) {{
+    for (const fn of this.listeners.get(type) || []) fn(payload);
+  }}
+}}
+
+class MockWorker {{
+  constructor(url, options) {{
+    this.url = String(url);
+    this.options = options;
+    this.listeners = new Map();
+    this.posted = [];
+    this.terminated = false;
+    dedicatedWorkers.push(this);
+  }}
+  addEventListener(type, fn) {{
+    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    this.listeners.get(type).add(fn);
+  }}
+  postMessage(msg) {{ this.posted.push(msg); }}
+  terminate() {{ this.terminated = true; }}
+  emit(type, payload) {{
+    for (const fn of this.listeners.get(type) || []) fn(payload);
+  }}
+}}
+
+// 1. Uses SharedWorker when available, starts port, and prioritizes /api/tour + /api/tour-layout as PRIORITY_HIGH
+globalThis.SharedWorker = MockSharedWorker;
+globalThis.Worker = MockWorker;
+resetState();
+
+const pTour = pagesRequest('/api/tour?at=');
+await flush();
+assert.equal(sharedWorkers.length, 1);
+assert.equal(dedicatedWorkers.length, 0);
+const sw = sharedWorkers[0];
+assert.equal(sw.options.type, 'module');
+assert.ok(sw.options.name.startsWith('anna-pages:'));
+assert.equal(sw.port.started, true);
+assert.equal(sw.port.posted[0].type, 'init');
+assert.equal(sw.port.posted[1].path, '/api/tour?at=');
+
+const pFacets = pagesRequest('/api/facets?type=spell');
+const pEntries = pagesRequest('/api/entries?offset=0&limit=150');
+const pTourLayout = pagesRequest('/api/tour-layout?at=create');
+await flush();
+
+const replyPort = (port, bodyObj) => {{
+  const reqMsg = port.posted[port.posted.length - 1];
+  const bytes = new TextEncoder().encode(JSON.stringify(bodyObj));
+  port.emit('message', {{data: {{id: reqMsg.id, status: 200, headers: {{'Content-Type': 'application/json'}}, body: bytes}}}});
+}};
+sw.port.emit('message', {{data: {{type: 'ready'}}}});
+replyPort(sw.port, {{ok: 'tour'}});
+assert.deepEqual(await (await pTour).json(), {{ok: 'tour'}});
+// /api/tour-layout is PRIORITY_HIGH, so it runs BEFORE /api/entries and /api/facets
+assert.equal(sw.port.posted[2].path, '/api/tour-layout?at=create');
+replyPort(sw.port, {{ok: 'layout'}});
+assert.deepEqual(await (await pTourLayout).json(), {{ok: 'layout'}});
+assert.equal(sw.port.posted[3].path, '/api/entries?offset=0&limit=150');
+replyPort(sw.port, {{ok: 'entries'}});
+assert.deepEqual(await (await pEntries).json(), {{ok: 'entries'}});
+assert.equal(sw.port.posted[4].path, '/api/facets?type=spell');
+replyPort(sw.port, {{ok: 'facets'}});
+assert.deepEqual(await (await pFacets).json(), {{ok: 'facets'}});
+
+// 2. SharedWorker constructor failure transparently falls back to dedicated Worker
+resetState();
+globalThis.SharedWorker = class {{ constructor() {{ throw new Error('no module SharedWorker'); }} }};
+const pCtorFallback = pagesRequest('/api/tour?at=create');
+await flush();
+assert.equal(dedicatedWorkers.length, 1);
+const dw1 = dedicatedWorkers[0];
+const dw1Msg = dw1.posted[1];
+dw1.emit('message', {{data: {{id: dw1Msg.id, status: 200, headers: {{}}, body: new TextEncoder().encode('{{"fallback":1}}')}}}});
+assert.deepEqual(await (await pCtorFallback).json(), {{fallback: 1}});
+
+// 3. Async SharedWorker error before ready closes port, disables SharedWorker, and retries on dedicated Worker
+resetState();
+globalThis.SharedWorker = MockSharedWorker;
+const swCountBefore = sharedWorkers.length;
+const dwCountBefore = dedicatedWorkers.length;
+const pAsyncFallback = pagesRequest('/api/tour?at=spells');
+await flush();
+assert.equal(sharedWorkers.length, swCountBefore + 1);
+const sw2 = sharedWorkers[sharedWorkers.length - 1];
+sw2.emit('error', {{message: 'shared load error'}});
+await flush();
+assert.equal(sw2.port.closed, true);
+assert.equal(dedicatedWorkers.length, dwCountBefore + 1);
+const dw2 = dedicatedWorkers[dedicatedWorkers.length - 1];
+assert.equal(dw2.posted[1].path, '/api/tour?at=spells');
+dw2.emit('message', {{data: {{id: dw2.posted[1].id, status: 200, headers: {{}}, body: new TextEncoder().encode('{{"fallback":2}}')}}}});
+assert.deepEqual(await (await pAsyncFallback).json(), {{fallback: 2}});
+
+// Subsequent requests stay on dedicated Worker without recreating SharedWorker
+const pNext = pagesRequest('/api/tour?at=classes');
+await flush();
+assert.equal(sharedWorkers.length, swCountBefore + 1);
+assert.equal(dw2.posted[2].path, '/api/tour?at=classes');
+dw2.emit('message', {{data: {{id: dw2.posted[2].id, status: 200, headers: {{}}, body: new TextEncoder().encode('{{"fallback":3}}')}}}});
+assert.deepEqual(await (await pNext).json(), {{fallback: 3}});
+resetState();
+"""
+        proc = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

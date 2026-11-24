@@ -1,7 +1,7 @@
 /* GitHub Pages transport for the server's GET routes. One worker serves requests for this document. */
 const siteBase = new URL('.', import.meta.url);
 let worker, nextId = 0, entriesLoader;
-let active = null, warmRequested = false, warmSent = false;
+let active = null, warmRequested = false, warmSent = false, sharedWorkerDisabled = false;
 const queue = [];
 
 const PRIORITY_HIGH = 0;
@@ -12,7 +12,8 @@ function priorityOf(path) {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return PRIORITY_HIGH;
   const pathname = new URL(path, 'https://anna.invalid').pathname;
   if (pathname === '/api/entry-versions' || pathname === '/api/meta' || pathname === '/api/library' ||
-      pathname === '/api/entry' || pathname === '/api/entry-layout') return PRIORITY_HIGH;
+      pathname === '/api/entry' || pathname === '/api/entry-layout' ||
+      pathname === '/api/tour' || pathname === '/api/tour-layout') return PRIORITY_HIGH;
   if (pathname === '/api/facets') return PRIORITY_LOW;
   return PRIORITY_MEDIUM;
 }
@@ -29,12 +30,57 @@ async function entryBundleRequest(path, signal) {
 
 function connect() {
   if (worker) return worker;
-  const current = new Worker(new URL('pages-worker.js', siteBase), {type:'module'});
-  worker = current;
+  const workerURL = new URL('pages-worker.js', siteBase);
+  let handle;
+  if (!sharedWorkerDisabled && typeof SharedWorker === 'function') {
+    try {
+      const shared = new SharedWorker(workerURL, {type:'module', name:'anna-pages:' + siteBase.pathname});
+      const port = shared.port;
+      handle = {
+        kind: 'shared',
+        ready: false,
+        post: msg => port.postMessage(msg),
+        close: () => { try { port.close?.(); } catch {} },
+      };
+      shared.addEventListener('error', event => fail(event.message));
+      port.addEventListener('messageerror', () => fail());
+      port.addEventListener('message', onMessage);
+      port.start?.();
+    } catch {
+      sharedWorkerDisabled = true;
+      handle = null;
+    }
+  }
+  if (!handle) {
+    const dedicated = new Worker(workerURL, {type:'module'});
+    handle = {
+      kind: 'dedicated',
+      ready: false,
+      post: msg => dedicated.postMessage(msg),
+      close: () => dedicated.terminate(),
+    };
+    dedicated.addEventListener('error', event => fail(event.message));
+    dedicated.addEventListener('messageerror', () => fail());
+    dedicated.addEventListener('message', onMessage);
+  }
+  worker = handle;
+
   function fail(message) {
-    if (worker !== current) return;
+    if (worker !== handle) return;
     worker = undefined;
-    current.terminate();
+    handle.close();
+    if (handle.kind === 'shared' && !handle.ready) {
+      sharedWorkerDisabled = true;
+      const activeJob = active;
+      active = null;
+      if (activeJob && !activeJob.aborted) queue.unshift(activeJob);
+      if (warmSent) {
+        warmSent = false;
+        warmRequested = true;
+      }
+      pump();
+      return;
+    }
     const error = new Error(message || 'The Pages worker failed.');
     const activeJob = active;
     active = null;
@@ -48,11 +94,12 @@ function connect() {
     warmRequested = false;
     warmSent = false;
   }
-  current.addEventListener('error', event => fail(event.message));
-  current.addEventListener('messageerror', () => fail());
-  current.addEventListener('message', ({data}) => {
-    if (worker !== current) return;
+
+  function onMessage({data}) {
+    if (worker !== handle || !data || typeof data !== 'object') return;
+    if (data.type === 'ready') { handle.ready = true; return; }
     if (data.type === 'error') { fail(data.error); return; }
+    handle.ready = true;
     if (!active || data.id !== active.id) return;
     const currentJob = active;
     active = null;
@@ -66,9 +113,10 @@ function connect() {
       }
     }
     pump();
-  });
-  current.postMessage({type:'init', baseUrl:siteBase.href});
-  return current;
+  }
+
+  handle.post({type:'init', baseUrl:siteBase.href});
+  return handle;
 }
 
 function takeNext() {
@@ -86,7 +134,7 @@ function pump() {
   if (job) {
     active = job;
     try {
-      connect().postMessage({id: job.id, path: job.path});
+      connect().post({id: job.id, path: job.path});
     } catch (error) {
       active = null;
       job.cleanup?.();
@@ -98,7 +146,7 @@ function pump() {
   if (warmRequested && !warmSent) {
     warmSent = true;
     warmRequested = false;
-    connect().postMessage({type:'warm'});
+    connect().post({type:'warm'});
   }
 }
 
@@ -106,7 +154,7 @@ export function warm() {
   if (warmSent) return;
   if (!active && !queue.length) {
     warmSent = true;
-    connect().postMessage({type:'warm'});
+    connect().post({type:'warm'});
   } else {
     warmRequested = true;
   }
@@ -137,12 +185,13 @@ export async function request(path, {signal} = {}) {
 }
 
 export function resetState() {
-  if (worker) worker.terminate();
+  if (worker) worker.close();
   worker = undefined;
   nextId = 0;
   entriesLoader = undefined;
   active = null;
   warmRequested = false;
   warmSent = false;
+  sharedWorkerDisabled = false;
   queue.length = 0;
 }

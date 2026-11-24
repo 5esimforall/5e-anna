@@ -237,7 +237,9 @@ class BrowseCorpusTests(unittest.TestCase):
         self.assertEqual(browse.schema_for(['equipment','magic_item'])['kinds'],['generic','equipment','item'])
         rows=query(self.db,{'type':['equipment','magic_item'],'limit':['40']})['rows']
         gear=[r for r in rows if r['type']=='equipment']
-        self.assertTrue(gear);self.assertTrue(all(r['fields'].get('price') for r in gear))
+        self.assertTrue(gear)
+        self.assertTrue(any(r['fields'].get('price') and r['fields'].get('weight') for r in gear))
+        self.assertTrue(all(r['fields'].get('price') or r['fields'].get('weight') or r['fields'].get('ac') for r in gear))
         self.assertEqual(rows[0]['type'],'equipment')
         # Its leading facets are the ones most of its entries can answer.
         self.assertEqual([g['key'] for g in facets(self.db,{'type':['equipment','magic_item']})['groups'] if g['key'].startswith('f_')][:2],['f_rarity','f_item_type'])

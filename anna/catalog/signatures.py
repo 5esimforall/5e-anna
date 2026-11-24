@@ -189,6 +189,17 @@ TRAP_DESCRIPTOR_RE = re.compile(r'(?:机械|魔法|简易|复合|致命|妨碍)�
 VEHICLE_CONTEXT_RE = re.compile(r'载具|船舶|战争机器|魔法船')
 VEHICLE_META_RE = re.compile(r'(?m)^\s*(?:大型|巨型|超巨型)\s*(?:载具|车辆|物件|物体|运载工具)')
 VEHICLE_COMPONENT_HEADING_RE = re.compile(r'^(?:操纵|移动|动作|武器|船壳|容量|乘员数量|载货量)')
+TOOL_PRICE_RE = re.compile(r'\s*[（(]\s*(\d[\d,]*\s*[CGSEP]P|Varies)\s*[）)]\s*$', re.I)
+TOOL_ABILITY_RE = re.compile(r'(?<![\u3400-\u9fffA-Za-z])属性\s*[:：]\s*(力量|敏捷|体质|智力|感知|魅力)')
+TOOL_WEIGHT_RE = re.compile(
+    r'(?:(?<![\u3400-\u9fffA-Za-z])|(?<=力量|敏捷|体质|智力|感知|魅力))重量\s*[:：]\s*([^\n]{1,30})'
+)
+TOOL_UTILIZE_RE = re.compile(r'(?<![\u3400-\u9fffA-Za-z])操作\s*[:：]')
+SIEGE_CONTEXT_RE = re.compile(r'攻城装备|攻城武器')
+SIEGE_TITLE_SUFFIX_RE = re.compile(r'\s+(?:中型|大型|巨型|超巨型)物件$')
+SIEGE_OBJECT_RE = re.compile(r'^\s*(?:中型|大型|巨型|超巨型)物件(?:\s|$)')
+DISEASE_DESCRIPTOR_RE = re.compile(r'^\s*魔法疫病(?:\s|$)')
+DISEASE_LINE_RE = re.compile(r'^\s*魔法疫病[ \t]*(?:\n|$)')
 
 # Standalone untagged block signatures used to promote untagged Word/prose lines into candidates.
 _STANDALONE_SIZES = '|'.join((*CREATURE_SIZES, '大形', '无与伦比的'))
@@ -214,6 +225,7 @@ STANDALONE_SPELL_CONFIRM_RE = re.compile(
 STANDALONE_POISON_RE = re.compile(
     r'(?m)^[ \t]*([^\n。]{1,130}[（(](?:' + '|'.join(POISON_MODES) + r')[）)])。'
 )
+STANDALONE_HAUNTED_TRAP_RE = re.compile(r'(?m)^[ \t]*灵异加成\s*[+＋]\s*\d+[^\n]*$')
 QUICKREF_ATTR_KINDS = {'item': 'magic_item', 'monster': 'creature', 'spell': 'spell'}
 
 
@@ -221,11 +233,18 @@ def matches_facility_descriptor(after_title: str) -> bool:
     return bool(FACILITY_DESCRIPTOR_RE.match(after_title))
 
 
-def matches_vehicle_layout(name: str, after_title: str, intro: str, context: str) -> bool:
-    if VEHICLE_COMPONENT_HEADING_RE.match(name):
+def matches_vehicle_layout(
+    name: str,
+    after_title: str,
+    intro: str,
+    context: str,
+    summary_text: str | None = None,
+) -> bool:
+    if VEHICLE_COMPONENT_HEADING_RE.match(name) or re.search(r'(?:概要|Summary)\s*$', name, re.I):
         return False
+    summary = summary_text if summary_text is not None else intro
     ship_summary = bool(
-        re.search(r'载货量\s*Cargo\s*[:：]', intro) and re.search(r'船员\s*Crew\s*[:：]', intro)
+        re.search(r'载货量(?:\s*Cargo)?\s*[:：]', summary) and re.search(r'船员(?:\s*Crew)?\s*[:：]', summary)
     )
     if ship_summary:
         return True
@@ -236,6 +255,23 @@ def matches_vehicle_layout(name: str, after_title: str, intro: str, context: str
         re.search(r'(?:生物容量|生物载量|乘员数量|乘员容量)\s*(?:[A-Za-z ]+)?[:：]', intro[:900])
     )
     return vehicle_meta or vehicle_capacity
+
+
+def matches_tool_card(after_title: str) -> bool:
+    head = after_title[:450]
+    return bool(TOOL_ABILITY_RE.search(head) and TOOL_WEIGHT_RE.search(head) and TOOL_UTILIZE_RE.search(head))
+
+
+def matches_siege_layout(name: str, after_title: str, intro: str, context: str) -> bool:
+    return bool(
+        SIEGE_CONTEXT_RE.search(context)
+        and (SIEGE_TITLE_SUFFIX_RE.search(name) or SIEGE_OBJECT_RE.match(after_title))
+        and STAT_BLOCK_RE.search(intro[:350])
+    )
+
+
+def matches_disease_descriptor(after_title: str, *, compacted: bool = False) -> bool:
+    return bool((DISEASE_DESCRIPTOR_RE if compacted else DISEASE_LINE_RE).match(after_title))
 
 
 def matches_hazard_descriptor(after_title: str) -> bool:
@@ -280,8 +316,12 @@ def matches_poison_descriptor(descriptor: str) -> bool:
 
 
 def clean_entry_name(name: str, kind: str) -> str:
-    """Strip type labels printed as a trailing suffix of the heading when needed."""
-    return TRAP_TITLE_SUFFIX_RE.sub('', name) if kind == 'trap' else name
+    """Strip type labels or price suffixes printed at the end of a heading when needed."""
+    if kind == 'trap':
+        return TRAP_TITLE_SUFFIX_RE.sub('', name)
+    if kind == 'equipment':
+        return TOOL_PRICE_RE.sub('', SIEGE_TITLE_SUFFIX_RE.sub('', name))
+    return name
 
 
 # ---------------------------------------------------------------------------------------------------
@@ -334,6 +374,7 @@ ALLOWED_LABELED_FIELDS: dict[str, set[str]] = {
     'facility': set(),
     'section': set(),
     'lore': set(),
+    'equipment': {'ac', 'hp'},
     'magic_item': set(),
     'ability': set(),
     'skill': set(),
@@ -474,5 +515,15 @@ def extract_entry_fields(text: str, kind: str, title_offset: int) -> dict[str, l
             type_val = f'{t1}/{t2}' if t2 and t2 != t1 else t1
             fields['size'] = [(size_val, m.start(), m.end())]
             fields['creature_type'] = [(type_val, m.start(), m.end())]
+    elif kind == 'equipment':
+        price = TOOL_PRICE_RE.search(text[:title_offset])
+        if price:
+            fields['price'] = [(price[1], price.start(1), price.end(1))]
+        weight = TOOL_WEIGHT_RE.search(raw_descriptor[:450])
+        if weight:
+            fields['weight'] = [(compact(weight[1]), title_offset + weight.start(), title_offset + weight.end())]
+        ability = TOOL_ABILITY_RE.search(raw_descriptor[:250])
+        if ability:
+            fields['ability'] = [(ability[1], title_offset + ability.start(), title_offset + ability.end())]
 
     return fields

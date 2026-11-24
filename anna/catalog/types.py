@@ -16,14 +16,17 @@ from anna.catalog.signatures import (
     class_structure,
     document_structure_name,
     matches_background_fields,
+    matches_disease_descriptor,
     matches_facility_descriptor,
     matches_feat_descriptor,
     matches_hazard_descriptor,
     matches_item_descriptor,
     matches_poison_descriptor,
+    matches_siege_layout,
     matches_species_fields,
     matches_spell_fields,
     matches_stat_fields,
+    matches_tool_card,
     matches_trap_descriptor,
     matches_vehicle_layout,
     printed_type,
@@ -49,6 +52,9 @@ RULE_EVIDENCE = {
     'vehicle_signature': PRINTED,
     'hazard_signature': PRINTED,
     'trap_signature': PRINTED,
+    'tool_signature': PRINTED,
+    'siege_signature': PRINTED,
+    'disease_descriptor': PRINTED,
     'equipment_table': PRINTED,
     'vehicle_table': PRINTED,
     'animal_offer_table': PRINTED,
@@ -226,7 +232,8 @@ OPTION_CATALOG_RE = re.compile(
 )
 POISON_PROCEDURE_RE = re.compile(r'^(?:毒药的(?:制作|提取)|采购毒药|制作毒药|提取毒药)')
 RULES_SECTION_RE = re.compile(
-    r'^(?:子职|子职业|特色设施详述|疾病范例|毒药范例|毒药的(?:制作|提取)|毒药|疾病|专长与背景)(?:\s*[A-Za-z].*)?$'
+    r'^(?:子职|子职业|特色设施详述|疾病范例|毒药范例|毒药的(?:制作|提取)|毒药|疾病|'
+    r'诅咒与魔法疫病|魔法疫病|范例疫病|专长与背景)(?:\s*[A-Za-z].*)?$'
 )
 COMBAT_RULES_PATH_RE = re.compile(r'术语|进行游戏|/战斗/')
 
@@ -252,7 +259,7 @@ def page_introduction(p: Probe):
 
 @recognizer('named_table_structure')
 def table_caption(p: Probe):
-    if p.c.method == 'table_caption':
+    if p.c.method == 'table_caption' and not p.prints_layout:
         return 'lore'
 
 
@@ -308,9 +315,13 @@ def statblock_part_heading(p: Probe):
 
 PRINTED_SIGNATURE_RULES: tuple[tuple[str, str, Callable[[Probe], bool]], ...] = (
     ('facility_signature', 'facility', lambda p: matches_facility_descriptor(p.after_title)),
-    ('vehicle_signature', 'vehicle', lambda p: matches_vehicle_layout(p.name, p.after_title, p.intro, p.context)),
+    ('vehicle_signature', 'vehicle', lambda p: matches_vehicle_layout(
+        p.name, p.after_title, p.intro, p.context, p.full[:1800] if p.primary else p.intro,
+    )),
     ('hazard_signature', 'hazard', lambda p: matches_hazard_descriptor(p.after_title)),
     ('trap_signature', 'trap', lambda p: matches_trap_descriptor(p.name, p.after_title)),
+    ('tool_signature', 'equipment', lambda p: not p.primary and matches_tool_card(p.after_title)),
+    ('siege_signature', 'equipment', lambda p: not p.primary and matches_siege_layout(p.name, p.after_title, p.intro, p.context)),
     ('spell_fields', 'spell', lambda p: matches_spell_fields(p.intro)),
     ('stat_fields', 'creature', lambda p: matches_stat_fields(p.intro)),
     ('item_descriptor', 'magic_item', lambda p: matches_item_descriptor(p.descriptor)),
@@ -319,6 +330,7 @@ PRINTED_SIGNATURE_RULES: tuple[tuple[str, str, Callable[[Probe], bool]], ...] = 
     ('background_fields', 'background', lambda p: matches_background_fields(p.intro, p.primary, p.context)),
     ('species_fields', 'species', lambda p: matches_species_fields(p.intro, p.primary, p.context)),
     ('poison_descriptor', 'poison', lambda p: matches_poison_descriptor(p.descriptor)),
+    ('disease_descriptor', 'disease', lambda p: matches_disease_descriptor(p.after_title)),
 )
 
 for _rule, _kind, _predicate in PRINTED_SIGNATURE_RULES:
@@ -468,7 +480,8 @@ CONTEXT_RULES: tuple[ContextRule, ...] = (
         predicate=lambda p: bool(p.c.fields.get('core_rule_chapter')) and p.c.method in STRUCTURAL_METHODS,
     ),
     ContextRule('rule', primary=True, path=r'术语|/状态\.|/状态/|进行游戏|/战斗/|属性值应用'),
-    ContextRule('subsystem', short_name=True, context=r'幕间|停工|虔诚|声望|据点|公司职位|变身'),
+    ContextRule('subsystem', short_name=True, context=r'幕间|停工|休整期|修整期|虔诚|声望|据点|公司职位|变身|恐惧与精神压力|恐惧与压力|心慌与惊恐', predicate=lambda p: not p.c.fields.get('table_span')),
+    ContextRule('subsystem', short_name=True, path=r'/(?:疯狂|伤患|伤残)\.(?:htm|html)$', predicate=lambda p: not p.c.fields.get('table_span')),
     ContextRule('lore', primary=True, context=r'神祇|神系|诸神|派系|地理|位面|宇宙|城镇|领域|冒险|战役'),
 )
 
@@ -520,6 +533,18 @@ def hazard_member(name: str, body: str) -> bool:
     return len(name) < 80 and not re.search(r'[。！？；]', name) and bool(RULES_MECHANICS.search(body[:6000]))
 
 
+def action_member(name: str, body: str) -> bool:
+    """A bilingual action option title inside a 2014 action catalog section."""
+    zh, en = split_name(name)
+    return bool(zh and en and len(name) < 80)
+
+
+def tool_proficiency_member(name: str, body: str) -> bool:
+    """A bilingual tool proficiency entry whose body states sample DCs."""
+    zh, en = split_name(name)
+    return bool(zh and en and len(name) < 80 and 'DC' in body)
+
+
 @dataclass(frozen=True)
 class Topic:
     """A catalog that types the definitions it holds at TOC, page, or heading scope."""
@@ -532,6 +557,8 @@ class Topic:
 TOPICS = (
     Topic('condition', re.compile(r'状态'), re.compile(r'状态'), condition_member),
     Topic('hazard', re.compile(r'(?:野外|地城|地下城)?危害物(?:实例)?|环境(?:灾害|危害|影响)'), re.compile(r'危害|灾害'), hazard_member),
+    Topic('action', re.compile(r'战斗动作|动作选用项'), re.compile(r'动作|边栏'), action_member),
+    Topic('rule', re.compile(r'工具熟练'), re.compile(r'工具熟练|工具详述'), tool_proficiency_member),
 )
 NO_TOC_PLACE = {'above': [], 'lists_pages': False}
 

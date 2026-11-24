@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 from anna.source.html import Document,resolve_link,split_name,key
-from anna.catalog.frames import candidates,extract_tables,quickref_rows
+from anna.catalog.frames import candidates,extract_page_entries,extract_tables,quickref_rows
 from anna.catalog.signatures import extract_entry_fields,labeled_fields,printed_type
 from anna.catalog.types import hazard_member,NO_TOC_PLACE
 from anna.catalog.build import Build,parse_one,normalize_value,observation_fields,resolve_entry_field
@@ -260,13 +260,74 @@ class StructureTests(unittest.TestCase):
         ]:
             self.assertEqual(labeled_fields(unchanged,'spell')['duration'][0][0],expected)
 
+    def test_tool_siege_disease_haunted_trap_and_airship_signatures(self):
+        tools_html=(
+            '<h2>工匠工具 Artisan\'s Tools</h2><p>说明。</p>'
+            '<p><b><font color="#800000">炼金工具 Alchemist\'s Supplies (50GP)</font></b>'
+            '<table><tr><td><b>属性：</b>智力</td><td><b>重量：</b>8磅</td></tr>'
+            '<tr><td colspan="2"><b>操作：</b>辨析物质（DC15）</td></tr></table></p>'
+            '<p><b>书法工具 Calligrapher\'s Supplies (10GP)</b></p>'
+            '<table><tr><td><b>属性：</b>敏捷</td><td><b>重量：</b>5磅</td></tr>'
+            '<tr><td colspan="2"><b>操作：</b>伪造防伪（DC15）</td></tr></table>'
+        )
+        d=Document('topics/装备/工匠工具.htm',tools_html)
+        ents,_,_=extract_page_entries(d,[],'装备',NO_TOC_PLACE,False)
+        d.close()
+        tools=[e for e in ents if e['type']=='equipment']
+        self.assertEqual([(e['name'],e['classification_rule']) for e in tools],
+                         [('炼金工具 Alchemist\'s Supplies','tool_signature'),('书法工具 Calligrapher\'s Supplies','tool_signature')])
+        self.assertEqual(tools[0]['fields']['price'][0][0],'50GP')
+        self.assertEqual(tools[0]['fields']['weight'][0][0],'8磅')
+        self.assertEqual(tools[0]['fields']['ability'][0][0],'智力')
+        self.assertEqual(tools[1]['fields']['price'][0][0],'10GP')
+
+        siege_html=(
+            '<h2>攻城装备 Siege Equipment</h2><p>引言。</p>'
+            '<h4>加农炮 Cannon<br>大型物件</h4><p>护甲等级：19<br>生命值：75</p>'
+            '<h4>闪击加农 Lightning Cannon</h4><p>中型物件<br>AC：19<br>HP：30</p>'
+        )
+        d=Document('topics/工具箱/攻城装备.htm',siege_html)
+        ents,_,_=extract_page_entries(d,[],'攻城装备',NO_TOC_PLACE,False)
+        d.close()
+        siege=[e for e in ents if e['type']=='equipment']
+        self.assertEqual([e['name'] for e in siege],['加农炮 Cannon','闪击加农 Lightning Cannon'])
+        self.assertTrue(all(e['classification_rule']=='siege_signature' for e in siege))
+        self.assertEqual((siege[0]['fields']['ac'][0][0],siege[0]['fields']['hp'][0][0]),('19','75'))
+        self.assertEqual((siege[1]['fields']['ac'][0][0],siege[1]['fields']['hp'][0][0]),('19','30'))
+
+        misc_html=(
+            '<h3>范例疫病 Example Contagions</h3><p>这些疫病作为示例。</p>'
+            '<p><b>疯笑病Cackle Fever</b><br><em>魔法疫病</em><br>染疫生物获得1级力竭。</p>'
+            '<h3>范例灵异陷阱 Sample Haunted Traps</h3>'
+            '<p><b>死亡之舞Danse Macabre</b></p><p>灵异加成 +4</p><p>陷入奥图迷舞般的影响。</p>'
+        )
+        d=Document('topics/测试书/混合.htm',misc_html)
+        ents,_,_=extract_page_entries(d,[],'测试',NO_TOC_PLACE,False)
+        d.close()
+        by_name={e['name']:e for e in ents}
+        self.assertEqual((by_name['疯笑病Cackle Fever']['type'],by_name['疯笑病Cackle Fever']['classification_rule']),('disease','disease_descriptor'))
+        self.assertEqual((by_name['死亡之舞Danse Macabre']['type'],by_name['死亡之舞Danse Macabre']['classification_rule']),('trap','trap_signature'))
+
+        airship_html=(
+            '<h2>挺进者飞艇 Strider Airship</h2><p>概要说明。</p>'
+            '<p><b>挺进者飞艇概要Strider Airship Summary</b></p>'
+            '<table><tr><td>船员：6</td><td>载货量：1吨</td></tr><tr><td>AC：16</td><td>HP：350</td></tr></table>'
+        )
+        d=Document('topics/测试书/挺进者飞艇.htm',airship_html)
+        air_ents,_,_=extract_page_entries(d,[],'挺进者飞艇',NO_TOC_PLACE,False)
+        d.close()
+        air_by_name={e['name']:e for e in air_ents}
+        self.assertEqual((air_by_name['挺进者飞艇 Strider Airship']['type'],air_by_name['挺进者飞艇 Strider Airship']['classification_rule']),('vehicle','vehicle_signature'))
+        self.assertEqual(air_by_name['挺进者飞艇概要Strider Airship Summary']['type'],'lore')
+
 class CorpusRegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.registry=SourceRegistry(WEB)
 
     def parse(self,rel,toc=True):
         path='topics/'+rel
-        return parse_one((str(WEB),path,[],rel,self.registry.toc_place(path) if toc else NO_TOC_PLACE,False))
+        ctx=self.registry.context(path) if toc else rel
+        return parse_one((str(WEB),path,[],ctx,self.registry.toc_place(path) if toc else NO_TOC_PLACE,False))
 
     def test_2014_feats(self):
         r=self.parse('玩家手册/自定义选项/专长.html')
@@ -506,6 +567,67 @@ class CorpusRegressionTests(unittest.TestCase):
             sp_page=self.parse(rel)
             sp=next(c for c in sp_page['candidates'] if c['name']==spell_name)
             self.assertEqual(sp['fields']['duration'][0][0],expected_dur,rel)
+
+    def test_tools_siege_contagions_haunted_traps_actions_and_subsystems(self):
+        artisan=self.parse('玩家手册2024/装备/工匠工具.htm')
+        a_tools=[c for c in artisan['candidates'] if c['type']=='equipment']
+        self.assertEqual(len(a_tools),17,[c['name'] for c in a_tools])
+        calligraphy=next(c for c in a_tools if c['name']=="书法工具 Calligrapher's Supplies")
+        self.assertEqual((calligraphy['fields']['price'][0][0],calligraphy['fields']['weight'][0][0],calligraphy['fields']['ability'][0][0]),('10GP','5磅','敏捷'))
+        self.assertEqual(sum(c['type']=='equipment' for c in self.parse('玩家手册2024/装备/其他工具.htm')['candidates']),8)
+        self.assertEqual(sum(c['type']=='equipment' for c in self.parse('第三方/火炬光下的克苏鲁/第二章/新工具.htm')['candidates']),2)
+
+        for rel,count in [
+            ('城主指南2024/3.地下城主工具箱/攻城装备.htm',10),
+            ('城主指南/规则之主/运作游戏/攻城装备.html',7),
+            ('龙枪：龙后之影/装备和魔法物品/侏儒攻城武器.htm',2),
+        ]:
+            r=self.parse(rel)
+            siege=[c for c in r['candidates'] if c['type']=='equipment']
+            self.assertEqual(len(siege),count,rel)
+            self.assertFalse(any(c['name'].endswith('物件') for c in siege),rel)
+        self.assertTrue(any(c['name']=='闪击加农Lightning Cannon' and c['type']=='equipment' for c in self.parse('城主指南2024/3.地下城主工具箱/攻城装备.htm')['candidates']))
+
+        contagions=self.parse('城主指南2024/3.地下城主工具箱/诅咒与魔法疫病.htm')
+        diseases=[c['name'] for c in contagions['candidates'] if c['type']=='disease']
+        self.assertEqual(diseases,['疯笑病Cackle Fever','下水道瘟疫Sewer Plague','腐眼症Sight Rot'])
+
+        haunted=self.parse('范·里希腾的鸦阁魔域指南/恐怖冒险/灵异陷阱.htm')
+        self.assertEqual([c['name'] for c in haunted['candidates'] if c['type']=='trap'],
+                         ['死亡之舞Danse Macabre','无面恶意Faceless Malice','深渊天空之国邪神像Icon Of The Lower Aerial Kingdoms','恐怖记忆Morbid Memory'])
+
+        for rel in ['艾伯伦：奇械锻炉/第七章/挺进者飞艇.htm','艾伯伦：奇械锻炉/第七章/黎兰达天梭.htm','艾伯伦：奇械锻炉/第七章/黎兰达巡天舰.htm']:
+            r=self.parse(rel)
+            self.assertEqual(sum(c['type']=='vehicle' for c in r['candidates']),1,rel)
+            self.assertFalse(any(c['type']=='vehicle' and 'Summary' in c['name'] for c in r['candidates']),rel)
+
+        phb_actions=self.parse('玩家手册/战斗/战斗动作.htm')
+        self.assertEqual(sum(c['type']=='action' for c in phb_actions['candidates']),10)
+        self.assertFalse(any(c['type']=='action' and '边栏' in c['name'] for c in phb_actions['candidates']))
+        dmg_actions=self.parse('城主指南/规则之主/城主工坊/动作选用项.htm')
+        self.assertEqual(dmg_actions['candidates'][0]['type'],'rule')
+        self.assertEqual(sum(c['type']=='action' for c in dmg_actions['candidates']),6)
+
+        for rel in ['珊娜萨的万事指南/地下城主工具/工具/炼金工具.htm','珊娜萨的万事指南/地下城主工具/工具/水陆载具.htm']:
+            self.assertEqual((self.parse(rel)['candidates'][0]['type'],self.parse(rel)['candidates'][0]['classification_rule']),('rule','topic_context'),rel)
+            self.assertEqual(self.parse(rel,toc=False)['candidates'][0]['type'],'section',rel)
+
+        for rel in [
+            '珊娜萨的万事指南/地下城主工具/范例休整期活动/角斗.html',
+            '玩家手册/冒险/训练.htm',
+            '艾奎兹玄有限责任公司/发展公司/休整期/团建.htm',
+            '城主指南/规则之主/运作游戏/疯狂.html',
+            '城主指南/规则之主/城主工坊/伤患.htm',
+            '城主指南2024/3.地下城主工具箱/恐惧与精神压力.htm',
+            '范·里希腾的鸦阁魔域指南/恐怖冒险/恐惧与压力.htm',
+        ]:
+            self.assertTrue(any(c['type']=='subsystem' for c in self.parse(rel)['candidates']),rel)
+        carousing=self.parse('城主指南/冒险之主/之余/休整期活动/狂欢.htm')['candidates']
+        self.assertEqual(carousing[0]['type'],'subsystem')
+        table_backed=[c for c in carousing if c.get('table_span')]
+        self.assertTrue(table_backed)
+        self.assertTrue(all(c['type']=='lore' for c in table_backed))
+        self.assertFalse(any(c['type']=='subsystem' for c in self.parse('拉尼卡公会长指南/生物/疯狂君父.htm')['candidates']))
 
     def test_comments_excluded(self):
         d=Document('topics/test.htm','<!--EndFragment--><h2>标题 Title</h2><p>正文</p>')

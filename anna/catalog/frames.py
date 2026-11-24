@@ -12,6 +12,7 @@ from anna.catalog.signatures import (
     FIELD_TITLE,
     QUICKREF_ATTR_KINDS,
     STANDALONE_CREATURE_META_RE,
+    STANDALONE_HAUNTED_TRAP_RE,
     STANDALONE_ITEM_META_RE,
     STANDALONE_POISON_RE,
     STANDALONE_SPELL_CONFIRM_RE,
@@ -21,6 +22,7 @@ from anna.catalog.signatures import (
     class_structure,
     clean_entry_name,
     extract_entry_fields,
+    matches_disease_descriptor,
     matches_feat_descriptor,
     skill_notation,
 )
@@ -342,10 +344,10 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
             )
         )
 
-    # 1. Structural headings and feat-descriptor bold openings.
+    # 1. Structural headings and feat/disease-descriptor bold openings.
     for block in doc.element_headings():
         if block.method == 'opening_bold':
-            if matches_feat_descriptor(block.tail):
+            if matches_feat_descriptor(block.tail) or matches_disease_descriptor(block.tail, compacted=True):
                 add(block.tag, block.text, rank=4, method='descriptor_heading', span=(block.start, block.end))
         else:
             add(block.tag, block.text, rank=block.rank, method=block.method, anchor=block.anchor, span=(block.start, block.end))
@@ -429,6 +431,15 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
         title = compact(m[1])
         if re.search('[A-Za-z]', title):
             items.append(Candidate(m.start(1), m.end(1), title, 4, 'poison_signature', None, [], ['poison']))
+
+    for m in STANDALONE_HAUNTED_TRAP_RE.finditer(doc.text):
+        previous = doc.preceding_title(m.start())
+        if not previous:
+            continue
+        a, b, title = previous
+        if any(c.start <= a < c.title_end and 'trap' in c.kinds for c in items):
+            continue
+        items.append(Candidate(a, b, title, 4, 'trap_signature', None, [], ['trap']))
 
     # 6. Bind quick-reference index observations by anchor or unique exact heading name.
     def nearest_candidate_tag(pos: int) -> Tag | None:

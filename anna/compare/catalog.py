@@ -20,7 +20,7 @@ CATALOG = '5etools-cn'
 # The 5etools-cn record kinds that can describe the same object as an anna entry type.
 KINDS = {
     'spell': ('spell',), 'creature': ('monster',), 'magic_item': ('item', 'magicvariant'),
-    'equipment': ('baseitem', 'item'), 'poison': ('item',), 'animal_offer': ('baseitem', 'item'),
+    'equipment': ('baseitem', 'item', 'object'), 'poison': ('item',), 'animal_offer': ('baseitem', 'item'),
     'feat': ('feat',), 'class': ('class',), 'subclass': ('subclass',),
     'class_feature': ('classFeature', 'subclassFeature', 'optionalfeature'),
     'species': ('race', 'subrace'), 'background': ('background',),

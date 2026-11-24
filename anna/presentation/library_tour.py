@@ -95,6 +95,7 @@ class LibraryTour:
         self.by_key = {c.key: c for c in self.members}
         self.curation_revision, self.curation = curation(curation_path or CURATION)
         self.topics = self.curation['topics']
+        self._places: dict[str, tuple[str, str] | None] = {}
         try:
             self.shelf = Shelf(registry, scope)
         except ReaderError:
@@ -181,16 +182,21 @@ class LibraryTour:
     def place(self, topic):
         """Where a topic's chapter opens: in the collection whose text of the work the reader leads with, among
         those whose contents name the chapter exactly; otherwise in the first of them."""
+        if topic.key in self._places:
+            return self._places[topic.key]
         found = []
         for c in self.members:
             path = topic.contents_in(c.key)
             if path and (resolved := c.tour.resolve(path))[0] == 'ok':
                 found.append((c.key, resolved[1]))
         if not found:
+            self._places[topic.key] = None
             return None
         text = self._text_of(qualify(*found[0]))
         lead = text[0]['collection'] if text else None
-        return next((f for f in found if f[0] == lead), found[0])
+        chosen = next((f for f in found if f[0] == lead), found[0])
+        self._places[topic.key] = chosen
+        return chosen
 
     def _text_of(self, node):
         """The texts of the work a shelf node belongs to, the leading one first."""

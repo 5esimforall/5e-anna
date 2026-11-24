@@ -1,7 +1,7 @@
 """Read-only presentation providers for the our5etools collection: catalog, tour, and Stella reader."""
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter, OrderedDict, defaultdict
 from contextlib import closing, contextmanager
 import csv
 import dataclasses
@@ -152,6 +152,37 @@ def _file_sig(path: Path) -> tuple[int, int, int] | None:
         return (st.st_ino, st.st_size, st.st_mtime_ns)
     except OSError:
         return None
+
+
+_NAV_LOCK = threading.Lock()
+_NAV_CACHE: OrderedDict[tuple[str, tuple[int, int, int]], dict[str, Any]] = OrderedDict()
+_NAV_CACHE_LIMIT = 4
+
+
+def _load_shared_nav(nav_path: Path, reader_path: Path) -> dict[str, Any] | None:
+    """Load and cache navigation tree JSON once across Our5etoolsTour and Our5etoolsReader."""
+    nav_sig = _file_sig(nav_path)
+    if nav_sig is not None:
+        chosen, sig, compressed = nav_path, nav_sig, True
+    else:
+        reader_sig = _file_sig(reader_path)
+        if reader_sig is None:
+            return None
+        chosen, sig, compressed = reader_path, reader_sig, False
+    key = (str(chosen), sig)
+    with _NAV_LOCK:
+        cached = _NAV_CACHE.get(key)
+        if cached is not None:
+            _NAV_CACHE.move_to_end(key)
+            return cached
+    raw = gzip.decompress(chosen.read_bytes()).decode('utf-8') if compressed else chosen.read_text('utf-8')
+    data = json.loads(raw)
+    with _NAV_LOCK:
+        _NAV_CACHE[key] = data
+        _NAV_CACHE.move_to_end(key)
+        while len(_NAV_CACHE) > _NAV_CACHE_LIMIT:
+            _NAV_CACHE.popitem(last=False)
+    return data
 
 
 def _json_loads(raw: Any, default: Any) -> Any:
@@ -1172,19 +1203,36 @@ class Our5etoolsCatalog:
                 'lazy_media': self.lazy_media,
             }
 
+    def _ensure_type_ruleset_counts(self, db: sqlite3.Connection) -> list[list[Any]]:
+        with self._lock:
+            if self._pages_type_ruleset_counts is not None:
+                return self._pages_type_ruleset_counts
+        rows = [
+            [r[0], r[1], int(r[2])]
+            for r in db.execute(
+                f"SELECT type, COALESCE(ruleset, ''), count(*) FROM {self._entry_table} "
+                "GROUP BY type, COALESCE(ruleset, '') ORDER BY type, COALESCE(ruleset, '')"
+            )
+        ]
+        with self._lock:
+            if self._pages_type_ruleset_counts is None:
+                self._pages_type_ruleset_counts = rows
+            return self._pages_type_ruleset_counts
+
     def count(self, params: dict[str, list[str]], restrict: Any = None) -> int:
         """Count matching versions without reading payloads or stacking."""
         with self._db() as db:
             self._ensure_static_cache(db)
             params = Query.of(params)
-            if self._pages_type_ruleset_counts is not None and not params.probing:
+            if not params.probing:
                 simple = catalog.simple_type_ruleset_filter(
                     params, set(otypes.TYPES), set(RULESETS), restrict,
                 )
                 if simple is not None:
                     types, rulesets = simple
+                    counts_rows = self._ensure_type_ruleset_counts(db)
                     return sum(
-                        cnt for t, r, cnt in self._pages_type_ruleset_counts
+                        cnt for t, r, cnt in counts_rows
                         if (types is None or t in types) and (rulesets is None or r in rulesets)
                     )
             where, values = self._where(params, restrict)
@@ -2410,12 +2458,7 @@ class Our5etoolsTour:
         self._topics = curation['topics']
 
         # 2. Load reader navigation tree from compact nav-nodes.json.gz when present
-        if self.nav_path.is_file():
-            reader = json.loads(gzip.decompress(self.nav_path.read_bytes()).decode('utf-8'))
-        elif self.reader_path.is_file():
-            reader = json.loads(self.reader_path.read_text('utf-8'))
-        else:
-            reader = {}
+        reader = _load_shared_nav(self.nav_path, self.reader_path) or {}
         self._snapshot = str(reader.get('snapshot') or '')
         raw_nodes = reader.get('nodes') or []
         self._nodes = {n['id']: n for n in raw_nodes}
@@ -3099,12 +3142,15 @@ class Our5etoolsReader:
         with self._lock:
             if sig == self._nav_sig:
                 return self._nav_data
-            data = json.loads(gzip.decompress(self.nav_path.read_bytes()).decode('utf-8'))
-            if data.get('schema') != READER_SCHEMA:
-                raise ReaderError('reader_schema_mismatch', 500)
+        data = _load_shared_nav(self.nav_path, self.reader_path)
+        if data is None:
+            return self._load_reader()
+        if data.get('schema') != READER_SCHEMA:
+            raise ReaderError('reader_schema_mismatch', 500)
+        with self._lock:
             self._nav_data = data
             self._nav_sig = sig
-            return data
+        return data
 
     def _load_reader(self) -> dict[str, Any]:
         sig = _file_sig(self.reader_path)

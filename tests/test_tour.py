@@ -755,6 +755,79 @@ class CorpusTests(unittest.TestCase):
         official = LibraryTour(self.registry, parse_scope({'libraries': ['5echm,our5etools'], 'content': ['official']}, self.registry))
         self.assertEqual([g['label']['zh'] for g in official.view('subclasses.wizard')['groups']], ['官方'])
 
+    @unittest.skipUnless(paths.OUR5ETOOLS_DATA.joinpath('manifest.json').exists(), 'Build our5etools first')
+    def test_shared_nav_cache_place_memoization_and_local_counts(self):
+        import gzip
+        from anna.presentation import our5etools as o5e_mod
+        from anna.presentation.collections import Restriction
+
+        # 1. Our5etoolsTour and Our5etoolsReader share one nav-nodes.json.gz parse per file signature
+        o5e_mod._NAV_CACHE.clear()
+        tour_nav_path = paths.OUR5ETOOLS_DATA / 'nav-nodes.json.gz'
+        if tour_nav_path.is_file():
+            tour_prov = o5e_mod.Our5etoolsTour(paths.OUR5ETOOLS_DATA)
+            reader_prov = o5e_mod.Our5etoolsReader(paths.OUR5ETOOLS_DATA)
+            try:
+                with mock.patch.object(o5e_mod.gzip, 'decompress', wraps=gzip.decompress) as spy_decomp:
+                    _ = tour_prov.snapshot
+                    _ = reader_prov.navigation()
+                    self.assertEqual(spy_decomp.call_count, 1)
+                # Cache invalidates cleanly when file signature changes
+                with tempfile.TemporaryDirectory() as td:
+                    tmp = Path(td)
+                    nav_copy = tmp / 'nav-nodes.json.gz'
+                    nav_copy.write_bytes(tour_nav_path.read_bytes())
+                    reader_copy = tmp / 'anna-reader.json'
+                    first = o5e_mod._load_shared_nav(nav_copy, reader_copy)
+                    second = o5e_mod._load_shared_nav(nav_copy, reader_copy)
+                    self.assertIs(first, second)
+                    payload = json.loads(gzip.decompress(nav_copy.read_bytes()).decode('utf-8'))
+                    payload['snapshot'] = 'mutated-snapshot'
+                    nav_copy.write_bytes(gzip.compress(json.dumps(payload).encode('utf-8')))
+                    third = o5e_mod._load_shared_nav(nav_copy, reader_copy)
+                    self.assertEqual(third['snapshot'], 'mutated-snapshot')
+            finally:
+                tour_prov.catalog.close()
+
+        # 2. LibraryTour.place() memoizes topic resolution within one tour instance
+        tour = LibraryTour(self.registry, parse_scope({'libraries': ['5echm,our5etools']}, self.registry))
+        calls = []
+        orig_text_of = tour._text_of
+
+        def spy_text_of(node):
+            calls.append(node)
+            return orig_text_of(node)
+
+        with mock.patch.object(tour, '_text_of', side_effect=spy_text_of):
+            root = tour.root_view()
+            self.assertGreater(len(calls), 0)
+            first_count = len(calls)
+            for g in root['groups']:
+                if g['key'] == 'section':
+                    for item in g['items']:
+                        if item['kind'] == 'topic':
+                            tour.status(tour.topics[item['id']])
+            self.assertEqual(len(calls), first_count)
+
+        # 3. Local unprojected catalog.count and Our5etoolsCatalog.count match full SQL counts
+        o5e_cat = self.our5etools.provider
+        for qparams in (
+            {},
+            {'type': ['spell']},
+            {'type': ['spell'], 'ruleset': ['5r']},
+            {'type': ['hazard', 'trap', 'poison', 'disease']},
+            {'type': ['creature'], 'ruleset': ['5r', '5e']},
+        ):
+            for rest in (None, Restriction(rulesets=frozenset({'5r'}))):
+                self.assertEqual(
+                    catalog.count(self.db, qparams, restrict=rest),
+                    catalog.query(self.db, {**qparams, 'limit': ['1']}, restrict=rest)['versions_total'],
+                )
+                self.assertEqual(
+                    o5e_cat.count(qparams, restrict=rest),
+                    o5e_cat.entries({**qparams, 'limit': ['1']}, restrict=rest)['versions_total'],
+                )
+
 
 if __name__ == '__main__':
     unittest.main()

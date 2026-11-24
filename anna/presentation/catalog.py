@@ -246,21 +246,67 @@ def simple_type_ruleset_filter(query, allowed_types, allowed_rulesets, restrict=
     return types, rulesets
 
 
+_TYPE_RULESET_COUNTS_LOCK = threading.Lock()
+_TYPE_RULESET_COUNTS_CACHE: OrderedDict[tuple[str, int, int, int], list[list]] = OrderedDict()
+_TYPE_RULESET_COUNTS_LIMIT = 8
+
+
+def _db_file_sig(db):
+    try:
+        rows = db.execute('PRAGMA database_list').fetchall()
+    except sqlite3.Error:
+        return None
+    main_file = next((r[2] for r in rows if r[1] == 'main'), '')
+    if not main_file:
+        return None
+    try:
+        st = Path(main_file).stat()
+        return (main_file, st.st_ino, st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
+
+def _type_ruleset_counts(db):
+    counts_rows = _meta_json(db, 'pages_type_ruleset_counts')
+    if counts_rows is not None:
+        return counts_rows
+    sig = _db_file_sig(db)
+    if sig is None:
+        return None
+    with _TYPE_RULESET_COUNTS_LOCK:
+        cached = _TYPE_RULESET_COUNTS_CACHE.get(sig)
+        if cached is not None:
+            _TYPE_RULESET_COUNTS_CACHE.move_to_end(sig)
+            return cached
+    table = _entry_table(db)
+    rows = [
+        [r[0], r[1], int(r[2])]
+        for r in db.execute(
+            f"SELECT type, COALESCE(ruleset, ''), count(*) FROM {table} "
+            "GROUP BY type, COALESCE(ruleset, '') ORDER BY type, COALESCE(ruleset, '')"
+        )
+    ]
+    with _TYPE_RULESET_COUNTS_LOCK:
+        _TYPE_RULESET_COUNTS_CACHE[sig] = rows
+        _TYPE_RULESET_COUNTS_CACHE.move_to_end(sig)
+        while len(_TYPE_RULESET_COUNTS_CACHE) > _TYPE_RULESET_COUNTS_LIMIT:
+            _TYPE_RULESET_COUNTS_CACHE.popitem(last=False)
+    return rows
+
+
 def count(db, params, restrict=None):
     """Count matching versions without reading full entry payloads or stacking."""
     query = bounded(Query.of(params))
     if first(query, 'sections') != '1' and not first(query, 'value') and not query.probing:
-        counts_rows = _meta_json(db, 'pages_type_ruleset_counts')
-        if counts_rows is not None:
-            allowed_types = set(TYPES) - {'section'}
-            allowed_rulesets = set(COMMON_CHOICES['ruleset'][1])
-            simple = simple_type_ruleset_filter(query, allowed_types, allowed_rulesets, restrict)
-            if simple is not None:
-                types, rulesets = simple
-                return sum(
-                    cnt for t, r, cnt in counts_rows
-                    if t != 'section' and (types is None or t in types) and (rulesets is None or r in rulesets)
-                )
+        allowed_types = set(TYPES) - {'section'}
+        allowed_rulesets = set(COMMON_CHOICES['ruleset'][1])
+        simple = simple_type_ruleset_filter(query, allowed_types, allowed_rulesets, restrict)
+        if simple is not None and (counts_rows := _type_ruleset_counts(db)) is not None:
+            types, rulesets = simple
+            return sum(
+                cnt for t, r, cnt in counts_rows
+                if t != 'section' and (types is None or t in types) and (rulesets is None or r in rulesets)
+            )
     where, values = filters(db, query, restrict)
     from_sql, (where,) = _from_and_bind(db, where)
     return int(db.execute(f'SELECT count(*) FROM {from_sql}{where}', values).fetchone()[0])

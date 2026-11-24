@@ -71,7 +71,7 @@ def audit_concepts(db,folder=None):
             scope=o['evidence'].get('scope',{})
             cue=syntax.get('cue_span',[])
             # A rules-use clause ends where the name starts; a d20-test notation contains the name it applies.
-            located=len(cue)==2 and (cue[0]<=a<b<=cue[1] if syntax.get('rule') in {'check_notation','damage_notation'} else 0<=cue[0]<cue[1]==a)
+            located=len(cue)==2 and (cue[0]<=a<b<=cue[1] if syntax.get('rule') in {'check_notation','damage_notation','condition_notation'} else 0<=cue[0]<cue[1]==a)
             if (o['role']!='mention' or not located
                 or scope.get('ruleset') not in {'5e','5r'} or len(scope.get('source_ids',[]))!=1
                 or not scope.get('owner_ids') or any(e not in entries for e in scope['owner_ids'])):
@@ -81,7 +81,8 @@ def audit_concepts(db,folder=None):
         ev=o.get('evidence',{})
         if status=='resolved' and (signal=='field' or 'field' in ev):
             span=ev.get('field_span',[]); scope=ev.get('scope',{}); declarations=ev.get('declarations',[])
-            allowed={'components','duration'} if signal=='field' else {'properties','mastery','damage'} if signal=='table' else {'components','duration','properties','mastery','damage'}
+            creature_fields={'skills','condition_immunities','resistances','immunities'}
+            allowed={'components','duration'}|creature_fields if signal=='field' else {'properties','mastery','damage'} if signal=='table' else {'components','duration','properties','mastery','damage'}|creature_fields
             if (ev.get('field') not in allowed or len(span)!=2 or not 0<=span[0]<=a<b<=span[1]<=pages[path]
                 or texts[path][slice(*span)]!=ev.get('field_text') or texts[path][a:b]!=o['text']
                 or len(scope.get('source_ids',[]))!=1 or not scope.get('owner_ids')
@@ -232,6 +233,37 @@ def type_conflict_report(db):
     return summary,rows
 
 
+def reference_summary(db):
+    """Aggregate effective references, clickable links, missing-definition queue, and unresolved candidates."""
+    if not db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone():
+        return None
+    row=db.execute("SELECT value FROM metadata WHERE key='reference_coverage'").fetchone()
+    if not row:
+        return None
+    report=json.loads(row[0])
+    cols={r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+    eff=" WHERE is_effective=1" if 'is_effective' in cols else ''
+    by_signal=defaultdict(dict)
+    for sig,st,cnt in db.execute(f'SELECT signal,status,COUNT(*) FROM effective_references{eff} GROUP BY 1,2'):
+        by_signal[sig][st]=cnt
+    candidates={}
+    and_eff='is_effective=1 AND ' if 'is_effective' in cols else ''
+    for kind,cnt in db.execute(
+        f"SELECT json_extract(data,'$.kind'),COUNT(*) FROM effective_references "
+        f"WHERE {and_eff}status='unresolved' AND (review_status IS NULL OR review_status='unreviewed') "
+        "AND json_extract(data,'$.reason')='no_definition' GROUP BY 1 ORDER BY 2 DESC,1"
+    ):
+        candidates[kind or 'unknown']=cnt
+    return {
+        'references':report.get('references',0),
+        'clickable_links':report.get('presentation',{}).get('link',0),
+        'missing_definitions':report.get('missing_definitions',{}),
+        'decisions':report.get('decisions',{}),
+        'by_signal':dict(by_signal),
+        'missing_candidates_by_kind':candidates,
+    }
+
+
 def audit(db_path,baseline=None):
     db=connect(db_path)
     summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
@@ -240,10 +272,11 @@ def audit(db_path,baseline=None):
     catalog_reviews=[json.loads(r[0]) for r in db.execute("SELECT data FROM review_queue WHERE reason IN ('animal_statblock_unresolved','mount_example_unresolved','catalog_table_unhandled','catalog_row_layout_unresolved') ORDER BY reason,target")]
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
     concepts=audit_concepts(db,Path(db_path).parent) if (db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone() and db.execute("SELECT 1 FROM metadata WHERE key='concept_coverage'").fetchone()) else None
+    ref_coverage=reference_summary(db)
     counterparts=audit_counterparts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
     gaps,gap_pages,gap_sections=classification_gaps(db)
     conflicts,conflict_rows=type_conflict_report(db)
-    old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None
+    old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None;ref_coverage_before=None
     if baseline:
         old=connect(baseline)
         prior=json.loads(old.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
@@ -252,6 +285,7 @@ def audit(db_path,baseline=None):
         gaps_before={k:prior_gaps[k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
         prior_conflicts=type_conflict_report(old)[0]
         conflicts_before=prior_conflicts['entries'] if prior_conflicts else None
+        ref_coverage_before=reference_summary(old)
         old_entries={r['id']:dict(r) for r in old.execute('SELECT id,name,type,page_path,fields FROM entries')}
         for eid in sorted(entries.keys()|old_entries.keys()):
             a=old_entries.get(eid);b=entries.get(eid)
@@ -268,7 +302,9 @@ def audit(db_path,baseline=None):
         'integrity_check':db.execute('PRAGMA integrity_check').fetchone()[0],
         'foreign_key_errors':len(db.execute('PRAGMA foreign_key_check').fetchall()),
         'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
-        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
+        'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,
+        'reference_coverage':ref_coverage,'reference_coverage_before':ref_coverage_before,
+        'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
         'classification_gaps':gaps,'classification_gaps_before':gaps_before,
         'type_conflicts':conflicts,'type_conflicts_before':conflicts_before}
     db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows}
@@ -339,6 +375,31 @@ def counterpart_report(result):
     return lines
 
 
+def reference_report(result):
+    """Markdown summary of effective references, missing-definition queue, and unresolved candidates."""
+    now=result.get('reference_coverage')
+    if not now:
+        return []
+    before=result.get('reference_coverage_before') or {}
+    links=f"{now['clickable_links']}（修改前 {before['clickable_links']}）" if 'clickable_links' in before else str(now['clickable_links'])
+    refs=f"{now['references']}（修改前 {before['references']}）" if 'references' in before else str(now['references'])
+    queue='，'.join(f"{k} {v}" for k,v in sorted(now.get('missing_definitions',{}).items())) or '无'
+    cands='，'.join(f"{k} {v}" for k,v in now.get('missing_candidates_by_kind',{}).items()) or '无'
+    lines=['','## 引用覆盖与缺失定义','',
+        f"- 有效引用：{refs}；可点击链接：{links}。",
+        f"- 缺失定义队列（`missing_definitions`）：{queue}。",
+        f"- 未登记缺失候选（按引用种类）：{cands}。",'',
+        '| 信号 | 已关联 | 歧义 | 未解析 | 待核 | 已排除 |','|---|---:|---:|---:|---:|---:|']
+    before_sig=before.get('by_signal',{})
+    for sig,counts in sorted(now.get('by_signal',{}).items()):
+        old_sig=before_sig.get(sig,{})
+        def cell(st):
+            v=counts.get(st,0)
+            return f"{v}（{old_sig[st]}）" if st in old_sig and old_sig[st]!=v else str(v)
+        lines.append(f"| `{sig}` | {cell('resolved')} | {cell('ambiguous')} | {cell('unresolved')} | {cell('review')} | {cell('excluded')} |")
+    return lines
+
+
 def export_report(out,result,changes,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
@@ -363,6 +424,7 @@ def export_report(out,result,changes,gaps):
         '', '全库待核原因与数量见 `audit.json` 与 `catalog.sqlite`。计数下降可能是纠正误分类，并不表示删去原文。','']
     lines+=gap_report(result,gaps)
     lines+=conflict_report(result)
+    lines+=reference_report(result)
     lines+=['',*counterpart_report(result)]
     (out/'audit.md').write_text('\n'.join(lines)+'\n')
 

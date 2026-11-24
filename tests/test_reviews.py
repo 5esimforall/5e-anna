@@ -8,7 +8,7 @@ import unittest
 from anna.catalog.concepts import build_concepts
 from anna.catalog.references import build_references, inspect_reference
 from anna.review.repository import revoke_annotation, save_annotation
-from anna.presentation.references import query_decisions, query_missing_definitions, query_references
+from anna.presentation.references import query_decisions, query_missing_candidates, query_missing_definitions, query_references
 from anna.review.search import search_candidates
 from anna.review.store import (
     annotation_snapshot,
@@ -296,6 +296,26 @@ class ReferenceAnnotationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Invalid annotation log'):
             load_annotations(self.log)
         self.assertEqual(self.log.read_bytes(), before)
+
+    def test_missing_candidates_groups_unregistered_unresolved_references(self):
+        self.page.write_text(self.page.read_text() + '<p>' + ('补充语境说明文字。' * 8) + '第二处：<a href="#missing">未知引用</a>，<a href="#missing2">另一缺失</a>。<a href="#missing"></a></p>')
+        self.rebuild()
+        unfiltered = query_references(self.db, status='unresolved', reason='explicit_locator', kind='entry')
+        self.assertEqual(unfiltered['total'], 4)
+        by_text = query_missing_candidates(self.db)
+        self.assertEqual([(r['text'], r['count'], r['page_count']) for r in by_text['rows']], [('未知引用', 2, 1), ('另一缺失', 1, 1)])
+        ref = next(r for r in query_references(self.db, signal='explicit', path=self.path)['rows'] if r['text'] == '未知引用')
+        view = inspect_reference(self.db, ref['id'], missing_definition=True, path=self.log)
+        save_annotation(
+            self.db, self.log, ref['id'], 'reference', reviewer='fixture', reason='Track missing definition',
+            ruling='missing_definition', target=None, expected_content_sha256=view['content_sha256'],
+            expected_context_sha256=view['context_sha256'],
+        )
+        self.rebuild()
+        after = query_missing_candidates(self.db)
+        self.assertEqual([(r['text'], r['count']) for r in after['rows']], [('另一缺失', 1), ('未知引用', 1)])
+        filtered = query_missing_candidates(self.db, path=self.path, signal='explicit', kind='entry')
+        self.assertEqual(filtered['total'], 2)
 
 
 if __name__ == '__main__':

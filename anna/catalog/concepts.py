@@ -18,7 +18,21 @@ UNDERLINE_KINDS = {
     'outer_italic': 'magic_item',
     'plain': 'concept',
     'mixed': 'ambiguous',
+    'empty': 'empty',
 }
+
+
+def _singular_en_keys(en: str) -> list[str]:
+    """Regular English plural-to-singular normalized keys for bilingual name confirmation."""
+    k = key(en)
+    out = []
+    if k.endswith('ies') and len(k) > 4:
+        out.append(k[:-3] + 'y')
+    if k.endswith('es') and len(k) > 3:
+        out.append(k[:-2])
+    if k.endswith('s') and len(k) > 2:
+        out.append(k[:-1])
+    return out
 
 
 def format_kind(mark_or_tag):
@@ -59,12 +73,28 @@ def format_evidence(tag_paths,markup,profile,linked):
             'stylesheet_path':profile['path'] if profile and linked else None,
             'stylesheet_sha256':profile['sha256'] if profile and linked else None}
 
+BILINGUAL_LIST_ZH_RE = re.compile(r'[，、；;,]|[\u3400-\u9fff][ \t]*[A-Za-z][a-z]{2,}')
+
+
 def reference_spans(text,start,end,kind,resolver):
     """Split verified name lists, never treat a markup element as a single rule identity."""
+    wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
+    def matching(name_key):
+        return {i for i in resolver.names.get(name_key,())
+                if not slot_only(resolver.entries[i]) and resolver.entries[i]['type'] in wanted}
     def known(a,b):
-        ids=resolver.names.get(key(compact(text[a:b])),set())
-        wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
-        return any(resolver.entries[i]['type'] in wanted and not slot_only(resolver.entries[i]) for i in ids)
+        clean=compact(text[a:b]).rstrip('*†‡ ')
+        if not clean:return False
+        if matching(key(clean)):return True
+        if kind!='concept':
+            zh,en=split_name(clean)
+            if zh and en and not BILINGUAL_LIST_ZH_RE.search(zh):
+                z_ids=matching(key(zh));e_ids=matching(key(en))
+                if e_ids and not (z_ids-e_ids):return True
+                if not e_ids and z_ids:
+                    s_ids={i for sk in _singular_en_keys(en) for i in matching(sk)}
+                    if z_ids&s_ids:return True
+        return False
     if known(start,end):return [(start,end)]  # punctuation may be part of a real name
     parts=[];begin=start;stack=[];pairs={'(':')','（':'）','[':']','【':'】','「':'」','“':'”'}
     def append(a,b):
@@ -129,8 +159,78 @@ def term_scanner(names):
 # ordinary prose must supply with a rules-use clause. Other definition kinds need their table column's
 # semantic role before a bare name cell can be treated as a reference.
 TABLE_REFERENCE_TYPES={'class_feature'}
+DECLARED_TABLE_TYPES={'spell','magic_item','feat'}
+DECLARED_SPELL_COL=re.compile(
+    r'^(?:(?:准备|结社|领域|誓言|扩展|地脉|对应|已知|血脉|契约|宗主|子职|职业|满月|朔月|新月|全巨灵|土巨灵|气巨灵|火巨灵|水巨灵|[一二三四五六七八九0-9]环)\s*)?'
+    r'(?:法术|戏法)(?:\s*(?:（零环）|\(零环\)|Cantrip|Spells?|Approximate Spell))?$',re.I)
+DECLARED_ITEM_COL=re.compile(r'^魔法物品(?:\s*Magic Items?)?$',re.I)
+DECLARED_FEAT_COL=re.compile(r'^(?:(?:起源|通用|战斗风格|传奇恩惠)\s*)?专长(?:\s*Feats?)?$',re.I)
+DECLARED_CELL_PROSE=re.compile(r'[。！？]|选择|你可以|你获得|每当|如果|见正文|任意|来自|由\s*DM')
+DECLARED_TRAIL_QUALIFIER=re.compile(r'(?:\s*(?:\([^()\n]{1,40}\)|（[^（）\n]{1,40}）|\([^()\n]{1,40}）|（[^（）\n]{1,40}\)|[*†‡]+))+$')
 TABLE_QUALIFIER=re.compile(r'\([^()\n]{0,40}\)|（[^（）\n]{0,40}）|\[[^\[\]\n]{0,30}\]|【[^【】\n]{0,30}】')
 TABLE_FILLER=re.compile(r'^(?:[\s,，、;；/／·。*†‡+＋\-—\d.()（）\[\]【】:：]|与|和|或|及|以及|或者|and|or)*$',re.I)
+
+
+def declared_column_kind(header):
+    """Map an explicit spell, magic-item, or feat table header to the entry type it lists."""
+    h=compact(header).rstrip('*†‡ ')
+    if DECLARED_SPELL_COL.fullmatch(h):return 'spell'
+    if DECLARED_ITEM_COL.fullmatch(h):return 'magic_item'
+    if DECLARED_FEAT_COL.fullmatch(h):return 'feat'
+    return None
+
+
+def declared_cell_spans(text,known_fn):
+    """Split a declared spell/item/feat table cell into bounded item spans, rejecting prose."""
+    n=len(text);s=0;e=n
+    while s<e and text[s].isspace():s+=1
+    while e>s and text[e-1].isspace():e-=1
+    whole=text[s:e]
+    if not whole or re.fullmatch(r'[\d\-—–/+,，.、\s*†‡]+',whole) or DECLARED_CELL_PROSE.search(whole):
+        return []
+    def trim_piece(a,b):
+        while a<b and text[a].isspace():a+=1
+        while b>a and text[b-1].isspace():b-=1
+        if a>=b:return None
+        if q:=DECLARED_TRAIL_QUALIFIER.search(text[a:b]):
+            if q.start()>=2 and not known_fn(text[a:b]):
+                b=a+q.start()
+                while b>a and text[b-1].isspace():b-=1
+        part=compact(text[a:b])
+        if not part or len(part)>60 or DECLARED_CELL_PROSE.search(part):return None
+        return (a,b,text[a:b])
+    if known_fn(whole):
+        p=trim_piece(s,e)
+        return [p] if p else []
+    q_whole=DECLARED_TRAIL_QUALIFIER.search(whole)
+    if q_whole and q_whole.start()>=2 and known_fn(whole[:q_whole.start()]):
+        return [(s,s+q_whole.start(),text[s:s+q_whole.start()])]
+    parts=[];begin=s;stack=[];pairs={'(':')','（':'）','[':']','【':'】','「':'」','“':'”'}
+    i=s
+    while i<e:
+        ch=text[i]
+        if ch in pairs:stack.append(pairs[ch]);i+=1;continue
+        if stack:
+            if ch==stack[-1]:stack.pop()
+            i+=1;continue
+        if ch in '，、；;,':
+            if not re.match(r'\s*(?:[+−-]?\d|[（(])',text[i+1:e]):
+                p=trim_piece(begin,i)
+                if p is None and text[begin:i].strip():return []
+                if p:parts.append(p)
+                begin=i+1
+            i+=1;continue
+        or_sep=re.match(r'(?:\s+或\s+|\s+or\s+)',text[i:e],re.I)
+        if or_sep and i>begin:
+            p=trim_piece(begin,i)
+            if p is None and text[begin:i].strip():return []
+            if p:parts.append(p)
+            begin=i+or_sep.end();i=begin;continue
+        i+=1
+    p=trim_piece(begin,e)
+    if p is None and text[begin:e].strip():return []
+    if p:parts.append(p)
+    return parts
 
 
 def table_cell_names(text,scan):
@@ -151,24 +251,25 @@ def table_cell_names(text,scan):
 
 
 PLAIN_LEAD=re.compile(
-    r'(?:视为|处于|处在|陷入|保持|维持|失去|免疫|无视|提供|给予|获得|具有|承受|受到|执行|进行|完成|消耗|发动|使用|采取|作为|(?<!可)以|(?<![作应运])用)'
+    r'(?:视为|处于|处在|陷入|保持|维持|失去|免疫|无视|提供|给予|获得|具有|承受|受到|执行|进行|完成|消耗|发动|使用|采取|作为|摆脱|(?<!可)以|(?<![作应运])用)'
     r'(?:了|其|你的?|一个|一种|一次|一项|任何|全部|额外的?){0,3}[ \t]*$')
 PLAIN_TAIL=re.compile(r'^[ \t]*(?:$|[。！？；、，,.;:：!?）)」”\n]|状态|词条|动作|期间|之前|之后|之下|下(?=$|[，。）；]|的|来|时)|时(?!钟|间|期|代)|来(?!源|历|临)|以|所|的|执行|发动|施展|进行|和|或|与|及|以及)')
 PLAIN_EN_LEAD=re.compile(r'\b(?:gain|have|lose|ignore|provide|grant|maintain|use|take|perform|become)[ \t]+(?:(?:a|an|the|your)[ \t]+)?$',re.I)
 PLAIN_EN_TAIL=re.compile(r'^(?:$|[.,;:!?\n)\]”]|[ \t]+(?:action|and|or|to|for|on|until|while|when|during|before|after)\b)',re.I)
 ACTION_LEAD=re.compile(r'^(?:执行|采取|(?:take|perform)\b)',re.I)
-ACTION_TAIL=re.compile(r'^[ \t]*(?:动作|action\b)',re.I)
+ACTION_TAIL=re.compile(r'^[ \t]*(?:(?:(?:、|和|或|与|以及|及|或者)[ \t]*[\u3400-\u9fff]{1,6}[ \t]*)?动作|action\b)',re.I)
 PLAIN_JOIN=re.compile(r'[ \t]*(?:、|和|或|与|以及|及|或者|及其|\band\b|\bor\b)[ \t]*',re.I)
 # The d20-test notation names its parts, and each part is a definition of its own kind: the test itself (力量检定,
 # 豁免检定); what is tested, right before 检定 or 豁免 (体质豁免, 力量或敏捷豁免, 隐匿检定); the ability before the
 # parentheses (感知（察觉）检定); and each skill inside them (魅力（欺瞒或游说）检定). 死亡豁免 therefore does not apply
 # 死亡 as an ability, and 力量 in 力量检定 is the ability, not a table titled 力量.
-CHECK_ROLES={'test':None,'tested':{'ability','skill'},'ability':{'ability'},'skill':{'skill'}}
+CHECK_ROLES={'test':None,'tested':{'ability','skill'},'ability':{'ability'},'skill':{'skill'},'condition':{'condition'}}
 CHECK_TEST=re.compile(r'(?:检定|豁免)$')
 CHECK_TESTED=re.compile(r'(?:[ \t]*'+NOTATION_JOINER+r'[ \t]*(?:(?!的)[㐀-鿿]){1,4}?){0,5}[ \t]*(?:检定|豁免)')
 CHECK_ABILITY=re.compile(r'[ \t]*[（(][^（）()\n]{1,30}[）)][ \t]*(?:检定|豁免)')
 CHECK_SKILL_LEAD=re.compile(r'[（(][ \t]*(?:[^（）()\n]{0,20}?'+NOTATION_JOINER+r'[ \t]*)?$')
 CHECK_SKILL_TAIL=re.compile(r'[ \t]*(?:'+NOTATION_JOINER+r'[^（）()\n]{0,20}?)?[）)][ \t]*检定')
+CONDITION_TAIL=re.compile(r'(?:[ \t]*'+NOTATION_JOINER+r'[ \t]*(?:(?!的)[㐀-鿿]){1,4}?){0,4}[ \t]*状态')
 
 
 def check_notation(text,a,b):
@@ -183,11 +284,18 @@ def check_notation(text,a,b):
     return None
 
 
+def condition_notation(text,a,b):
+    """A condition name (or list of conditions) directly qualified by 状态."""
+    after=CONDITION_TAIL.match(text,b)
+    if after:return {'rule':'condition_notation','slot':'rule','role':'condition','cue_span':[a,after.end()]}
+    return None
+
+
 def plain_syntax(text,a,b,previous):
     """A name must fill a rules-use slot, not just be a substring of prose. A name in a d20-test notation fills the
     notation's slot; the rules-use clause it may also sit in is kept as `clause` for names the notation cannot use."""
     clause=rule_use_clause(text,a,b,previous)
-    notation=None if text[a:b].isascii() else check_notation(text,a,b)
+    notation=None if text[a:b].isascii() else (check_notation(text,a,b) or condition_notation(text,a,b))
     if notation:return {**notation,'clause':clause}
     return clause
 
@@ -238,20 +346,24 @@ class Resolver:
     def resolve(self,label,kind,path,position=None,*,scope=None,types=None,member_ids=None):
         """`types` narrows a concept to the definition kinds its position admits (a d20-test notation part)."""
         excluded_features=[]
-        def result(candidates,reason,status=None):
+        def result(candidates,reason,status=None,extra=None):
             ids=sorted(e['id'] for e in candidates)
-            result={'targets':ids,'reason':reason,'status':status or ('resolved' if len(ids)==1 else 'ambiguous' if ids else 'unresolved')}
-            if excluded_features:result['resolution_evidence']={'out_of_scope_feature_ids':sorted(excluded_features)}
-            return result
+            res={'targets':ids,'reason':reason,'status':status or ('resolved' if len(ids)==1 else 'ambiguous' if ids else 'unresolved')}
+            ev={}
+            if excluded_features:ev['out_of_scope_feature_ids']=sorted(excluded_features)
+            if extra:ev.update(extra)
+            if ev:res['resolution_evidence']=ev
+            return res
         local=[d for d in self.local_definitions[path] if d['kind']==kind and key(label) in d['name_keys'] and position is not None and d['scope'][0]<=position<d['scope'][1]]
         if local and member_ids is None:
             size=min(d['scope'][1]-d['scope'][0] for d in local)
             local=[d for d in local if d['scope'][1]-d['scope'][0]==size]
             found=result([self.entries[i] for i in sorted({d['definition_id'] for d in local})],'local_definition')
-            found['resolution_evidence']={'local_definition_ids':[d['id'] for d in local]}
+            found.setdefault('resolution_evidence',{})['local_definition_ids']=[d['id'] for d in local]
             return found
+        clean=compact(label).rstrip('*†‡ ')
         ids=(member_ids if member_ids is not None else
-             {i for i in self.names.get(key(label),()) if not slot_only(self.entries[i])})
+             {i for i in self.names.get(key(clean),()) if not slot_only(self.entries[i])})
         wanted=types or (RULE_TYPES|{'class_feature'} if kind=='concept' else {kind})
         def matches_kind(e):return e['type'] in wanted or kind=='concept' and not types and e.get('table_span') and e['type']=='lore'
         candidates=[self.entries[i] for i in ids if matches_kind(self.entries[i])]
@@ -261,36 +373,65 @@ class Resolver:
             if position is None or owner['page_path']!=path or not owner['start']<=position<owner['end']:
                 excluded_features.append(e['id'])
         candidates=[e for e in candidates if e['id'] not in excluded_features]
+        extra_ev={'match_rule':'footnote_stripped'} if (clean!=compact(label) and candidates) else {}
+        if not candidates and not excluded_features and member_ids is None and kind!='concept':
+            bilingual=self._bilingual_lookup(clean,wanted)
+            if bilingual is not None:
+                b_status,b_reason,b_cands,b_match=bilingual
+                if b_status is not None:
+                    return result(b_cands,b_reason,b_status,{'name_match':b_match} if b_match else None)
+                candidates=b_cands
+                if b_match:extra_ev['name_match']=b_match
         if not candidates and excluded_features:return result([], 'feature_out_of_scope','review')
         if not candidates:
             return result([self.entries[i] for i in ids],'type_mismatch' if ids else 'no_definition','review' if ids else 'unresolved')
+        matched_ids=[e['id'] for e in candidates]
         local=self.pages.get(path,[])
         sources=set(scope['source_ids']) if scope else {s for e in local for s in e.get('source_ids',[])}
         rules={scope['ruleset']} if scope else {e['ruleset'] for e in local if e['ruleset'] not in {'待核','冲突'}}
         if not scope:
             same_page=[e for e in candidates if e['page_path']==path]
-            if same_page:return result(same_page,'same_page')
+            if same_page:return result(same_page,'same_page',extra=extra_ev)
         if len(rules)==1:candidates=[e for e in candidates if e['ruleset'] in rules]
-        else:return result(candidates,'unknown_ruleset','review')
-        if not candidates:return result([self.entries[i] for i in ids if matches_kind(self.entries[i]) and i not in excluded_features],'ruleset_mismatch','review')
+        else:return result(candidates,'unknown_ruleset','review',extra=extra_ev)
+        if not candidates:return result([self.entries[i] for i in matched_ids],'ruleset_mismatch','review',extra=extra_ev)
         same_source=[e for e in candidates if sources.intersection(e.get('source_ids',[]))]
         if same_source:
-            return result(same_source,'same_source')
+            return result(same_source,'same_source',extra=extra_ev)
         # A source's recorded ruleset establishes an inferred dependency on its core books.
         # Restrict to catalogued core sources, never arbitrary same-edition supplements.
         context_sources=[self.sources[s] for s in sorted(sources) if s in self.sources]
         if context_sources and all(s['ruleset_hint'] in rules for s in context_sources):
             core=[e for e in candidates if any(self.sources.get(s,{}).get('reference_role')=='core_rules' and self.sources[s]['ruleset_hint'] in rules for s in e['source_ids'])]
             if core:
-                found=result(core,'source_core_rules')
+                found=result(core,'source_core_rules',extra=extra_ev)
                 found.setdefault('resolution_evidence',{}).update({'status':'上下文推得','rule':'source_ruleset_core_dependency',
                     'sources':[{'id':s['id'],'ruleset':s['ruleset_hint'],'evidence':s['evidence']} for s in context_sources],
                     'target_sources':[{'id':sid,'role_evidence':self.sources.get(sid,{}).get('reference_role_evidence',[])} for sid in sorted({sid for e in core for sid in e['source_ids']})]})
                 return found
         # Core glossary is an explicitly curated definition registry for that ruleset.
         core=[e for e in candidates if '/术语汇编/' in e['page_path'] and e['id'] in self.indexed] if not scope else []
-        if core:return result(core,'core_registry')
-        return result(candidates,'cross_source_unconfirmed','review')
+        if core:return result(core,'core_registry',extra=extra_ev)
+        return result(candidates,'cross_source_unconfirmed','review',extra=extra_ev)
+
+    def _bilingual_lookup(self,clean,wanted):
+        zh,en=split_name(clean)
+        if not (zh and en) or BILINGUAL_LIST_ZH_RE.search(zh):return None
+        def matching(name_key):
+            return {i for i in self.names.get(name_key,())
+                    if not slot_only(self.entries[i]) and self.entries[i]['type'] in wanted}
+        z_ids=matching(key(zh));e_ids=matching(key(en))
+        if e_ids:
+            if z_ids-e_ids:
+                return ('ambiguous','bilingual_conflict',[self.entries[i] for i in sorted(z_ids|e_ids)],'bilingual_conflict')
+            return (None,None,[self.entries[i] for i in sorted(e_ids)],'bilingual_exact_en')
+        if z_ids:
+            s_ids={i for sk in _singular_en_keys(en) for i in matching(sk)}
+            both=z_ids&s_ids
+            if both:
+                return (None,None,[self.entries[i] for i in sorted(both)],'bilingual_plural_en')
+            return ('review','bilingual_partial_match',[self.entries[i] for i in sorted(z_ids)],'bilingual_partial_match')
+        return None
 
     def plain_scope(self,path,a,b):
         owners=[e for e in self.pages.get(path,[]) if e['title_end']<=a<b<=e['end']]
@@ -386,12 +527,14 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
     damage_pattern = damage_notation(families)
     facts_by_page=defaultdict(list)
     for f in field_facts:
-        if f['rule']=='body_label' and f['field'] in {'components','duration','damage','properties','mastery'}:
+        if f['rule']=='body_label' and f['field'] in {'components','duration','damage','properties','mastery','skills','condition_immunities','resistances','immunities'}:
             facts_by_page[f['evidence']['path']].append(f)
     terms={n for e in entries if not slot_only(e) and e['id'] in definition_ids for n in aliases(e) if len(n)>=2}
     scan_terms=term_scanner(terms) if terms else None
     table_terms={n for e in entries if e['type'] in TABLE_REFERENCE_TYPES for n in aliases(e) if len(n)>=2}
     table_scan=term_scanner(table_terms) if table_terms else None
+    declared_scans={kind:term_scanner(names) for kind in sorted(DECLARED_TABLE_TYPES)
+                    if (names:={n for e in entries if e['type']==kind for n in aliases(e) if len(n)>=2})}
     by_initial=defaultdict(list)
     for n in sorted(terms,key=lambda n:(-len(n),n)):by_initial[n[0].casefold()].append(n)
     def shorter_names(text,a,b):
@@ -435,7 +578,7 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
                 resolver.local_definitions[path].append(record)
         fields = facts_by_page.get(path, ())
         cells = weapon_cells(path,page_text,dom['concept_tables']) if fields else {}
-        slots = resolve_field_slots(field_occurrences(fields,resolver.entries,page_text,cells),
+        slots = resolve_field_slots(field_occurrences(fields,resolver.entries,page_text,cells,vocabulary=families),
                                     resolver,families,path,page_text)
         non_prose=overlap_check(tuple(s) for s in dom['non_prose_spans'])
         slots.update(column_mentions(page_text,path,dom['concept_tables'],resolver,families))
@@ -451,6 +594,7 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
             evidence['stylesheets']=[{'path':p,'sha256':profiles[p]['sha256'] if profiles[p] else None,'supported':bool(profiles[p] and profiles[p]['supported'])} for p in stylesheet_paths]
             evidence['format_mark_id']='mark_'+digest(path,a,b)
             evidence['format_mark_span']=[a,b]
+            if not label:observe(path,a,b,label,'format',kind,reason='empty_format',status='excluded',role='empty',evidence=evidence);continue
             if in_title(a,b):observe(path,a,b,label,'format',kind,reason='definition_title',status='excluded',role='definition',evidence=evidence);continue
             if mark['in_explicit_parent'] or mark['has_explicit_child']:
                 observe(path,a,b,label,'format',kind,reason='explicit_link',status='excluded',role='explicit_reference',evidence=evidence);continue
@@ -504,6 +648,62 @@ def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field
                             'cell_text':compact(text)},'resolution_reason':resolution['reason']}
                         if resolution.get('resolution_evidence'):evidence['resolution']=resolution['resolution_evidence']
                         observe(path,ca+a,ca+b,label,'table','concept',role='mention',evidence=evidence,**resolution)
+                    occupied.append((ca,cb))
+        if declared_scans:
+            for table in dom['concept_tables']:
+                headers=table['headers']
+                col_kinds=[declared_column_kind(h) for h in headers]
+                if not any(col_kinds):continue
+                for ri,ci,ca,cb in table['cells']:
+                    if ci>=len(col_kinds) or not col_kinds[ci]:continue
+                    kind=col_kinds[ci]
+                    text=page_text[ca:cb]
+                    if not text.strip() or compact(text)==compact(headers[ci]):continue
+                    if any(ca < te and ts < cb for ts,te in titles):continue
+                    if any(ca < ob and oa < cb for oa,ob in occupied):continue
+                    scan=declared_scans.get(kind)
+                    names=table_cell_names(text,scan) if scan else []
+                    from_fallback=False
+                    if not names:
+                        def _cell_known(lbl, k=kind):
+                            c = lbl.rstrip('*†‡ ')
+                            if any(resolver.entries[i]['type']==k and not slot_only(resolver.entries[i]) for i in resolver.names.get(key(c),())):
+                                return True
+                            return resolver._bilingual_lookup(c, {k}) is not None
+                        names=declared_cell_spans(text,_cell_known)
+                        from_fallback=True
+                    if not names:continue
+                    resolved_items=[]
+                    for a,b,label in names:
+                        resolution=resolver.resolve(label,kind,path,ca+a)
+                        resolved_items.append((a,b,label,resolution))
+                    if from_fallback and not any(
+                        r['status'] in {'resolved','ambiguous'}
+                        or r['reason'] in {'bilingual_partial_match','bilingual_conflict','cross_source_unconfirmed','ruleset_mismatch','unknown_ruleset'}
+                        for _,_,_,r in resolved_items
+                    ):
+                        continue
+                    filtered=[]
+                    for a,b,label,resolution in resolved_items:
+                        if resolution['status']=='resolved':
+                            target=resolver.entries[resolution['targets'][0]]
+                            if target['page_path']==path and target['start']<=ca+a<ca+b<=target['end']:
+                                continue
+                        filtered.append((a,b,label,resolution))
+                    if not filtered:continue
+                    merged=[]
+                    for a,b,label,resolution in filtered:
+                        if (merged and resolution['status']==merged[-1][3]['status']
+                                and resolution['targets']==merged[-1][3]['targets']
+                                and resolution['targets'] and not text[merged[-1][1]:a].strip()):
+                            merged[-1]=(merged[-1][0],b,text[merged[-1][0]:b],merged[-1][3])
+                        else:merged.append((a,b,label,resolution))
+                    for a,b,label,resolution in merged:
+                        evidence={'table':{'id':'tbl_'+digest(path,table['index']),'span':table['span'],
+                            'cell_span':[ca,cb],'row':ri,'column':ci,'headers':headers,
+                            'cell_text':compact(text)},'column_kind':kind,'resolution_reason':resolution['reason']}
+                        if resolution.get('resolution_evidence'):evidence['resolution']=resolution['resolution_evidence']
+                        observe(path,ca+a,ca+b,label,'table',kind,role='mention',evidence=evidence,**resolution)
                     occupied.append((ca,cb))
         page_coverage.append({'path':path,'book':path.split('/')[1],'profile_applies':trusted,'format_count':marked})
         # Unclassified boundaries and definitional prose remain visible as candidates, not invented definitions.

@@ -116,6 +116,21 @@ def value_tokens(field, text):
     return list_tokens(text, 0, QUALIFIED_NAME if field == 'properties' else MEMBER_NAME)
 
 
+CREATURE_FIELDS = {'skills', 'condition_immunities', 'resistances', 'immunities'}
+CREATURE_FIELD_LABEL_RE = re.compile(
+    r'\s*(?:技能(?:熟练项?|加值)?|状态免疫|伤害抗性|伤害免疫|抗性|免疫)(?:\s*[A-Za-z][A-Za-z ]{0,35})?\s*[:：]?\s*'
+)
+CREATURE_SKILL_RE = re.compile(
+    r'(?<![^\s，、；;,：:。或和与及\d])((?![或和与及])[\u3400-\u9fff]{2,4})(?:\s*[A-Za-z][A-Za-z ]{1,20})?\s*[+＋\-−]\s*\d+'
+)
+CREATURE_FIELD_TARGETS = {
+    'skills': ('skills', 'skill'),
+    'condition_immunities': ('condition_immunities', 'condition'),
+    'resistances': ('damage', 'rule'),
+    'immunities': ('damage', 'rule'),
+}
+
+
 class SlotVocabulary:
     """Family-local spellings with source-backed target identities, kept out of global aliases."""
     def __init__(self, resolver, pages):
@@ -125,7 +140,25 @@ class SlotVocabulary:
         self.parameter_roles = {}
         self.measured = defaultdict(list)
         self.parameterized = defaultdict(lambda: defaultdict(list))
+        self.family_names = defaultdict(set)
         for entry in resolver.entries.values():
+            etype = entry.get('type')
+            if etype == 'skill':
+                for n in (entry.get('name_zh', ''), entry.get('name_en', '')):
+                    if n:
+                        self.members['skills', key(n)][entry['id']].append({
+                            'member_id': entry['id'], 'member_name': entry['name'], 'heading': '技能', 'via': 'member',
+                        })
+                if entry.get('name_zh'):
+                    self.family_names['skills'].add(entry['name_zh'])
+            elif etype == 'condition':
+                for n in (entry.get('name_zh', ''), entry.get('name_en', '')):
+                    if n:
+                        self.members['condition_immunities', key(n)][entry['id']].append({
+                            'member_id': entry['id'], 'member_name': entry['name'], 'heading': '状态', 'via': 'member',
+                        })
+                if entry.get('name_zh'):
+                    self.family_names['condition_immunities'].add(entry['name_zh'])
             if collection := entry.get('slot_collection'):
                 self.collections[collection][entry['id']] = [{'member_id':entry['id'],'member_name':entry['name'],
                                                               'heading':entry['name'],'via':'collection'}]
@@ -136,6 +169,8 @@ class SlotVocabulary:
             if family == 'legend':
                 self.legends[entry['page_path'],definition['column']].append(entry)
                 continue
+            if entry.get('name_zh'):
+                self.family_names[family].add(entry['name_zh'])
             names = {entry['name_zh'], entry.get('name_en','')}
             if family == 'components' and (m := SYMBOL.search(entry['name'])):
                 names.add(m[1])
@@ -171,6 +206,9 @@ class SlotVocabulary:
                     if parameter and spelling == key(entry['name_zh']):
                         self.parameterized[family, spelling][target].append({**declaration, 'notation':parameter[1]})
 
+    def names_for(self, family):
+        return sorted(self.family_names.get(family, ()), key=lambda n: (-len(n), n))
+
     def candidates(self, field, name):
         if field == 'duration' and TIME_AMOUNT.fullmatch(name):
             return self.measured
@@ -184,7 +222,7 @@ class SlotVocabulary:
         return matches
 
 
-def field_occurrences(facts, entries, text, cells):
+def field_occurrences(facts, entries, text, cells, vocabulary=None):
     """Bind only printed field evidence. Weapon cells must agree with the column and equipment row."""
     for fact in facts:
         field = fact['field']
@@ -207,6 +245,28 @@ def field_occurrences(facts, entries, text, cells):
             evidence['table'] = cell[1]
             start = a
             signal = 'table'
+        elif owner['type']=='creature' and field in CREATURE_FIELDS:
+            label = CREATURE_FIELD_LABEL_RE.match(text,a,b)
+            start = label.end() if label else a
+            body = text[start:b]
+            if field == 'skills':
+                masked = re.sub(r'\([^()\n]{0,40}\)|（[^（）\n]{0,40}）', lambda m: ' ' * len(m[0]), body)
+                for m in CREATURE_SKILL_RE.finditer(masked):
+                    yield owner, start+m.start(1), start+m.end(1), 'field', evidence
+            elif field == 'condition_immunities':
+                tokens = value_tokens(field, body)
+                if tokens:
+                    for lo,hi in tokens:
+                        yield owner, start+lo, start+hi, 'field', evidence
+                elif vocabulary and (names := vocabulary.names_for('condition_immunities')):
+                    pat = re.compile('|'.join(map(re.escape, names)))
+                    for m in pat.finditer(body):
+                        yield owner, start+m.start(), start+m.end(), 'field', evidence
+            elif vocabulary and (names := vocabulary.names_for('damage')):
+                pat = re.compile('|'.join(map(re.escape, names)))
+                for m in pat.finditer(body):
+                    yield owner, start+m.start(), start+m.end(), 'field', evidence
+            continue
         else:
             continue
         for lo,hi in value_tokens(field,text[start:b]):
@@ -232,9 +292,10 @@ def resolve_field_slots(occurrences, resolver, vocabulary, path, text):
                           {'status':'review','reason':'slot_conflict','targets':[]})
             continue
         label = text[a:b]
+        vocab_family, target_kind = CREATURE_FIELD_TARGETS.get(ev['field'], (ev['field'], 'rule'))
         members = (vocabulary.collections[ev['field']] if ev.get('slot_role')=='collection'
-                   else vocabulary.candidates(ev['field'],label))
-        result, proof = resolve_members(resolver,path,a,label,scope,members)
+                   else vocabulary.candidates(vocab_family,label))
+        result, proof = resolve_members(resolver,path,a,label,scope,members,kind=target_kind)
         slots[a,b] = signal,{**ev,**proof},result
         if (ev['field']=='properties' and result['status']=='resolved'
                 and (role := vocabulary.parameter_roles.get(result['targets'][0]))):

@@ -59,24 +59,35 @@ def compact(s: object) -> str:
     return re.sub(r'\s+', ' ', str(s)).strip()
 
 
+LIST_PUNCT_RE = re.compile(r'[\s，、；;,.·/／]+')
+
+
 def underline_style(tag: Tag) -> str:
-    """Uniform typographical emphasis around a <u> tag: bold, inner_italic, outer_italic, plain, or mixed."""
-    styles = set()
+    """Uniform typographical emphasis around a <u> tag: bold, inner_italic, outer_italic, plain, mixed, or empty."""
+    all_styles = set()
+    content_styles = set()
     for node in tag.find_all(string=True):
-        if not str(node).strip():
+        text = str(node)
+        if not text.strip():
             continue
         ancestors = list(node.parents)
         boundary = next(i for i, p in enumerate(ancestors) if p is tag)
         inner = any(p.name in {'em', 'i'} for p in ancestors[:boundary])
         outer = any(p.name in {'em', 'i'} for p in ancestors[boundary + 1:])
         bold = any(p.name in {'b', 'strong'} for p in ancestors)
-        styles.add(
+        style = (
             'mixed' if sum((inner, outer, bold)) > 1
             else 'bold' if bold
             else 'inner_italic' if inner
             else 'outer_italic' if outer
             else 'plain'
         )
+        all_styles.add(style)
+        if not LIST_PUNCT_RE.fullmatch(text):
+            content_styles.add(style)
+    if not all_styles:
+        return 'empty'
+    styles = content_styles or all_styles
     return styles.pop() if len(styles) == 1 else 'mixed'
 
 

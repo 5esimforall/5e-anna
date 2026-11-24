@@ -4,7 +4,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from anna.catalog.audit import classification_gaps, gap_report, type_conflict_report, conflict_report
+from anna.catalog.audit import classification_gaps, gap_report, reference_report, reference_summary, type_conflict_report, conflict_report
 
 REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 
@@ -29,6 +29,7 @@ class PlainProvenanceTests(unittest.TestCase):
         self.assertEqual(self.errors({'rule':'rule_use_clause','slot':'rule','cue_span':[7,10]}),[])
         self.assertEqual(self.errors({'rule':'check_notation','slot':'rule','role':'ability','cue_span':[10,18]}),[])
         self.assertEqual(self.errors({'rule':'check_notation','slot':'rule','role':'skill','cue_span':[9,13]}),[])
+        self.assertEqual(self.errors({'rule':'condition_notation','slot':'rule','role':'condition','cue_span':[10,14]}),[])
         # A notation cue that misses the name, or a clause cue that does not end at it, is no evidence.
         self.assertTrue(self.errors({'rule':'check_notation','slot':'rule','role':'ability','cue_span':[11,18]}))
         self.assertTrue(self.errors({'rule':'rule_use_clause','slot':'rule','cue_span':[10,18]}))
@@ -216,3 +217,33 @@ class TableProvenanceTests(unittest.TestCase):
         self.assertTrue(self.errors({**table,'headers':'职业特性'}))
         self.assertTrue(self.errors({**table,'id':None}))
         self.assertTrue(self.errors(table,role='definition'))
+
+
+class ReferenceReportTests(unittest.TestCase):
+    def test_reference_summary_and_report_render_missing_candidates(self):
+        db=sqlite3.connect(':memory:')
+        db.executescript('''
+            CREATE TABLE metadata(key TEXT,value TEXT);
+            CREATE TABLE effective_references(id TEXT,page_path TEXT,start INTEGER,end INTEGER,signal TEXT,status TEXT,target_id TEXT,review_status TEXT,is_effective INTEGER,data TEXT);
+        ''')
+        db.execute('INSERT INTO metadata VALUES(?,?)',('reference_coverage',json.dumps({
+            'references':3,'presentation':{'link':2},'missing_definitions':{'open':1},'decisions':{'applied':1},
+        })))
+        rows=[
+            ('r1','p1',0,2,'format','resolved','e1','unreviewed',1,{'reason':'same_source','kind':'spell'}),
+            ('r2','p1',3,5,'table','resolved','e2','unreviewed',1,{'reason':'same_source','kind':'spell'}),
+            ('r3','p2',0,2,'format','unresolved',None,'unreviewed',1,{'reason':'no_definition','kind':'creature'}),
+        ]
+        db.executemany('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?,?,?,?)',
+                       [(*r[:-1],json.dumps(r[-1])) for r in rows])
+        summary=reference_summary(db)
+        self.assertEqual((summary['references'],summary['clickable_links']), (3,2))
+        self.assertEqual(summary['missing_candidates_by_kind'],{'creature':1})
+        lines='\n'.join(reference_report({'reference_coverage':summary,'reference_coverage_before':{
+            'references':2,'clickable_links':1,'by_signal':{'format':{'resolved':1}},
+        }}))
+        self.assertIn('有效引用：3（修改前 2）；可点击链接：2（修改前 1）',lines)
+        self.assertIn('缺失定义队列（`missing_definitions`）：open 1',lines)
+        self.assertIn('未登记缺失候选（按引用种类）：creature 1',lines)
+        self.assertIn('| `table` | 1 | 0 | 0 | 0 | 0 |',lines)
+        db.close()

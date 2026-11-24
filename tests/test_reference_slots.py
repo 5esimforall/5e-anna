@@ -147,3 +147,39 @@ class SlotTests(unittest.TestCase):
         for kwargs,reason in [({'generation':'5e'},'ruleset_mismatch'),({'unknown_scope':True},'slot_scope_unconfirmed')]:
             row=self.observations(**kwargs)[1]
             self.assertIsNone(row['target_id']);self.assertEqual(row['reason'],reason)
+
+    def test_creature_statblock_fields_resolve_skills_conditions_and_damage(self):
+        path='topics/test/怪.htm'; defs='topics/test/规则.htm'
+        raw=('<h2>火蝠 Firebat</h2>'
+             '<p>前置段落。</p>'
+             '<p>技能察觉+4（蛇形态为+6），隐匿+6或宗教+2</p>'
+             '<p>伤害抗性：火焰、闪电</p>'
+             '<p>状态免疫魅惑，恐慌</p>')
+        doc=Document(path,raw);text=doc.text
+        def e(i,n,kind,p=path,**kw):
+            return {**dict(id=i,entity_id=i,name=n,name_zh=n.split()[0],name_en=n.partition(' ')[2],type=kind,
+                           source_ids=['s'],ruleset='5r',page_path=p,start=0,title_end=0,end=len(text)),**kw}
+        monster=e('m','火蝠 Firebat','creature',title_end=text.index('\n'))
+        entries=[monster,
+                 e('perc','察觉 Perception','skill',defs),e('stealth','隐匿 Stealth','skill',defs),
+                 e('rel','宗教 Religion','skill',defs),
+                 e('charmed','魅惑 Charmed','condition',defs),e('frightened','恐慌 Frightened','condition',defs),
+                 e('fire','火焰 Fire','rule',defs,slot_definition={'family':'damage','heading':'伤害类型'}),
+                 e('light','闪电 Lightning','rule',defs,slot_definition={'family':'damage','heading':'伤害类型'})]
+        facts=[dict(field=f,entry_id='m',rule='body_label',evidence={'span':[doc.span(p)[0]-1,doc.span(p)[1]],'path':path})
+               for p,f in zip(doc.body.find_all('p')[1:],('skills','resistances','condition_immunities'))]
+        with tempfile.TemporaryDirectory() as td:
+            db=sqlite3.connect(':memory:')
+            db.executescript('CREATE TABLE entries(id PRIMARY KEY,ruleset,type);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
+            db.executemany('INSERT INTO entries VALUES(?,?,?)',[(x['id'],x['ruleset'],x['type']) for x in entries])
+            pages={path:{'text':text,'parse_status':'ok'},defs:{'text':'定义','parse_status':'excluded'}}
+            db.executemany('INSERT INTO pages VALUES(?,?)',[(k,v['text']) for k,v in pages.items()])
+            build_concepts(db,Path(td),None,entries,pages,[{'id':'s','ruleset_hint':'5r'}],
+                           dom_by_path={path:doc.dom_snapshot()},field_facts=facts)
+            rows=[json.loads(d) for d, in db.execute("SELECT data FROM effective_references WHERE signal='field' ORDER BY start")]
+            self.assertEqual([(r['text'],r['target_id']) for r in rows],
+                             [('察觉','perc'),('隐匿','stealth'),('宗教','rel'),('火焰','fire'),('闪电','light'),('魅惑','charmed'),('恐慌','frightened')])
+            from anna.catalog.audit import audit_concepts
+            self.assertEqual(audit_concepts(db)['errors'],[])
+            db.close()
+        doc.close()

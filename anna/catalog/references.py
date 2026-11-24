@@ -551,7 +551,7 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
             original = exact.get((o['start'], o['end']))
             if original:
                 original['observation_ids'].append(o['id'])
-            elif o['role'] not in {'definition', 'explicit_reference'}:
+            elif o['role'] not in {'definition', 'explicit_reference', 'empty'}:
                 refs.append(reference(o))
         refs_by_page[path] = refs
 

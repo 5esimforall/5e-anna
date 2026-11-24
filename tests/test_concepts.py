@@ -142,8 +142,83 @@ class ConceptTests(unittest.TestCase):
         self.assertEqual(spans(term_scanner(names)(text)),spans(expected.finditer(text)))
 
     def test_format_order_and_conflicts(self):
-        for html,kind in [('<u>优势</u>','concept'),('<u><em>法术</em></u>','spell'),('<em><u>物品</u></em>','magic_item'),('<b><u>怪物</u></b>','creature'),('<em><u><i>冲突</i></u></em>','ambiguous'),('<u>部分<em>斜体</em></u>','ambiguous'),('<u><em>全</em><i>斜体</i></u>','spell')]:
+        for html,kind in [('<u>优势</u>','concept'),('<u><em>法术</em></u>','spell'),('<em><u>物品</u></em>','magic_item'),('<b><u>怪物</u></b>','creature'),('<em><u><i>冲突</i></u></em>','ambiguous'),('<u>部分<em>斜体</em></u>','ambiguous'),('<u><em>全</em><i>斜体</i></u>','spell'),('<u><em>甲</em>，<em>乙</em></u>','spell'),('<u> </u>','empty')]:
             d=Document('topics/a.htm',html);self.assertEqual(format_kind(d.soup.u),kind);d.close()
+
+    def test_empty_format_bilingual_and_condition_action_mentions(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);(root/'topics/book').mkdir(parents=True)
+            from anna.paths import WEB
+            (root/'topics/style.css').write_bytes((WEB/'topics/style.css').read_bytes())
+            raw=(
+                '<link rel="stylesheet" href="../style.css"><body>'
+                '<p><u> </u>'
+                '<u><em>探知Scrying</em></u>；'
+                '<u><em>防护法阵Magic Circle</em>，<em>灵体守卫Spirit Guardians</em></u>；'
+                '<u><em>传讯术Sending</em></u>；'
+                '<u><em>蛛行术Spider Clim</em></u>；'
+                '<b><u>烟雾元素Smoke Elementals</u></b>。</p>'
+                '<p>目标处于魅惑和恐慌状态，而非魔法状态，可使用疾走或撤离动作摆脱魅惑。</p>'
+                '<table><tr><th>环阶</th><th>法术</th></tr>'
+                '<tr><td>1环</td><td>命令术command，强制决斗compelled duel</td></tr>'
+                '<tr><td>2环</td><td>请从列表选择任意法术。</td></tr></table>'
+                '<table><tr><th>专长</th><th>分类</th></tr>'
+                '<tr><td>骑乘斗士Mounted Combatant</td><td>通用</td></tr></table>'
+                '</body>'
+            )
+            path='topics/book/text.htm';(root/path).write_text(raw)
+            d=Document(path,raw);text=d.text;d.close()
+            core_path='topics/book/core.htm'
+            entries=[
+                {**entry('sec','测试页',path,kind='section'),'end':len(text)},
+                {**entry('scry','探知术 Scrying',core_path,kind='spell'),'name_zh':'探知术','name_en':'Scrying'},
+                {**entry('circle','防护法阵 Magic Circle',core_path,kind='spell'),'name_zh':'防护法阵','name_en':'Magic Circle'},
+                {**entry('guards','灵体卫士 Spirit Guardians',core_path,kind='spell'),'name_zh':'灵体卫士','name_en':'Spirit Guardians'},
+                {**entry('msg','传讯术 Message',core_path,kind='spell'),'name_zh':'传讯术','name_en':'Message'},
+                {**entry('send','短讯术 Sending',core_path,kind='spell'),'name_zh':'短讯术','name_en':'Sending'},
+                {**entry('spider','蛛行术 Spider Climb',core_path,kind='spell'),'name_zh':'蛛行术','name_en':'Spider Climb'},
+                {**entry('cmd','命令术 Command',core_path,kind='spell'),'name_zh':'命令术','name_en':'Command'},
+                {**entry('duel','强制决斗 Compelled Duel',core_path,kind='spell'),'name_zh':'强制决斗','name_en':'Compelled Duel'},
+                {**entry('smoke','烟雾元素 Smoke Elemental',core_path,kind='creature'),'name_zh':'烟雾元素','name_en':'Smoke Elemental'},
+                {**entry('mounted','骑乘斗士 Mounted Combatant',core_path,kind='feat'),'name_zh':'骑乘斗士','name_en':'Mounted Combatant'},
+                {**entry('charmed','魅惑 Charmed',core_path,kind='condition'),'name_zh':'魅惑','name_en':'Charmed'},
+                {**entry('frightened','恐慌 Frightened',core_path,kind='condition'),'name_zh':'恐慌','name_en':'Frightened'},
+                {**entry('magic_act','魔法 Magic',core_path,kind='action'),'name_zh':'魔法','name_en':'Magic'},
+                {**entry('dash','疾走 Dash',core_path,kind='action'),'name_zh':'疾走','name_en':'Dash'},
+                {**entry('disengage','撤离 Disengage',core_path,kind='action'),'name_zh':'撤离','name_en':'Disengage'},
+            ]
+            sources=[{'id':'book','ruleset_hint':'5r','reference_role':'core_rules','evidence':[]}]
+            pages={path:{'text':text,'parse_status':'ok'},core_path:{'text':'定义','parse_status':'excluded'}}
+            db=sqlite3.connect(':memory:')
+            db.executescript('CREATE TABLE entries(id PRIMARY KEY,ruleset,type);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
+            db.executemany('INSERT INTO entries VALUES(?,?,?)',[(e['id'],e['ruleset'],e['type']) for e in entries])
+            db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
+            report=build_concepts(db,root,root,entries,pages,sources)
+            rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_references ORDER BY start')]
+            empty_mark=next(r for r in rows if r['signal']=='format' and r['role']=='empty')
+            self.assertEqual((empty_mark['status'],empty_mark['reason']),('excluded','empty_format'))
+            self.assertEqual(report['gaps']['marked_without_target'],[r['id'] for r in rows if r['signal']=='format' and r['status'] not in {'resolved','excluded'}])
+            fmt={r['text']:r for r in rows if r['signal']=='format'}
+            self.assertEqual(fmt['探知Scrying']['target_id'],'scry')
+            self.assertEqual(fmt['防护法阵Magic Circle']['target_id'],'circle')
+            self.assertEqual(fmt['灵体守卫Spirit Guardians']['target_id'],'guards')
+            self.assertEqual((fmt['传讯术Sending']['status'],fmt['传讯术Sending']['reason'],fmt['传讯术Sending']['candidates']),('ambiguous','bilingual_conflict',['msg','send']))
+            self.assertEqual((fmt['蛛行术Spider Clim']['status'],fmt['蛛行术Spider Clim']['reason'],fmt['蛛行术Spider Clim']['candidates']),('review','bilingual_partial_match',['spider']))
+            self.assertEqual(fmt['烟雾元素Smoke Elementals']['target_id'],'smoke')
+            plain=[(r['text'],r['status'],r['reason'],r['target_id']) for r in rows if r['signal']=='plain']
+            self.assertIn(('魅惑','resolved','same_source','charmed'),plain)
+            self.assertIn(('恐慌','resolved','same_source','frightened'),plain)
+            self.assertIn(('魔法','review','plain_check_part_mismatch',None),plain)
+            self.assertIn(('疾走','resolved','same_source','dash'),plain)
+            self.assertIn(('撤离','resolved','same_source','disengage'),plain)
+            tbl={(r['text'],r['kind']):r['target_id'] for r in rows if r['signal']=='table'}
+            self.assertEqual(tbl['命令术command','spell'],'cmd')
+            self.assertEqual(tbl['强制决斗compelled duel','spell'],'duel')
+            self.assertEqual(tbl['骑乘斗士Mounted Combatant','feat'],'mounted')
+            self.assertFalse(any('选择任意法术' in k[0] for k in tbl))
+            from anna.catalog.audit import audit_concepts
+            self.assertEqual(audit_concepts(db,root)['errors'],[])
+            db.close()
     def test_version_and_ambiguity(self):
         a=entry('a','专注');b=entry('b','专注',ruleset='5e');context=entry('c','正文','topics/book/text.htm')
         r=Resolver([a,b,context]);self.assertEqual(r.resolve('专注','concept',context['page_path'])['targets'],['a'])

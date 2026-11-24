@@ -100,6 +100,8 @@ def main():
     refs_cmd.add_argument('--status', default='')
     refs_cmd.add_argument('--signal', default='')
     refs_cmd.add_argument('--review-status', default='')
+    refs_cmd.add_argument('--reason', default='')
+    refs_cmd.add_argument('--kind', default='')
     refs_cmd.add_argument('--limit', type=int, default=30)
     refs_cmd.add_argument('--offset', type=int, default=0)
     ref_inspect = commands.add_parser('ref-inspect')
@@ -120,6 +122,12 @@ def main():
     miss_cmd.add_argument('--path', default='')
     miss_cmd.add_argument('--limit', type=int, default=30)
     miss_cmd.add_argument('--offset', type=int, default=0)
+    mc_cmd = commands.add_parser('missing-candidates')
+    mc_cmd.add_argument('--signal', default='')
+    mc_cmd.add_argument('--kind', default='')
+    mc_cmd.add_argument('--path', default='')
+    mc_cmd.add_argument('--limit', type=int, default=30)
+    mc_cmd.add_argument('--offset', type=int, default=0)
     undo = commands.add_parser('revoke')
     undo.add_argument('id')
     undo.add_argument('--reviewer', required=True)
@@ -152,7 +160,8 @@ def main():
                 elif args.command == 'references':
                     from anna.presentation.references import query_references
                     result = query_references(db, path=args.path, status=args.status, signal=args.signal,
-                                              review_status=args.review_status, limit=args.limit, offset=args.offset)
+                                              review_status=args.review_status, reason=args.reason, kind=args.kind,
+                                              limit=args.limit, offset=args.offset)
                 elif args.command == 'ref-inspect':
                     from anna.catalog.references import inspect_reference
                     result = inspect_reference(db, args.id, args.target, path=args.annotations,
@@ -166,6 +175,10 @@ def main():
                     from anna.presentation.references import query_missing_definitions
                     result = query_missing_definitions(db, status=args.status, path=args.path,
                                                        limit=args.limit, offset=args.offset)
+                elif args.command == 'missing-candidates':
+                    from anna.presentation.references import query_missing_candidates
+                    result = query_missing_candidates(db, signal=args.signal, kind=args.kind, path=args.path,
+                                                      limit=args.limit, offset=args.offset)
         print(json.dumps(result, ensure_ascii=False, indent=2))
     except (ValueError, LookupError, sqlite3.Error, OSError) as exc:
         parser.exit(1, str(exc)+'\n')

@@ -94,7 +94,7 @@ const annaKit = (() => {
     return null;
   }
   async function tourSkeleton(signal) {
-    if (!tour) return null;
+    if (!tour || tourArtifact()) return null;
     signal?.throwIfAborted();
     const cache = await import(new URL('tour-cache.js', base).href).catch(() => null);
     return cache ? await cache.skeleton(tour, signal) : null;

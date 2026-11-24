@@ -22,7 +22,8 @@ from anna.presentation.layout import (
 from anna.presentation.library import name_fold
 from anna.presentation.our5etools import (
     COLLECTION_KEY as OUR5ETOOLS_KEY, FALLBACK_BOOK_ASSETS, build_entry_row, build_relations_list,
-    build_sources_map, build_subclass_records, build_version_compare, load_our5etools_collection, promote_media_html,
+    build_sources_map, build_subclass_records, build_version_compare, load_our5etools_collection,
+    merge_subclass_tour_layout, promote_media_html, subclass_root_feature_id,
 )
 from anna.presentation.tour import LEAD_LIMIT, RULESETS, Tour, clip, first_sentence, load as load_curation
 from anna.review.store import load_annotations, require_current_annotations
@@ -1061,10 +1062,15 @@ def choose_entry_buckets(total: int) -> int:
 
 
 def _collect_default_entry_records(db_path):
-    """Yield (eid, detail_dict, layout_json_bytes) matching BookCatalog.detail/layout."""
+    """Yield (eid, detail_dict, layout_json_bytes, tour_layout_json_bytes) matching BookCatalog/Tour."""
     with closing(sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         pages_text = dict(conn.execute('SELECT path, text FROM pages'))
+        tour_layouts_by_id = {}
+        for span_key, payload_gzip in conn.execute('SELECT span_key, payload_gzip FROM pages_tour_layout'):
+            owner = span_key.rsplit('\0', 1)[-1]
+            if owner:
+                tour_layouts_by_id[owner] = payload_gzip
         relations_by_subject = defaultdict(list)
         for subj, pred, obj_id, label, status in conn.execute(
             'SELECT subject_id, predicate, object_id, target_label, status '
@@ -1112,11 +1118,29 @@ def _collect_default_entry_records(db_path):
                 if payload_gzip is not None
                 else _json({'status': 'missing', 'path': e['page_path']})
             )
-            yield eid, e, layout_bytes
+            tour_layout_bytes = (
+                gzip.decompress(tour_layouts_by_id[eid])
+                if eid in tour_layouts_by_id
+                else _json({'status': 'empty', 'path': e['page_path']})
+            )
+            yield eid, e, layout_bytes, tour_layout_bytes
+
+
+def _our_layout_dict(layout_gzip, provenance_json, media_dir):
+    prov = json.loads(provenance_json) if provenance_json else {}
+    media = prov.get('media_summary')
+    html_body = gzip.decompress(layout_gzip).decode('utf-8') if layout_gzip is not None else ''
+    if not html_body:
+        return {'status': 'empty', 'media': media}
+    return {
+        'status': 'ok',
+        'html': promote_media_html(html_body, media_dir, lazy_media=False),
+        'media': media,
+    }
 
 
 def _collect_our_entry_records(db_path, media_dir, extra_locations):
-    """Yield (eid, detail_dict, layout_json_bytes) matching Our5etoolsCatalog.detail/layout."""
+    """Yield (eid, detail_dict, layout_json_bytes, tour_layout_json_bytes_or_none) matching Our5etoolsCatalog/Tour."""
     with closing(sqlite3.connect(db_path.as_uri() + '?mode=ro', uri=True)) as conn:
         conn.row_factory = sqlite3.Row
         sources_map = build_sources_map(conn)
@@ -1130,6 +1154,32 @@ def _collect_our_entry_records(db_path, media_dir, extra_locations):
         relations_raw = defaultdict(list)
         for rr in conn.execute('SELECT source_id, type AS rel_type, target_id, meta_json FROM relations'):
             relations_raw[rr['source_id']].append(rr)
+
+        subclass_root_map = {}
+        for sc_id, sc_name, sc_name_zh in conn.execute(
+            "SELECT id, name, name_zh FROM entry_core WHERE type = 'subclass'"
+        ):
+            root_id = subclass_root_feature_id(
+                conn, 'entry_core', sc_id, sc_name, sc_name_zh or '', order_col='e.build_order',
+            )
+            if root_id is not None:
+                subclass_root_map[sc_id] = root_id
+        root_layouts = {}
+        needed_roots = sorted(set(subclass_root_map.values()))
+        for start in range(0, len(needed_roots), 400):
+            batch = needed_roots[start:start + 400]
+            ph = ','.join('?' for _ in batch)
+            for rrow in conn.execute(
+                'SELECT e.id, em.provenance_json, el.layout_gzip '
+                'FROM entry_core e '
+                'LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid '
+                'LEFT JOIN entry_layout el ON el.entry_rowid = e.rowid '
+                f'WHERE e.id IN ({ph})',
+                batch,
+            ):
+                root_layouts[rrow['id']] = _our_layout_dict(
+                    rrow['layout_gzip'], rrow['provenance_json'], media_dir,
+                )
 
         group_rows = defaultdict(list)
         entry_group = {}
@@ -1199,7 +1249,12 @@ def _collect_our_entry_records(db_path, media_dir, extra_locations):
                     'html': promote_media_html(html_body, media_dir, lazy_media=False),
                     'media': media,
                 }
-            yield eid, entry, _json(layout_dict)
+            tour_layout_bytes = None
+            if eid in subclass_root_map:
+                merged = merge_subclass_tour_layout(root_layouts[subclass_root_map[eid]], layout_dict)
+                if merged is not None and merged != layout_dict:
+                    tour_layout_bytes = _json(merged)
+            yield eid, entry, _json(layout_dict), tour_layout_bytes
 
 
 def _export_entry_buckets(stage, default_projection, our_projection=None, our_media_dir=None,
@@ -1229,7 +1284,7 @@ def _export_entry_buckets(stage, default_projection, our_projection=None, our_me
     bucket_items = [[] for _ in range(buckets)]
 
     def add_records(col_key, stackable_types, records):
-        for eid, detail, layout_bytes in records:
+        for eid, detail, layout_bytes, tour_layout_bytes in records:
             typ = detail.get('type')
             name_en = detail.get('name_en') or ''
             folded = name_fold(name_en) if typ in stackable_types and name_en else ''
@@ -1239,8 +1294,13 @@ def _export_entry_buckets(stage, default_projection, our_projection=None, our_me
                 has_extra = bool(stackable_names[(typ, folded)] - mine)
             else:
                 has_extra = False
+            tour_part = (
+                b',"tour_layout":' + tour_layout_bytes
+                if tour_layout_bytes is not None and tour_layout_bytes != layout_bytes
+                else b''
+            )
             extra = b',"has_extra_versions":true' if has_extra else b''
-            record_bytes = b'{"detail":' + _json(detail) + b',"layout":' + layout_bytes + extra + b'}'
+            record_bytes = b'{"detail":' + _json(detail) + b',"layout":' + layout_bytes + tour_part + extra + b'}'
             bucket_items[entry_bucket_index(eid, buckets)].append((eid, record_bytes))
 
     add_records(DEFAULT, browse.STACKABLE_TYPES, _collect_default_entry_records(default_projection))

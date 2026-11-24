@@ -1226,9 +1226,11 @@ class Phase5StaticEntryBucketsAndVersionsTests(unittest.TestCase):
                         self.assertIn(eid, b_map)
                         s_e, _, b_e = site.handle(f'/api/entry?id={eid}')
                         s_l, _, b_l = site.handle(f'/api/entry-layout?id={eid}')
-                        self.assertEqual((s_e, s_l), (200, 200))
+                        s_tl, _, b_tl = site.handle(f'/api/tour-layout?at=5echm:{eid}')
+                        self.assertEqual((s_e, s_l, s_tl), (200, 200, 200))
                         self.assertEqual(b_map[eid]['detail'], json.loads(b_e))
                         self.assertEqual(b_map[eid]['layout'], json.loads(b_l))
+                        self.assertEqual(b_map[eid].get('tour_layout', b_map[eid]['layout']), json.loads(b_tl))
                     self.assertFalse(bucket['ver_1'].get('has_extra_versions', False))
                     self.assertFalse(bucket['ver_2'].get('has_extra_versions', False))
                     self.assertTrue(bucket['ver_3'].get('has_extra_versions'))
@@ -1259,6 +1261,7 @@ class Phase5StaticEntryBucketsAndVersionsTests(unittest.TestCase):
                 media_dir = o5e_dir / 'media'
                 media_dir.mkdir()
                 o5e_cat = Our5etoolsCatalog(o5e_dir)
+                o5e_tour = Our5etoolsTour(OUR5ETOOLS_DATA)
                 try:
                     with closing(sqlite3.connect(proj_o5e.as_uri() + '?mode=ro', uri=True)) as conn:
                         wanted = set()
@@ -1273,15 +1276,19 @@ class Phase5StaticEntryBucketsAndVersionsTests(unittest.TestCase):
                         if grp_row:
                             wanted.add(grp_row[0])
                     checked = 0
-                    for eid, detail_rec, layout_bytes in _collect_our_entry_records(proj_o5e, media_dir, extra_locs):
+                    for eid, detail_rec, layout_bytes, tour_layout_bytes in _collect_our_entry_records(proj_o5e, media_dir, extra_locs):
                         if eid in wanted:
                             expected_d = o5e_cat.detail(eid)
                             expected_d['collection'] = 'our5etools'
                             self.assertEqual(detail_rec, expected_d, eid)
                             self.assertEqual(json.loads(layout_bytes), o5e_cat.layout(eid), eid)
+                            expected_tl = o5e_tour.layout(eid)
+                            actual_tl = json.loads(tour_layout_bytes) if tour_layout_bytes is not None else json.loads(layout_bytes)
+                            self.assertEqual(actual_tl, expected_tl, eid)
                             checked += 1
                     self.assertEqual(checked, len(wanted))
                 finally:
+                    o5e_tour.catalog.close()
                     o5e_cat.close()
 
     @unittest.skipUnless(shutil.which('node'), 'Node.js is required to test web/pages-entries.js')
@@ -1298,6 +1305,7 @@ class Phase5StaticEntryBucketsAndVersionsTests(unittest.TestCase):
             'ver_extra': {
                 'detail': {'id': 'ver_extra', 'name': 'Extra', 'collection': '5echm'},
                 'layout': {'status': 'ok', 'html': '<p>Extra</p>'},
+                'tour_layout': {'status': 'ok', 'html': '<p>Extra Tour</p>'},
                 'has_extra_versions': True,
             },
             'ver_plain': {
@@ -1432,6 +1440,26 @@ assert.equal(recovered.status, 200);
 
 assert.equal(await request('/api/entry?id=ver_extra&versions=bogus'), null);
 assert.equal(await request('/api/entry?id=ver_extra&libraries=bad!'), null);
+
+// 7. Entry /api/tour-layout hits static tour_layout or falls back to layout, and passes non-entry paths to Worker
+resetCache();
+attrValue = '2:gzip';
+const rtlExtra = await request('/api/tour-layout?at=5echm:ver_extra&snapshot=s1');
+assert.equal(rtlExtra.status, 200);
+assert.equal(rtlExtra.headers.get('X-Anna-Entry-Bundle'), '1');
+assert.deepEqual(await rtlExtra.json(), {{status: 'ok', html: '<p>Extra Tour</p>'}});
+const rtlPlain = await request('/api/tour-layout?at=5echm:ver_plain');
+assert.equal(rtlPlain.status, 200);
+assert.deepEqual(await rtlPlain.json(), {{status: 'ok', html: '<p>Plain</p>'}});
+assert.equal(await request('/api/tour-layout?at=5echm:ver_extra&libraries=our5etools'), null);
+assert.equal(await request('/api/tour-layout?at=our5etools:ver_extra&libraries=5echm,our5etools'), null);
+assert.equal(await request('/api/tour-layout?at=5echm:n123'), null);
+assert.equal(await request('/api/tour-layout?at=create'), null);
+resetCache();
+attrValue = null;
+const rtlO5e = await request('/api/tour-layout?at=our5etools:o5e_one&libraries=our5etools');
+assert.equal(rtlO5e.status, 200);
+assert.deepEqual(await rtlO5e.json(), {{status: 'ok', html: '<p>One</p>'}});
 """
         proc = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=20)
         self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)

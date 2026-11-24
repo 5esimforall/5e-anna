@@ -2392,6 +2392,43 @@ def build_subclass_records(
     return records
 
 
+def subclass_root_feature_id(
+    db: sqlite3.Connection,
+    entry_table: str,
+    entry_id: str,
+    name: str,
+    name_zh: str,
+    *,
+    order_col: str = 'e.rowid',
+) -> str | None:
+    """Return the root class-feature ID shared with a subclass tour layout, if present."""
+    feats = db.execute(
+        f'SELECT e.id, e.name, e.name_zh, e.owner_level '
+        f'FROM relations r JOIN {entry_table} e ON e.id = r.source_id '
+        "WHERE r.target_id = ? AND r.type = 'part_of' AND e.type = 'class_feature' "
+        f'ORDER BY COALESCE(e.owner_level, 999), {order_col}',
+        (entry_id,),
+    ).fetchall()
+    if not feats:
+        return None
+    min_level = feats[0]['owner_level']
+    wanted = {x for x in (name, name_zh) if x}
+    root = next(
+        (f for f in feats if f['owner_level'] == min_level and (f['name'] in wanted or f['name_zh'] in wanted)),
+        None,
+    )
+    return root['id'] if root is not None else None
+
+
+def merge_subclass_tour_layout(root_layout: dict[str, Any], own_layout: dict[str, Any]) -> dict[str, Any] | None:
+    """Combine a subclass's root-feature layout with its own fluff section for tour detail rendering."""
+    if root_layout.get('status') == 'ok' and root_layout.get('html'):
+        fluff = FLUFF_SECTION_RE.search(own_layout.get('html') or '') if own_layout.get('status') == 'ok' else None
+        html = root_layout['html'] + (fluff.group(0) if fluff else '')
+        return {**root_layout, 'html': html}
+    return None
+
+
 class Our5etoolsTour:
     """The levels of the tour in one our5etools snapshot: its contents, books, packages and entries.
 
@@ -3070,7 +3107,7 @@ class Our5etoolsTour:
         self._ensure_loaded()
         if not segment or not ENTRY_SEGMENT_RE.fullmatch(segment):
             return {'status': 'empty'}
-        root = None
+        root_id = None
         with self.catalog._db() as db:
             self.catalog._ensure_static_cache(db)
             row = db.execute(
@@ -3078,15 +3115,15 @@ class Our5etoolsTour:
                 (segment,),
             ).fetchone()
             if row is not None and row['type'] == 'subclass':
-                feats = self._subclass_parts(db, segment)
-                root = self._subclass_root_feature(feats, row['name'], row['name_zh'] or '')
-        if root is not None:
-            root_layout = self.catalog.layout(root['id'])
-            if root_layout.get('status') == 'ok' and root_layout.get('html'):
-                own_layout = self.catalog.layout(segment)
-                fluff = FLUFF_SECTION_RE.search(own_layout.get('html') or '') if own_layout.get('status') == 'ok' else None
-                html = root_layout['html'] + (fluff.group(0) if fluff else '')
-                return {**root_layout, 'html': html}
+                order_col = 'e.build_order' if self.catalog._has_build_order else 'e.rowid'
+                root_id = subclass_root_feature_id(
+                    db, self.catalog._entry_table, segment, row['name'], row['name_zh'] or '',
+                    order_col=order_col,
+                )
+        if root_id is not None:
+            merged = merge_subclass_tour_layout(self.catalog.layout(root_id), self.catalog.layout(segment))
+            if merged is not None:
+                return merged
         return self.catalog.layout(segment)
 
 

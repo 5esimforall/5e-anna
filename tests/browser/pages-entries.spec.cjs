@@ -312,3 +312,60 @@ test('Multi-scope static tour cache serves root and level-1 topic with 0 worker 
   expect(seen.defaultTour).toBe(0);
   expect(seen.worker).toBe(0);
 });
+
+test('Pages mode opens tour entry layout directly from static bucket without worker fallback', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900});
+  const listData = await (await page.request.get(`${anna}/api/entries?type=spell&limit=1`)).json();
+  const spell = listData.rows[0];
+  const spellDetail = await (await page.request.get(`${anna}/api/entry?id=${encodeURIComponent(spell.id)}`)).json();
+  const tourLayout = await (await page.request.get(`${anna}/api/tour-layout?at=${encodeURIComponent('5echm:' + spell.id)}`)).json();
+  const bucketGzip = zlib.gzipSync(Buffer.from(JSON.stringify({
+    [spell.id]: {
+      detail: {...spellDetail, collection: '5echm'},
+      layout: {status: 'ok', html: '<p>Entry Layout</p>'},
+      tour_layout: tourLayout,
+    },
+  }), 'utf-8'));
+
+  const realPagesJs = fs.readFileSync(path.join(webDir, 'pages.js'), 'utf-8');
+  const testPagesJs = realPagesJs.replace(
+    'connect();\n  const id = ++nextId, priority = priorityOf(path);',
+    'if (path.startsWith("/api/tour-layout?")) await fetch("/__worker_tour_layout_fallback");\n  return fetch(path, {signal});\n  connect();\n  const id = ++nextId, priority = priorityOf(path);'
+  );
+  expect(testPagesJs).not.toBe(realPagesJs);
+
+  const seen = {bucket: 0, fallback: 0};
+  await page.route('**/*', async route => {
+    const u = new URL(route.request().url());
+    if (u.pathname === '/tour') {
+      const resp = await route.fetch();
+      const html = (await resp.text()).replace('<html', '<html data-anna-pages data-anna-entries="1"');
+      return route.fulfill({status: resp.status(), headers: resp.headers(), body: html});
+    }
+    if (u.pathname === '/pages.js') {
+      return route.fulfill({status: 200, contentType: 'text/javascript; charset=utf-8', body: testPagesJs});
+    }
+    if (u.pathname === '/pages-entries.js') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/javascript; charset=utf-8',
+        body: fs.readFileSync(path.join(webDir, 'pages-entries.js'), 'utf-8'),
+      });
+    }
+    if (u.pathname === '/pages-entries/000.bin') {
+      seen.bucket++;
+      return route.fulfill({status: 200, contentType: 'application/octet-stream', body: bucketGzip});
+    }
+    if (u.pathname === '/__worker_tour_layout_fallback') {
+      seen.fallback++;
+      return route.fulfill({status: 204, body: ''});
+    }
+    return route.continue();
+  });
+
+  await page.goto(`${anna}/tour?at=${encodeURIComponent('5echm:' + spell.id)}`);
+  await expect(page.locator('.tour-column[data-depth="1"]')).toHaveAttribute('data-state', 'ready');
+  await expect(page.locator('.tour-column[data-depth="1"] .tour-body')).toBeVisible();
+  expect(seen.bucket).toBe(1);
+  expect(seen.fallback).toBe(0);
+});

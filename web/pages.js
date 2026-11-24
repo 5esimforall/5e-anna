@@ -21,7 +21,7 @@ function priorityOf(path) {
 async function entryBundleRequest(path, signal) {
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return null;
   const pathname = new URL(path, 'https://anna.invalid').pathname;
-  if (pathname !== '/api/entry' && pathname !== '/api/entry-layout') return null;
+  if (pathname !== '/api/entry' && pathname !== '/api/entry-layout' && pathname !== '/api/tour-layout') return null;
   entriesLoader ??= import(new URL('pages-entries.js', siteBase).href).catch(() => null);
   const loader = await entriesLoader;
   signal?.throwIfAborted();

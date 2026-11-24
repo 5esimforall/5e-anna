@@ -8,6 +8,7 @@ const VALID_WORK = /^[a-z0-9]+(?:-[a-z0-9]+)*:.{1,300}$/;
 const RULESETS = new Set(['5r', '5e', '待核']);
 const CONTENT = new Set(['official', 'partnered', 'unverified', 'curated', 'community']);
 const SINGLE_VALUE_KEYS = ['libraries', 'versions', 'prefer', 'rulesets', 'content'];
+const TOUR_ENTRY_AT = /^([a-z0-9]+(?:-[a-z0-9]+)*):((?:ver_|o5e_)[A-Za-z0-9_.:-]+)$/;
 
 let configPromise = null;
 const bucketCache = new Map();
@@ -147,14 +148,25 @@ export async function request(path, {signal} = {}) {
   signal?.throwIfAborted();
   if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return null;
   const url = new URL(path, 'https://anna.invalid');
-  if (url.pathname !== '/api/entry' && url.pathname !== '/api/entry-layout') return null;
+  const tourLayout = url.pathname === '/api/tour-layout';
+  if (!tourLayout && url.pathname !== '/api/entry' && url.pathname !== '/api/entry-layout') return null;
 
   const scope = parseEntryScope(url.searchParams);
   if (!scope) return null;
 
-  const id = url.searchParams.get('id') || '';
-  if (!id) {
-    return Response.json({error:'条目不存在'}, {status:404, headers:{'X-Anna-Entry-Bundle':'1'}});
+  let id = '', collection = null;
+  if (tourLayout) {
+    if (url.searchParams.getAll('at').length > 1) return null;
+    const match = TOUR_ENTRY_AT.exec(url.searchParams.get('at') || '');
+    if (!match) return null;
+    collection = match[1];
+    id = match[2];
+    if (!scope.libraries.includes(collection)) return null;
+  } else {
+    id = url.searchParams.get('id') || '';
+    if (!id) {
+      return Response.json({error:'条目不存在'}, {status:404, headers:{'X-Anna-Entry-Bundle':'1'}});
+    }
   }
 
   const config = await waitWithAbort(readConfig(), signal);
@@ -174,9 +186,14 @@ export async function request(path, {signal} = {}) {
   signal?.throwIfAborted();
 
   if (!Object.hasOwn(bucket, id)) {
+    if (tourLayout) return null;
     return Response.json({error:'条目不存在'}, {status:404, headers:{'X-Anna-Entry-Bundle':'1'}});
   }
   const record = bucket[id];
+  if (tourLayout) {
+    if (record.detail?.collection !== collection) return null;
+    return Response.json(record.tour_layout ?? record.layout, {headers:{'X-Anna-Entry-Bundle':'1'}});
+  }
   if (url.pathname === '/api/entry-layout') {
     return Response.json(record.layout, {headers:{'X-Anna-Entry-Bundle':'1'}});
   }

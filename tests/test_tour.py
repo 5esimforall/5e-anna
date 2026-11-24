@@ -345,6 +345,41 @@ class TourTests(unittest.TestCase):
                     ask(segment)
                 self.assertEqual((caught.exception.code, caught.exception.status), (code, status))
 
+    def test_content_gaps_reports_missing_lead_and_untyped_outline_nodes(self):
+        with closing(sqlite3.connect(self.catalog.db)) as conn:
+            conn.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?,?)',
+                         ('topics/empty_leaf.htm', '', 'document', 'ok', '', ' \n空叶\n', '["src_phb"]', '{}'))
+            conn.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?,?)',
+                         ('topics/nolead_outline.htm', '', 'document', 'ok', '', ' \n无导语\n第一条 First\n内容。\n', '["src_phb"]', '{}'))
+            self.catalog.entry(conn, 'ver_g1', '第一条 First', 'section', 'topics/nolead_outline.htm', (5, 17), 13)
+            conn.execute('INSERT INTO pages VALUES(?,?,?,?,?,?,?,?)',
+                         ('topics/typed_leaf.htm', '', 'document', 'ok', '', ' \n火球术\n发射一团烈焰。\n', '["src_phb"]', '{}'))
+            self.catalog.entry(conn, 'ver_g2', '火球术 Fireball', 'spell', 'topics/typed_leaf.htm', (2, 14), 5, primary=True, name_zh='火球术')
+            conn.commit()
+        extra_nodes = [
+            *NODES,
+            node('30', '12', '空叶', 'topics/empty_leaf.htm'),
+            node('31', '12', '无导语', 'topics/nolead_outline.htm'),
+            node('32', '12', '火球术', 'topics/typed_leaf.htm'),
+        ]
+        tour = Tour(self.catalog.db, extra_nodes, {'ver_b1', 'ver_g2'}, load(write(Path(self.tmp.name), CURATION)), Path(self.tmp.name) / 'source')
+        summary, rows = tour.content_gaps()
+        by_node = {r['node_id']: r for r in rows}
+        # Missing both lead & outline on empty leaf, missing lead on node with outline, untyped leaf without outline on step2.
+        self.assertEqual(by_node['30']['missing'], 'lead;outline')
+        self.assertEqual(by_node['30']['entries'], 0)
+        self.assertEqual(by_node['31']['missing'], 'lead')
+        self.assertEqual(by_node['15']['missing'], 'outline')
+        self.assertFalse(by_node['15']['page_typed'])
+        # Typed leaf with lead (ver_g2) is already semantically classified, so it is excluded; quick-reference & dividers are excluded.
+        self.assertNotIn('32', by_node)
+        self.assertNotIn('1', by_node)
+        self.assertNotIn('2', by_node)
+        self.assertNotIn('10', by_node)
+        self.assertGreaterEqual(summary['missing_both'], 1)
+        self.assertGreaterEqual(summary['untyped_leaf_without_outline'], 2)
+        self.assertGreaterEqual(summary['empty_leaf_without_entries'], 1)
+
 
 class LibraryTourTests(unittest.TestCase):
     """The first column, the topics and the shelf over the reader's library, the book's levels qualified."""
@@ -580,6 +615,21 @@ class CorpusTests(unittest.TestCase):
             with self.subTest(topic=key):
                 if self.tour.available(self.tour.topics[key]):
                     self.assertEqual(self.tour.view(key)['status'], 'ok')
+
+    def test_combat_rest_and_dm_prep_routes_and_content_gaps(self):
+        for key in ('combat', 'healing-rest', 'downtime', 'dm-prep', 'dm-running', 'dm-adventures'):
+            with self.subTest(topic=key):
+                view = self.tour.view(key)
+                self.assertEqual(view['status'], 'ok')
+        self.assertEqual([i['id'] for i in self.items(self.tour.view('combat'), 'choices')],
+                         ['actions', 'conditions', 'healing-rest'])
+        self.assertEqual([i['id'] for i in self.items(self.tour.view('dm-prep'), 'choices')],
+                         ['dm-adventures', 'dm-running', 'monsters', 'tables'])
+        summary, rows = self.bundle.tour().content_gaps()
+        self.assertGreater(summary['nodes_checked'], 100)
+        self.assertLessEqual(summary['missing_both'], summary['missing_lead'])
+        self.assertLessEqual(summary['empty_leaf_without_entries'], summary['untyped_leaf_without_outline'])
+        self.assertEqual(sum(1 for r in rows if r['missing'] == 'lead;outline'), summary['missing_both'])
 
     @unittest.skipUnless(paths.OUR5ETOOLS_DATA.joinpath('manifest.json').exists(), 'Build our5etools first')
     def test_every_curated_our5etools_path_resolves(self):

@@ -676,6 +676,7 @@ mark { background: var(--anna-mark); color: var(--anna-mark-ink); scroll-margin-
   /* The other companion keeps her avatar; where turning to her leads stays in its accessible name and tooltip. */
   .companion-label { display: none; }
   .companion-go { padding-right: 3px; }
+  .companion-menu { right: -46px; max-width: calc(100vw - 32px); }
   .table-wrap { overflow-x: hidden; scroll-padding-top: 0; }
   .table-wrap>table { width: auto; min-width: 0; }
   .table-wrap table, .table-wrap tbody { display: block; }

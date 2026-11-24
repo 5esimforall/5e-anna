@@ -6,7 +6,7 @@ workspace.useStorage({get:key=>values.has(key)?values.get(key):null,set:(key,val
 const builds={'5echm':'s1',brew:'b1'};
 const book=(root,y=10,extra={})=>({root:'5echm:'+root,page:`5echm:topics/${root}.htm`,node:'5echm:'+root,position:{x:0,y},label:root,snapshot:'s1',...extra});
 const query=(q,extra={})=>({query:q,entry:'',entryName:'',title:q,ui:{tableTop:40},...extra});
-const empty={version:2,topic:null,query:[],book:[]};
+const empty={version:2,topic:null,query:[],book:[],tour:null};
 
 // Addresses name their collection.
 assert.equal(workspace.collectionOf('brew:books/a.html'),'brew');
@@ -114,4 +114,17 @@ assert.equal(workspace.takeResume('book'),null);
 global.sessionStorage={getItem(){throw new Error('blocked');},setItem(){throw new Error('blocked');},removeItem(){}};
 workspace.requestResume('book','a');
 assert.equal(workspace.takeResume('book'),null);
+
+// Tour positions live in the shared workspace, drop collection levels when that collection rebuilds, and keep curated paths.
+let toured=workspace.normalize(null,builds);
+toured=workspace.rememberTour(toured,{path:'create/5echm:n924',title:'第一步：选择职业',snapshots:{'5echm':'s1'},at:50});
+assert.deepEqual(toured.tour,{path:'create/5echm:n924',title:'第一步：选择职业',snapshots:{'5echm':'s1'},at:50});
+assert.equal(workspace.rememberTour(toured,{path:'../bad',title:'bad'}).tour.path,'create/5echm:n924','invalid tour path is ignored');
+assert.equal(workspace.normalize(JSON.parse(JSON.stringify(toured)),{'5echm':'s1'}).tour.path,'create/5echm:n924');
+assert.equal(workspace.normalize(JSON.parse(JSON.stringify(toured)),{'5echm':'s2'}).tour,null,'rebuilt collection drops its tour level');
+toured=workspace.rememberTour(toured,{path:'create',title:'创建角色',snapshots:{},at:60});
+assert.equal(workspace.normalize(JSON.parse(JSON.stringify(toured)),{'5echm':'s2'}).tour.path,'create','curated topic path survives rebuilds');
+toured=workspace.rememberTour(toured,{path:'create/brew:n1',title:'家酿节点',snapshots:{brew:'b1'},at:70});
+assert.equal(workspace.normalize(JSON.parse(JSON.stringify(toured)),{'5echm':'s1'}).tour.path,'create/brew:n1','unknown collection tour stays for pages that know it');
+assert.equal(workspace.clearTour(toured).tour,null);
 console.log('workspace ok');

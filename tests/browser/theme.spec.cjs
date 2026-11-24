@@ -168,3 +168,40 @@ test('theme labels are localized independently of the query app',async({page})=>
     await expect(control(page)).toHaveAttribute('title',label);
   }
 });
+
+test('dark mode renders consistently across Query, Tour and Stella on desktop and narrow screens',async({page})=>{
+  await page.goto(anna);await ready(page);
+  await choose(page,'dark');
+  for(const viewport of [{width:1280,height:800},{width:375,height:812}]){
+    await page.setViewportSize(viewport);
+    // Query page in dark mode
+    await page.goto(anna+'/?type=spell');await ready(page);
+    await expect(root(page)).toHaveAttribute('data-theme','dark');
+    await expect(root(page)).toHaveCSS('color-scheme','dark');
+    await expect(page.locator('body')).toHaveCSS('background-color','rgb(21, 23, 27)');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+
+    // Tour page in dark mode
+    await page.goto(anna+'/tour?at=create');
+    await expect(page.locator('.tour-column[data-depth="1"]')).toHaveAttribute('data-state','ready');
+    await expect(root(page)).toHaveAttribute('data-theme','dark');
+    await expect(page.locator('.tour-column[data-depth="1"]')).toHaveCSS('background-color','rgb(33, 36, 41)');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+
+    // Stella page + sidebar + companion menu in dark mode
+    await page.goto(anna+'/read');
+    await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');
+    await expect(page.locator('#content')).toBeVisible();
+    await expect(root(page)).toHaveAttribute('data-theme','dark');
+    if(viewport.width<=800)await page.locator('#book-menu').click();
+    await expect(page.locator('#book-sidebar')).toBeVisible();
+    await expect(page.locator('#book-sidebar')).toHaveCSS('background-color','rgb(27, 30, 35)');
+    if(viewport.width<=800)await page.locator('#book-close').click();
+    await page.locator('#companion-more').click();
+    await expect(page.locator('#companion-menu')).toHaveCSS('background-color','rgb(33, 36, 41)');
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+  }
+  await page.reload();
+  await expect(root(page)).toHaveAttribute('data-theme','dark');
+});

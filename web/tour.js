@@ -37,7 +37,7 @@ const annaTour = (() => {
   const lang = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
   const ui = annaTourLabels[lang], {esc, stored} = annaKit;
   // A level is named by one segment: a topic key, or `collection:segment` for a level of one collection's own.
-  const MEMORY = 'anna.tour', SEGMENT = /^[A-Za-z0-9_.:-]+$/, FILTER_THRESHOLD = 24;
+  const MEMORY = 'anna.tour', SEGMENT = /^(?!\.\.?$)[A-Za-z0-9_.:-]+$/, FILTER_THRESHOLD = 24;
   const columns = document.querySelector('#tour-columns'), notice = document.querySelector('#tour-notice');
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   // How many levels stay open side by side; the rest fold. Phones read one level at a time.
@@ -55,7 +55,7 @@ const annaTour = (() => {
   const views = new Map(), layouts = new Map(), reading = new WeakMap(), motions = new WeakMap();
   /* `shown` is the generation whose levels are in place; `landing` is where the focus goes once the levels on their
      way are. `openOnRest` opens the row a held key rests on, when the key is released or `restTimer` runs out. */
-  let snapshot = null, snapshots = {}, path = [], generation = 0, shown = 0, landing = null, mounted = false, topic = null;
+  let snapshot = null, snapshots = {}, path = [], generation = 0, shown = 0, landing = null, mounted = false, topic = null, querySwitchWired = false;
   let restTimer = 0, openOnRest = null;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
@@ -487,24 +487,63 @@ const annaTour = (() => {
     land();
     return moved;
   }
+  function tourPathSnapshots(segments) {
+    const used = {};
+    for (const seg of segments) {
+      const col = collectionOf(seg);
+      if (col && col in snapshots && snapshots[col]) used[col] = snapshots[col];
+    }
+    return used;
+  }
+  function querySwitchHref(latest) {
+    if (!latest) return '/';
+    const params = new URLSearchParams(latest.query);
+    if (latest.entry) params.set('entry', annaWorkspace.localOf(latest.entry));
+    return '/' + (params.size ? '?' + params : '');
+  }
+  function syncQuerySwitch() {
+    if (!snapshot) return;
+    const latest = annaWorkspace.read(snapshots).query[0] || null;
+    annaTopbar.pointSwitch('query', querySwitchHref(latest));
+    const link = document.querySelector('.page-switch a[data-page="query"]');
+    if (!link) return;
+    if (latest) link.dataset.resume = annaWorkspace.memoryId.query(latest);
+    else delete link.dataset.resume;
+  }
   // After a level opens: the title names it, the place is remembered, and an entry shown here is the topic.
   function settle() {
     const last = views.get(['', ...path].at(-1));
     document.title = annaPageTitle('tour', last && last.kind !== 'root' ? nameOf(last) : ui.title);
-    stored.set(MEMORY, path.length ? joinSegments(path) : null);
+    stored.set(MEMORY, null);
     if (!snapshot) return;
     if (!mounted && typeof annaCompanions !== 'undefined') { annaCompanions.mount({page:'tour', snapshots}); mounted = true; }
-    const latest = annaWorkspace.read(snapshots).query[0];
-    annaTopbar.pointSwitch('query', latest ? '/?' + latest.query : '/');
+    if (!querySwitchWired) {
+      annaWorkspace.subscribe(syncQuerySwitch);
+      document.querySelector('.page-switch')?.addEventListener('click', event => {
+        const anchor = event.target.closest('a[data-page="query"][data-resume]');
+        if (!anchor || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        annaWorkspace.requestResume('query', anchor.dataset.resume);
+      });
+      querySwitchWired = true;
+    }
     // An entry shown here is the topic Stella can turn to when it has a place in its book.
     const shownEntry = last?.kind === 'entry' && last.type !== 'section' && last.read && collectionOf(last.id) ? last : null;
-    if (topic && topic !== shownEntry?.id) annaWorkspace.update(snapshots, state => annaWorkspace.clearTopic(state, topic));
-    if (shownEntry && topic !== shownEntry.id) {
-      const nextTopic = {entry:shownEntry.id, name:shownEntry.title, from:'query', snapshot:snapshots[collectionOf(shownEntry.id)], at:Date.now()};
-      if (shownEntry.read?.page) nextTopic.bookLocation = shownEntry.read;
-      annaWorkspace.update(snapshots, state => annaWorkspace.setTopic(state, nextTopic));
-    }
+    const prevTopic = topic;
+    const nextTopic = shownEntry && prevTopic !== shownEntry.id ? {
+      entry:shownEntry.id, name:shownEntry.title, from:'query',
+      snapshot:snapshots[collectionOf(shownEntry.id)], at:Date.now(),
+      ...(shownEntry.read?.page ? {bookLocation:shownEntry.read} : {})
+    } : null;
+    annaWorkspace.update(snapshots, state => {
+      let next = path.length
+        ? annaWorkspace.rememberTour(state, {path:joinSegments(path), title:last ? nameOf(last) : '', snapshots:tourPathSnapshots(path), at:Date.now()})
+        : annaWorkspace.clearTour(state);
+      if (prevTopic && prevTopic !== shownEntry?.id) next = annaWorkspace.clearTopic(next, prevTopic);
+      if (nextTopic) next = annaWorkspace.setTopic(next, nextTopic);
+      return next;
+    });
     topic = shownEntry?.id || null;
+    syncQuerySwitch();
   }
   // Opening a level is a step in history; `replace` changes the current step instead. `focus` is where the focus
   // lands once the levels are in place: `depth` names the level, `enter` enters it rather than its rows, and `open`

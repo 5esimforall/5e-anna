@@ -52,9 +52,11 @@ test('the reader topbar mirrors anna with its own Stella avatar on desktop and m
     await page.locator('.skip-link').focus();await page.keyboard.press('Tab');
     await expect(brand).toBeFocused();
     await page.locator('.companion-go').focus();await page.keyboard.press('Tab');
+    await expect(page.locator('#companion-more')).toBeFocused();
+    await page.keyboard.press('Tab');
     await expect(page.locator('#theme')).toBeFocused();
-    // With nothing more remembered, the companion is one link; the library and the theme are the visible buttons.
-    await expect(page.locator('.book-topbar button:visible')).toHaveCount(2);
+    // In Stella, the companion menu always reaches Anna's Tour as well as Query; Library and Theme are the other buttons.
+    await expect(page.locator('.book-topbar button:visible')).toHaveCount(3);
     await expect(page.locator('.book-topbar .library-button')).toBeVisible();
     await expect(page.locator('#book-bar #book-menu')).toHaveCSS('border-top-color','rgba(0, 0, 0, 0)');
     const [bar,menu,scope,pager,marks]=await Promise.all(['#book-bar','#book-menu','#book-scope-title','#book-paging','#book-link-marks'].map(s=>page.locator(s).boundingBox()));
@@ -224,7 +226,8 @@ test('reader footer shows the printed source release and only the search shortcu
   await visit(page);
   expect(bookCollection(meta).source_release.path).toBe('topics/写在前面.html');
   expect(bookCollection(meta).source_release.version).toMatch(/^\d{8}(?:\.\d+)*$/);
-  await expect(page.locator('.book-sidebar-foot')).toHaveText('不全书 v'+bookCollection(meta).source_release.version+'/ 搜索');
+  await expect(page.locator('#book-tour-link')).toHaveText('回到导览');
+  await expect(page.locator('.book-sidebar-foot')).toHaveText('回到导览不全书 v'+bookCollection(meta).source_release.version+'/ 搜索');
   await expect(page.locator('#book-snapshot')).toHaveCount(0);
   await page.route('**/api/reader',async route=>{
     const response=await route.fetch();const data=await response.json();bookCollection(data).source_release=null;
@@ -232,7 +235,7 @@ test('reader footer shows the printed source release and only the search shortcu
   });
   await page.reload();await ready(page);
   await expect(page.locator('#book-version')).toBeHidden();
-  await expect(page.locator('.book-sidebar-foot')).toHaveText('/ 搜索');
+  await expect(page.locator('.book-sidebar-foot')).toHaveText('回到导览/ 搜索');
 });
 
 test('duplicate directory entries retain their node; filtering restores expansion and keyboard navigation',async({page})=>{

@@ -4,7 +4,10 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-from anna.catalog.audit import classification_gaps, gap_report, reference_report, reference_summary, type_conflict_report, conflict_report
+from anna.catalog.audit import (
+    classification_gaps, conflict_report, gap_report, reference_report, reference_summary,
+    tour_content_gaps, tour_gap_report, type_conflict_report,
+)
 
 REAL_DB=Path(__file__).resolve().parents[1]/'data/extracted/catalog.sqlite'
 
@@ -247,3 +250,23 @@ class ReferenceReportTests(unittest.TestCase):
         self.assertIn('未登记缺失候选（按引用种类）：creature 1',lines)
         self.assertIn('| `table` | 1 | 0 | 0 | 0 | 0 |',lines)
         db.close()
+
+
+class TourGapReportTests(unittest.TestCase):
+    def test_missing_book_returns_none_and_report_renders_summary(self):
+        self.assertEqual(tour_content_gaps(':memory:', None), (None, []))
+        self.assertEqual(tour_gap_report({'tour_gaps': None}, {'tour': []}), [])
+        result = {'tour_gaps': {
+            'nodes_checked': 10,
+            'missing_both': 1,
+            'missing_lead': 2,
+            'missing_outline': 3,
+            'untyped_leaf_without_outline': 2,
+            'empty_leaf_without_entries': 1,
+            'by_book': [{'book': '测试书', 'missing_both': 1, 'missing_lead': 2, 'untyped_leaf_without_outline': 1}],
+        }}
+        rows = [{'label_path': '测试书 / 空页', 'page_path': 'topics/empty.htm', 'kind': 'leaf', 'missing': 'lead;outline', 'entries': 0}]
+        lines = '\n'.join(tour_gap_report(result, {'tour': rows}))
+        self.assertIn('既缺导语又缺本页清单：1', lines)
+        self.assertIn('| 测试书 | 1 | 2 | 1 |', lines)
+        self.assertIn('`测试书 / 空页`', lines)

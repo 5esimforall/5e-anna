@@ -399,3 +399,19 @@ test('a phone shows one level with the way back, in either theme',async({page})=
   await expect(level(page,2).locator('.tour-item').first()).toBeFocused();
   await expect(page.locator('.tour-column')).toHaveCount(3);
 });
+
+test('curated routes cover combat, resting/downtime and DM session prep',async({page})=>{
+  await page.setViewportSize({width:1280,height:800});
+  await page.goto(anna+'/tour');await ready(page,0);
+  await row(page,0,'战斗回合').click();await ready(page,1);
+  expect(at(page)).toBe('combat');
+  await expect(level(page,1).locator('[data-group=choices] .tour-item-title')).toHaveText(['动作','状态','伤害、治疗与休息']);
+
+  await row(page,0,'休整期活动').click();await ready(page,1);
+  expect(at(page)).toBe('downtime');
+  await expect(level(page,1).locator('h2')).toHaveText('休整期活动');
+
+  await row(page,0,'城主备团').click();await ready(page,1);
+  expect(at(page)).toBe('dm-prep');
+  await expect(level(page,1).locator('[data-group=choices] .tour-item-title')).toHaveText(['创建冒险与遭遇','运作游戏','怪物图鉴','随机表与战利品表']);
+});

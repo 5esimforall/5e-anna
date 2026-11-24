@@ -264,7 +264,21 @@ def reference_summary(db):
     }
 
 
-def audit(db_path,baseline=None):
+def tour_content_gaps(db_path,book_dir):
+    """Inspect present non-divider Tour TOC nodes missing a lead or untyped leaf outline."""
+    if not book_dir:return None,[]
+    book_dir=Path(book_dir)
+    reader_file,manifest_file=book_dir/'anna-reader.json',book_dir/'anna-manifest.json'
+    if not reader_file.is_file() or not manifest_file.is_file():return None,[]
+    from anna.presentation.tour import Tour,load as load_curation
+    reader=json.loads(reader_file.read_text(encoding='utf-8'))
+    manifest=json.loads(manifest_file.read_text(encoding='utf-8'))
+    locatable={eid for eid,entry in manifest['entries'].items() if entry.get('locatable')}
+    tour=Tour(db_path,reader['nodes'],locatable,load_curation(),book_dir)
+    return tour.content_gaps()
+
+
+def audit(db_path,baseline=None,book_dir=None):
     db=connect(db_path)
     summary=json.loads(db.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
     entries={r['id']:dict(r) for r in db.execute('SELECT id,name,type,page_path,fields FROM entries')}
@@ -276,6 +290,7 @@ def audit(db_path,baseline=None):
     counterparts=audit_counterparts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
     gaps,gap_pages,gap_sections=classification_gaps(db)
     conflicts,conflict_rows=type_conflict_report(db)
+    tour_gaps_summary,tour_gap_rows=tour_content_gaps(db_path,book_dir)
     old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None;ref_coverage_before=None
     if baseline:
         old=connect(baseline)
@@ -306,8 +321,9 @@ def audit(db_path,baseline=None):
         'reference_coverage':ref_coverage,'reference_coverage_before':ref_coverage_before,
         'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
         'classification_gaps':gaps,'classification_gaps_before':gaps_before,
-        'type_conflicts':conflicts,'type_conflicts_before':conflicts_before}
-    db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows}
+        'type_conflicts':conflicts,'type_conflicts_before':conflicts_before,
+        'tour_gaps':tour_gaps_summary}
+    db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows,'tour':tour_gap_rows}
 
 
 def gap_report(result,gaps):
@@ -400,6 +416,30 @@ def reference_report(result):
     return lines
 
 
+def tour_gap_report(result,gaps):
+    """Markdown feedback for entry classification: TOC nodes missing a lead or untyped leaf outline."""
+    now=result.get('tour_gaps')
+    if not now:
+        return []
+    lines=['','## 导览内容缺口（条目分类反馈）','',
+        '统计非分隔符、非速查的可用目录节点：缺乏导语（标题与首条目之间无文本，常见于未分段导言或版权／索引页）或属于未分类叶节点且“本页”清单为空时，通常意味着页面条目尚未按语义识别或划分。','',
+        f"- 检查目录节点：{now['nodes_checked']}。",
+        f"- 既缺导语又缺本页清单：{now['missing_both']}。",
+        f"- 缺乏导语的目录节点：{now['missing_lead']}。",
+        f"- 未分类且本页清单为空的叶节点：{now['untyped_leaf_without_outline']}（其中页面无任何条目 {now['empty_leaf_without_entries']}）。"]
+    if now.get('by_book'):
+        lines+=['','| 书籍 | 缺导语且缺清单 | 缺导语 | 未分类无清单叶节点 |','|---|---:|---:|---:|']
+        for b in now['by_book'][:15]:
+            lines.append(f"| {b['book']} | {b['missing_both']} | {b['missing_lead']} | {b['untyped_leaf_without_outline']} |")
+    both_rows=[r for r in (gaps.get('tour') or ()) if r.get('missing')=='lead;outline']
+    if both_rows:
+        lines+=['','既缺导语又缺本页清单的节点（前 15 项）：','']
+        for r in both_rows[:15]:
+            lines.append(f"- `{r['label_path']}`（`{r['page_path']}`，{r['kind']}，条目 {r['entries']}）")
+    lines+=['','完整节点清单见 `tour-gaps.csv` 与 `audit.json`。']
+    return lines
+
+
 def export_report(out,result,changes,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
@@ -423,19 +463,26 @@ def export_report(out,result,changes,gaps):
     lines+=['','未支持的混合饮食／住宿价格表保留原表并进入审核队列，不伪装成装备条目。驴／骡的并列表述逐个关联；未找到独立驴数据卡时保留待核，不擅用骡替代。',
         '', '全库待核原因与数量见 `audit.json` 与 `catalog.sqlite`。计数下降可能是纠正误分类，并不表示删去原文。','']
     lines+=gap_report(result,gaps)
+    lines+=tour_gap_report(result,gaps)
     lines+=conflict_report(result)
     lines+=reference_report(result)
     lines+=['',*counterpart_report(result)]
     (out/'audit.md').write_text('\n'.join(lines)+'\n')
+    if gaps.get('tour'):
+        csv_write(out/'tour-gaps.csv',gaps['tour'],
+                  ['node_id','book','label_path','page_path','kind','missing','entries','page_typed','primary_type'])
 
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
+    p.add_argument('--book',type=Path,default=PROJECT/'data/5echm-anna')
     p.add_argument('--baseline',type=Path);p.add_argument('--output',type=Path)
-    a=p.parse_args();result,changes,gaps=audit(a.db,a.baseline);export_report(a.output or a.db.parent,result,changes,gaps)
+    a=p.parse_args();result,changes,gaps=audit(a.db,a.baseline,book_dir=a.book);export_report(a.output or a.db.parent,result,changes,gaps)
     report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','concepts','change_counts']}
     report['classification_gaps']={k:result['classification_gaps'][k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
+    if result.get('tour_gaps'):
+        report['tour_gaps']={k:result['tour_gaps'][k] for k in ('nodes_checked','missing_both','missing_lead','untyped_leaf_without_outline','empty_leaf_without_entries')}
     report['type_conflicts']=result['type_conflicts']['entries'] if result['type_conflicts'] else None
     report['counterparts']={k:result['counterparts'][k] for k in ('commit','outcomes','findings','errors')} if result['counterparts'] else None
     print(json.dumps(report,ensure_ascii=False,indent=2))

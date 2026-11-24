@@ -3,10 +3,10 @@
    Both read the shared workspace, so every tab shows the same record. */
 // Companion names are not translated; the verbs say what turning to her does.
 const annaCompanionLabels = {
-  zh:{names:{query:'Anna',book:'Stella'}, topic:{book:'翻到 {name}',query:'查 {name}'}, resume:{book:'接着读 {name}',query:'回到 {name}'},
-    go:'{brand}：{action}', more:'最近打开的位置', recent:'最近', showing:'当前', allEntries:'全部条目'},
-  en:{names:{query:'Anna',book:'Stella'}, topic:{book:'Turn to {name}',query:'Look up {name}'}, resume:{book:'Keep reading {name}',query:'Back to {name}'},
-    go:'{brand}: {action}', more:'Recent places', recent:'Recent', showing:'Current', allEntries:'All entries'}
+  zh:{names:{query:'Anna',book:'Stella'}, topic:{book:'翻到 {name}',query:'查 {name}'}, resume:{book:'接着读 {name}',query:'回到 {name}',tour:'回到导览：{name}'},
+    go:'{brand}：{action}', more:'最近打开的位置', moreAnna:'Anna 的页面与最近位置', tour:'导览', tourHome:'打开导览', recent:'最近', showing:'当前', allEntries:'全部条目'},
+  en:{names:{query:'Anna',book:'Stella'}, topic:{book:'Turn to {name}',query:'Look up {name}'}, resume:{book:'Keep reading {name}',query:'Back to {name}',tour:'Back to tour: {name}'},
+    go:'{brand}: {action}', more:'Recent places', moreAnna:"Anna's pages and recent places", tour:'Tour', tourHome:'Open tour', recent:'Recent', showing:'Current', allEntries:'All entries'}
 };
 const annaCompanions = (() => {
   let labels;
@@ -65,9 +65,21 @@ const annaCompanions = (() => {
     go.querySelector('.companion-label').textContent = text || brand;
     const name = text ? fill(labels.go, {brand, action:text}) : brand;
     go.setAttribute('aria-label', name); go.title = name;
-    // The menu adds something only when it holds more than the one choice the button already makes.
-    more.hidden = (state.topic && state.topic.from !== companion ? 1 : 0) + state[companion].length < 2;
+    // The menu adds something only when it holds more than the one choice the button already makes;
+    // in Stella it also keeps Anna's Tour reachable alongside Query.
+    more.hidden = page === 'book' ? false : (state.topic && state.topic.from !== companion ? 1 : 0) + state[companion].length < 2;
     slot.classList.toggle('single', more.hidden);
+  }
+  function tourEntry(state) {
+    const anchor = document.createElement('a');
+    anchor.className = 'popup-menu-entry';
+    anchor.href = annaKit.href(state.tour ? '/tour?' + new URLSearchParams({at:state.tour.path}) : '/tour');
+    const avatar = document.createElement('img'); avatar.className = 'popup-menu-avatar';
+    avatar.src = annaKit.href(annaTopbar.pages.tour.logo); avatar.width = avatar.height = 18; avatar.alt = '';
+    const main = document.createElement('span'); main.className = 'popup-menu-label';
+    main.textContent = state.tour ? fill(labels.resume.tour, {name:state.tour.title || labels.tour}) : labels.tourHome;
+    anchor.append(avatar, main);
+    return anchor;
   }
   function group(label, entries) {
     const element = document.createElement('div'); element.setAttribute('role','group'); element.setAttribute('aria-label',label);
@@ -91,6 +103,7 @@ const annaCompanions = (() => {
       const choice = {kind:'topic', topic:state.topic};
       groups.push(group(labels.showing, [entry(choice, state, action(choice))]));
     }
+    if (page === 'book') groups.push(group(labels.tour, [tourEntry(state)]));
     const places = state[companion].map(memory => {
       const choice = {kind:'resume', memory};
       return companion === 'book' ? entry(choice, state, memoryName(companion, memory), memory.scopeLabel) :
@@ -112,7 +125,8 @@ const annaCompanions = (() => {
     slot = document.querySelector('.topbar .companion');
     go = slot.querySelector('.companion-go') || annaTopbar.companionHome(page);
     more = document.createElement('button'); more.type = 'button'; more.className = 'companion-more'; more.id = 'companion-more';
-    more.setAttribute('aria-label', labels.more); more.title = labels.more;
+    const moreLabel = page === 'book' ? labels.moreAnna : labels.more;
+    more.setAttribute('aria-label', moreLabel); more.title = moreLabel;
     more.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
     menu = document.createElement('div'); menu.className = 'popup-menu companion-menu'; menu.id = 'companion-menu';
     menu.setAttribute('role','menu'); menu.tabIndex = -1; menu.hidden = true;

@@ -715,6 +715,76 @@ class Tour:
     def count(self, db, params):
         return catalog.count(db, params)
 
+    def content_gaps(self):
+        """List present non-divider TOC nodes missing a lead or untyped leaf outline, as feedback for classification."""
+        by_book_counts = defaultdict(lambda: {'missing_both': 0, 'missing_lead': 0, 'untyped_leaf_without_outline': 0})
+        checked = missing_both = missing_lead = missing_outline = 0
+        untyped_leaf_without_outline = empty_leaf_without_entries = 0
+        rows = []
+        for nid, node in self.nodes.items():
+            if node['status'] != 'present' or divider(node) is not None:
+                continue
+            path_label = self.label_path[nid]
+            if path_label.startswith(QUICK_REFERENCE):
+                continue
+            checked += 1
+            has_lead = bool(self.page_lead(node['path']))
+            has_outline = bool(self.outline_ids(nid))
+            has_children = self.contents_count(nid) > 0
+            entries = self.on_page.get(node['path'], ())
+            primary = self.page_entry(node['path'])
+            page_typed = any(e.type not in {'section', 'lore'} for e in entries)
+            book = path_label.split(' / ', 1)[0]
+            if not has_lead and not has_outline:
+                missing_both += 1
+                by_book_counts[book]['missing_both'] += 1
+            if not has_lead:
+                missing_lead += 1
+                by_book_counts[book]['missing_lead'] += 1
+            if not has_outline:
+                missing_outline += 1
+            untyped_leaf = not has_children and not has_outline and not page_typed
+            if untyped_leaf:
+                untyped_leaf_without_outline += 1
+                by_book_counts[book]['untyped_leaf_without_outline'] += 1
+                if not entries:
+                    empty_leaf_without_entries += 1
+            if not has_lead or untyped_leaf:
+                missing_parts = [part for part, absent in (('lead', not has_lead), ('outline', not has_outline)) if absent]
+                rows.append({
+                    'node_id': nid,
+                    'book': book,
+                    'label_path': path_label,
+                    'page_path': node['path'],
+                    'kind': 'branch' if has_children else 'leaf',
+                    'missing': ';'.join(missing_parts),
+                    'entries': len(entries),
+                    'page_typed': page_typed,
+                    'primary_type': primary.type if primary else '',
+                })
+        rows.sort(key=lambda r: (0 if r['missing'] == 'lead;outline' else 1, r['label_path'], r['node_id']))
+        by_book = [
+            {'book': book, **counts}
+            for book, counts in sorted(
+                by_book_counts.items(),
+                key=lambda item: (
+                    -(item[1]['missing_both'] + item[1]['missing_lead'] + item[1]['untyped_leaf_without_outline']),
+                    item[0],
+                ),
+            )
+            if any(counts.values())
+        ]
+        summary = {
+            'nodes_checked': checked,
+            'missing_both': missing_both,
+            'missing_lead': missing_lead,
+            'missing_outline': missing_outline,
+            'untyped_leaf_without_outline': untyped_leaf_without_outline,
+            'empty_leaf_without_entries': empty_leaf_without_entries,
+            'by_book': by_book,
+        }
+        return summary, rows
+
 
 def expand_tour_nodes(raw_nodes):
     """Expand compact Tour index node tuples into dictionary nodes."""

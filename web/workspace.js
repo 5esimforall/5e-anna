@@ -6,6 +6,8 @@
    of its collection: a rebuilt collection drops what it named, and the rest of the record stays. */
 const annaWorkspace = (() => {
   const key = 'anna.workspace', resumeKey = 'anna.resume', version = 2, limit = 5;
+  const TOUR_PATH = /^(?!\.\.?(?:\/|$))[A-Za-z0-9_.:-]+(\/(?!\.\.?(?:\/|$))[A-Za-z0-9_.:-]+)*$/;
+  const COLLECTION_KEY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
   const text = value => typeof value === 'string' ? value : '';
   const time = value => Number.isFinite(value) && value > 0 ? value : 0;
   const position = value => value && Number.isFinite(value.x) && Number.isFinite(value.y) && value.x >= 0 && value.y >= 0;
@@ -39,19 +41,35 @@ const annaWorkspace = (() => {
     if (loc) out.bookLocation = loc;
     return out;
   }
+  function tourMemory(value) {
+    if (!value || typeof value !== 'object' || typeof value.path !== 'string' || value.path.length > 2000 || !TOUR_PATH.test(value.path)) return null;
+    const snaps = {};
+    if (value.snapshots && typeof value.snapshots === 'object' && !Array.isArray(value.snapshots)) {
+      for (const [k, v] of Object.entries(value.snapshots)) {
+        if (COLLECTION_KEY.test(k) && typeof v === 'string' && v) snaps[k] = v;
+      }
+    }
+    return {path:value.path, title:text(value.title), snapshots:snaps, at:time(value.at)};
+  }
   const list = (values, read) => (Array.isArray(values) ? values : []).map(read).filter(Boolean).slice(0, limit);
   /* Reads a stored record against the builds the reading page knows ({collection: snapshot}). What a rebuilt
      collection named is dropped: its places and topic, and the entry of a query (its conditions stay). What a
      collection the page does not know named stays for the pages that do. A malformed record reads as empty. */
   function normalize(raw, snapshots = {}) {
-    const empty = {version, topic:null, query:[], book:[]};
+    const empty = {version, topic:null, query:[], book:[], tour:null};
     if (!raw || raw.version !== version) return empty;
     const current = (address, snapshot) => !(collectionOf(address) in snapshots) || snapshots[collectionOf(address)] === snapshot;
     const query = list(raw.query, queryMemory).map(memory =>
       memory.entry && !current(memory.entry, memory.snapshot) ? {...memory, entry:'', entryName:'', snapshot:'', ui:null} : memory);
     const found = topic(raw.topic);
+    const tour = tourMemory(raw.tour);
+    const tourCurrent = tour && tour.path.split('/').every(seg => {
+      const col = collectionOf(seg);
+      return !col || !(col in snapshots) || snapshots[col] === (tour.snapshots[col] || '');
+    });
     return {version, topic:found && current(found.entry, found.snapshot) ? found : null, query,
-      book:list(raw.book, bookMemory).filter(memory => current(memory.page, memory.snapshot))};
+      book:list(raw.book, bookMemory).filter(memory => current(memory.page, memory.snapshot)),
+      tour:tourCurrent ? tour : null};
   }
   // The newest memory comes first; returning to a remembered place moves it to the front instead of adding one.
   function remember(memories, memory, same) {
@@ -81,6 +99,11 @@ const annaWorkspace = (() => {
     return {...state, topic:next};
   }
   function clearTopic(state, entry) { return state.topic?.entry === entry ? {...state, topic:null} : state; }
+  function rememberTour(state, memory) {
+    const value = tourMemory(memory);
+    return value ? {...state, tour:value} : state;
+  }
+  function clearTour(state) { return state.tour ? {...state, tour:null} : state; }
   /* What turning to a companion offers first: the topic another companion showed you since your last visit
      with her, otherwise the place you left her, otherwise her home. */
   function offer(state, companion) {
@@ -120,7 +143,7 @@ const annaWorkspace = (() => {
     try { request = JSON.parse(sessionStorage.getItem(resumeKey) || 'null'); sessionStorage.removeItem(resumeKey); } catch { return null; }
     return request?.companion === companion && typeof request.id === 'string' ? request.id : null;
   }
-  return {key, limit, collectionOf, localOf, normalize, rememberQuery, rememberBook, setTopic, clearTopic, offer, read, update, subscribe,
+  return {key, limit, collectionOf, localOf, normalize, rememberQuery, rememberBook, setTopic, clearTopic, rememberTour, clearTour, offer, read, update, subscribe,
     requestResume, takeResume, memoryId, useStorage(value) { storage = value; }};
 })();
 if (typeof module !== 'undefined') module.exports = annaWorkspace;

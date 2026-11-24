@@ -44,12 +44,17 @@ test('spell multi-select, mutually exclusive flags, unknowns and retained active
   data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
   expect(data.rows.every(r=>r.quickref.concentration.includes('false')&&!r.quickref.concentration.includes('__conflict__'))).toBeTruthy();
   await expect(page.locator('[data-group=f_concentration] [aria-pressed=true]')).toHaveCount(1);
-  await page.getByRole('button',{name:'专注：未提取',exact:true}).click();await queryMatchesAPI(page);
+  await page.getByRole('button',{name:'专注：冲突',exact:true}).click();await queryMatchesAPI(page);
   await expect(page.getByRole('button',{name:'专注：否',exact:true})).toHaveAttribute('aria-pressed','false');
+  await page.getByRole('button',{name:'专注：否',exact:true}).click();await queryMatchesAPI(page);
+  await page.getByRole('button',{name:'仪式：未提取',exact:true}).click();
+  data=await queryMatchesAPI(page);expect(data.total).toBeGreaterThan(0);
+  expect(data.rows.every(r=>r.quickref.ritual.includes('__unknown__'))).toBeTruthy();
   await page.locator('#toggle-filters').click();
   await expect(page.locator('#filter-panel')).toBeHidden();
   await expect(page.locator('#active-filters')).toContainText('一环、二环');
   await expect(page.locator('#active-filters')).toContainText('专注');
+  await expect(page.locator('#active-filters')).toContainText('仪式');
   await shot(page,testInfo,'spell-active-filters.png');
   // Clearing removes every condition, the type included.
   await page.locator('#reset').click();await ready(page);await expect(page.locator('#active-filters button')).toHaveCount(0);

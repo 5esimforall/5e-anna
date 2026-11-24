@@ -1271,6 +1271,33 @@ $('#compact-rows').onchange=()=>{
 };
 stored.watch(DENSITY_KEY,()=>applyDensity(storedDensity()));
 applyDensity(storedDensity());
+let tourSwitchSubscribed=false;
+function syncTourSwitch(){
+  const pageSwitch=document.querySelector('.topbar .page-switch');
+  if(!pageSwitch||!metadata)return;
+  if(metadata.tour_url===null){pageSwitch.hidden=true;return;}
+  pageSwitch.hidden=false;
+  let tourHref=metadata.tour_url,tourTitle='';
+  if(sharing()){
+    const savedTour=annaWorkspace.read(snapshots()).tour;
+    if(savedTour){
+      tourHref='/tour?'+new URLSearchParams({at:savedTour.path});
+      tourTitle=savedTour.title||'';
+    }else{
+      let rawTour=null;
+      try{rawTour=JSON.parse(stored.get(annaWorkspace.key)||'null')?.tour;}catch{}
+      if(!rawTour)tourHref=annaTopbar?.pages?.tour?.resume?.()||metadata.tour_url;
+    }
+  }else{
+    tourHref=annaTopbar?.pages?.tour?.resume?.()||metadata.tour_url;
+  }
+  if(tourHref&&typeof annaTopbar?.pointSwitch==='function')annaTopbar.pointSwitch('tour',tourHref);
+  const link=pageSwitch.querySelector('a[data-page="tour"]');
+  if(link){
+    if(tourTitle)link.title=tourTitle;
+    else link.removeAttribute('title');
+  }
+}
 initReaderLayout();
 async function init(){
   let saved=history.state?.anna;restoringUi=true;
@@ -1284,16 +1311,11 @@ async function init(){
     params.delete('collection');
     const meta=await api('/api/meta');
     metadata=meta;Object.assign(fieldNames,metadata.fields);showLibrary();
-    const pageSwitch=document.querySelector('.topbar .page-switch');
-    if(pageSwitch){
-      if(metadata.tour_url===null){pageSwitch.hidden=true;}
-      else{
-        pageSwitch.hidden=false;
-        const tourHref=annaTopbar?.pages?.tour?.resume?.()||metadata.tour_url;
-        if(tourHref&&typeof annaTopbar?.pointSwitch==='function')annaTopbar.pointSwitch('tour',tourHref);
-      }
+    syncTourSwitch();
+    if(sharing()){
+      annaCompanions.mount({page:'query',snapshots:snapshots()});
+      if(!tourSwitchSubscribed){annaWorkspace.subscribe(syncTourSwitch);tourSwitchSubscribed=true;}
     }
-    if(sharing())annaCompanions.mount({page:'query',snapshots:snapshots()});
     // Preserve older bookmarked single-attribute queries.
     // Paging was replaced by batch loading; old links keep their query and drop page and size.
     params.delete('page');params.delete('size');

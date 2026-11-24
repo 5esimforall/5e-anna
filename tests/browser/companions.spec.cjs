@@ -18,6 +18,12 @@ async function stellaReady(page){
   await expect(page.locator('#book-main')).toHaveAttribute('aria-busy','false');
   await expect(page.locator('#content')).toBeVisible();await expect(page.locator('.companion')).toBeVisible();
 }
+async function tourReady(page,depth){
+  const col=page.locator(`.tour-column[data-depth="${depth}"]`);
+  await expect(col).toHaveAttribute('data-state','ready');
+  await expect(page.locator('.tour-column')).toHaveCount(depth+1);
+  return col;
+}
 const go=page=>page.locator('.companion-go'), more=page=>page.locator('.companion-more');
 const workspace=page=>page.evaluate(()=>JSON.parse(localStorage.getItem('anna.workspace')));
 async function scrollBook(page,y){await page.locator('#book-scroll').evaluate((e,y)=>{
@@ -164,4 +170,109 @@ test('reading on in Stella makes the definition in view the topic Anna looks up'
   expect(new URL(await go(page).getAttribute('href'),anna).searchParams.get('entry')).toBe(target.id);
   await go(page).click();await entryReady(page);
   expect(new URL(page.url()).searchParams.get('entry')).toBe(target.id);
+});
+
+test('Stella reaches Anna tour via menu and sidebar, and Anna switches preserve query, entry and tour across tabs',async({context})=>{
+  const page=await context.newPage();
+  // On a fresh Stella visit, Anna's menu already offers Tour alongside Query, and the sidebar footer offers Tour.
+  await page.goto(anna+'/read');await stellaReady(page);
+  await expect(more(page)).toBeVisible();
+  await more(page).click();
+  await expect(page.locator('#companion-menu').getByRole('group',{name:'导览'}).getByRole('menuitem',{name:'打开导览'})).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#book-tour-link')).toHaveAttribute('href','/tour');
+
+  // Walk Tour -> Stella -> Tour -> Query -> Tour round-trip.
+  await page.goto(anna+'/tour');await tourReady(page,0);
+  await page.locator('.tour-column[data-depth="0"] .tour-item-title',{hasText:'创建角色'}).first().click();await tourReady(page,1);
+  const stepCol=await (async()=>{
+    await page.locator('.tour-column[data-depth="1"] .tour-item-title',{hasText:'第一步：选择职业'}).first().click();
+    return tourReady(page,2);
+  })();
+  await stepCol.locator('.tour-go').first().click();await stellaReady(page);
+  const expectedTour='/tour?'+new URLSearchParams({at:'create/'+bookAddress('n924')});
+  await expect(page.locator('#book-tour-link')).toHaveAttribute('href',expectedTour);
+  await more(page).click();
+  const tourMenu=page.locator('#companion-menu').getByRole('group',{name:'导览'}).getByRole('menuitem',{name:'回到导览：第一步：选择职业'});
+  await expect(tourMenu).toHaveAttribute('href',expectedTour);
+  await tourMenu.click();await tourReady(page,2);
+  await expect(page.locator('.tour-column[data-depth="2"] h2')).toHaveText('第一步：选择职业');
+
+  // Open Query with search + entry, switch to Tour, then switch back via Tour's topbar switch restoring entry & query.
+  await page.goto(anna+'/?q='+encodeURIComponent('护盾术'));await annaReady(page);
+  await page.locator(`#results .entry-name[data-entry="${cases.spell.id}"]`).first().click();await entryReady(page);
+  await page.locator('.page-switch a[data-page="tour"]').click();await tourReady(page,2);
+  const backToQuery=page.locator('.page-switch a[data-page="query"]');
+  await expect(backToQuery).toHaveAttribute('href',new RegExp('q=.*entry='+cases.spell.id));
+  await backToQuery.click();await annaReady(page);await entryReady(page);
+  expect(new URL(page.url()).searchParams.get('entry')).toBe(cases.spell.id);
+
+  // Live cross-tab sync across all three pages.
+  const queryTab=page;
+  const tourTab=await context.newPage();await tourTab.goto(anna+'/tour');await tourReady(tourTab,0);
+  const stellaTab=await context.newPage();await stellaTab.goto(anna+'/read');await stellaReady(stellaTab);
+  await tourTab.locator('.tour-column[data-depth="0"] .tour-item-title',{hasText:'战斗回合'}).first().click();await tourReady(tourTab,1);
+  await expect(queryTab.locator('.page-switch a[data-page="tour"]')).toHaveAttribute('href','/tour?at=combat');
+  await expect(stellaTab.locator('#book-tour-link')).toHaveAttribute('href','/tour?at=combat');
+  await queryTab.goto(anna+'/?type=feat');await annaReady(queryTab);
+  await expect(tourTab.locator('.page-switch a[data-page="query"]')).toHaveAttribute('href','/?type=feat');
+});
+
+test('stale build drops collection-qualified tour levels while keeping curated tour paths',async({page})=>{
+  await page.goto(anna+'/anna-logo.png');
+  await page.evaluate(()=>localStorage.setItem('anna.workspace',JSON.stringify({version:2,
+    topic:null,query:[],book:[],
+    tour:{path:'create/5echm:n924',title:'第一步：选择职业',snapshots:{'5echm':'old'},at:5}})));
+  await page.goto(anna+'/read?'+new URLSearchParams({page:meta.default_page}));await stellaReady(page);
+  await expect(page.locator('#book-tour-link')).toHaveAttribute('href','/tour');
+  expect((await workspace(page)).tour).toBeNull();
+  await page.evaluate(()=>localStorage.setItem('anna.workspace',JSON.stringify({version:2,
+    topic:null,query:[],book:[],
+    tour:{path:'create',title:'创建角色',snapshots:{},at:6}})));
+  await page.goto(anna+'/');await annaReady(page);
+  await expect(page.locator('.page-switch a[data-page="tour"]')).toHaveAttribute('href','/tour?at=create');
+  expect((await workspace(page)).tour?.path).toBe('create');
+});
+
+test('shared workspace works cleanly across desktop, tablet and phone viewports, keyboard navigation, and reload',async({page})=>{
+  // Seed all three pages in the workspace.
+  await page.goto(anna+'/tour?at='+encodeURIComponent('create/'+bookAddress('n924')));await tourReady(page,2);
+  await page.goto(anna+'/?q='+encodeURIComponent('护盾术')+'&entry='+encodeURIComponent(cases.spell.id));await annaReady(page);await entryReady(page);
+  await page.goto(anna+'/read?'+new URLSearchParams({page:bookAddress(cases.spell.path)}));await stellaReady(page);
+  await scrollBook(page,320);
+  await expect.poll(async()=>(await workspace(page)).book[0]?.position.y).toBe(320);
+
+  for(const viewport of [{width:1440,height:900},{width:900,height:800},{width:375,height:812}]){
+    await page.setViewportSize(viewport);
+    for(const path of ['/read?'+new URLSearchParams({page:bookAddress(cases.spell.path)}),'/tour?at='+encodeURIComponent('create/'+bookAddress('n924')),'/?q='+encodeURIComponent('护盾术')+'&entry='+encodeURIComponent(cases.spell.id)]){
+      await page.goto(anna+path);
+      if(path.startsWith('/read'))await stellaReady(page);
+      else if(path.startsWith('/tour'))await tourReady(page,2);
+      else { await annaReady(page);await entryReady(page); }
+      const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>document.documentElement.clientWidth);
+      expect(overflow,`${path} @ ${viewport.width}px horizontal overflow`).toBe(false);
+    }
+  }
+
+  // On 375px phone, open #companion-menu from keyboard, verify it stays inside viewport, navigate items, and restore on reload.
+  await page.setViewportSize({width:375,height:812});
+  await page.goto(anna+'/read?'+new URLSearchParams({page:bookAddress(cases.spell.path)}));await stellaReady(page);
+  await scrollBook(page,320);
+  await expect.poll(async()=>(await workspace(page)).book[0]?.position.y).toBe(320);
+  await page.reload();await stellaReady(page);
+  await expect.poll(()=>bookOffset(page)).toBe(320);
+
+  await more(page).focus();await page.keyboard.press('ArrowDown');
+  const menu=page.locator('#companion-menu');
+  await expect(menu).toBeVisible();
+  const menuBox=await menu.boundingBox();
+  expect(menuBox.x).toBeGreaterThanOrEqual(0);
+  expect(menuBox.x+menuBox.width).toBeLessThanOrEqual(375);
+  await page.keyboard.press('End');await expect(menu.getByRole('menuitem').last()).toBeFocused();
+  await page.keyboard.press('Escape');await expect(menu).toBeHidden();await expect(more(page)).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  const tourItem=menu.getByRole('group',{name:'导览'}).getByRole('menuitem');
+  await tourItem.focus();await page.keyboard.press('Enter');
+  await tourReady(page,2);
+  expect(new URL(page.url()).searchParams.get('at')).toBe('create/'+bookAddress('n924'));
 });

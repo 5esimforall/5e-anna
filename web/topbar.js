@@ -5,14 +5,19 @@
 const annaTopbar = (() => {
   const library = typeof annaLibrary === 'undefined' ? null : annaLibrary;
   // A tour level is named by its segments from the first column down, each `topic` or `collection:segment`.
-  const TOUR_PATH = /^[A-Za-z0-9_.:-]+(\/[A-Za-z0-9_.:-]+)*$/;
+  const TOUR_PATH = /^(?!\.\.?(?:\/|$))[A-Za-z0-9_.:-]+(\/(?!\.\.?(?:\/|$))[A-Za-z0-9_.:-]+)*$/;
   // Each page belongs to one companion: Anna answers queries and keeps the tour, Stella reads the book with you.
   const {href} = annaKit;
   const pages = {
     query:{home:'/', logo:'/anna-logo.png', guide:'anna', companion:'query'},
     // The tour remembers the last level the reader opened; turning back to it from the query page returns there.
     tour:{home:'/tour', logo:'/anna-logo.png', guide:'anna', companion:'query', resume() {
-      const at = annaKit.stored.get('anna.tour');
+      let at = null;
+      try {
+        const raw = JSON.parse(annaKit.stored.get('anna.workspace') || 'null');
+        if (raw && raw.version === 2 && raw.tour && typeof raw.tour.path === 'string' && TOUR_PATH.test(raw.tour.path)) at = raw.tour.path;
+      } catch {}
+      if (!at) at = annaKit.stored.get('anna.tour');
       return at && TOUR_PATH.test(at) ? '/tour?' + new URLSearchParams({at}) : null;
     }},
     book:{home:'/read', logo:'/stella-logo.png', guide:'stella', companion:'book'}

@@ -55,7 +55,17 @@
     return annaKit.href('/read' + (params.size ? '?' + params : ''));
   }
   if ($('#book-query-search')) $('#book-query-search').href = queryURL();
+  if ($('#book-tour-link')) $('#book-tour-link').href = annaKit.href('/tour');
   if ($('#book-error a')) $('#book-error a').href = routeURL({});
+  let tourLinkSubscribed = false;
+  function syncTourLink() {
+    const link = $('#book-tour-link');
+    if (!link || !metadata) return;
+    const saved = annaWorkspace.read(snapshots()).tour;
+    link.href = annaKit.href(saved ? '/tour?' + new URLSearchParams({at:saved.path}) : '/tour');
+    if (saved?.title) link.title = saved.title;
+    else link.removeAttribute('title');
+  }
   function nodeRoute(node) { return node.status === 'present' ? {root:node.id,page:node.path,anchor:node.fragment,node:node.id} : {root:node.id}; }
   function pageRoute(item) { return {root:scope.root,page:item.path,anchor:item.fragment,node:item.node}; }
   function save(url = '') {
@@ -758,6 +768,8 @@
       $('#book-version').hidden = !release;
       $('#book-version').textContent = release ? text('sourceVersion',release) : '';
       annaCompanions.mount({page:'book', snapshots:snapshots()});
+      syncTourLink();
+      if (!tourLinkSubscribed) { annaWorkspace.subscribe(syncTourLink); tourLinkSubscribed = true; }
       const kept = restorable(saved);
       const params = new URL(location.href).searchParams;
       // A place chosen from Anna's switcher arrives with its location in the URL and its offset in the workspace.

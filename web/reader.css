@@ -97,6 +97,8 @@
 .toc-collection { flex: none; margin-inline-end: 6px; padding: 1px 6px; border-radius: 4px; background: var(--anna-canvas); color: var(--anna-muted); font-size: var(--anna-type-small); white-space: nowrap; }
 .toc-row.current::after { content: ''; width: 4px; height: 18px; border-radius: 3px; background: var(--anna-brand); margin: 0 5px; }
 .book-sidebar-foot { flex-shrink: 0; margin: 0 16px; padding: 10px 0 8px; border-top: 1px solid var(--anna-line); color: var(--anna-muted); font-size: 12px; }
+.book-sidebar-foot a { display: inline-block; margin-bottom: 6px; color: var(--anna-brand); font-size: 13px; font-weight: 500; text-decoration: none; }
+.book-sidebar-foot a:hover { text-decoration: underline; }
 .book-sidebar-foot p { margin: 4px 0 0; font-size: 13px; }
 .book-note { color: var(--anna-muted); line-height: 1.7; }
 #book-outline-title { font-family: var(--anna-serif); font-size: 18px; margin: 8px 0 14px; }

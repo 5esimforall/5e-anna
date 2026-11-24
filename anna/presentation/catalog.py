@@ -608,6 +608,18 @@ def meta(db):
             'type_conditions':{t:browse.type_conditions(t) for t in TYPES if t!='section'}}
 
 
+def _build_version_compare(group_id, status, members_rows):
+    order = list(dict.fromkeys(k for r in members_rows for k in browse.field_order(r) if k not in browse.METADATA_FIELDS))
+    fields = []
+    for k in order:
+        known = {browse.comparable(r['fields'], k) for r in members_rows} - {None}
+        fields.append({'field': k, 'values': [r['fields'].get(k) for r in members_rows], 'differs': len(known) > 1})
+    return {'group_id': group_id, 'status': status,
+            'members': [{k: r.get(k) for k in ('id', 'name', 'name_zh', 'name_en', 'ruleset', 'source_ids', 'source_names', 'legacy', 'fields', 'quickref')}
+                        for r in map(browse.enrich, members_rows)],
+            'fields': fields}
+
+
 def version_compare(db, entry):
     """All versions in the entry's candidate group, independent of the current filters, field by field."""
     has_core = _has_table(db, 'entry_core')
@@ -636,14 +648,7 @@ def version_compare(db, entry):
         members_rows=[contracts.entry(json.loads(r[0])) for r in db.execute(
             'WITH '+stack_members()+f' SELECT {data_col} FROM {from_join} WHERE m.stack=? '
             "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, e.page_path, e.start, e.id",(group['stack'],))]
-    order=list(dict.fromkeys(k for r in members_rows for k in browse.field_order(r) if k not in browse.METADATA_FIELDS))
-    fields=[]
-    for k in order:
-        known={browse.comparable(r['fields'],k) for r in members_rows}-{None}
-        fields.append({'field':k,'values':[r['fields'].get(k) for r in members_rows],'differs':len(known)>1})
-    return {'group_id':group['stack'],'status':group['status'],
-            'members':[{k:r.get(k) for k in ('id','name','name_zh','name_en','ruleset','source_ids','source_names','legacy','fields','quickref')} for r in map(browse.enrich,members_rows)],
-            'fields':fields}
+    return _build_version_compare(group['stack'], group['status'], members_rows)
 
 
 
@@ -660,6 +665,19 @@ def detail(db, eid):
     e['relations']=[dict(r) for r in db.execute('SELECT predicate,object_id,target_label,status FROM relations WHERE subject_id=? ORDER BY predicate,target_label',(eid,))]
     e['versions']=version_compare(db,e)
     return e
+
+
+def versions(db, eid):
+    """Lightweight version-comparison slice for an entry without reading body text, relations or full JSON."""
+    if not eid:
+        raise LookupError('条目不存在')
+    table = _entry_table(db)
+    row = db.execute(f'SELECT id, type, name_en FROM {table} WHERE id=?', (eid,)).fetchone()
+    if not row:
+        raise LookupError('条目不存在')
+    entry = {'id': row['id'], 'type': row['type'], 'name_en': row['name_en'] or ''}
+    entry['versions'] = version_compare(db, entry)
+    return entry
 
 def csv_export(rows, config=None):
     out=io.StringIO(newline=''); writer=csv.writer(out)

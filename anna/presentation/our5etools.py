@@ -410,6 +410,123 @@ def _make_preview(text: str, text_lower: str, terms: list[str]) -> str:
     return ('…' if start > 0 else '') + text[start:end] + ('…' if end < len(text) else '')
 
 
+def build_sources_map(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:
+    sources_map: dict[str, dict[str, Any]] = {}
+    for row in db.execute(
+        'SELECT id, package_id, origin, ruleset, short_name, name, data_json FROM sources'
+    ):
+        data = _json_loads(row['data_json'], {})
+        sources_map[row['id']] = {
+            'id': row['id'],
+            'package_id': row['package_id'],
+            'origin': row['origin'] or data.get('origin') or '社区',
+            'ruleset': row['ruleset'] or data.get('ruleset') or '待核',
+            'short_name': row['short_name'] or data.get('short_label') or data.get('code') or row['id'],
+            'name': row['name'] or data.get('name') or row['id'],
+            'data': data,
+        }
+    return sources_map
+
+
+def build_entry_row(row: sqlite3.Row, sources_map: dict[str, dict[str, Any]], collection_key: str) -> dict[str, Any]:
+    fields = _json_loads(row['fields_json'], {})
+    quickref = _json_loads(row['quickref_json'], {})
+    conflicts = _json_loads(row['conflicts_json'], [])
+    provenance = _json_loads(row['provenance_json'], {})
+    sid = row['source_id'] or ''
+    srec = sources_map.get(sid)
+    sname = (srec['name'] if srec else None) or provenance.get('source_name') or row['source_code'] or sid
+    slabel = (srec['short_name'] if srec else None) or row['source_code'] or sid
+    origin = (srec['origin'] if srec else None) or provenance.get('origin') or '社区'
+    col_key = str(provenance.get('collection') or collection_key)
+    provenance.setdefault('collection', col_key)
+
+    entry: dict[str, Any] = {
+        'id': row['id'],
+        'collection': col_key,
+        'type': row['type'],
+        'type_label': otypes.TYPES.get(row['type'], row['type']),
+        'raw_kind': row['raw_kind'],
+        'name': row['name'],
+        'name_zh': row['name_zh'] or row['name'],
+        'name_en': row['name_en'] or '',
+        'ruleset': row['ruleset'] or '待核',
+        'legacy': row['legacy'] or 'unmarked',
+        'package_id': row['package_id'],
+        'source_id': sid,
+        'source_code': row['source_code'] or '',
+        'source_ids': [sid] if sid else [],
+        'source_names': [sname] if sname else [],
+        'source_short': slabel,
+        'origin': origin,
+        'owner_class': row['owner_class'] or '',
+        'owner_subclass': row['owner_subclass'] or '',
+        'owner_level': row['owner_level'],
+        'copy_status': row['copy_status'] or 'ok',
+        'fields': fields,
+        'quickref': quickref,
+        'field_conflicts': conflicts,
+        'provenance': provenance,
+    }
+    if not entry['quickref']:
+        otypes.enrich(entry)
+    return entry
+
+
+def build_version_compare(gid: str, mem_entries: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    order = list(dict.fromkeys(
+        k for m in mem_entries for k in otypes.field_order(m)
+        if k not in otypes.METADATA_FIELDS
+    ))
+    diff_fields = []
+    for k in order:
+        known = {otypes.comparable(m['fields'], k) for m in mem_entries} - {None}
+        diff_fields.append({
+            'field': k,
+            'values': [m['fields'].get(k) for m in mem_entries],
+            'differs': len(known) > 1,
+        })
+    members_compact = [
+        {k: m.get(k) for k in ('id', 'name', 'name_zh', 'name_en', 'ruleset', 'source_ids', 'source_names', 'legacy', 'fields', 'quickref', 'package_id')}
+        for m in mem_entries
+    ]
+    versions_compare = {
+        'group_id': gid,
+        'status': 'reprint_group',
+        'members': members_compact,
+        'fields': diff_fields,
+    }
+    return members_compact, versions_compare
+
+
+def build_relations_list(rel_rows: list[Any], targets_map: dict[str, tuple[str, str, str]]) -> list[dict[str, Any]]:
+    relations_out: list[dict[str, Any]] = []
+    enriched_rels = []
+    for rr in rel_rows:
+        tid = rr['target_id']
+        target_info = targets_map.get(tid)
+        t_name = target_info[0] if target_info else None
+        t_type = (target_info[1] or '') if target_info else ''
+        t_code = (target_info[2] or '') if target_info else ''
+        enriched_rels.append((rr['rel_type'], t_name is not None, t_name or '', tid, t_name, t_type, t_code, rr['meta_json']))
+    enriched_rels.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    for rel_type, _, _, tid, t_name, t_type, t_code, meta_json in enriched_rels:
+        relations_out.append({
+            'type': rel_type,
+            'predicate': rel_type,
+            'target_id': tid,
+            'object_id': tid,
+            'name': t_name or tid,
+            'target_label': t_name or tid,
+            'target_type': t_type,
+            'target_type_label': otypes.TYPES.get(t_type, t_type),
+            'source_code': t_code,
+            'status': 'ok' if t_name else 'missing',
+            'meta': _json_loads(meta_json, {}),
+        })
+    return relations_out
+
+
 # ---------------------------------------------------------------------------
 # 1. Our5etoolsCatalog
 # ---------------------------------------------------------------------------
@@ -574,20 +691,7 @@ class Our5etoolsCatalog:
         with self._lock:
             if sig is not None and sig == self._cache_sig:
                 return
-            sources_map: dict[str, dict[str, Any]] = {}
-            for row in db.execute(
-                'SELECT id, package_id, origin, ruleset, short_name, name, data_json FROM sources'
-            ):
-                data = _json_loads(row['data_json'], {})
-                sources_map[row['id']] = {
-                    'id': row['id'],
-                    'package_id': row['package_id'],
-                    'origin': row['origin'] or data.get('origin') or '社区',
-                    'ruleset': row['ruleset'] or data.get('ruleset') or '待核',
-                    'short_name': row['short_name'] or data.get('short_label') or data.get('code') or row['id'],
-                    'name': row['name'] or data.get('name') or row['id'],
-                    'data': data,
-                }
+            sources_map = build_sources_map(db)
             packages_map: dict[str, dict[str, Any]] = {}
             for row in db.execute(
                 'SELECT id, name, origin, ours, entry_count, book_count, data_json FROM packages'
@@ -902,48 +1006,7 @@ class Our5etoolsCatalog:
         return f'e.sort_name {direction}, e.id ASC'
 
     def _row_to_entry(self, row: sqlite3.Row) -> dict[str, Any]:
-        fields = _json_loads(row['fields_json'], {})
-        quickref = _json_loads(row['quickref_json'], {})
-        conflicts = _json_loads(row['conflicts_json'], [])
-        provenance = _json_loads(row['provenance_json'], {})
-        sid = row['source_id'] or ''
-        srec = self._sources_map.get(sid)
-        sname = (srec['name'] if srec else None) or provenance.get('source_name') or row['source_code'] or sid
-        slabel = (srec['short_name'] if srec else None) or row['source_code'] or sid
-        origin = (srec['origin'] if srec else None) or provenance.get('origin') or '社区'
-        col_key = str(provenance.get('collection') or self.collection_key)
-        provenance.setdefault('collection', col_key)
-
-        entry: dict[str, Any] = {
-            'id': row['id'],
-            'collection': col_key,
-            'type': row['type'],
-            'type_label': otypes.TYPES.get(row['type'], row['type']),
-            'raw_kind': row['raw_kind'],
-            'name': row['name'],
-            'name_zh': row['name_zh'] or row['name'],
-            'name_en': row['name_en'] or '',
-            'ruleset': row['ruleset'] or '待核',
-            'legacy': row['legacy'] or 'unmarked',
-            'package_id': row['package_id'],
-            'source_id': sid,
-            'source_code': row['source_code'] or '',
-            'source_ids': [sid] if sid else [],
-            'source_names': [sname] if sname else [],
-            'source_short': slabel,
-            'origin': origin,
-            'owner_class': row['owner_class'] or '',
-            'owner_subclass': row['owner_subclass'] or '',
-            'owner_level': row['owner_level'],
-            'copy_status': row['copy_status'] or 'ok',
-            'fields': fields,
-            'quickref': quickref,
-            'field_conflicts': conflicts,
-            'provenance': provenance,
-        }
-        if not entry['quickref']:
-            otypes.enrich(entry)
-        return entry
+        return build_entry_row(row, self._sources_map, self.collection_key)
 
     # --- CatalogProvider methods ---
 
@@ -1760,6 +1823,47 @@ class Our5etoolsCatalog:
     def signature(self) -> tuple:
         return (str(self.db_path), *(_file_sig(self.db_path) or ()))
 
+    def _version_compare(self, db: sqlite3.Connection, entry_id: str) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+        im_row = db.execute('SELECT group_id FROM identity_members WHERE entry_id = ?', (entry_id,)).fetchone()
+        if im_row is None:
+            return [], None
+        gid = im_row['group_id']
+        cols = self._row_select_cols()
+        entry_table = self._entry_table
+        from_mem = f'identity_members im JOIN {entry_table} e ON e.id = im.entry_id'
+        if self._has_entry_core:
+            if self._has_entry_fields:
+                from_mem += ' LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid'
+            if self._has_entry_meta:
+                from_mem += ' LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid'
+        mem_rows = db.execute(
+            f'SELECT {cols} FROM {from_mem} WHERE im.group_id = ? '
+            "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, im.is_primary DESC, e.id ASC",
+            (gid,),
+        ).fetchall()
+        mem_entries = [self._row_to_entry(mr) for mr in mem_rows]
+        return build_version_compare(gid, mem_entries)
+
+    def versions(self, entry_id: str) -> dict[str, Any]:
+        """Return only the entry's version-comparison data without loading body, layout or relations."""
+        if not entry_id:
+            raise LookupError('条目不存在')
+        with self._db() as db:
+            self._ensure_static_cache(db)
+            row = db.execute(
+                f'SELECT id, type, name_en FROM {self._entry_table} WHERE id = ?',
+                (entry_id,),
+            ).fetchone()
+            if row is None:
+                raise LookupError('条目不存在')
+            _, versions_compare = self._version_compare(db, entry_id)
+            return {
+                'id': row['id'],
+                'type': row['type'],
+                'name_en': row['name_en'] or '',
+                'versions': versions_compare,
+            }
+
     def detail(self, entry_id: str) -> dict[str, Any]:
         if not entry_id:
             raise LookupError('条目不存在')
@@ -1789,51 +1893,13 @@ class Our5etoolsCatalog:
                     for s in sids
                 ]
 
-            # Identity group / version comparison
-            im_row = db.execute('SELECT group_id FROM identity_members WHERE entry_id = ?', (entry_id,)).fetchone()
-            members_compact: list[dict[str, Any]] = []
-            versions_compare: dict[str, Any] | None = None
-            entry_table = self._entry_table
-            if im_row is not None:
-                gid = im_row['group_id']
-                from_mem = f'identity_members im JOIN {entry_table} e ON e.id = im.entry_id'
-                if self._has_entry_core:
-                    if self._has_entry_fields:
-                        from_mem += ' LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid'
-                    if self._has_entry_meta:
-                        from_mem += ' LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid'
-                mem_rows = db.execute(
-                    f'SELECT {cols} FROM {from_mem} WHERE im.group_id = ? '
-                    "ORDER BY CASE e.ruleset WHEN '5r' THEN 0 WHEN '5e' THEN 1 ELSE 2 END, im.is_primary DESC, e.id ASC",
-                    (gid,),
-                ).fetchall()
-                mem_entries = [self._row_to_entry(mr) for mr in mem_rows]
-                order = list(dict.fromkeys(
-                    k for m in mem_entries for k in otypes.field_order(m)
-                    if k not in otypes.METADATA_FIELDS
-                ))
-                diff_fields = []
-                for k in order:
-                    known = {otypes.comparable(m['fields'], k) for m in mem_entries} - {None}
-                    diff_fields.append({
-                        'field': k,
-                        'values': [m['fields'].get(k) for m in mem_entries],
-                        'differs': len(known) > 1,
-                    })
-                members_compact = [
-                    {k: m.get(k) for k in ('id', 'name', 'name_zh', 'name_en', 'ruleset', 'source_ids', 'source_names', 'legacy', 'fields', 'quickref', 'package_id')}
-                    for m in mem_entries
-                ]
-                versions_compare = {
-                    'group_id': gid,
-                    'status': 'reprint_group',
-                    'members': members_compact,
-                    'fields': diff_fields,
-                }
+            # Identity groups / version comparison
+            members_compact, versions_compare = self._version_compare(db, entry_id)
             entry['members'] = members_compact
             entry['versions'] = versions_compare
 
             # Relations (outgoing, enriched with target name/type/source_code without materializing entries view)
+            entry_table = self._entry_table
             rel_rows = db.execute(
                 'SELECT type AS rel_type, target_id, meta_json FROM relations WHERE source_id = ?',
                 (entry_id,),
@@ -1849,31 +1915,7 @@ class Our5etoolsCatalog:
                         batch,
                     ):
                         targets_map[tr['id']] = (tr['name'], tr['type'], tr['source_code'])
-            relations_out: list[dict[str, Any]] = []
-            enriched_rels = []
-            for rr in rel_rows:
-                tid = rr['target_id']
-                target_info = targets_map.get(tid)
-                t_name = target_info[0] if target_info else None
-                t_type = (target_info[1] or '') if target_info else ''
-                t_code = (target_info[2] or '') if target_info else ''
-                enriched_rels.append((rr['rel_type'], t_name is not None, t_name or '', tid, t_name, t_type, t_code, rr['meta_json']))
-            enriched_rels.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
-            for rel_type, _, _, tid, t_name, t_type, t_code, meta_json in enriched_rels:
-                relations_out.append({
-                    'type': rel_type,
-                    'predicate': rel_type,
-                    'target_id': tid,
-                    'object_id': tid,
-                    'name': t_name or tid,
-                    'target_label': t_name or tid,
-                    'target_type': t_type,
-                    'target_type_label': otypes.TYPES.get(t_type, t_type),
-                    'source_code': t_code,
-                    'status': 'ok' if t_name else 'missing',
-                    'meta': _json_loads(meta_json, {}),
-                })
-            entry['relations'] = relations_out
+            entry['relations'] = build_relations_list(rel_rows, targets_map)
 
             # Reader location from provenance or anna-reader.json
             loc = entry['provenance'].get('reader_location')

@@ -207,6 +207,9 @@ class BookCatalog:
     def detail(self, entry):
         return self._read(catalog.detail, entry)
 
+    def versions(self, entry):
+        return self._read(catalog.versions, entry)
+
     def layout(self, entry):
         return self._read(entry_layout, entry, self.source_root)
 

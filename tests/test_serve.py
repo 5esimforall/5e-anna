@@ -374,6 +374,17 @@ class WebTests(unittest.TestCase):
         # Reader notes read normalized values from the entry itself.
         self.assertEqual(detail(self.db,eid)['quickref']['spell_level'],['7'])
 
+    def test_entry_versions_endpoint(self):
+        eid=self.db.execute("SELECT id FROM entries WHERE type='spell' AND name_en='Fireball' AND ruleset='5r' LIMIT 1").fetchone()[0]
+        s_entry,_,b_entry=self.request('/api/entry?'+urlencode({'id':eid}))
+        s_ver,kind,b_ver=self.request('/api/entry-versions?'+urlencode({'id':eid}))
+        self.assertEqual((s_entry,s_ver),(200,200));self.assertIn('application/json',kind)
+        d_entry,d_ver=json.loads(b_entry),json.loads(b_ver)
+        self.assertEqual(d_ver['id'],eid)
+        self.assertEqual(d_ver['versions'],d_entry['versions'])
+        self.assertEqual(self.request('/api/entry-versions?id=ver_missing')[0],404)
+        self.assertEqual(self.request('/api/entry-versions?id='+eid,{'Host':'attacker.example'})[0],403)
+
     def test_environmental_hazards_are_queryable(self):
         data=query(self.db,{'type':['hazard'],'versions':['each']})
         self.assertTrue(all(r['type']=='hazard' for r in data['rows']))

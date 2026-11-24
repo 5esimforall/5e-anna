@@ -73,7 +73,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def serve_query(self,url):
         try:
-            if url.path not in {'/api/meta','/api/facets','/api/entries','/api/entry','/api/entry-layout','/api/export','/api/library','/source'}:
+            if url.path not in {'/api/meta','/api/facets','/api/entries','/api/entry','/api/entry-versions','/api/entry-layout','/api/export','/api/library','/source'}:
                 raise LookupError('页面不存在')
             registry = self.collection_registry()
             p = parse_qs(url.query, keep_blank_values=True)
@@ -113,6 +113,7 @@ class Handler(BaseHTTPRequestHandler):
             elif url.path=='/api/facets': self.send(library.facets(query()))
             elif url.path=='/api/entries': self.send(library.entries(query()))
             elif url.path=='/api/entry': self.send(library.detail(catalog.first(p,'id')))
+            elif url.path=='/api/entry-versions': self.send(library.entry_versions(catalog.first(p,'id')))
             elif url.path=='/api/entry-layout': self.send(library.layout(catalog.first(p,'id')))
             else:
                 body, key = library.export(query())

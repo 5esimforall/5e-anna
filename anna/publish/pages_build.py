@@ -92,11 +92,18 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
         (stage / '.nojekyll').touch()
         total = export_pages_data(stage, source=source, db=db, book=book, our5etools_data=our5etools_data,
                                   rewrite_html=lambda raw, path: rebase_book(raw, path, base), home_cache=home_cache)
+        entries_index = json.loads((stage / 'pages-entries' / 'index.json').read_text(encoding='utf-8'))
+        entries_attr = (
+            str(entries_index['buckets'])
+            if entries_index['encoding'] == 'gzip'
+            else f"{entries_index['buckets']}:{entries_index['encoding']}"
+        )
+        pages_attrs = f'data-anna-pages data-anna-entries="{entries_attr}"'.encode('ascii')
         home = next(stage.glob('home.*.json')).name if home_cache else None
         for source_name, target_name in DOCUMENTS.values():
             target = stage / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
-            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', b'<html data-anna-pages', 1)
+            html = (PROJECT / 'web' / source_name).read_bytes().replace(b'<html', b'<html ' + pages_attrs, 1)
             if home and source_name == 'index.html':
                 html = mark_home(html, home)
             target.write_bytes(rebase_links(html, lambda url: mount_url(url, base)))

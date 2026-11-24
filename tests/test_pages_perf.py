@@ -24,8 +24,14 @@ from anna.presentation.our5etools import (
     Our5etoolsCatalog, Our5etoolsTour, build_subclass_records, load_our5etools_collection,
 )
 from anna.presentation.tour import PublishedTour, Tour, load as load_curation
-from anna.publish.pages_data import CHUNK_SIZE, _project_db, _project_our_db, export_pages_data
+from anna.publish.pages_assets import stage_browser_runtime
+from anna.publish.pages_build import build as build_pages
+from anna.publish.pages_data import (
+    CHUNK_SIZE, _collect_our_entry_records, _project_db, _project_our_db,
+    choose_entry_buckets, entry_bucket_index, export_pages_data,
+)
 from anna.server.pages import PublishedSite
+from anna.server.query import QueryRequest
 from anna.source.html import Document
 
 
@@ -1011,18 +1017,406 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
     def test_frontend_request_order_and_idle_warmup_wiring(self):
         detail_js = (paths.PROJECT / 'web' / 'detail.js').read_text(encoding='utf-8')
         open_idx = detail_js.index('async function openEntry(')
-        entry_idx = detail_js.index("api('/api/entry?id='", open_idx)
-        layout_idx = detail_js.index('layoutOf(id)', open_idx)
+        entry_idx = detail_js.index("apiRequest('/api/entry?id='", open_idx)
+        layout_idx = detail_js.index('layoutOf(id', open_idx)
         self.assertLess(entry_idx, layout_idx)
+        self.assertIn('X-Anna-Entry-Versions-Pending', detail_js)
+        self.assertIn('/api/entry-versions?id=', detail_js)
 
         pages_js = (paths.PROJECT / 'web' / 'pages.js').read_text(encoding='utf-8')
         self.assertIn('export function warm()', pages_js)
+        self.assertIn('pages-entries.js', pages_js)
         kit_js = (paths.PROJECT / 'web' / 'kit.js').read_text(encoding='utf-8')
         self.assertIn('request, warm', kit_js)
         worker_js = (paths.PROJECT / 'web' / 'pages-worker.js').read_text(encoding='utf-8')
         self.assertIn("data.type === 'warm'", worker_js)
         app_js = (paths.PROJECT / 'web' / 'app.js').read_text(encoding='utf-8')
         self.assertIn('annaKit.warm()', app_js)
+
+
+class Phase5StaticEntryBucketsAndVersionsTests(unittest.TestCase):
+    def test_entry_versions_endpoint_and_lightweight_query_plans(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            source, orig = _make_5echm_fixture(root)
+            proj = root / 'proj.sqlite'
+            _project_db(orig, proj, source)
+
+            book = BookCatalog(proj, source)
+            additional = ()
+            o5e_cat = None
+            o5e_proj_dir = root / 'o5e'
+            if (OUR5ETOOLS_DATA / 'manifest.json').is_file():
+                o5e_proj_dir.mkdir()
+                for name in ('manifest.json', 'summary.json'):
+                    shutil.copyfile(OUR5ETOOLS_DATA / name, o5e_proj_dir / name)
+                (o5e_proj_dir / 'reader').mkdir()
+                shutil.copyfile(OUR5ETOOLS_DATA / 'reader' / 'anna-reader.json', o5e_proj_dir / 'reader' / 'anna-reader.json')
+                _project_our_db(OUR5ETOOLS_DATA / 'catalog.sqlite', o5e_proj_dir / 'catalog.sqlite')
+                o5e_cat = Our5etoolsCatalog(o5e_proj_dir)
+                from anna.presentation.collections import Collection
+                additional = (Collection('our5etools', 'our5etools', 'our5etools', provider=o5e_cat),)
+
+            from anna.presentation.alignment import Alignment
+            from anna.presentation.library import Publications
+            reg = CollectionRegistry(book, additional, published_publications=Publications(Alignment(), {}))
+            try:
+                scopes = ['libraries=5echm', 'libraries=5echm&versions=each', 'libraries=5echm&prefer=5e']
+                test_ids = ['ver_1', 'ver_3']
+                if o5e_cat is not None:
+                    with closing(sqlite3.connect((o5e_proj_dir / 'catalog.sqlite').as_uri() + '?mode=ro', uri=True)) as conn:
+                        fireball_o5e = conn.execute(
+                            "SELECT id FROM entry_core WHERE type='spell' AND name_en='Fireball' LIMIT 1"
+                        ).fetchone()[0]
+                    test_ids.append(fireball_o5e)
+                    scopes.extend([
+                        'libraries=our5etools',
+                        'libraries=5echm,our5etools',
+                        'libraries=5echm,our5etools&prefer=5e',
+                        'libraries=5echm,our5etools&rulesets=5r',
+                        'libraries=5echm,our5etools&versions=each',
+                    ])
+
+                for eid in test_ids:
+                    for qs in scopes:
+                        if eid.startswith('o5e_') and 'our5etools' not in qs:
+                            continue
+                        s1, _, b1 = QueryRequest(reg).handle_path(f'/api/entry?id={eid}&{qs}')
+                        s2, _, b2 = QueryRequest(reg).handle_path(f'/api/entry-versions?id={eid}&{qs}')
+                        self.assertEqual((s1, s2), (200, 200), (eid, qs))
+                        d1, d2 = json.loads(b1), json.loads(b2)
+                        self.assertEqual(d2['id'], d1['id'])
+                        self.assertEqual(d2['collection'], d1['collection'])
+                        self.assertEqual(d2['versions'], d1['versions'], (eid, qs))
+
+                self.assertEqual(QueryRequest(reg).handle_path('/api/entry-versions?id=ver_missing')[0], 404)
+                self.assertEqual(QueryRequest(reg).handle_path('/api/entry-versions?id=')[0], 404)
+                self.assertEqual(QueryRequest(reg).handle_path('/api/entry-versions?id=ver_1&versions=bogus')[0], 400)
+
+                # Verify catalog.versions() never touches pages, entry_data, relations, or pages_entry_layout
+                traced_5e = []
+                db5 = book._read(lambda db: db)
+                db5.set_trace_callback(traced_5e.append)
+                try:
+                    self.assertEqual(book.versions('ver_1')['versions'], book.detail('ver_1')['versions'])
+                finally:
+                    db5.set_trace_callback(None)
+                sql_head_5e = traced_5e[0]
+                self.assertNotIn('pages', sql_head_5e)
+                self.assertNotIn('entry_data', sql_head_5e)
+                self.assertNotIn('relations', sql_head_5e)
+
+                if o5e_cat is not None:
+                    traced_o5e = []
+                    dbo = o5e_cat._connect()
+                    dbo.set_trace_callback(traced_o5e.append)
+                    try:
+                        v_o5e = o5e_cat.versions(fireball_o5e)
+                    finally:
+                        dbo.set_trace_callback(None)
+                    self.assertEqual(v_o5e['versions'], o5e_cat.detail(fireball_o5e)['versions'])
+                    joined_sql = '\n'.join(traced_o5e)
+                    for forbidden in ('entry_body', 'entry_layout', 'relations', 'entry_sources'):
+                        self.assertNotIn(forbidden, joined_sql, traced_o5e)
+            finally:
+                if o5e_cat is not None:
+                    o5e_cat.close()
+                _clear_book_connections()
+
+    def test_static_entry_buckets_export_and_parity(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td).resolve()
+            source, orig = _make_5echm_fixture(root)
+            # Add a second Magic Missile entry in src2 outside identity_candidates so has_extra_versions=True is exercised
+            with closing(sqlite3.connect(orig)) as c:
+                row_mm = c.execute("SELECT start, end, data FROM entries WHERE id='ver_3'").fetchone()
+                d4 = json.loads(row_mm[2])
+                d4['id'] = 'ver_4'
+                d4['source_ids'] = ['src2']
+                d4['source_names'] = ['Empty']
+                d4['ruleset'] = '5e'
+                c.execute(
+                    "INSERT INTO entries VALUES ('ver_4','ent2','魔法飞弹 Magic Missile','魔法飞弹','Magic Missile',"
+                    "'spell','topics/spells.htm',?,?, '5e','unmarked','原文明示','{\"spell_level\":1}',?)",
+                    (row_mm[0], row_mm[1], json.dumps(d4)),
+                )
+                c.execute("INSERT INTO entry_sources VALUES ('ver_4','src2')")
+                c.commit()
+
+            book = root / 'book'
+            (book / 'topics').mkdir(parents=True)
+            shutil.copyfile(source / 'topics' / 'spells.htm', book / 'topics' / 'spells.htm')
+            db_sha = sha256(orig.read_bytes()).hexdigest()
+            page_sha = sha256((book / 'topics' / 'spells.htm').read_bytes()).hexdigest()
+            reader = {
+                'schema': 6,
+                'snapshot': 'snap-fixture',
+                'nodes': [{'id': '1', 'parent_id': '', 'label': 'Spells', 'path': 'topics/spells.htm', 'fragment': '', 'status': 'present'}],
+                'default_page': 'topics/spells.htm',
+                'pages': {'topics/spells.htm': {'title': 'Spells'}},
+                'presentation_resources': [],
+                'source_release': None,
+            }
+            reader_bytes = json.dumps(reader).encode('utf-8')
+            (book / 'anna-reader.json').write_bytes(reader_bytes)
+            manifest = {
+                'reader_schema': 6,
+                'database_sha256': db_sha,
+                'outputs': {'anna-reader.json': sha256(reader_bytes).hexdigest(), 'topics/spells.htm': page_sha},
+                'entries': {eid: {'path': 'topics/spells.htm', 'fragment': '', 'locatable': True} for eid in ('ver_1', 'ver_2', 'ver_3', 'ver_4')},
+            }
+            (book / 'anna-manifest.json').write_text(json.dumps(manifest), encoding='utf-8')
+            curation = root / 'tour.json'
+            curation.write_text(json.dumps({
+                'schema': 2,
+                'sections': [{'key': 'rules', 'label': {'zh': '规则', 'en': 'Rules'},
+                              'topics': [{'key': 'spells', 'label': {'zh': '法术', 'en': 'Spells'}, 'contents': {'5echm': 'Spells'}}]}],
+                'choices': {'5echm': {}},
+            }), encoding='utf-8')
+
+            for gzip_shards in (False, True):
+                out = root / f'out-{gzip_shards}'
+                export_pages_data(out, db=orig, book=book, source=source, curation=curation, gzip_shards=gzip_shards)
+                entries_dir = out / 'pages-entries'
+                idx = json.loads((entries_dir / 'index.json').read_text(encoding='utf-8'))
+                self.assertEqual(idx['schema'], 1)
+                self.assertEqual(idx['buckets'], choose_entry_buckets(4))
+                self.assertEqual(idx['encoding'], 'gzip' if gzip_shards else 'identity')
+                self.assertEqual(idx['collections'], [DEFAULT])
+
+                # Reconstruct site-data for PublishedSite parity verification
+                manifest_idx = json.loads((out / 'pages-data' / 'index.json').read_text(encoding='utf-8'))
+                site_root = root / f'site-{gzip_shards}'
+                for rel, meta in manifest_idx.items():
+                    target_file = site_root / rel
+                    target_file.parent.mkdir(parents=True, exist_ok=True)
+                    cnt = (meta['size'] + meta['chunkSize'] - 1) // meta['chunkSize']
+                    with target_file.open('wb') as dst:
+                        for i in range(cnt):
+                            raw_chunk = (out / 'pages-data' / rel / f'{i}.bin').read_bytes()
+                            dst.write(gzip.decompress(raw_chunk) if meta.get('encoding') == 'gzip' else raw_chunk)
+
+                bucket_file = entries_dir / f'{entry_bucket_index("ver_1", idx["buckets"]):03x}.bin'
+                raw_bucket = bucket_file.read_bytes()
+                bucket = json.loads((gzip.decompress(raw_bucket) if gzip_shards else raw_bucket).decode('utf-8'))
+                try:
+                    site = PublishedSite(site_root)
+                    for eid in ('ver_1', 'ver_2', 'ver_3', 'ver_4'):
+                        b_idx = entry_bucket_index(eid, idx['buckets'])
+                        b_raw = (entries_dir / f'{b_idx:03x}.bin').read_bytes()
+                        b_map = json.loads((gzip.decompress(b_raw) if gzip_shards else b_raw).decode('utf-8'))
+                        self.assertIn(eid, b_map)
+                        s_e, _, b_e = site.handle(f'/api/entry?id={eid}')
+                        s_l, _, b_l = site.handle(f'/api/entry-layout?id={eid}')
+                        self.assertEqual((s_e, s_l), (200, 200))
+                        self.assertEqual(b_map[eid]['detail'], json.loads(b_e))
+                        self.assertEqual(b_map[eid]['layout'], json.loads(b_l))
+                    self.assertFalse(bucket['ver_1'].get('has_extra_versions', False))
+                    self.assertFalse(bucket['ver_2'].get('has_extra_versions', False))
+                    self.assertTrue(bucket['ver_3'].get('has_extra_versions'))
+                    self.assertTrue(bucket['ver_4'].get('has_extra_versions'))
+                finally:
+                    _clear_book_connections()
+
+            # Verify pages_build.build stamps data-anna-entries on all HTML documents
+            built = root / 'built-pages'
+            with patch('anna.publish.pages_build.stage_browser_runtime', lambda target: target.mkdir(parents=True, exist_ok=True)), \
+                 patch('anna.publish.pages_build.export_pages_data', wraps=lambda *a, **kw: export_pages_data(*a, curation=curation, **kw)):
+                build_pages(built, source, orig, book, '/5e-anna/')
+            for rel_doc in ('index.html', 'read/index.html', 'tour/index.html', 'source/index.html'):
+                html_doc = (built / rel_doc).read_text(encoding='utf-8')
+                self.assertIn('data-anna-pages', html_doc)
+                self.assertIn('data-anna-entries="1"', html_doc)
+
+            # Verify real our5etools collection streaming parity when available
+            if (OUR5ETOOLS_DATA / 'manifest.json').is_file():
+                o5e_dir = root / 'o5e-real'
+                o5e_dir.mkdir()
+                for name in ('manifest.json', 'summary.json'):
+                    shutil.copyfile(OUR5ETOOLS_DATA / name, o5e_dir / name)
+                proj_o5e = o5e_dir / 'catalog.sqlite'
+                _project_our_db(OUR5ETOOLS_DATA / 'catalog.sqlite', proj_o5e)
+                extra_locs = {}
+                (o5e_dir / 'reader-index.json').write_text(json.dumps({'roots': {}, 'entry_locations': extra_locs}))
+                media_dir = o5e_dir / 'media'
+                media_dir.mkdir()
+                o5e_cat = Our5etoolsCatalog(o5e_dir)
+                try:
+                    with closing(sqlite3.connect(proj_o5e.as_uri() + '?mode=ro', uri=True)) as conn:
+                        wanted = set()
+                        for typ in ('spell', 'subclass', 'class', 'magic_item', 'creature'):
+                            row = conn.execute('SELECT id FROM entry_core WHERE type=? LIMIT 1', (typ,)).fetchone()
+                            if row:
+                                wanted.add(row[0])
+                        rel_row = conn.execute('SELECT source_id FROM relations LIMIT 1').fetchone()
+                        if rel_row:
+                            wanted.add(rel_row[0])
+                        grp_row = conn.execute('SELECT entry_id FROM identity_members LIMIT 1').fetchone()
+                        if grp_row:
+                            wanted.add(grp_row[0])
+                    checked = 0
+                    for eid, detail_rec, layout_bytes in _collect_our_entry_records(proj_o5e, media_dir, extra_locs):
+                        if eid in wanted:
+                            expected_d = o5e_cat.detail(eid)
+                            expected_d['collection'] = 'our5etools'
+                            self.assertEqual(detail_rec, expected_d, eid)
+                            self.assertEqual(json.loads(layout_bytes), o5e_cat.layout(eid), eid)
+                            checked += 1
+                    self.assertEqual(checked, len(wanted))
+                finally:
+                    o5e_cat.close()
+
+    @unittest.skipUnless(shutil.which('node'), 'Node.js is required to test web/pages-entries.js')
+    def test_pages_entries_js_module_behavior(self):
+        sample_ids = [
+            'ver_1', 'ver_missing', 'ver_7e43c12bf8016dfa65efd6bd', 'o5e_ae4364085b943d7c',
+            'entry-中文-火球术', 'spell_αβγ',
+        ]
+        expected_hashes = {
+            bcount: {eid: entry_bucket_index(eid, bcount) for eid in sample_ids}
+            for bcount in (1, 2048, 4096)
+        }
+        gz_payload = gzip.compress(json.dumps({
+            'ver_extra': {
+                'detail': {'id': 'ver_extra', 'name': 'Extra', 'collection': '5echm'},
+                'layout': {'status': 'ok', 'html': '<p>Extra</p>'},
+                'has_extra_versions': True,
+            },
+            'ver_plain': {
+                'detail': {'id': 'ver_plain', 'name': 'Plain', 'collection': '5echm'},
+                'layout': {'status': 'ok', 'html': '<p>Plain</p>'},
+            },
+        }, separators=(',', ':')).encode('utf-8'), mtime=0)
+        id_payload = json.dumps({
+            'o5e_one': {
+                'detail': {'id': 'o5e_one', 'name': 'One', 'collection': 'our5etools'},
+                'layout': {'status': 'ok', 'html': '<p>One</p>'},
+                'has_extra_versions': True,
+            },
+        }).encode('utf-8')
+        module_url = (paths.PROJECT / 'web' / 'pages-entries.js').resolve().as_uri()
+        script = f"""
+import assert from 'node:assert/strict';
+import {{ entryBucket, request, resetCache }} from {json.dumps(module_url)};
+
+const expectedHashes = {json.dumps(expected_hashes)};
+for (const [bcount, mapping] of Object.entries(expectedHashes)) {{
+  const n = Number(bcount);
+  for (const [eid, expected] of Object.entries(mapping)) {{
+    assert.equal(entryBucket(eid, n), expected, `hash mismatch for ${{eid}} @ ${{n}}`);
+  }}
+}}
+
+let fetchCalls = [];
+let attrValue = '2:gzip';
+let mode = 'normal';
+let failOnce = true;
+
+globalThis.document = {{
+  documentElement: {{
+    getAttribute(name) {{
+      return name === 'data-anna-entries' ? attrValue : null;
+    }}
+  }}
+}};
+
+const gzBytes = Uint8Array.from({json.dumps(list(gz_payload))});
+const idBytes = Uint8Array.from({json.dumps(list(id_payload))});
+
+globalThis.fetch = async (url) => {{
+  const href = String(url);
+  fetchCalls.push(href);
+  if (mode === 'http500') {{
+    return new Response('boom', {{status: 500}});
+  }}
+  if (mode === 'flaky' && failOnce) {{
+    failOnce = false;
+    throw new Error('network hiccup');
+  }}
+  if (href.endsWith('/pages-entries/index.json')) {{
+    return Response.json({{schema: 1, buckets: 2, encoding: 'identity', collections: ['5echm', 'our5etools']}});
+  }}
+  if (attrValue === '2:gzip') {{
+    return new Response(gzBytes, {{status: 200}});
+  }}
+  return new Response(idBytes, {{status: 200}});
+}};
+
+// 1. Concurrent /api/entry + /api/entry-layout hits fetch once (deduplicated & LRU cached)
+resetCache();
+fetchCalls = [];
+const [rEntry, rLayout] = await Promise.all([
+  request('/api/entry?id=ver_extra'),
+  request('/api/entry-layout?id=ver_extra'),
+]);
+assert.equal(fetchCalls.length, 1);
+assert.equal(rEntry.status, 200);
+assert.equal(rLayout.status, 200);
+assert.equal(rEntry.headers.get('X-Anna-Entry-Bundle'), '1');
+assert.equal(rEntry.headers.get('X-Anna-Entry-Versions-Pending'), null);
+assert.deepEqual(await rEntry.json(), {{id: 'ver_extra', name: 'Extra', collection: '5echm'}});
+assert.deepEqual(await rLayout.json(), {{status: 'ok', html: '<p>Extra</p>'}});
+
+// 2. X-Anna-Entry-Versions-Pending header matrix
+const matrix = [
+  ['/api/entry?id=ver_extra&libraries=5echm', null],
+  ['/api/entry?id=ver_extra&libraries=5echm,our5etools&versions=each', null],
+  ['/api/entry?id=ver_plain&libraries=5echm,our5etools', null],
+  ['/api/entry?id=ver_extra&libraries=5echm,our5etools', '1'],
+  ['/api/entry?id=ver_extra&libraries=our5etools', '1'],
+];
+for (const [path, expectedPending] of matrix) {{
+  const resp = await request(path);
+  assert.equal(resp.status, 200, path);
+  assert.equal(resp.headers.get('X-Anna-Entry-Versions-Pending'), expectedPending, path);
+}}
+assert.equal(fetchCalls.length, 1);
+
+// 3. Instant 404 for missing or empty ID without fallback
+const rMissing = await request('/api/entry?id=ver_not_here');
+assert.equal(rMissing.status, 404);
+assert.equal(rMissing.headers.get('X-Anna-Entry-Bundle'), '1');
+const rEmpty = await request('/api/entry?id=');
+assert.equal(rEmpty.status, 404);
+
+// 4. Fallback to index.json when data-anna-entries attribute is absent + identity encoding
+resetCache();
+attrValue = null;
+fetchCalls = [];
+const rId = await request('/api/entry?id=o5e_one&libraries=our5etools');
+assert.equal(rId.status, 200);
+assert.equal(rId.headers.get('X-Anna-Entry-Versions-Pending'), '1');
+assert.deepEqual(await rId.json(), {{id: 'o5e_one', name: 'One', collection: 'our5etools'}});
+assert.equal(fetchCalls.length, 2);
+
+// 5. AbortSignal isolation on concurrent shared bucket fetch
+resetCache();
+attrValue = '2:gzip';
+const ac = new AbortController();
+const p1 = request('/api/entry?id=ver_extra', {{signal: ac.signal}});
+const p2 = request('/api/entry-layout?id=ver_extra');
+ac.abort(new DOMException('aborted', 'AbortError'));
+await assert.rejects(p1, {{name: 'AbortError'}});
+const r2 = await p2;
+assert.equal(r2.status, 200);
+assert.deepEqual(await r2.json(), {{status: 'ok', html: '<p>Extra</p>'}});
+
+// 6. Worker fallback (null) on HTTP 500, network failure + retry recovery, and invalid scope
+resetCache();
+mode = 'http500';
+assert.equal(await request('/api/entry?id=ver_extra'), null);
+
+mode = 'flaky';
+failOnce = true;
+assert.equal(await request('/api/entry?id=ver_extra'), null);
+const recovered = await request('/api/entry?id=ver_extra');
+assert.equal(recovered.status, 200);
+
+assert.equal(await request('/api/entry?id=ver_extra&versions=bogus'), null);
+assert.equal(await request('/api/entry?id=ver_extra&libraries=bad!'), null);
+"""
+        proc = subprocess.run(['node', '--input-type=module', '-e', script], capture_output=True, text=True, timeout=20)
+        self.assertEqual(proc.returncode, 0, proc.stderr + proc.stdout)
 
 
 if __name__ == '__main__':

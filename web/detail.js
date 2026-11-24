@@ -200,6 +200,16 @@ function renderProvenance(e){
   if(!headBadges&&!rows.length)return '';
   return `<section class="o5e-provenance" aria-label="${esc(ui.provenance)}"><div class="o5e-prov-head"><strong>${esc(ui.provenance)}</strong>${headBadges?`<div class="badges">${headBadges}</div>`:''}</div>${rows.length?`<dl class="o5e-prov-grid">${rows.map(([k,v])=>`<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join('')}</dl>`:''}</section>`;
 }
+function versionPillsHTML(e){
+  const members=e.versions?.members||[];
+  return members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}${relationMark(m)}</button>`).join('')}</div>`:'';
+}
+function detailTabButtonsHTML(e,tab){
+  const members=e.versions?.members||[],rels=e.relations||[];
+  const tabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',ui.versionsTab,members.length]]:e.versionsPending?[['versions',ui.versionsTab]]:[]),['relations',ui.relations,rels.length]];
+  const tabButton=([id,name,count])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''} ${count===0?'empty':''}" data-tab="${id}">${esc(count===undefined?name:`${name} ${count}`)}</button>`;
+  return tabs.map(tabButton).join('');
+}
 function renderDetail(tab='body') {
   const e=currentEntry;if(!e)return;
   if(!['body','fields','versions','relations'].includes(tab))tab='body';
@@ -207,24 +217,22 @@ function renderDetail(tab='body') {
   const linkLabels=annaLinkLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
   const members=e.versions?.members||[];
   const rels=e.relations||[],conflicts=e.field_conflicts||[],sourceIds=e.source_ids||[];
-  const tabs=[['body',ui.body],['fields',ui.fields],...(members.length>1?[['versions',ui.versionsTab,members.length]]:[]),['relations',ui.relations,rels.length]];
-  const tabButton=([id,name,count])=>`<button role="tab" id="tab-${id}" aria-controls="detail-panel" aria-selected="${tab===id}" tabindex="${tab===id?0:-1}" class="${tab===id?'active':''} ${count===0?'empty':''}" data-tab="${id}">${esc(count===undefined?name:`${name} ${count}`)}</button>`;
   let content='';
   if(tab==='body'){content=renderBody(e);loadLayout(e);}
   // Attributes follow the type's table columns; fields naming the version (type, book, rules) come last.
   if(tab==='fields') content=`<dl class="detail-fields">${(e.field_order||Object.keys(e.fields||{})).map(k=>`<dt>${esc(fieldNames[k]||k)}</dt><dd>${esc(fieldText(e,k))}${conflicts.includes(k)?' '+badge('冲突','amber'):''}</dd>`).join('')}</dl>`;
-  if(tab==='versions'&&members.length>1) content=renderVersions(e);
+  if(tab==='versions') content=members.length>1?renderVersions(e):e.versionsPending?`<p class="reader-message" role="status">${esc(ui.loadingVersions)}</p>`:'';
   if(tab==='relations') content=rels.length?rels.map(r=>`<div class="related"><span class="muted">${esc(relationNames[r.predicate]||r.predicate)}</span>${r.object_id?`<button data-entry="${esc(r.object_id)}">${esc(r.target_label)}</button>`:`<span>${esc(r.target_label)} ${badge('目标未关联','amber')}</span>`}${badge(r.status)}</div>`).join(''):'<p class="muted">未提取到关系；不代表不存在。</p>';
   // One compact head: name, then what and where it is, then its versions and outside links. The tabs stay
   // pinned while the text scrolls, and the toolbar takes over the name once the head has scrolled away.
   const badges=`${e.legacy&&e.legacy!=='unmarked'&&legacy[e.legacy]?badge(legacy[e.legacy]):''}${conflicts.length?badge(`${conflicts.length} 个字段冲突`,'amber'):''}`;
-  const versions=members.length>1?`<div class="reader-versions" role="group" aria-label="${esc(ui.versionsTab)}">${members.map(m=>`<button type="button" class="version-pill ${m.ruleset==='待核'?'unverified':''}" data-entry="${esc(m.id)}" data-keep-tab ${m.id===e.id?'aria-current="true"':''} title="${esc(versionTitle(m))}">${esc(versionLabel(m))}${relationMark(m)}</button>`).join('')}</div>`:'';
+  const versions=versionPillsHTML(e);
   const native=nativeEntry(e),stella=bookHref(e);
   const bookLink=stella?`<a class="book-definition" target="_blank" rel="noopener" href="${esc(stella)}"><img src="${esc(annaKit.href('/stella-logo.png'))}" width="18" height="18" alt="">${esc(native?linkLabels.bookDefinition:ui.provReadBook)} ↗</a>`:'';
   const rangeLink=native&&metadata.source_text!==false?`<a target="_blank" rel="noopener" href="${esc(sourceURL(e.page_path,e.start,e.end))}">${esc(linkLabels.extractedRange)} ↗</a>`:'';
   const links=bookLink||rangeLink?`<div class="detail-links">${bookLink}${rangeLink}</div>`:'';
   const name=e.name_zh||e.name;
-  $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(sourceIds.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${tabs.map(tabButton).join('')}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section><p class="reader-hint">${esc(readerHint())}</p>`;
+  $('#detail-content').innerHTML=`<header class="reader-head"><div class="reader-heading"><h2 id="entry-title">${esc(name)}</h2>${e.name_en?`<span class="english">${esc(e.name_en)}</span>`:''}</div><div class="reader-meta"><span class="reader-type">${esc(e.type_label)}</span><span class="reader-ruleset">${esc(rulesetFull(e.ruleset))}</span><span class="reader-source">${esc(sourceIds.map(sourceFull).join('；'))}</span></div><div class="reader-row">${versions}${links}</div>${badges?`<div class="badges">${badges}</div>`:''}</header><div class="detail-tabs" role="tablist" aria-label="${esc(ui.detailTabs)}">${detailTabButtonsHTML(e,tab)}</div><section id="detail-panel" role="tabpanel" tabindex="0" aria-labelledby="tab-${tab}">${content}</section><p class="reader-hint">${esc(readerHint())}</p>`;
   $('#reader-name').textContent=name;updatePageChrome();watchReaderTitle();markTableFrames();
   if(tab==='body')prepareBody(e);
   $('#detail').setAttribute('aria-labelledby','entry-title');
@@ -239,9 +247,70 @@ function switchTab(tab){
 // The entry and its source layout load together, and the text appears once, already in the book's layout;
 // a layout slower than this still follows, replacing the extracted text that stands in for it.
 const LAYOUT_WAIT=400;
-const layoutOf=id=>api('/api/entry-layout?id='+encodeURIComponent(id)).catch(()=>({status:'error'}));
+let detailController=null;
+const layoutOf=(id,signal)=>api('/api/entry-layout?id='+encodeURIComponent(id),signal).catch(()=>({status:'error'}));
+function applyVersionsUpdate(e){
+  if(currentEntry!==e)return;
+  const members=e.versions?.members||[];
+  const row=$('#detail-content .reader-row');
+  if(row){
+    const focusedPill=document.activeElement?.closest?.('.reader-versions [data-entry]')?.dataset.entry;
+    row.querySelector('.reader-versions')?.remove();
+    const pills=versionPillsHTML(e);
+    if(pills)row.insertAdjacentHTML('afterbegin',pills);
+    if(focusedPill)row.querySelector(`.reader-versions [data-entry="${CSS.escape(focusedPill)}"]`)?.focus({preventScroll:true});
+  }
+  if(detailTab==='versions'&&members.length<=1){renderDetail('body');return;}
+  const tabsEl=$('#detail-content .detail-tabs');
+  if(tabsEl){
+    const focusedTab=document.activeElement?.closest?.('.detail-tabs [data-tab]')?.dataset.tab;
+    tabsEl.innerHTML=detailTabButtonsHTML(e,detailTab);
+    if(focusedTab)tabsEl.querySelector(`[data-tab="${CSS.escape(focusedTab)}"]`)?.focus({preventScroll:true});
+  }
+  const panel=$('#detail-panel');
+  if(!panel)return;
+  if(detailTab==='versions'){panel.innerHTML=renderVersions(e);return;}
+  if(detailTab==='body'&&e.layout?.status==='ok'){
+    const prevWith=e.differenceWith,prevBar=panel.querySelector('.difference-bar');
+    const focusedDiff=document.activeElement?.closest?.('.difference-bar [data-difference]')?.dataset.difference;
+    const targets=differenceTargets(e);
+    if(!targets.length){prevBar?.remove();return;}
+    if(e.differenceWith===undefined||(!e.differenceManual&&!e.differenceWith)){
+      const base=e.provenance?.copied_from?.id;
+      e.differenceWith=targets.some(m=>m.id===base)?base:(e.differenceWith??null);
+    }
+    const buttons=differenceButtonsHTML(e,targets);
+    if(prevBar){
+      const statusEl=prevBar.querySelector('.difference-status');
+      for(const b of [...prevBar.querySelectorAll('.difference-toggle')])b.remove();
+      if(statusEl)statusEl.insertAdjacentHTML('beforebegin',buttons);
+      else prevBar.innerHTML=buttons+'<p class="difference-status muted" role="status"></p>';
+    }else{
+      panel.insertAdjacentHTML('afterbegin',`<div class="difference-bar">${buttons}<p class="difference-status muted" role="status"></p></div>`);
+    }
+    if(focusedDiff)panel.querySelector(`.difference-bar [data-difference="${CSS.escape(focusedDiff)}"]`)?.focus({preventScroll:true});
+    if(e.differenceWith&&(e.differenceWith!==prevWith||!prevBar))markDifferences(e);
+  }
+}
+async function enrichVersions(e,gen,signal){
+  try{
+    const data=await api('/api/entry-versions?id='+encodeURIComponent(e.id),signal);
+    if(gen!==detailGeneration||currentEntry!==e)return;
+    e.versionsPending=false;
+    e.versions=data.versions||null;
+    applyVersionsUpdate(e);
+  }catch{
+    if(gen!==detailGeneration||currentEntry!==e)return;
+    e.versionsPending=false;
+    if(detailTab==='versions'&&!(e.versions?.members?.length>1)){renderDetail('body');return;}
+    const tabsEl=$('#detail-content .detail-tabs');
+    if(tabsEl)tabsEl.innerHTML=detailTabButtonsHTML(e,detailTab);
+  }
+}
 // `from` is the side the entry comes in from when it replaces another in an open reader; without it, it fades in.
 async function openEntry(id,update=true,tab='body',fromResult=false,from=null) {
+  detailController?.abort();
+  const controller=new AbortController();detailController=controller;
   const gen=++detailGeneration,content=$('#detail-content');
   if(fromResult&&!currentReaderId)lastResultEntry=id;
   if(update){params.set('entry',id);params.delete('tab');historyUpdate();}
@@ -257,14 +326,18 @@ async function openEntry(id,update=true,tab='body',fromResult=false,from=null) {
   if(!wasOpen||!content.querySelector('.reader-head')){content.innerHTML=`<p class="reader-message" role="status">${esc(ui.loading)}</p>`;content.scrollTop=0;}
   updateReaderNavigation();
   try {
-    const entryRequest=api('/api/entry?id='+encodeURIComponent(id));
-    const layout=layoutOf(id);
-    const e=await entryRequest;if(gen!==detailGeneration)return;
+    const entryRequest=apiRequest('/api/entry?id='+encodeURIComponent(id),controller.signal);
+    const layout=layoutOf(id,controller.signal);
+    const entryResponse=await entryRequest;
+    const versionsPending=entryResponse.headers.get('X-Anna-Entry-Versions-Pending')==='1';
+    const e=await readApi(entryResponse);if(gen!==detailGeneration)return;
+    e.versionsPending=versionsPending;
     e.layoutRequest=layout;e.layout=await Promise.race([layout,new Promise(done=>setTimeout(done,LAYOUT_WAIT,null))]);
     if(gen!==detailGeneration)return;
     currentEntry=e;renderDetail(tab);content.scrollTop=0;
     // The next entry comes from its side; the first one fades in where the reader waited for it.
     annaMotion.arrive(content,wasOpen?from:null);
+    if(versionsPending)enrichVersions(e,gen,controller.signal);
   } catch(e) {
     if(gen===detailGeneration){content.innerHTML=`<div class="reader-message" role="alert"><strong>${esc(ui.readError)}</strong><p>${esc(e.message)}</p><button data-retry>${esc(ui.retry)}</button></div>`;content.scrollTop=0;}
   } finally {
@@ -294,22 +367,25 @@ function differenceTargets(e){
   const here=e.collection||metadata.collection;
   return (e.versions?.members||[]).filter(m=>m.id!==e.id&&(m.collection||here)===here&&m.relation!=='translation');
 }
+function differenceButtonsHTML(e,targets){
+  return targets.map(m=>{const on=m.id===e.differenceWith,name=versionLabel(m);
+    return `<button type="button" class="difference-toggle" data-difference="${esc(m.id)}" aria-pressed="${on}">${esc((on?ui.diffShown:ui.diffAgainst).replace('{name}',name))}</button>`;}).join('');
+}
 function differenceBar(e){
   const targets=differenceTargets(e);
   if(!targets.length)return '';
-  if(e.differenceWith===undefined){const base=e.provenance?.copied_from?.id;e.differenceWith=targets.some(m=>m.id===base)?base:null;}
-  const buttons=targets.map(m=>{const on=m.id===e.differenceWith,name=versionLabel(m);
-    return `<button type="button" class="difference-toggle" data-difference="${esc(m.id)}" aria-pressed="${on}">${esc((on?ui.diffShown:ui.diffAgainst).replace('{name}',name))}</button>`;}).join('');
-  return `<div class="difference-bar">${buttons}<p class="difference-status muted" role="status"></p></div>`;
+  if(e.differenceWith===undefined||(!e.differenceManual&&!e.differenceWith)){const base=e.provenance?.copied_from?.id;e.differenceWith=targets.some(m=>m.id===base)?base:(e.differenceWith??null);}
+  return `<div class="difference-bar">${differenceButtonsHTML(e,targets)}<p class="difference-status muted" role="status"></p></div>`;
 }
 async function markDifferences(e){
-  const id=e.differenceWith,text=$('#detail-content .layout-text'),status=$('#detail-content .difference-status');
+  const id=e.differenceWith,text=$('#detail-content .layout-text');
   const target=differenceTargets(e).find(m=>m.id===id);
-  if(!target||!text||!status)return;
+  if(!target||!text||!$('#detail-content .difference-status'))return;
   const name=versionLabel(target);
   e.differenceLayouts||={};
-  const other=await (e.differenceLayouts[id]||=layoutOf(id));
-  if(currentEntry!==e||e.differenceWith!==id||!text.isConnected)return;
+  const other=await (e.differenceLayouts[id]||=layoutOf(id,detailController?.signal));
+  const status=$('#detail-content .difference-status');
+  if(currentEntry!==e||e.differenceWith!==id||!text.isConnected||!status)return;
   if(other?.status!=='ok'){status.textContent=ui.diffUnavailable.replace('{name}',name);return;}
   const template=document.createElement('template');template.innerHTML=other.html;
   const result=annaDifferences.mark(text,template.content);
@@ -322,6 +398,7 @@ function prepareBody(e){
 }
 function toggleDifferences(id){
   const e=currentEntry;if(!e||detailTab!=='body')return;
+  e.differenceManual=true;
   e.differenceWith=e.differenceWith===id?null:id;
   const top=$('#detail-content').scrollTop;
   $('#detail-panel').innerHTML=renderBody(e);$('#detail-content').scrollTop=top;markTableFrames();prepareBody(e);
@@ -379,6 +456,7 @@ function renderVersions(e){
     ${same.length?`<details class="versions-same"><summary>${esc(ui.sameFields.replace('{count}',same.length))}</summary><div class="version-table-wrap"><table class="version-table">${head}<tbody>${rows(same)}</tbody></table></div></details>`:''}`;
 }
 function closeEntry({update=true,restoreFocus=true}={}) {
+  detailController?.abort();detailController=null;
   detailGeneration++;
   if(restoreFocus)lastResultEntry=lastResultEntry||currentReaderId;
   // A wide reader leaves to the right at the width it had, and the results' edge follows it (style.css, Motion).

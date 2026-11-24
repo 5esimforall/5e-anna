@@ -1,7 +1,17 @@
 /* GitHub Pages transport for the server's GET routes. One worker serves requests for this document. */
 const siteBase = new URL('.', import.meta.url);
-let worker, nextId = 0;
+let worker, nextId = 0, entriesLoader;
 const pending = new Map();
+
+async function entryBundleRequest(path, signal) {
+  if (typeof path !== 'string' || !path.startsWith('/') || path.startsWith('//')) return null;
+  const pathname = new URL(path, 'https://anna.invalid').pathname;
+  if (pathname !== '/api/entry' && pathname !== '/api/entry-layout') return null;
+  entriesLoader ??= import(new URL('pages-entries.js', siteBase).href).catch(() => null);
+  const loader = await entriesLoader;
+  signal?.throwIfAborted();
+  return loader ? loader.request(path, {signal}) : null;
+}
 
 function connect() {
   if (worker) return worker;
@@ -38,6 +48,9 @@ export function warm() {
 }
 
 export async function request(path, {signal} = {}) {
+  signal?.throwIfAborted();
+  const bundled = await entryBundleRequest(path, signal);
+  if (bundled) return bundled;
   signal?.throwIfAborted();
   const current = connect(), id = ++nextId;
   return new Promise((resolve, reject) => {

@@ -810,6 +810,16 @@ class Library:
             self._library_versions(entry, collection)
         return entry
 
+    def entry_versions(self, entry_id: str) -> dict:
+        """Return only the entry's version comparison across the reader's library scope."""
+        collection = self.owner(entry_id)
+        versions_fn = getattr(collection.provider, 'versions', None)
+        entry = dict(versions_fn(entry_id) if versions_fn is not None else collection.provider.detail(entry_id))
+        entry['collection'] = collection.key
+        if self.stacking:
+            self._library_versions(entry, collection)
+        return {'id': entry_id, 'collection': collection.key, 'versions': entry.get('versions')}
+
     def layout(self, entry_id: str) -> dict:
         return self.owner(entry_id).provider.layout(entry_id)
 

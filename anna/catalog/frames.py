@@ -32,17 +32,17 @@ STRUCTURAL_HEADING_METHODS = {'heading', 'word_heading', 'colored_heading'}
 
 # Catalog and definition table vocabularies.
 TABLE_HEADERS = {
-    '价格': 'price', '费用': 'price', '市场价格': 'price', '重量': 'weight',
+    '价格': 'price', '价值': 'price', '费用': 'price', '市场价格': 'price', '重量': 'weight',
     '载重': 'carrying_capacity', '速度': 'speed', '伤害': 'damage',
     '属性': 'properties', '词条': 'properties', '精通': 'mastery',
     '护甲等级（AC）': 'armor_class', '护甲等级（ AC ）': 'armor_class', '护甲等级': 'armor_class',
     '力量': 'strength_requirement', '隐匿': 'stealth', '特殊': 'special',
     '份量': 'quantity', '数量': 'quantity', '容器': 'container', '存放容器': 'container',
-    '船员': 'crew', '乘客': 'passengers', '货物（吨）': 'cargo_tons',
+    '船员': 'crew', '乘客': 'passengers', '货物（吨）': 'cargo_tons', '货物(吨)': 'cargo_tons',
     'AC': 'ac', 'HP': 'hp', '伤害阈值': 'damage_threshold',
 }
 TABLE_NAME_HEADERS = {
-    '物品', '项目', '名称', '商品', '船只类型', '护甲', '护甲名称', '法器', '徽章',
+    '物品', '项目', '名称', '商品', '船只类型', '船舶类型', '护甲', '护甲名称', '法器', '徽章',
     '种类', '类型', '大小', '水晶大小', '死亡象征', '货物',
 }
 VEHICLE_NAMES_RE = re.compile(
@@ -324,10 +324,11 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
         kind: str = '',
         ob: dict | None = None,
         end: int | None = None,
+        span: tuple[int, int] | None = None,
     ) -> None:
         if id(tag) not in doc.ranges:
             return
-        a, b = doc.span(tag)
+        a, b = span if span is not None else doc.span(tag)
         label = compact(name or doc.text[a:b])
         if not _valid_candidate_name(label):
             return
@@ -345,9 +346,9 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
     for block in doc.element_headings():
         if block.method == 'opening_bold':
             if matches_feat_descriptor(block.tail):
-                add(block.tag, block.text, rank=4, method='descriptor_heading')
+                add(block.tag, block.text, rank=4, method='descriptor_heading', span=(block.start, block.end))
         else:
-            add(block.tag, block.text, rank=block.rank, method=block.method, anchor=block.anchor)
+            add(block.tag, block.text, rank=block.rank, method=block.method, anchor=block.anchor, span=(block.start, block.end))
 
     # 2. Inline level-prefixed and subfeature headings in class/subclass prose.
     if CLASS_PATH.search(doc.path) or class_structure(doc.text, doc.title):
@@ -554,6 +555,10 @@ def facility_list_entries(doc: Document) -> list[dict]:
     return entries
 
 
+def _is_name_header(header: str) -> bool:
+    return header in TABLE_NAME_HEADERS or header.endswith('物品')
+
+
 def _header_field(header: str) -> str | None:
     cleaned = re.sub(r'\s+', '', header)
     if cleaned.startswith('护甲等级'):
@@ -561,15 +566,11 @@ def _header_field(header: str) -> str | None:
     return TABLE_HEADERS.get(cleaned)
 
 
-def weapon_field(header):
-    return 'price' if header.strip()=='价值' else _header_field(header)
-
-
 def weapon_header(headers):
     """The column signature identifies weapons even in a price-less or period-labelled inventory."""
     roles = [_header_field(h) for h in headers]
     return (bool(headers) and {'damage','properties'} <= set(roles)
-            and (headers[0] in TABLE_NAME_HEADERS or headers[0].endswith('物品'))
+            and _is_name_header(headers[0])
             and all(roles.count(role)==1 for role in ('damage','properties')))
 
 
@@ -687,7 +688,7 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
             (
                 i for i, r in enumerate(rows[:4])
                 if weapon_header(r['cells']) or (any(_header_field(h) == 'price' for h in r['cells'])
-                and any(h in TABLE_NAME_HEADERS for h in r['cells']))
+                and any(_is_name_header(h) for h in r['cells']))
             ),
             None,
         )
@@ -696,8 +697,7 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
 
         headers = rows[hi]['cells']
         weapons = weapon_header(headers)
-        column_field = weapon_field if weapons else _header_field
-        namecols = [0] if weapons else [i for i, h in enumerate(headers) if h in TABLE_NAME_HEADERS]
+        namecols = [0] if weapons else [i for i, h in enumerate(headers) if _is_name_header(h)]
         before = [c for c in page_candidates if c.start < a]
         title = max(before, key=lambda c: c.start).name if before else doc.title
         caption_text = t.get('preceding_text', '')
@@ -709,9 +709,9 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
             lo = 0 if len(namecols) == 1 else (nc if nc else 0)
             end = namecols[i + 1] if i + 1 < len(namecols) else len(headers)
             cols = list(range(lo, end))
-            if not weapons and not any(column_field(headers[j]) == 'price' for j in cols):
+            if not weapons and not any(_header_field(headers[j]) == 'price' for j in cols):
                 continue
-            mapped = {column_field(headers[j]) for j in cols}
+            mapped = {_header_field(headers[j]) for j in cols}
             animal = 'carrying_capacity' in mapped and bool(re.search(r'坐骑.*动物', title))
             vehicle = (
                 ('speed' in mapped and bool(re.search('载具|船', doc.path + title)))
@@ -732,6 +732,15 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
                 groups = [(0, list(range(len(headers))), 'equipment')]
                 group_label = ''
                 continue
+            if (
+                not weapons
+                and len(vals) == len(headers)
+                and _is_name_header(vals[0])
+                and [_header_field(v) for v in vals[1:]] == [_header_field(h) for h in headers[1:]]
+            ):
+                headers = vals
+                group_label = ''
+                continue
             if len(vals) == 1 and row['colspan'][0] != '1':
                 group_label = vals[0]
                 continue
@@ -743,10 +752,10 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
                 name = vals[nc]
                 if not name or len(name) > 100:
                     continue
-                price = next((vals[j] for j in cols if column_field(headers[j]) == 'price'), '')
+                price = next((vals[j] for j in cols if _header_field(headers[j]) == 'price'), '')
                 if not re.search(r'\d|×|多[种类]|不等|—|－', price):
                     # Without a printed price, require an actual damage expression, not a section divider.
-                    if not weapons or not re.match(r'\s*\d', vals[next(j for j in cols if column_field(headers[j])=='damage')]):
+                    if not weapons or not re.match(r'\s*\d', vals[next(j for j in cols if _header_field(headers[j])=='damage')]):
                         continue
                 actual = 'vehicle' if kind == 'equipment' and '坐骑' in doc.path and VEHICLE_NAMES_RE.search(name) else kind
                 left = min(row['cell_spans'][j][0] for j in cols)
@@ -754,7 +763,7 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
                 fields = {
                     field_name: [(vals[j], row['cell_spans'][j][0] - left, row['cell_spans'][j][1] - left)]
                     for j in cols
-                    if (field_name := column_field(headers[j])) and vals[j]
+                    if (field_name := _header_field(headers[j])) and vals[j]
                 }
                 extra = []
                 if actual == 'animal_offer':
@@ -787,7 +796,7 @@ def extract_tables(doc: Document, page_candidates: list[Candidate], core_rule_so
                 )
                 if (family_heading and heading_family(family_heading.name)=='ammunition'
                         and actual=='equipment' and headers[nc] in {'种类','类型'}
-                        and {'quantity','container','price','weight'}<={column_field(h) for h in headers}):
+                        and {'quantity','container','price','weight'}<={_header_field(h) for h in headers}):
                     entries[-1]['slot_definition'] = {'family':'ammunition','heading':family_heading.name,
                         'heading_span':[family_heading.start,family_heading.title_end]}
     return entries, tables, issues

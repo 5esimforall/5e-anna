@@ -367,6 +367,18 @@ CREATURE_ABILITIES = (
 )
 
 
+_SPELL_DURATION_TIME_RE = r'(?:[0-9]+|[一二两三四五六七八九十百千]+)\s*(?:个\s*)?(?:分钟|小时|星期|轮|日|天|周|月|年)'
+_SPELL_DURATION_PREFIX_RE = re.compile(
+    r'^(?:'
+    r'专注(?:[ \t]*[，,；;][ \t]*)?(?:(?:至多|最多|最长)[ \t]*)?' + _SPELL_DURATION_TIME_RE
+    + r'|立即|即刻|瞬发|瞬间|特殊'
+    + r'|直到被解除(?:或(?:被)?触发)?|直至(?:被)?(?:解除|驱散)(?:或(?:被)?触发)?'
+    + r'|(?:(?:至多|最多|最长)[ \t]*)?' + _SPELL_DURATION_TIME_RE
+    + r')'
+)
+_SPELL_DURATION_CONTINUATION_RE = re.compile(r'^[ \t]*(?:或|，\s*(?:至|直|并)|[（(])')
+
+
 def labeled_fields(text: str, kind: str) -> dict[str, list[tuple[str, int, int]]]:
     """Extract colon-labeled field lines and statblock attribute lines with relative spans."""
     result: dict[str, list[tuple[str, int, int]]] = {}
@@ -380,9 +392,18 @@ def labeled_fields(text: str, kind: str) -> dict[str, list[tuple[str, int, int]]
         next_match = matches[i + 1].start() if i + 1 < len(matches) else len(scan)
         newline = scan.find('\n', m.end())
         end = min(next_match, newline if newline != -1 else len(scan))
+        field = LABEL_TO_FIELD[m.group(1)]
+        if kind == 'spell' and field == 'duration':
+            raw = scan[m.end():end]
+            if '。' in raw:
+                prefix = _SPELL_DURATION_PREFIX_RE.match(raw)
+                if prefix:
+                    tail = raw[prefix.end():]
+                    if '。' in tail and len(tail.strip('。. \t')) >= 6 and not _SPELL_DURATION_CONTINUATION_RE.match(tail):
+                        end = m.end() + prefix.end()
         value = compact(scan[m.end():end])
         if value and len(value) <= 600:
-            result.setdefault(LABEL_TO_FIELD[m.group(1)], []).append((value, m.start(), end))
+            result.setdefault(field, []).append((value, m.start(), end))
 
     if kind == 'creature':
         for field, labels in CREATURE_NUMERIC_LINES:

@@ -191,6 +191,75 @@ class StructureTests(unittest.TestCase):
             self.assertFalse(hazard_member('甲 Alpha',body),body)
         self.assertFalse(hazard_member('如果你掷出 DC 10。',"DC 10"))
 
+    def test_element_headings_clip_wrapped_tables_and_prose(self):
+        html=(
+            '<p><font color="#800000"><strong>双头弯刀：军用近战武器</strong>\n'
+            '<table><tr><td>名称</td><td>价格</td></tr><tr><td>双头弯刀</td><td>100GP</td></tr></table></font></p>'
+            '<h4>阅卷失误 Scroll Mishap<table><tr><td>d6</td><td>结果</td></tr><tr><td>1</td><td>爆炸</td></tr></table></h4>'
+            '<h4><table><tr><td>A</td><td>B</td></tr><tr><td>1</td><td>2</td></tr></table></h4>'
+            '<p style="border-bottom: 1px solid #000"><strong>边框标题</strong><table><tr><td>X</td><td>Y</td></tr><tr><td>1</td><td>2</td></tr></table></p>'
+            '<p><font color="#800000"><strong>工具精通 Tool Proficiency</strong>'
+            '<font color="#000000"><br><em>第3级战地匠师特性</em></font></font></p>'
+            '<p><font color="#800000"><font color="#000000">'
+            '<font color="#800000"><strong>奥术精通 Arcane Mastery</strong></font>'
+            '<br>从17级起，你选择四条奥秘。</font></font></p>'
+            '<p><font color="#800000"><strong><font color="#000000">冒险引子 Adventure Hooks</font></strong><br></font></p>'
+            '<p><font color="#800000"><strong>历史年表<br><font color="#000000">Historical Timeline</font></strong></font></p>'
+            '<p><font color="#800000"><strong>大法师 Archmage<sup><font color="#000000">Legacy</font></sup></strong></font></p>'
+            '<font color="#800000"><p><strong>页面标题 Page Title</strong></p>'
+            '<p><span style="color:rgb(0,0,0)">' + ('多段落页面包装正文。' * 20) + '</span></p></font>'
+            '<p><font color="#800000"><b><font color="#000000">中型类人，守序中立</font><br>'
+            '<font color="#000000">' + ('属性块数据行内容。' * 20) + '</font></b></font></p>'
+            '<p><font color="#800000"><strong>苍白法典 The Codicil of White<br></strong>'
+            '<font color="#000000">' + ('一段超过一百五十字符的正文说明。' * 12) + '</font></font></p>'
+            '<p><font color="#800000"><font color="#800000"><strong>风</strong></font>'
+            '<strong>暴术法 Storm Sorcery</strong></font></p>'
+        )
+        d=Document('topics/test.htm',html)
+        blocks=d.element_headings()
+        by_method=[(b.method,b.text,d.text[b.start:b.end]) for b in blocks if b.method!='opening_bold']
+        titles=[t for _,t,_ in by_method]
+        self.assertIn('双头弯刀：军用近战武器',titles)
+        self.assertIn('阅卷失误 Scroll Mishap',titles)
+        self.assertIn('边框标题',titles)
+        self.assertIn('工具精通 Tool Proficiency',titles)
+        self.assertIn('奥术精通 Arcane Mastery',titles)
+        self.assertIn('冒险引子 Adventure Hooks',titles)
+        self.assertIn('历史年表 Historical Timeline',titles)
+        self.assertIn('苍白法典 The Codicil of White',titles)
+        self.assertIn('风暴术法 Storm Sorcery',titles)
+        self.assertNotIn('页面标题 Page Title',titles)
+        self.assertNotIn('中型类人，守序中立',titles)
+        self.assertEqual(titles.count('奥术精通 Arcane Mastery'),1)
+        self.assertTrue(any('Legacy' in t and 'Archmage' in t for t in titles))
+        self.assertFalse(any('100GP' in t or '爆炸' in t or '第3级' in t or '四条奥秘' in t or t=='A B 1 2' for t in titles))
+        cs=candidates(d)
+        scimitar=next(c for c in cs if c.name=='双头弯刀：军用近战武器')
+        self.assertNotIn('100GP',d.text[scimitar.start:scimitar.title_end])
+        self.assertEqual(d.text[scimitar.start:scimitar.title_end],'双头弯刀：军用近战武器')
+        d.close()
+
+    def test_labeled_fields_split_glued_spell_duration(self):
+        glued_instant=(
+            '二环 塑能（术士）\n施法时间：动作\n施法距离：30尺\n法术成分：V、S\n'
+            '持续时间： 立即一股力场波动从你张开的手中爆发。目标进行豁免检定。'
+        )
+        self.assertEqual(labeled_fields(glued_instant,'spell')['duration'][0][0],'立即')
+        glued_conc=(
+            '四环 塑能（圣武士）\n施法时间：1附赠动作\n施法距离：自身\n法术成分：V\n'
+            '持续时间： 专注，至多1 分钟在此法术的持续时间内，你的武器造成额外伤害。此外，目标身上法术终止。'
+        )
+        dur_val,a,b=labeled_fields(glued_conc,'spell')['duration'][0]
+        self.assertEqual(dur_val,'专注，至多1 分钟')
+        self.assertIn('专注，至多1 分钟',glued_conc[a:b])
+        for unchanged,expected in [
+            ('持续时间：专注，至多1分钟。\n正文。','专注，至多1分钟。'),
+            ('持续时间：立即或1小时\n正文。','立即或1小时'),
+            ('持续时间：特殊（见正文）\n正文。','特殊（见正文）'),
+            ('持续时间：直到被解除或触发\n正文。','直到被解除或触发'),
+        ]:
+            self.assertEqual(labeled_fields(unchanged,'spell')['duration'][0][0],expected)
+
 class CorpusRegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):cls.registry=SourceRegistry(WEB)
@@ -388,6 +457,55 @@ class CorpusRegressionTests(unittest.TestCase):
     def test_old_poisons(self):
         r=self.parse('城主指南/规则之主/运作游戏/毒药.html')
         self.assertEqual(sum(c['type']=='poison' for c in r['candidates']),14)
+
+    def test_wrapped_headings_and_glued_durations_in_corpus(self):
+        elf=self.parse('艾伯伦寻路者指南/种族/精灵.htm')
+        scimitar=next(c for c in elf['candidates'] if c['name'].startswith('双头弯刀：军用近战武器'))
+        self.assertEqual(scimitar['name'],'双头弯刀：军用近战武器')
+        self.assertNotIn('100GP',elf['page']['text'][scimitar['start']:scimitar['title_end']])
+        self.assertTrue(any(c['type']=='equipment' and c['name']=='双头弯刀' for c in elf['candidates']))
+
+        mishap=self.parse('城主指南/宝藏/魔法物品类别.htm')
+        scroll_sec=next(c for c in mishap['candidates'] if '阅卷失误' in c['name'])
+        self.assertNotIn('d6',scroll_sec['name'])
+
+        for rel,expected_names in [
+            ('塔莎的万事坩埚/玩家选项/职业/奇械师/战地匠师.html',['工具精通 Tool Proficiency']),
+            ('塔莎的万事坩埚/玩家选项/职业/奇械师/魔炮师.html',['魔炮师法术 Artillerist Spells','奥法枪械 Arcane Firearm']),
+            ('剑湾冒险者指南/职业/牧师-奥秘领域.html',['强力施法 Potent Spellcasting','奥术精通 Arcane Mastery']),
+        ]:
+            r=self.parse(rel)
+            by_name={c['name']:c for c in r['candidates'] if c['name'] in expected_names}
+            self.assertEqual(set(by_name),set(expected_names),rel)
+            self.assertTrue(all(c['type']=='class_feature' for c in by_name.values()),rel)
+
+        kindred=self.parse('第三方/吸血鬼：避世潜藏/血族职业/血族.htm')
+        feat_gain=next(c for c in kindred['candidates'] if c['name'].startswith('2级：血族专长'))
+        self.assertEqual(feat_gain['name'],'2级：血族专长 Kindred Feat')
+
+        greyhawk=self.parse('城主指南2024/5.创作战役/灰鹰/自由城市灰鹰/自由城市灰鹰.htm')
+        self.assertTrue(any(c['name']=='冒险引子 Adventure Hooks' for c in greyhawk['candidates']))
+        drakken=self.parse('第三方/德拉肯海姆/德拉肯海姆的世界/历史年表.htm')
+        self.assertEqual(drakken['candidates'][0]['name'],'历史年表 Historical Timeline')
+
+        icewind=self.parse('模组/冰风谷/冰风谷的书.htm')
+        self.assertTrue(any(c['name']=='苍白法典The Codicil of White' for c in icewind['candidates']))
+        eldrick=self.parse('第三方/德拉肯海姆/生物/非玩家角色/埃德瑞克·符文织者.htm')
+        self.assertFalse(any(c['name']=='中型类人，守序中立' for c in eldrick['candidates']))
+
+        storm=self.parse('剑湾冒险者指南/职业/术士-风暴术法.htm')
+        self.assertEqual((storm['candidates'][0]['type'],storm['candidates'][0]['name']),('subclass','风暴术法 Storm Sorcery'))
+        veteran=self.parse('剑湾冒险者指南/新背景选项/老佣兵.html')
+        self.assertTrue(any(c['name']=='建议特征 Suggested Characteristics' for c in veteran['candidates']))
+
+        for rel,spell_name,expected_dur in [
+            ('第三方/瓦尔达的秘密尖塔/法术.htm','掷出窗外｜Defenestration','立即'),
+            ('第三方/瓦尔达的秘密尖塔/玩家包1/法术.htm','掷出窗外｜Defenestration','立即'),
+            ('第三方/鬼魅幽谷/玩家包/法术.htm','超神斩｜Supernal Smite','专注，至多1 分钟'),
+        ]:
+            sp_page=self.parse(rel)
+            sp=next(c for c in sp_page['candidates'] if c['name']==spell_name)
+            self.assertEqual(sp['fields']['duration'][0][0],expected_dur,rel)
 
     def test_comments_excluded(self):
         d=Document('topics/test.htm','<!--EndFragment--><h2>标题 Title</h2><p>正文</p>')

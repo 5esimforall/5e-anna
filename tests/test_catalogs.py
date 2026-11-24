@@ -63,6 +63,21 @@ class CatalogTests(unittest.TestCase):
         r=self.parse('被遗忘的国度/费伦英雄/第四章/载具.htm')
         self.assertEqual([e['name'] for e in r['candidates'] if e['type']=='vehicle'],['货篷车Covered Wagon'])
 
+    def test_dmg14_vehicle_and_explosives_catalog_tables(self):
+        env=self.parse('城主指南/冒险之主/环境/非常规环境.html')
+        vehicles=[e for e in env['candidates'] if e['type']=='vehicle']
+        self.assertEqual(len(vehicles),7,[e['name'] for e in vehicles])
+        for e in vehicles:
+            for field in ('price','speed','cargo_tons','ac','hp','damage_threshold'):
+                self.assertIn(field,e['fields'],e['name'])
+        exp=self.parse('城主指南/规则之主/城主工坊/爆炸物.htm')
+        items=[e for e in exp['candidates'] if e['type']=='equipment']
+        self.assertEqual(len(items),7,[e['name'] for e in items])
+        self.assertFalse(any(e['name']=='现代物品' for e in items))
+        names={e['name'] for e in items}
+        self.assertIn('炸弹Bomb',names)
+        self.assertIn('榴弹发射器grenade launcher',names)
+
     def test_parallel_columns_do_not_overwrite(self):
         r=self.parse('玩家手册2024/装备/冒险装备.htm')
         items=[e for e in r['candidates'] if e['boundary_rule']=='table_row']

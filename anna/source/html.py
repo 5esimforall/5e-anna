@@ -20,6 +20,26 @@ LEGACY = re.compile(r'Legacy\b|[（(]旧版[）)]', re.I)
 LOCAL_LEGACY_RE = re.compile(r'[（(](?:旧版|Legacy)[）)]', re.I)
 MAROON_COLORS = {'#800000', '800000', '#ff0000', 'red', 'maroon'}
 MAROON_STYLE_RE = re.compile(r'color\s*:\s*(?:rgb\(128,\s*0,\s*0\)|#800000)')
+COLOR_STYLE_RE = re.compile(r'(?<![a-z-])color\s*:\s*([^;"\']+)', re.I)
+PURE_ASCII_TITLE_RE = re.compile(r"[A-Za-z0-9\s'’\-:：]+")
+
+
+def _is_maroon(tag: Tag) -> bool:
+    color = tag.get('color', '').strip().lower()
+    style = tag.get('style', '').lower()
+    return color in MAROON_COLORS or bool(MAROON_STYLE_RE.search(style))
+
+
+def _is_non_maroon_color(tag: Tag) -> bool:
+    if tag.name not in {'font', 'span'} or _is_maroon(tag):
+        return False
+    return bool(tag.get('color', '').strip()) or bool(COLOR_STYLE_RE.search(tag.get('style', '')))
+
+
+def _trim_span_end(text: str, a: int, b: int) -> int:
+    while b > a and text[b - 1].isspace():
+        b -= 1
+    return b
 
 NOTATION_JOINER = r'(?:或|、|/|／|和)'
 JOINERS = ('或', '/', '／', '、')
@@ -554,6 +574,46 @@ class Document:
             })
         return out
 
+    def _earliest_table_start(self, tag: Tag, a: int, b: int) -> int | None:
+        return min(
+            (self.span(tbl)[0] for tbl in tag.find_all('table') if id(tbl) in self.ranges and a <= self.span(tbl)[0] < b),
+            default=None,
+        )
+
+    def _has_bold_before(self, tag: Tag, limit: int) -> bool:
+        return any(
+            id(bt) in self.ranges and self.span(bt)[0] < limit
+            for bt in tag.find_all(['b', 'strong'])
+        )
+
+    def _covered_by_non_maroon(self, tag: Tag, a: int, b: int) -> bool:
+        return any(
+            id(d) in self.ranges
+            and _is_non_maroon_color(d)
+            and self.span(d)[0] <= a
+            and self.span(d)[1] >= b
+            for d in tag.find_all(['font', 'span'])
+        )
+
+    def _clip_colored_heading_end(self, tag: Tag, a: int, b: int) -> int:
+        cuts: list[int] = []
+        tbl_cut = self._earliest_table_start(tag, a, b)
+        if tbl_cut is not None:
+            cuts.append(tbl_cut)
+        for d in tag.find_all(['font', 'span']):
+            if id(d) not in self.ranges or not _is_non_maroon_color(d):
+                continue
+            da, db = self.span(d)
+            if not (a <= da < b) or not compact(self.text[a:da]):
+                continue
+            if '\n' not in self.text[a:da] and not self.text[da:db].lstrip(' \t').startswith('\n'):
+                continue
+            inside = compact(self.text[da:db])
+            if not inside or PURE_ASCII_TITLE_RE.fullmatch(inside):
+                continue
+            cuts.append(da)
+        return _trim_span_end(self.text, a, min(cuts)) if cuts else b
+
     def element_headings(self) -> list[HeadingBlock]:
         """Yield structural headings and paragraph-opening bold leads in DOM order."""
         blocks: list[HeadingBlock] = []
@@ -562,7 +622,12 @@ class Document:
                 continue
             a, b = self.span(tag)
             if tag.name in HEADINGS:
-                blocks.append(HeadingBlock(tag, a, b, compact(self.text[a:b]), int(tag.name[1]), 'heading', anchor=tag.get('id', '')))
+                cut = self._earliest_table_start(tag, a, b)
+                if cut is not None:
+                    b = _trim_span_end(self.text, a, cut)
+                txt = compact(self.text[a:b])
+                if txt:
+                    blocks.append(HeadingBlock(tag, a, b, txt, int(tag.name[1]), 'heading', anchor=tag.get('id', '')))
                 continue
             if tag.name in {'b', 'strong'} and not tag.find_parent(list(HEADINGS)):
                 block = tag.find_parent('p')
@@ -572,15 +637,34 @@ class Document:
                         blocks.append(HeadingBlock(tag, a, b, compact(self.text[a:b]), 4, 'opening_bold', tail=compact(self.text[b:bb])))
             if tag.name == 'p':
                 style = tag.get('style', '').lower()
-                txt = compact(self.text_of(tag))
-                if 'border-bottom' in style and len(txt) < 150 and (tag.find('b') or tag.find('strong')):
-                    blocks.append(HeadingBlock(tag, a, b, txt, 4, 'word_heading'))
+                if 'border-bottom' in style:
+                    cut = self._earliest_table_start(tag, a, b)
+                    if cut is not None:
+                        b = _trim_span_end(self.text, a, cut)
+                    txt = compact(self.text[a:b])
+                    if txt and len(txt) < 150 and self._has_bold_before(tag, b):
+                        blocks.append(HeadingBlock(tag, a, b, txt, 4, 'word_heading'))
+                        continue
+            if _is_maroon(tag) and tag.name in {'font', 'span'} and not tag.find_parent(list(HEADINGS)):
+                if self._covered_by_non_maroon(tag, a, b) and any(
+                    id(d) in self.ranges
+                    and _is_maroon(d)
+                    and not compact(self.text[a:self.span(d)[0]])
+                    and self.span(d)[1] < b
+                    and compact(self.text[self.span(d)[1]:b])
+                    for d in tag.find_all(['font', 'span'])
+                ):
                     continue
-            color = tag.get('color', '').lower()
-            style = tag.get('style', '').lower()
-            colored = color in MAROON_COLORS or bool(MAROON_STYLE_RE.search(style))
-            if colored and tag.name in {'font', 'span'} and not tag.find_parent(list(HEADINGS)):
-                txt = compact(self.text_of(tag))
+                orig_b = b
+                raw_len = len(compact(self.text[a:orig_b]))
+                b = self._clip_colored_heading_end(tag, a, b)
+                if raw_len >= 150 and (
+                    b >= orig_b
+                    or tag.find(['p', 'div'])
+                    or self._covered_by_non_maroon(tag, a, b)
+                ):
+                    continue
+                txt = compact(self.text[a:b])
                 if not 1 < len(txt) < 150:
                     continue
                 block = tag.find_parent(['p', 'li', 'div', 'td', 'body'])
@@ -591,7 +675,7 @@ class Document:
                     continue
                 if block.name == 'p' and 'border-bottom' in block.get('style', '').lower():
                     continue
-                if not (tag.find(['b', 'strong']) or tag.find_parent(['b', 'strong']) or re.search('[A-Za-z]{3}', txt)):
+                if not (self._has_bold_before(tag, b) or tag.find_parent(['b', 'strong']) or re.search('[A-Za-z]{3}', txt)):
                     continue
                 blocks.append(HeadingBlock(tag, a, b, txt, 4, 'colored_heading'))
         return blocks

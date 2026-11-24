@@ -100,7 +100,7 @@ def entry_values(kind, fields):
         values['concentration'] = [v for v in listed('concentration') if isinstance(v, bool)]
     elif kind == 'creature':
         values['cr'] = [str(v) for v in listed('cr')]
-        values['size'] = [v for v in listed('size') if v in SIZES.values()]
+        values['size'] = [s for v in listed('size') for s in re.split(r'[/／或]', str(v)) if s in SIZES.values()]
     elif kind == 'skill':
         values['ability'] = [v for v in listed('ability') if v in ABILITIES.values()]
     elif kind == 'magic_item':

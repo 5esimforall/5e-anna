@@ -36,7 +36,7 @@ FEAT_CATEGORIES = ('起源', '通用', '战斗风格', '传奇恩惠', '种族',
 POISON_MODES = ('服用', '吸入', '接触', '损伤')
 ITEM_BASE_KINDS = ('武器', '护甲', '奇物', '戒指', '魔杖', '法杖', '魔棒', '药水', '卷轴', '弹药', '盾牌')
 ITEM_WEAPON_SUBKINDS = ('长剑', '短剑', '弯刀', '匕首', '巨剑', '长棍', '权杖', '魔法船')
-RARITIES = ('非普通', '极珍稀', '珍稀', '普通', '传说', '神器', '稀有', '罕见')
+RARITIES = ('非普通', '极珍稀', '珍稀', '普通', '传说', '神器', '稀有', '罕见', '独特')
 
 GENERIC = re.compile(
     r'^(?:前言|简介|概述|引言|目录|使用本书|专长|法术|魔法物品|装备|种族|背景|职业|角色选项|玩家选项|'
@@ -148,7 +148,7 @@ def printed_generation(kind: str, text: str) -> tuple[str, tuple[int, int]] | No
 # ---------------------------------------------------------------------------------------------------
 # Printed layout & descriptor patterns shared by candidate promotion, typing, and field extraction.
 
-FEAT_DESCRIPTOR_RE = re.compile(r'\s*(' + '|'.join(FEAT_CATEGORIES) + r')专长')
+FEAT_DESCRIPTOR_RE = re.compile(r'\s*(' + '|'.join(FEAT_CATEGORIES) + r')专长(?:\s|[（(，,。：:]|$)')
 SPELL_DESCRIPTOR_RE = re.compile(
     r'(戏法|[一二三四五六七八九十\d]+环)\s*(?:[｜|/：:]\s*)?(' + '|'.join(SPELL_SCHOOLS) + r')'
 )
@@ -162,15 +162,18 @@ STAT_BLOCK_RE = re.compile(
     re.S | re.I,
 )
 STAT_CONFIRM_RE = re.compile(r'挑战|\bCR\b|力量.*敏捷', re.S)
+_HEADER_SIZES = '|'.join((*CREATURE_SIZES, '大形'))
+_HEADER_TYPES = '|'.join((*CREATURE_TYPES, '不死', '天界'))
+_SIZE_SYNONYMS = {'大形': '大型'}
+_CREATURE_TYPE_SYNONYMS = {'不死': '亡灵', '天界': '天族'}
 CREATURE_HEADER_RE = re.compile(
-    r'(' + '|'.join(CREATURE_SIZES) + r')\s*(' + '|'.join(CREATURE_TYPES) + r')'
+    rf'({_HEADER_SIZES})(?:[ \t]*或[ \t]*({_HEADER_SIZES}))?\s*({_HEADER_TYPES})(?:[ \t]*或[ \t]*({_HEADER_TYPES}))?'
 )
 ITEM_DESCRIPTOR_RE = re.compile(
-    r'^(?:' + '|'.join(ITEM_BASE_KINDS) + r').{0,60}(?:普通|珍稀|稀有|传说|神器)'
+    r'^(?:' + '|'.join(ITEM_BASE_KINDS) + r').{0,60}(?:普通|珍稀|稀有|传说|神器|独特)'
 )
 ITEM_EXTRACT_RE = re.compile(
-    r'\s*(' + '|'.join(ITEM_BASE_KINDS + ITEM_WEAPON_SUBKINDS) + r').*?(' + '|'.join(RARITIES) + r')',
-    re.S,
+    r'\s*(' + '|'.join(ITEM_BASE_KINDS + ITEM_WEAPON_SUBKINDS) + r')[^\n]{0,80}?(' + '|'.join(RARITIES) + r')',
 )
 ATTUNEMENT_RE = re.compile(r'[（(]([^\n）)]{0,80}同调[^\n）)]{0,30})[）)]')
 BACKGROUND_FIELD_LABELS = (
@@ -188,9 +191,11 @@ VEHICLE_META_RE = re.compile(r'(?m)^\s*(?:大型|巨型|超巨型)\s*(?:载具|�
 VEHICLE_COMPONENT_HEADING_RE = re.compile(r'^(?:操纵|移动|动作|武器|船壳|容量|乘员数量|载货量)')
 
 # Standalone untagged block signatures used to promote untagged Word/prose lines into candidates.
+_STANDALONE_SIZES = '|'.join((*CREATURE_SIZES, '大形', '无与伦比的'))
+_STANDALONE_TYPES = '|'.join((*CREATURE_TYPES, '天界', '不死'))
 STANDALONE_CREATURE_META_RE = re.compile(
-    r'(?m)^[ \t]*(?:' + '|'.join(CREATURE_SIZES) + r')(?:或(?:' + '|'.join(CREATURE_SIZES[:-1]) + r'))?\s*'
-    r'(?:' + '|'.join((*CREATURE_TYPES[:3], '天界', *CREATURE_TYPES[3:])) + r')[^\n]{0,120}$'
+    rf'(?m)^[ \t]*(?:(?:{_STANDALONE_SIZES})(?:或(?:{"|".join(CREATURE_SIZES)}))?|\d+\s*级)\s*'
+    rf'(?:{_STANDALONE_TYPES})[^\n]{{0,120}}$'
 )
 STANDALONE_STATS_RE = re.compile(
     r'(?:护甲等级|(?<![A-Za-z])AC(?=\s|[:：]|\d)).{0,100}(?:生命值|(?<![A-Za-z])HP(?=\s|[:：]|\d))',
@@ -313,6 +318,11 @@ LABEL_RE = re.compile(
 )
 
 ALLOWED_LABELED_FIELDS: dict[str, set[str]] = {
+    'creature': {
+        'ac', 'hp', 'cr', 'speed', 'languages', 'senses', 'skills',
+        'resistances', 'immunities', 'condition_immunities',
+        'strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma',
+    },
     'spell': {'casting_time', 'range', 'components', 'duration'},
     'feat': {'prerequisite'},
     'background': {'ability_scores', 'skills', 'tools', 'granted_feat', 'starting_equipment', 'languages'},
@@ -329,6 +339,10 @@ ALLOWED_LABELED_FIELDS: dict[str, set[str]] = {
     'skill': set(),
 }
 
+_CREATURE_STAT_BODY_RE = re.compile(
+    r'(?m)^[ \t]*(?:特质|特性|动作|行动|附赠动作|反应|传奇动作|神话动作|巢穴动作)(?:\s*[A-Za-z][A-Za-z .]*)?[ \t]*[:：]?[ \t]*$',
+    re.I,
+)
 CREATURE_NUMERIC_LINES = (
     ('ac', r'AC|护甲等级'),
     ('hp', r'HP|生命值'),
@@ -338,7 +352,7 @@ CREATURE_TRAIT_LINES = (
     ('speed', '速度'),
     ('languages', '语言'),
     ('senses', '感官'),
-    ('skills', '技能'),
+    ('skills', r'技能(?:熟练项?|加值)?'),
     ('resistances', '伤害抗性'),
     ('immunities', '伤害免疫'),
     ('condition_immunities', '状态免疫'),
@@ -356,26 +370,35 @@ CREATURE_ABILITIES = (
 def labeled_fields(text: str, kind: str) -> dict[str, list[tuple[str, int, int]]]:
     """Extract colon-labeled field lines and statblock attribute lines with relative spans."""
     result: dict[str, list[tuple[str, int, int]]] = {}
-    matches = list(LABEL_RE.finditer(text))
+    if kind == 'creature':
+        body_match = _CREATURE_STAT_BODY_RE.search(text)
+        scan = text[:body_match.start()] if body_match else text
+    else:
+        scan = text
+    matches = list(LABEL_RE.finditer(scan))
     for i, m in enumerate(matches):
-        next_match = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        newline = text.find('\n', m.end())
-        end = min(next_match, newline if newline != -1 else len(text))
-        value = compact(text[m.end():end])
+        next_match = matches[i + 1].start() if i + 1 < len(matches) else len(scan)
+        newline = scan.find('\n', m.end())
+        end = min(next_match, newline if newline != -1 else len(scan))
+        value = compact(scan[m.end():end])
         if value and len(value) <= 600:
             result.setdefault(LABEL_TO_FIELD[m.group(1)], []).append((value, m.start(), end))
 
     if kind == 'creature':
         for field, labels in CREATURE_NUMERIC_LINES:
-            m = re.search(r'(?:^|[\s\n])(?:' + labels + r')\s*[:：]?\s*(\d+(?:/\d+)?[^\n]{0,65})', text, re.I)
+            if field in result:
+                continue
+            m = re.search(r'(?:^|[\s\n])(?:' + labels + r')\s*[:：]?\s*(\d+(?:/\d+)?[^\n]{0,65})', scan, re.I)
             if m:
                 result.setdefault(field, []).append((compact(m[1]), m.start(), m.end()))
         for field, label in CREATURE_TRAIT_LINES:
-            m = re.search(r'(?:^|[\s\n])' + label + r'\s*[:：]?\s*([^\n]{1,250})', text[:1800])
+            if field in result:
+                continue
+            m = re.search(r'(?:^|[\s\n])(?:' + label + r')\s*[:：]?\s*([^\n]{1,250})', scan[:1800])
             if m:
                 result.setdefault(field, []).append((compact(m[1]), m.start(), m.end()))
         for field, label in CREATURE_ABILITIES:
-            m = re.search(label + r'\s*[:：]?\s*(\d{1,2})', text[:1200])
+            m = re.search(label + r'\s*[:：]?\s*(\d{1,2})', scan[:1200])
             if m:
                 result.setdefault(field, []).append((m[1], m.start(), m.end()))
 
@@ -422,7 +445,13 @@ def extract_entry_fields(text: str, kind: str, title_offset: int) -> dict[str, l
     elif kind == 'creature':
         m = CREATURE_HEADER_RE.search(text[:500])
         if m:
-            fields['size'] = [(m[1], m.start(), m.end())]
-            fields['creature_type'] = [(m[2], m.start(), m.end())]
+            s1 = _SIZE_SYNONYMS.get(m[1], m[1])
+            s2 = _SIZE_SYNONYMS.get(m[2], m[2]) if m[2] else ''
+            t1 = _CREATURE_TYPE_SYNONYMS.get(m[3], m[3])
+            t2 = _CREATURE_TYPE_SYNONYMS.get(m[4], m[4]) if m[4] else ''
+            size_val = f'{s1}/{s2}' if s2 and s2 != s1 else s1
+            type_val = f'{t1}/{t2}' if t2 and t2 != t1 else t1
+            fields['size'] = [(size_val, m.start(), m.end())]
+            fields['creature_type'] = [(type_val, m.start(), m.end())]
 
     return fields

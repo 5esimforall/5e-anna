@@ -19,6 +19,7 @@ class SkillValueTests(unittest.TestCase):
         self.assertEqual(counterparts.record_values('skill', {'ability': 'luck'}), {})
         self.assertEqual(counterparts.entry_values('skill', {'ability': '敏捷'}), {'ability': ['敏捷']})
         self.assertEqual(counterparts.entry_values('skill', {'ability': '运气'}), {})
+        self.assertEqual(counterparts.entry_values('creature', {'size': '中型/小型'}), {'size': ['中型', '小型']})
 
 
 def spell(en, zh, source, level, school, **extra):

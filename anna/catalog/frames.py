@@ -17,6 +17,7 @@ from anna.catalog.signatures import (
     STANDALONE_SPELL_CONFIRM_RE,
     STANDALONE_SPELL_META_RE,
     STANDALONE_STATS_RE,
+    STATBLOCK_PART,
     class_structure,
     clean_entry_name,
     extract_entry_fields,
@@ -276,6 +277,36 @@ def legend_entries(doc, candidates):
                 yield member
 
 
+STATBLOCK_INTERNAL_HEADING_RE = re.compile(
+    r'^(?:'
+    r'(?:动作|行动|附赠动作|附赠动|反应|特质|特性|传奇动作|神话动作|巢穴动作|区域效应|[123]型动作)(?:\s*[A-Za-z .]*)?\s*[:：]?$'
+    r'|(?:护甲等级|AC|生命值|HP|速度|力量|敏捷|体质|智力|感知|魅力|豁免|技能|伤害|状态|感官|语言|挑战|CR|先攻|抗性|免疫|易伤|装备|被动察觉)'
+    r'|(?:穿刺|挥砍|钝击|昏迷|束缚|麻痹|石化|中毒|魅惑|恐慌|力竭)(?:[、，,]\s*(?:穿刺|挥砍|钝击|昏迷|束缚|麻痹|石化|中毒|魅惑|恐慌|力竭))*$'
+    r'|\d+\s*$'
+    r'|(?:\*|\[译者注)'
+    r')',
+    re.I,
+)
+
+
+def _is_statblock_internal(c: Candidate) -> bool:
+    """Whether a candidate inside a standalone stat_signature belongs to that statblock rather than starting a new entry."""
+    if c.kinds or c.observations or c.method in {
+        'stat_block', 'stat_signature', 'spell_signature', 'magic_item_signature',
+        'poison_signature', 'index_anchor', 'level_inline_heading', 'descriptor_heading',
+    }:
+        return False
+    if c.method == 'table_caption':
+        return True
+    name = c.name.strip()
+    return (
+        '。' in name
+        or bool(STATBLOCK_PART.fullmatch(name))
+        or bool(STANDALONE_CREATURE_META_RE.match(name))
+        or bool(STATBLOCK_INTERNAL_HEADING_RE.match(name))
+    )
+
+
 def _valid_candidate_name(name: str) -> bool:
     return bool(name and len(name) <= 200 and not FIELD_TITLE.fullmatch(name))
 
@@ -370,7 +401,6 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
     for title_tag, anchor, box_end in doc.boxed_headings():
         add(title_tag, rank=2, method='stat_block', kind='creature', anchor=anchor, end=box_end)
 
-    synthetic: list[Candidate] = []
     for m in STANDALONE_CREATURE_META_RE.finditer(doc.text):
         if not STANDALONE_STATS_RE.search(doc.text[m.end():m.end() + 450]):
             continue
@@ -380,11 +410,7 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
         a, b, title = previous
         if any(c.explicit_end and c.start <= a < c.explicit_end for c in items):
             continue
-        synthetic.append(Candidate(a, b, title, 2, 'stat_signature', None, [], ['creature']))
-    for c in synthetic:
-        following = [x.start for x in synthetic + items if 'creature' in x.kinds and x.start > c.start]
-        c.explicit_end = min(following) if following else len(doc.text)
-        items.append(c)
+        items.append(Candidate(a, b, title, 2, 'stat_signature', None, [], ['creature']))
 
     for kind, pattern in (('magic_item', STANDALONE_ITEM_META_RE), ('spell', STANDALONE_SPELL_META_RE)):
         for m in pattern.finditer(doc.text):
@@ -478,6 +504,13 @@ def candidates(doc: Document, observations=()) -> list[Candidate]:
 
     if compact(doc.text[:merged[0].start]) and merged[0].start > 100:
         merged.insert(0, Candidate(0, 0, doc.title, 0, 'page_intro', end=merged[0].start))
+
+    for i, c in enumerate(merged):
+        if c.method == 'stat_signature' and not c.explicit_end:
+            c.explicit_end = next(
+                (x.start for x in merged[i + 1:] if x.start > c.title_end and not _is_statblock_internal(x)),
+                len(doc.text),
+            )
 
     stack: list[int] = []
     legacy_markers = doc.legacy_marker_spans()

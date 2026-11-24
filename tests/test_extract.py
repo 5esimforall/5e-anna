@@ -3,9 +3,9 @@ import unittest
 
 from anna.source.html import Document,resolve_link,split_name,key
 from anna.catalog.frames import candidates,extract_tables,quickref_rows
-from anna.catalog.signatures import printed_type
+from anna.catalog.signatures import extract_entry_fields,labeled_fields,printed_type
 from anna.catalog.types import hazard_member,NO_TOC_PLACE
-from anna.catalog.build import Build,parse_one,normalize_value,observation_fields
+from anna.catalog.build import Build,parse_one,normalize_value,observation_fields,resolve_entry_field
 from anna.source.registry import SourceRegistry
 
 from anna.paths import WEB
@@ -116,7 +116,67 @@ class StructureTests(unittest.TestCase):
         self.assertEqual(split_name('粉碎者 CrusherLegacy'),('粉碎者','Crusher'))
         self.assertEqual(normalize_value('cr','1/4（XP50）'),'1/4')
         self.assertEqual(normalize_value('ritual','×'),False)
+        self.assertEqual(normalize_value('attunement','特殊'),True)
+        self.assertEqual(normalize_value('ritual','特殊'),'特殊')
+        self.assertEqual(normalize_value('casting_time','一动作'),'动作')
         self.assertEqual(normalize_value('casting_time','其他'),'其他')
+
+    def test_field_conflict_canonical_equivalence(self):
+        f=lambda v,scope='entry':{'value':v,'scope':scope}
+        # Formatting variants of attunement_requirements collapse cleanly; genuine disagreements stay flagged.
+        self.assertEqual(resolve_entry_field('attunement_requirements',[f('牧师、德鲁伊或圣武士'),f('牧师 / 德鲁伊 / 圣武士','index')]),('牧师、德鲁伊或圣武士',False))
+        self.assertEqual(resolve_entry_field('attunement_requirements',[f('缺失手、臂或腿的生物'),f('缺失手 / 缺失臂 / 缺失腿','index')]),('缺失手、臂或腿的生物',False))
+        self.assertTrue(resolve_entry_field('attunement_requirements',[f('牧师'),f('法师','index')])[1])
+        # Dual creature size/type accepts a subset from the quickref index, while rejecting disjoint values.
+        self.assertEqual(resolve_entry_field('size',[f('小型/中型'),f('小型','index')]),('小型/中型',False))
+        self.assertEqual(resolve_entry_field('creature_type',[f('天族/邪魔'),f('天族','index')]),('天族/邪魔',False))
+        self.assertTrue(resolve_entry_field('size',[f('小型/中型'),f('巨型','index')])[1])
+
+    def test_creature_and_item_field_scoping(self):
+        stat=(
+            '遗忘王子 The Forgotten Prince\n中型妖精，混乱中立\n'
+            'AC 22 先攻 +16（26）\nHP 262（25d8+150）\n速度 40尺\n'
+            '技能熟练：察觉+5，藏匿+6\nCR 21\n'
+            '特质Traits\n速度：目标的步行速度减少20尺。\n施法时间：动作\n先决条件：第6级\n'
+        )
+        fs=labeled_fields(stat,'creature')
+        self.assertEqual(fs['speed'][0][0],'40尺')
+        self.assertEqual([v for v,_,_ in fs['skills']],['察觉+5，藏匿+6'])
+        self.assertFalse({'casting_time','prerequisite'} & set(fs))
+
+        dual=extract_entry_fields('幽影龙 Shadow Dragon\n大型或巨型龙类，混乱邪恶\nAC 16\nHP 189','creature',len('幽影龙 Shadow Dragon'))
+        self.assertEqual((dual['size'][0][0],dual['creature_type'][0][0]),('大型/巨型','龙类'))
+        titan=extract_entry_fields('至高天 Empyrean\n巨型天族或邪魔（泰坦），中立','creature',len('至高天 Empyrean'))
+        self.assertEqual(titan['creature_type'][0][0],'天族/邪魔')
+
+        clog_title='迅捷木屐 Quickstep Clogs'
+        clog=clog_title+'\n\n奇物，独特\n穿着期间与普通拖鞋无异。'
+        item_fields=extract_entry_fields(clog,'magic_item',len(clog_title))
+        self.assertEqual((item_fields['item_type'][0][0],item_fields['rarity'][0][0]),('奇物','独特'))
+
+    def test_stat_signature_discovery_and_end_boundaries(self):
+        raw=(
+            '<h4>灵魄 Summons</h4>'
+            '<p><b>植物灵魄Plant Spirit</b><br>中型植物，中立<br>护甲等级 11<br>生命值 30<br>速度 30尺</p>'
+            '<p><font color="#800000"><b>动作Actions</b></font><br>猛击。</p>'
+            '<h4 id="Sp1">沉鱼落雁｜Transfix</h4><p>一环 惑控<br>施法时间：动作<br>施法距离：30尺<br>法术成分：V<br>持续时间：立即</p>'
+            '<p><b>迅步幻灵Flitterstep</b><br>中型不死 任意<br>AC 14 HP 44</p>'
+            '<p><b>猎法者魔像Mage Hunter</b><br>大形构装生物<br>AC 20 HP 243</p>'
+            '<p><b>卓莫克雷提Tromokratis</b><br>无与伦比的怪兽（泰坦）<br>AC：22 HP：409</p>'
+            '<p><b>专家Expert</b><br>1级类人生物<br>AC 14 生命值 11</p>'
+        )
+        d=Document('topics/test.htm',raw)
+        cs=candidates(d)
+        by_name={c.name:c for c in cs}
+        spirit=by_name['植物灵魄Plant Spirit']
+        transfix=by_name['沉鱼落雁｜Transfix']
+        # Statblock stops at the following spell instead of swallowing it, while keeping its own 动作Actions.
+        self.assertEqual(spirit.end,transfix.start)
+        self.assertIn('动作Actions',d.text[spirit.start:spirit.end])
+        self.assertNotIn('沉鱼落雁',d.text[spirit.start:spirit.end])
+        for name in ('迅步幻灵Flitterstep','猎法者魔像Mage Hunter','卓莫克雷提Tromokratis','专家Expert'):
+            self.assertEqual(by_name[name].method,'stat_signature',name)
+        d.close()
 
     def test_printed_type_label(self):
         self.assertEqual(printed_type('目盲 Blinded【状态】'),'condition')

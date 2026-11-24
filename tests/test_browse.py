@@ -11,6 +11,8 @@ class NormalizeTests(unittest.TestCase):
     def test_level_alias(self):
         self.assertEqual(browse.normalized({'spell_level':['一环','1环']},'spell_level'),['1'])
         self.assertEqual(browse.sort_value('{"spell_level":"戏法"}','spell_level'),0)
+        self.assertEqual(browse.normalized({'size':'大型/巨型'},'size'),['大型','巨型'])
+        self.assertEqual(browse.normalized({'size':'小型或中型'},'size'),['小型','中型'])
     def test_class_tokens(self):
         self.assertEqual(browse.normalized({'spell_classes':'术 法 锁 械'},'spell_classes'),['术士','法师','魔契师','奇械师'])
         self.assertEqual(browse.normalized({},'spell_classes'),[browse.UNKNOWN])

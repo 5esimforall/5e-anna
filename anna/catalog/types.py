@@ -154,8 +154,9 @@ class Probe:
         self.path = context.split(' | ')[-1]
         self.name = compact(c.name)
         self.class_context = bool(CLASS_PATH.search(self.path))
-        self.text = full if primary and (self.class_context or class_structure(full, c.name)) else own
-        self.intro = self.text[:1800]
+        self.full = full
+        self.text = own
+        self.intro = own[:1800]
 
     @cached_property
     def after_title(self) -> str:
@@ -221,7 +222,7 @@ def recognizer(rule: str):
 # 1. Pre-classified candidates, structural guards, and rule-section headings.
 
 OPTION_CATALOG_RE = re.compile(
-    r'^(?:魔能祈唤(?:选项)?|禁令恩惠|子职(?:业)?选项|反派选项|超魔(?:法)?选项|灌注选项)(?:\s*[A-Za-z].*)?$'
+    r'^(?:魔能祈唤(?:选项)?|禁令恩惠|子职(?:业)?选项|反派选项|超魔(?:法)?选项|灌注选项|奇械师注法(?:选项)?)(?:\s*[A-Za-z].*)?$'
 )
 POISON_PROCEDURE_RE = re.compile(r'^(?:毒药的(?:制作|提取)|采购毒药|制作毒药|提取毒药)')
 RULES_SECTION_RE = re.compile(
@@ -275,7 +276,7 @@ def structure_name(p: Probe):
 
 @recognizer('class_structure')
 def class_layout(p: Probe):
-    if p.primary and class_structure(p.text, p.name):
+    if p.primary and class_structure(p.full, p.name):
         return 'class'
 
 
@@ -340,7 +341,17 @@ INTERDICT_TIER_RE = re.compile(r'^\d+级禁令恩惠')
 
 def class_region_heading(p: Probe) -> bool:
     """A titled heading on a class page that is not the page's own framing."""
-    return p.class_context and not p.primary and bool(p.en) and not CLASS_FRAMING_HEADING_RE.search(p.name)
+    return (
+        p.class_context
+        and not p.primary
+        and bool(p.en)
+        and not CLASS_FRAMING_HEADING_RE.search(p.name)
+        and not STATBLOCK_PART.fullmatch(p.name)
+        and not document_structure_name(p.name)
+        and not option_catalog(p)
+        and 'spell' not in p.c.kinds
+        and not matches_spell_fields(p.intro)
+    )
 
 
 @dataclass(frozen=True)
@@ -398,8 +409,8 @@ CONTEXT_RULES: tuple[ContextRule, ...] = (
     ),
     ContextRule('rule', path=r'术语汇编', predicate=lambda p: p.c.method == 'heading'),
     ContextRule(
-        'subclass', primary=True,
-        predicate=lambda p: p.class_context and p.zh not in CLASSES and bool(SUBCLASS_LEVEL_TEXT_RE.search(p.text)),
+        'subclass', primary=True, exclude_name=r'法术',
+        predicate=lambda p: p.class_context and p.zh not in CLASSES and bool(SUBCLASS_LEVEL_TEXT_RE.search(p.full)),
     ),
     ContextRule(
         'class_feature', rule='level_statement',
@@ -425,10 +436,10 @@ CONTEXT_RULES: tuple[ContextRule, ...] = (
     ContextRule('background', titled=True, primary=True, path=r'角色起源/背景|个性与背景/背景|/背景/'),
     ContextRule('species', titled=True, primary=True, path=r'/种族/|/物种/|/血统/|/族裔/', exclude_name=r'特质|特性|列表|简介'),
     ContextRule(
-        'subclass', titled=True, primary=True,
+        'subclass', titled=True, primary=True, exclude_name=r'法术',
         predicate=lambda p: bool(
             re.search(r'子职|子职业', p.context)
-            or (re.search(r'/角色职业/|/职业/', p.context) and SUBCLASS_SECTION_LEVEL_RE.search(p.text))
+            or (re.search(r'/角色职业/|/职业/', p.context) and SUBCLASS_SECTION_LEVEL_RE.search(p.full))
         ),
     ),
     ContextRule('class_feature', titled=True, english=True, context=r'祈唤|战技|超魔|灌注|职业特性|子职特性'),

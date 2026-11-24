@@ -110,6 +110,49 @@ class ClassifyTests(unittest.TestCase):
         t=typed('随机遭遇',table_span=[0,10])
         self.assertEqual((t.type,t.rule),('lore','named_table_structure'))
 
+    def test_subclass_with_companion_statblock_and_option_catalogs_avoid_spurious_conflicts(self):
+        # A primary subclass page reads its full text only for subclass structure, not companion statblocks.
+        own='战地匠师 Battle Smith\n制造魔偶的奥术匠人。'
+        full=own+'\n3级：钢铁守卫 Steel Defender\n钢铁守卫\n护甲等级：15\n生命值：20（3d8+6）\n力量 14 敏捷 12'
+        t=classify(Candidate(0,len(own.splitlines()[0]),'战地匠师 Battle Smith',1,'heading'),own,full,'topics/测试书/职业/奇械师/战地匠师.htm',True)
+        self.assertEqual((t.type,t.rule),('subclass','context_heading'))
+        self.assertEqual(type_conflicts(t.type,t.printed_types),[])
+
+        # Artificer infusions option catalog is a section even with companion statblocks later on the page.
+        inf=typed('奇械师注法 Artificer Infusions','\n以下为注法选项。',path='topics/测试书/职业/奇械师/奇械师注法.htm',primary=True,full='奇械师注法\nAC 13 HP 15\n力量10 敏捷10\n14级')
+        self.assertEqual((inf.type,type_conflicts(inf.type,inf.printed_types)),('section',[]))
+
+        # A spell appendix in a class folder does not absorb the first spell's fields.
+        app_own='附录B：新法术 New Spells\n此处列出魔战士法术。'
+        app=typed('附录B：新法术 New Spells','',path='topics/第三方/魔战士/附录B：新法术.htm',primary=True,full=app_own+'\n'+SPELL_FIELDS)
+        app_c=Candidate(0,len('附录B：新法术 New Spells'),'附录B：新法术 New Spells',1,'heading')
+        app=classify(app_c,app_own,app_own+'\n'+SPELL_FIELDS,'topics/第三方/魔战士/附录B：新法术.htm',True)
+        self.assertEqual((app.type,type_conflicts(app.type,app.printed_types)),('section',[]))
+
+        # Statblock parts, generic cantrip headings, option catalogs, and class cantrips are not level_statement features.
+        for name,body in [
+            ('动作Actions','此伤害在你到达6级时增加。'),
+            ('戏法Cantrips','第1级时，你选择两个戏法。'),
+            ('超魔法选项 Metamagic Options','第3级术士特性。'),
+        ]:
+            res=typed(name,'\n'+body,path='topics/玩家手册/职业/术士.html')
+            self.assertEqual((res.type,type_conflicts(res.type,res.printed_types)),('section',[]),name)
+
+        cantrip=typed('仇杀剑 Vengeful Blade',SPELL_FIELDS+'\n当你的等级到达5级时增加伤害。',path='topics/第三方/邪狱使/法术.htm',kinds=['spell'])
+        self.assertEqual((cantrip.type,type_conflicts(cantrip.type,cantrip.printed_types)),('spell',[]))
+
+        # Concatenated table headers ("种族 | 专长 | 分类") are not feat descriptors.
+        feat_list=typed('专长列表 Feats List','\n种族专长分类\n精灵艾伦诺专精起源',table_span=[10,50])
+        self.assertEqual((feat_list.type,type_conflicts(feat_list.type,feat_list.printed_types)),('lore',[]))
+
+        # Class-granted invocations on a class page remain class_feature (not blocked as option catalogs).
+        inv=typed('魔能祈唤 Eldritch Invocations','\n第2级时，你习得两项魔能祈唤。',path='topics/玩家手册/职业/邪术师.html')
+        self.assertEqual((inv.type,inv.rule),('class_feature','level_statement'))
+
+        # Spell catalog pages under a class folder do not become subclasses from cantrip scaling in full text.
+        new_spells=typed('新法术','\n下列新法术可供使用。',path='topics/第三方/邪狱使/邪狱使法术.htm',primary=True,full='新法术\n5级时伤害提升。\n'+SPELL_FIELDS)
+        self.assertEqual(new_spells.type,'section')
+
 
 def page_entries(*names,parents=None,types=None):
     """A rules page: its primary rule and the given headings, each a child of the primary unless `parents` says."""

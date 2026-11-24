@@ -168,7 +168,7 @@ def normalized(fields, field):
             out.extend(CLASSES.get(x,x) for x in re.split(r'[\s、,，/；;]+',text) if x)
         elif field=='casting_time':
             out.append({'附赠':'附赠动作','1个动作':'动作','一动作':'动作'}.get(text,text))
-        elif field=='size':out.append('超巨型' if text=='超型' else text)
+        elif field=='size':out.extend('超巨型' if x=='超型' else x for x in re.split(r'[/／或]',text) if x)
         elif field=='creature_type':out.extend(x for x in re.split(r'[/／]',text) if x)
         elif field in BOOL_FIELDS:
             if field=='material':

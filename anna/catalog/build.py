@@ -55,18 +55,56 @@ def normalize_value(field,value):
     if field=='attunement_requirements':
         return re.sub(r'同调$','',re.sub(r'^(?:需要|需)','',value)).strip()
     if field in {'attunement','legendary_actions','ritual','concentration','verbal','somatic'}:
-        if value in {'是','有','√','V','S','仪式','专注'}:return True
+        if value in {'是','有','√','V','S','仪式','专注'} or (field=='attunement' and value=='特殊'):return True
         if value in {'否','无','×','非仪','非专'}:return False
     if field in {'ac','hp','cr'}:
         m=re.match(r'\d+(?:/\d+)?',value)
         if m:return m[0]
     if field=='casting_time':
-        if re.match(r'^(?:1\s*)?附赠',value):return '附赠动作'
-        if re.match(r'^(?:1\s*)?反应',value):return '反应'
-        if re.match(r'^(?:1\s*)?动作',value):return '动作'
+        if re.match(r'^(?:[1１一]\s*个?)?附赠',value):return '附赠动作'
+        if re.match(r'^(?:[1１一]\s*个?)?反应',value):return '反应'
+        if re.match(r'^(?:[1１一]\s*个?)?动作',value):return '动作'
         if re.match(r'^\d+\s*(?:分钟|小时|轮)|^其他',value):return '其他'
         return value
     return value
+
+
+def attunement_req_key(value:str)->tuple[str,...]:
+    """Canonical token tuple for equivalent attunement requirement wordings."""
+    s=re.sub(r'的生物$','',compact(value))
+    parts=[p.strip() for p in re.split(r'\s*(?:/|／|、|，|,|或)\s*',s) if p.strip()]
+    if parts and parts[0].startswith('缺失'):
+        parts=[parts[0]]+[p if p.startswith('缺失') else '缺失'+p for p in parts[1:]]
+    return tuple(sorted(set(parts)))
+
+
+def _split_dual_tokens(value:object)->list[str]:
+    return [t.strip() for t in re.split(r'[/／或]',str(value)) if t.strip()]
+
+
+MULTI_VALUE_FIELDS={'source_id','source_code','spell_classes','type','ruleset','role'}
+
+
+def resolve_entry_field(field:str,fs:list[dict])->tuple[object,bool]:
+    """Combine one entry's extracted and index facts for `field`, flagging only unresolved disagreements."""
+    values={canonical(f['value']):f['value'] for f in fs}
+    if len(values)<=1:
+        return next(iter(values.values())),False
+    if field=='attunement_requirements':
+        groups={attunement_req_key(str(f['value'])) for f in fs}
+        if len(groups)==1:
+            return next((f['value'] for f in fs if f['scope']=='entry'),next(iter(values.values()))),False
+    elif field in {'size','creature_type'}:
+        entry_vals={canonical(f['value']):f['value'] for f in fs if f['scope']=='entry'}
+        other_facts=[f for f in fs if f['scope']!='entry']
+        if len(entry_vals)==1 and other_facts:
+            entry_val=next(iter(entry_vals.values()))
+            dual_tokens=set(_split_dual_tokens(entry_val))
+            if '/' in str(entry_val) and all((toks:=_split_dual_tokens(f['value'])) and set(toks)<=dual_tokens for f in other_facts):
+                return entry_val,False
+    multirarity=field=='rarity' and any('多种' in str(v) for v in values.values())
+    conflict=field not in MULTI_VALUE_FIELDS and not multirarity
+    return list(values.values()),conflict
 
 
 def observation_fields(ob):
@@ -401,15 +439,15 @@ class Build:
         self.facts=list({f['id']:f for f in self.facts}.values())
         facts=defaultdict(lambda:defaultdict(list))
         for f in self.facts:facts[f['entry_id']][f['field']].append(f)
-        multi={'source_id','source_code','spell_classes','type','ruleset','role'}
         for e in self.entries:
             for field,fs in facts[e['id']].items():
-                values={canonical(f['value']):f['value'] for f in fs}
-                e['fields'][field]=list(values.values()) if len(values)>1 else next(iter(values.values()))
-                multirarity=field=='rarity' and any('多种' in str(v) for v in values.values())
-                if len(values)>1 and field not in multi and not multirarity:
+                resolved,conflict=resolve_entry_field(field,fs)
+                e['fields'][field]=resolved
+                if conflict:
                     e['field_conflicts'].append(field)
-                    self.review(e['id'],'field_conflict',{'field':field,'values':list(values.values())},{'fact_ids':[f['id'] for f in fs]},'high')
+                    values=[f['value'] for f in fs]
+                    deduped=list({canonical(v):v for v in values}.values())
+                    self.review(e['id'],'field_conflict',{'field':field,'values':deduped},{'fact_ids':[f['id'] for f in fs]},'high')
             if e['type']=='background' and e['fields'].get('granted_feat'):
                 for f in facts[e['id']]['granted_feat']:
                     self.relation(e['id'],'grants_feat',f['value'],f['evidence'])

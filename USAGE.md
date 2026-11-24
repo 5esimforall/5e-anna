@@ -319,27 +319,39 @@ Pages 优先显示随包图片。其余配图由浏览器按需从上游 CDN 或
 先运行 `make build`，然后查询并检查一处引用：
 
 ```sh
-# 列出普通正文中的待核引用；也可使用 --signal explicit / index / format / field / table
+# 列出普通正文中的待核引用；也可按 --reason / --kind 或 --signal explicit / index / format / field / table 筛选
 .venv/bin/python -m anna.review.repository references --signal plain --status review --limit 10
+.venv/bin/python -m anna.review.repository references --status unresolved --reason no_definition --kind spell --limit 10
 
 # 查看引用上下文、可迁移锚点、目标选择器、候选与双哈希依据
 .venv/bin/python -m anna.review.repository ref-inspect 引用ID --target 目标条目ID
 ```
 
-`ref-inspect` 返回引用锚点（`within`、`quote`）、目标条目选择器以及 `content_sha256`、`context_sha256` 双哈希。核对后用这组指纹写入确认裁定：
+`ref-inspect` 返回引用锚点（`within`、`quote`）、目标条目选择器以及 `content_sha256`、`context_sha256` 双哈希。写入前可先用 `--preview` 预览变更；核对后用同一组指纹写入确认裁定，并用 `preview` / `gate` 验证重放差异与快照门禁：
 
 ```sh
+# 试运行单条确认（不修改 annotations.jsonl）
+.venv/bin/python -m anna.review.repository annotate 引用ID \
+  --kind reference --ruling confirm --target 目标条目ID \
+  --expected-content-sha256 查看得到的content_sha256 \
+  --expected-context-sha256 查看得到的context_sha256 \
+  --reviewer 审核者 --reason '说明此处引用该定义的原文与上下文依据' \
+  --preview
+
+# 实际追加事件并预览重放差异
 .venv/bin/python -m anna.review.repository annotate 引用ID \
   --kind reference --ruling confirm --target 目标条目ID \
   --expected-content-sha256 查看得到的content_sha256 \
   --expected-context-sha256 查看得到的context_sha256 \
   --reviewer 审核者 --reason '说明此处引用该定义的原文与上下文依据'
+.venv/bin/python -m anna.review.repository preview
 make build
+.venv/bin/python -m anna.review.repository gate --strict
 # 停止旧服务，再重新运行
 make up
 ```
 
-一次裁定锚定于该引用所在上下文及文本片段；目标可以是候选外的现有可定位条目，但须提供核对理由。保存只写入 `annotations/annotations.jsonl`，须重建才生效；同一固定输入快照允许连续保存多项裁定，发布前由 `require_current_annotations` 校验日志已完整重放。
+一次裁定锚定于该引用所在上下文及文本片段；目标可以是候选外的现有可定位条目，但须提供核对理由。保存只写入 `annotations/annotations.jsonl`，须重建才生效；同一固定输入快照允许连续保存多项裁定，可通过 `preview` 只读计算生效后引用、点击层、裁定状态与缺失定义队列的完整差异。生成链接版（`make linked`）、首页缓存（`make home`）、静态导出（`make pages`）与启动服务（`make up`）前都会校验日志已完成重放且与快照一致。
 
 若确认此处不是规则引用或记录缺少独立定义，先不带 `--target` 运行 `ref-inspect 引用ID`（登记缺失定义时加 `--missing-definition`），再写入 `non_reference` 或 `missing_definition` 裁定：
 
@@ -352,10 +364,12 @@ make up
 make build
 ```
 
-撤销时追加一条 `revoke` 事件，保留历史并在重建后恢复自动结果：
+撤销时追加一条 `revoke` 事件，保留历史并在重建后恢复自动结果；写入前同样支持 `--preview`：
 
 ```sh
-.venv/bin/python -m anna.review.repository revoke ann_ref_事件ID \
+.venv/bin/python -m anna.review.repository revoke ann_rev_事件ID \
+  --reviewer 审核者 --reason '说明撤销原因' --preview
+.venv/bin/python -m anna.review.repository revoke ann_rev_事件ID \
   --reviewer 审核者 --reason '说明撤销原因'
 make build
 ```
@@ -364,27 +378,36 @@ make build
 
 ### 候选搜索与缺失定义（命令行）
 
-条目详情不再提供核对模式或内联候选抽屉；候选检索和缺失定义队列通过命令行查看。候选排序只表示证据匹配程度，不自动批准关系：
+条目详情不再提供核对模式或内联候选抽屉；候选检索和缺失定义队列通过命令行查看。候选排序只表示证据匹配程度，不自动批准关系，支持关键词多词匹配、英文复数／前缀加值归一化与 `--locatable`／`--exclude-sections` 过滤：
 
 ```sh
 .venv/bin/python -m anna.review.repository candidates 引用ID
-.venv/bin/python -m anna.review.repository candidates 引用ID --query '名称或路径关键词' --limit 20 --offset 0
-.venv/bin/python -m anna.review.repository missing --status open
+.venv/bin/python -m anna.review.repository candidates 引用ID --query '名称或路径关键词' --locatable --exclude-sections --limit 20 --offset 0
+.venv/bin/python -m anna.review.repository missing --status open --text '关键词'
+.venv/bin/python -m anna.review.repository missing-candidates --signal format --reason no_definition --limit 20
 ```
 
-登记缺失定义时先 `ref-inspect 引用ID --missing-definition`，再用 `--kind reference --ruling missing_definition` 写入（可通过 `--query` 保留搜索关键词）；队列保存在 `catalog.sqlite` 的 `missing_definitions` 表。定义补齐后重新 `ref-inspect --target` 并用 `annotate --kind reference --ruling confirm --supersedes 缺失登记事件ID` 显式解决，问题状态随之变为 `resolved`。
+`missing-candidates` 按信号、种类与原文文本聚合尚未登记缺失定义的 `unresolved` 引用（支持 `--kind`、`--path`、`--reason`、`--text`）。登记缺失定义时先 `ref-inspect 引用ID --missing-definition`，再用 `--kind reference --ruling missing_definition` 写入（可通过 `--query` 保留搜索关键词）；队列保存在 `catalog.sqlite` 的 `missing_definitions` 表。定义补齐后重新 `ref-inspect --target` 并用 `annotate --kind reference --ruling confirm --supersedes 缺失登记事件ID` 显式解决，问题状态随之变为 `resolved`。
 
-### 依据变化后的迁移与重新待核
+### 依据变化后的迁移与重建门禁
 
-原文更新后，裁定按内容／上下文双哈希依据迁移：无关改动保持 `applied`，被标注语境或目标变化时进入 `stale`、`missing` 或 `conflict` 等状态，判定规则见[双哈希依据](MODEL.md#双哈希依据)。按状态列出需要重新核对的裁定：
+原文更新后，裁定按内容／上下文双哈希依据迁移：无关改动保持 `applied`，被标注语境或目标变化时进入 `stale`、`missing` 或 `conflict` 等状态，判定规则见[双哈希依据](MODEL.md#双哈希依据)。可按状态、裁定组（`--annotation-id`）、页面（`--path`）或结论（`--ruling`）查询，或加 `--from-log` 直接查看日志生命周期（含待重放、替代与撤销链路）：
 
 ```sh
 .venv/bin/python -m anna.review.repository annotations --kind reference --status stale
 .venv/bin/python -m anna.review.repository annotations --kind reference --status missing
 .venv/bin/python -m anna.review.repository annotations --kind reference --status conflict
+.venv/bin/python -m anna.review.repository annotations --from-log --path '原文页面路径'
 ```
 
-修改了 `annotations/annotations.jsonl` 但尚未 `make build` 时，构建门禁会拒绝以未重放日志生成链接版或启动服务。修改名称解析规则（见[名称与括号结构](MODEL.md#名称与括号结构)）后需要重建数据库和链接版；既有审核决策仍按上述依据变化规则重新判定。
+运行 `gate` 只读检查日志合法性、数据库重放状态、`extraction_sha256` 一致性与链接版快照同步（存在未重放、偏离或快照不一致时以非零状态退出；加 `--strict` 时同时将 `stale`／`missing`／`ambiguous`／`conflict` 裁定和 `needs_review` 缺失定义视为失败）：
+
+```sh
+.venv/bin/python -m anna.review.repository gate
+.venv/bin/python -m anna.review.repository gate --strict --no-book
+```
+
+修改了 `annotations/annotations.jsonl` 但尚未 `make build` 时，构建门禁会拒绝以未重放日志生成链接版、首页缓存、Pages 导出或启动服务。修改名称解析规则（见[名称与括号结构](MODEL.md#名称与括号结构)）后需要重建数据库和链接版；既有审核决策仍按上述依据变化规则重新判定。
 
 隔离试验时可传入 `--annotations 临时日志路径` 与 `--db 临时数据库路径`；不要把实验裁定写入仓库的 `annotations/annotations.jsonl`。
 

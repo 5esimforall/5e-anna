@@ -9,7 +9,7 @@ import unittest
 from bs4 import BeautifulSoup
 from anna.source.pages import read_page
 from anna.source.html import Document
-from anna.presentation.layout import entry_layout, render
+from anna.presentation.layout import entry_layout, reference_layers, render
 import anna.paths as paths
 from anna.presentation.catalog import DB, connect
 
@@ -74,6 +74,17 @@ class RenderTests(unittest.TestCase):
         doc=self.doc('<p><b>上一条 Prev</b><br>上文。<br><b>本条 This</b><br>本文。</p>')
         out=render(doc,doc.text.index('本条'),len(doc.text),[]);doc.close()
         self.assertEqual(out,'<div><p><strong>本条 This</strong></p><p>本文。</p></div>')
+    def test_reference_layers_requires_effective_linkable_references(self):
+        db=sqlite3.connect(':memory:')
+        db.execute('CREATE TABLE effective_references(id TEXT PRIMARY KEY,page_path TEXT,start INTEGER,end INTEGER,target_id TEXT,can_link INTEGER,is_effective INTEGER,data TEXT)')
+        db.executemany('INSERT INTO effective_references VALUES(?,?,?,?,?,?,?,?)',[
+            ('r_idx','p',1,3,'t1',0,0,json.dumps({'id':'r_idx','start':1,'end':3,'target_id':'t1','can_link':False})),
+            ('r_cov','p',4,6,'t2',0,1,json.dumps({'id':'r_cov','start':4,'end':6,'target_id':'t2','can_link':False})),
+            ('r_ok','p',7,9,'t3',1,1,json.dumps({'id':'r_ok','start':7,'end':9,'target_id':'t3','can_link':True})),
+            ('r_self','p',10,12,'owner',1,1,json.dumps({'id':'r_self','start':10,'end':12,'target_id':'owner','can_link':True})),
+        ])
+        self.assertEqual(reference_layers(db,'p',0,20,owner='owner'),[(7,9,'ref','t3')])
+        db.close()
 
 
 class NoteOrderTests(unittest.TestCase):
@@ -156,7 +167,7 @@ class CorpusLayoutTests(unittest.TestCase):
         with self.assertRaises(LookupError):entry_layout(self.db,'ver_missing',paths.WEB)
     def test_resolved_references_become_entry_buttons(self):
         row=self.db.execute("SELECT r.page_path,r.start,r.end,r.data FROM effective_references r JOIN entries e ON e.page_path=r.page_path AND r.start>=json_extract(e.data,'$.title_end') AND r.end<=e.end "
-                            "WHERE e.type='spell' AND json_extract(r.data,'$.target_id') IS NOT NULL AND json_extract(r.data,'$.target_id')!=e.id LIMIT 1").fetchone()
+                            "WHERE e.type='spell' AND r.can_link=1 AND r.is_effective=1 AND json_extract(r.data,'$.target_id') IS NOT NULL AND json_extract(r.data,'$.target_id')!=e.id LIMIT 1").fetchone()
         self.assertIsNotNone(row)
         ref=json.loads(row[3])
         eid=self.db.execute("SELECT id FROM entries WHERE page_path=? AND type='spell' AND json_extract(data,'$.title_end')<=? AND end>=? ORDER BY start DESC",(row[0],row[1],row[2])).fetchone()[0]

@@ -478,7 +478,8 @@ class Phase2PrerenderTests(unittest.TestCase):
                 try:
                     facts_rows = db.execute('SELECT field,value,evidence,rule,status FROM facts WHERE entry_id=? ORDER BY id', (eid,))
                     page_refs = db.execute(
-                        'SELECT start, end, target_id FROM effective_references WHERE page_path=? AND target_id IS NOT NULL AND end > start ORDER BY start, id',
+                        'SELECT start, end, target_id FROM effective_references '
+                        'WHERE page_path=? AND can_link=1 AND is_effective=1 AND target_id IS NOT NULL AND end > start ORDER BY start, id',
                         (path,),
                     ).fetchall()
                     ref_layers = _span_ref_layers(page_refs, text_start(e), e['end'], eid)
@@ -499,7 +500,8 @@ class Phase2PrerenderTests(unittest.TestCase):
                 doc = Document(path, html_text)
                 try:
                     page_refs = db.execute(
-                        'SELECT start, end, target_id FROM effective_references WHERE page_path=? AND target_id IS NOT NULL AND end > start ORDER BY start, id',
+                        'SELECT start, end, target_id FROM effective_references '
+                        'WHERE page_path=? AND can_link=1 AND is_effective=1 AND target_id IS NOT NULL AND end > start ORDER BY start, id',
                         (path,),
                     ).fetchall()
                     prerendered = render_span_layout(doc, path, start, stop, _span_ref_layers(page_refs, start, stop, owner))

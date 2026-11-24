@@ -193,10 +193,16 @@ def open_page(db, path, source_root):
 def reference_layers(db, path, start, end, owner=None):
     """Resolved references within a range, each pointing at an entry other than the one being read."""
     if not _has_table(db, 'effective_references'):return []
+    cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+    clauses = ['page_path=?', 'start>=?', 'end<=?', 'end>start']
+    if 'target_id' in cols:clauses.append('target_id IS NOT NULL')
+    if 'can_link' in cols:clauses.append('can_link=1')
+    if 'is_effective' in cols:clauses.append('is_effective=1')
     layers = []
-    for (data,) in db.execute('SELECT data FROM effective_references WHERE page_path=? AND start>=? AND end<=? ORDER BY start,id',(path,start,end)):
+    for (data,) in db.execute('SELECT data FROM effective_references WHERE ' + ' AND '.join(clauses) + ' ORDER BY start,id',(path,start,end)):
         r = json.loads(data)
-        if r.get('target_id') and r['target_id']!=owner and r['end']>r['start']:layers.append((r['start'],r['end'],'ref',r['target_id']))
+        if r.get('target_id') and r['target_id']!=owner and r['end']>r['start'] and r.get('can_link', True):
+            layers.append((r['start'],r['end'],'ref',r['target_id']))
     return layers
 
 

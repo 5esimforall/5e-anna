@@ -70,7 +70,9 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             for path,expected in coverage['discovery_inputs'].items():
                 actual=fingerprint(source/path) if (source/path).exists() else None
                 if actual!=expected:raise ValueError('Concept discovery evidence does not match the database snapshot; run make build: '+path)
-        for path,raw in db.execute("SELECT page_path,data FROM effective_references WHERE can_link=1 ORDER BY page_path,start,id"):
+        ref_cols={r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+        eff_clause=' AND is_effective=1' if 'is_effective' in ref_cols else ''
+        for path,raw in db.execute(f"SELECT page_path,data FROM effective_references WHERE can_link=1{eff_clause} ORDER BY page_path,start,id"):
             mentions[path].append(contracts.reference(json.loads(raw)))
         reference_coverage=json.loads(db.execute("SELECT value FROM metadata WHERE key='reference_coverage'").fetchone()[0])
         unresolved=[json.loads(raw) for raw, in db.execute("SELECT data FROM effective_references WHERE signal='explicit' AND status IN ('review','unresolved','ambiguous')")]

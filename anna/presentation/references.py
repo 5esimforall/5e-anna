@@ -18,7 +18,7 @@ def query_references(db, *, path='', reference_id='', status='', signal='', revi
     return {'total': total, 'offset': offset, 'limit': limit, 'rows': rows}
 
 
-def query_missing_candidates(db, *, signal='', kind='', path='', limit=50, offset=0):
+def query_missing_candidates(db, *, signal='', kind='', path='', reason='', text='', limit=50, offset=0):
     """Group unreviewed unresolved references without an open missing-definition ticket."""
     if not 1 <= limit <= 300 or offset < 0: raise ValueError('缺失定义候选查询范围无效')
     cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
@@ -31,6 +31,8 @@ def query_missing_candidates(db, *, signal='', kind='', path='', limit=50, offse
     if signal: clauses.append('signal=?'); values.append(signal)
     if kind: clauses.append("json_extract(data,'$.kind')=?"); values.append(kind)
     if path: clauses.append('page_path=?'); values.append(path)
+    if reason: clauses.append("json_extract(data,'$.reason')=?"); values.append(reason)
+    if text: clauses.append("instr(lower(COALESCE(json_extract(data,'$.text'),'')), lower(?)) > 0"); values.append(text)
     where = ' WHERE ' + ' AND '.join(clauses)
     grouped_sql = (
         "SELECT signal, json_extract(data,'$.kind') AS ref_kind, json_extract(data,'$.text') AS ref_text, "
@@ -50,6 +52,12 @@ def query_missing_candidates(db, *, signal='', kind='', path='', limit=50, offse
             f'SELECT id FROM effective_references{item_where} ORDER BY page_path, start, id LIMIT 1',
             item_vals,
         ).fetchone()[0]
+        reasons = sorted({
+            r[0] for r in db.execute(
+                f"SELECT DISTINCT json_extract(data,'$.reason') FROM effective_references{item_where}",
+                item_vals,
+            ) if r[0]
+        })
         sample_pages = [
             r[0] for r in db.execute(
                 f'SELECT DISTINCT page_path FROM effective_references{item_where} ORDER BY page_path LIMIT 5',
@@ -62,30 +70,37 @@ def query_missing_candidates(db, *, signal='', kind='', path='', limit=50, offse
             'text': rtext,
             'count': cnt,
             'page_count': page_cnt,
+            'reasons': reasons,
             'sample_reference_id': sample_id,
             'sample_pages': sample_pages,
         })
     return {'total': total, 'offset': offset, 'limit': limit, 'rows': rows}
 
 
-
-def query_decisions(db, *, status='', limit=50, offset=0):
-    if not 1 <= limit <= 300 or offset < 0: raise ValueError('审核查询范围无效')
+def query_decisions(db, *, status='', annotation_id='', path='', ruling='', limit=50, offset=0):
+    if not 1 <= limit <= 500 or offset < 0: raise ValueError('审核查询范围无效')
     clauses = ["kind='reference'"]; values = []
     if status: clauses.append('status=?'); values.append(status)
+    if annotation_id: clauses.append('annotation_id=?'); values.append(annotation_id)
+    if path: clauses.append("json_extract(data,'$.subject.page_path')=?"); values.append(path)
+    if ruling: clauses.append("json_extract(data,'$.event.statements.ruling')=?"); values.append(ruling)
     where = ' WHERE '+' AND '.join(clauses)
     total = db.execute('SELECT count(*) FROM knowledge_annotations'+where, values).fetchone()[0]
+    counts = dict(db.execute("SELECT status, count(*) FROM knowledge_annotations WHERE kind='reference' GROUP BY status"))
     rows = [json.loads(row[0]) for row in db.execute('SELECT data FROM knowledge_annotations'+where+' ORDER BY annotation_id,id LIMIT ? OFFSET ?', values+[limit, offset])]
-    return {'total': total, 'offset': offset, 'limit': limit, 'rows': rows}
+    return {'total': total, 'offset': offset, 'limit': limit, 'counts': counts, 'rows': rows}
 
 
-
-def query_missing_definitions(db, *, status='', path='', limit=50, offset=0):
+def query_missing_definitions(db, *, status='', path='', text='', limit=50, offset=0):
     if not 1 <= limit <= 300 or offset < 0: raise ValueError('缺失定义查询范围无效')
     clauses=[]; values=[]
     for field,value in [('status',status),('page_path',path)]:
         if value: clauses.append(field+'=?'); values.append(value)
+    if text:
+        clauses.append("instr(lower(COALESCE(json_extract(data,'$.text'),'')), lower(?)) > 0")
+        values.append(text)
     where=' WHERE '+' AND '.join(clauses) if clauses else ''
     total=db.execute('SELECT count(*) FROM missing_definitions'+where,values).fetchone()[0]
+    counts=dict(db.execute('SELECT status, count(*) FROM missing_definitions GROUP BY status'))
     rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM missing_definitions'+where+' ORDER BY page_path,id LIMIT ? OFFSET ?',values+[limit,offset])]
-    return {'total':total,'rows':rows,'limit':limit,'offset':offset}
+    return {'total':total,'counts':counts,'rows':rows,'limit':limit,'offset':offset}

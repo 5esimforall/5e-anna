@@ -25,6 +25,7 @@ from anna.presentation.our5etools import (
     build_sources_map, build_subclass_records, build_version_compare, load_our5etools_collection, promote_media_html,
 )
 from anna.presentation.tour import LEAD_LIMIT, RULESETS, Tour, clip, first_sentence, load as load_curation
+from anna.review.store import load_annotations, require_current_annotations
 from anna.server import home
 from anna.server.pages import PublishedSite
 from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
@@ -119,9 +120,15 @@ def _prerender_layouts(conn, original, source, *, tour=None):
 
     refs_by_page = defaultdict(list)
     if conn.execute("SELECT 1 FROM original.sqlite_master WHERE type='table' AND name='effective_references'").fetchone():
+        ref_cols = {r[1] for r in conn.execute('PRAGMA original.table_info(effective_references)')}
+        clauses = ['target_id IS NOT NULL', 'end > start']
+        if 'can_link' in ref_cols:
+            clauses.append('can_link=1')
+        if 'is_effective' in ref_cols:
+            clauses.append('is_effective=1')
         for page_path, start, end, target_id in conn.execute(
             'SELECT page_path, start, end, target_id FROM original.effective_references '
-            'WHERE target_id IS NOT NULL AND end > start ORDER BY page_path, start, id'
+            f"WHERE {' AND '.join(clauses)} ORDER BY page_path, start, id"
         ):
             refs_by_page[page_path].append((start, end, target_id))
 
@@ -745,6 +752,17 @@ def _copy_asset(stage, file, target, rewrite_html, *, expected=None):
     dest.write_bytes(raw)
 
 
+def _validate_default_annotations(db, manifest):
+    with closing(sqlite3.connect(db.as_uri() + '?mode=ro', uri=True)) as conn:
+        db_ann = require_current_annotations(conn)
+    manifest_ann = manifest.get('annotation_snapshot')
+    if db_ann is not None and manifest_ann != db_ann:
+        raise ValueError('Default database and linked book annotation snapshots do not match; run make build')
+    if manifest_ann is not None and load_annotations(manifest_ann['path'])[1] != manifest_ann['sha256']:
+        raise ValueError('Annotation log does not match the published snapshot; run make build')
+    return db_ann or manifest_ann
+
+
 def _default_book(stage, db, book, rewrite_html):
     manifest = _read_json(_input(book, 'anna-manifest.json'))
     reader_file = _input(book, 'anna-reader.json')
@@ -753,6 +771,7 @@ def _default_book(stage, db, book, rewrite_html):
         raise ValueError('Default reader does not match its manifest; rebuild the linked book')
     if _file_hash(db) != manifest['database_sha256']:
         raise ValueError('Default database does not match the linked book; rebuild the data')
+    ann_snapshot = _validate_default_annotations(db, manifest)
     pages = reader['pages']
     if any(not name.startswith('topics/') or PurePosixPath(name).suffix.lower() not in HTML_SUFFIXES
            or name not in manifest['outputs'] for name in pages):
@@ -764,7 +783,7 @@ def _default_book(stage, db, book, rewrite_html):
             _copy_asset(stage, _input(book, name), 'book/' + name, rewrite_html, expected=expected)
     entries = {entry_id: {key: entry[key] for key in ('path', 'fragment', 'locatable')}
                for entry_id, entry in manifest['entries'].items()}
-    return {'reader_schema': manifest['reader_schema'], 'entries': entries}, reader_file, reader
+    return {'reader_schema': manifest['reader_schema'], 'entries': entries}, reader_file, reader, ann_snapshot
 
 
 def _our_attribution(attribution):
@@ -1262,7 +1281,7 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
         work = Path(temp)
         stage = work / 'stage'
         stage.mkdir()
-        default_manifest, default_reader, default_reader_data = _default_book(stage, db, book, rewrite_html)
+        default_manifest, default_reader, default_reader_data, ann_snapshot = _default_book(stage, db, book, rewrite_html)
         if our5etools_data is None:
             public_curation = work / 'tour.json'
             _public_curation(curation, public_curation)
@@ -1335,6 +1354,8 @@ def export_pages_data(output, *, db, book, source, our5etools_data=None, our5eto
         bytes_written = sum(file.stat().st_size for file in stage.rglob('*') if file.is_file())
         if bytes_written + existing_bytes > size_limit:
             raise ValueError(f'Pages output is {bytes_written + existing_bytes:,} bytes, over the {size_limit:,}-byte limit')
+        if ann_snapshot is not None and load_annotations(ann_snapshot['path'])[1] != ann_snapshot['sha256']:
+            raise ValueError('Annotation log changed during Pages export; run make build')
         staged = sorted(stage.iterdir())
         for file in staged:
             if (output / file.name).exists() or (output / file.name).is_symlink():

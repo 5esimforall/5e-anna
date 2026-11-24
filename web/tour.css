@@ -113,6 +113,7 @@
 .tour-sequence a[rel=next] { margin-left: auto; text-align: right; }
 .tour-status { margin: 14px 0 0; padding: 8px 10px; border-radius: var(--anna-radius-sm); background: var(--anna-warning-bg); color: var(--anna-warning); }
 .tour-status button { margin-left: 8px; }
+.tour-shelf-loading { margin: 18px 10px 0; color: var(--anna-muted); font-size: var(--anna-type-ui); }
 
 /* Active book/package scope banner with explicit widen-to-all control. */
 .tour-scope { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding: 9px 12px; border: 1px solid var(--anna-line-strong); border-radius: var(--anna-radius-sm); background: var(--anna-surface); font-size: var(--anna-type-ui); }

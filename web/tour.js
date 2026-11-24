@@ -15,7 +15,7 @@ const annaTourLabels = {
     previous:'上一项：{name}', next:'下一项：{name}', back:'‹ {name}', table:'表', versions:'其他版本',
     rest:'选择一项，它会在这里展开', onward:'由此继续', onwardJump:'由此继续 · {count} 项 ↓', unfold:'展开「{name}」',
     filterPlaceholder:'筛选此列表…', filterLabel:'筛选 {name}', filterCount:'{shown} / {total}', filterEmpty:'没有匹配项。',
-    loading:'正在读取…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
+    loading:'正在读取…', shelfLoading:'正在读取书架与计数…', retry:'重试', readError:'无法读取这一层。', nodeMissing:'这一层已不在当前原文快照中，已回到上一层。',
     bundleChanged:'数据已经重建，请刷新页面。', unavailable:'导览需要完整服务：请使用 make up 启动后打开。', pagesUnavailable:'无法读取导览数据，请重试。',
     status:{missing:'未找到对应原文', ambiguous:'原文对应不唯一', placeholder:'分组'},
     rulesets:{'5e':['2014','2014 版规则（5e）'],'5r':['2024','2024 版规则（5r）'],'待核':['待核','规则版本待核']}},
@@ -28,7 +28,7 @@ const annaTourLabels = {
     previous:'Previous: {name}', next:'Next: {name}', back:'‹ {name}', table:'Table', versions:'Other versions',
     rest:'Choose an item to open it here', onward:'Where this leads', onwardJump:'Where this leads · {count} ↓', unfold:'Show {name}',
     filterPlaceholder:'Filter this list…', filterLabel:'Filter {name}', filterCount:'{shown} / {total}', filterEmpty:'No matching items.',
-    loading:'Loading…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
+    loading:'Loading…', shelfLoading:'Loading bookshelf and counts…', retry:'Try again', readError:'Unable to load this level.', nodeMissing:'That level is not in the current source snapshot; showing the level above.',
     bundleChanged:'The data was rebuilt. Refresh this page.', unavailable:'The tour needs the full service: start it with make up.', pagesUnavailable:'Unable to load tour data. Please retry.',
     status:{missing:'Source not found', ambiguous:'Source match not unique', placeholder:'Group'},
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']}}
@@ -204,12 +204,41 @@ const annaTour = (() => {
     return section;
   }
   function render(section, view, depth) {
-    section.dataset.state = 'ready'; section.dataset.shape = view.shape; section.removeAttribute('aria-busy');
+    const wasSkeleton = section.dataset.state === 'skeleton';
+    const prevScroll = wasSkeleton ? section.scrollTop : 0;
+    const focusedSeg = wasSkeleton && section.contains(document.activeElement)
+      ? document.activeElement.closest('.tour-item[data-segment]')?.dataset.segment : null;
+    section.dataset.state = view.skeleton ? 'skeleton' : 'ready';
+    section.dataset.shape = view.shape;
+    section.removeAttribute('aria-busy');
     const name = view.kind === 'root' ? ui.title : nameOf(view), spine = section.querySelector('.tour-spine');
     spine.querySelector('span').textContent = name; spine.title = name;
     spine.setAttribute('aria-label', fill(ui.unfold, {name}));
-    section.querySelector('.tour-column-body').innerHTML = body(view, depth);
+    section.querySelector('.tour-column-body').innerHTML = body(view, depth) +
+      (view.skeleton ? `<p class="tour-shelf-loading" role="status">${esc(ui.shelfLoading)}</p>` : '');
     watchOnward(section);
+    if (wasSkeleton && !view.skeleton) {
+      section.scrollTop = prevScroll;
+      if (focusedSeg) {
+        const match = section.querySelector(`.tour-item[data-segment="${CSS.escape(focusedSeg)}"]`);
+        if (match) match.focus({preventScroll:true});
+      }
+      for (const badge of section.querySelectorAll('.tour-item-count')) annaMotion.arrive(badge);
+      const shelf = section.querySelector('.tour-group[data-group="shelf"]');
+      if (shelf) annaMotion.arrive(shelf);
+    }
+  }
+  function buildSkeletonView(skeleton) {
+    if (!skeleton?.sections?.length) return null;
+    const libs = annaLibrary.libraries();
+    const groups = [];
+    for (const sec of skeleton.sections) {
+      const items = (sec.topics || [])
+        .filter(t => t.global || (t.collections || []).some(c => libs.includes(c)))
+        .map(t => ({id:t.id, kind:'topic', label:t.label, status:'ok', ruleset:t.ruleset, count:null}));
+      if (items.length) groups.push({key:'section', section:sec.key, label:sec.label, ordered:false, items});
+    }
+    return {id:'', kind:'root', shape:'index', skeleton:true, groups};
   }
   // The link to where a detail leads shows only while that part lies below what the column shows.
   function watchOnward(section) {
@@ -438,7 +467,7 @@ const annaTour = (() => {
            existing[keep].dataset.state === 'ready') keep++;
     /* The levels being replaced stay until the new ones can take their place, and the row that opens them shows at
        once. New levels that load within LOADING_DELAY open in one step, the deepest with a detail's own words; past
-       it they open showing that they are loading, and take their final form in a second step. */
+       it they open showing that they are loading, and render progressively as each level arrives. */
     const leaving = existing.slice(keep);
     let fresh = wanted.slice(keep).map((segment, i) => column(segment, keep + i)), opening = null;
     const placed = motion => motion.then(() => { if (run === generation) reveal(); });
@@ -448,10 +477,61 @@ const annaTour = (() => {
     }));
     markCurrent();
     const waited = new Promise(resolve => setTimeout(resolve, LOADING_DELAY));
-    waited.then(() => { if (run === generation) open(); });
-    const loaded = await Promise.allSettled(wanted.slice(keep).map(fetchView));
+    const results = new Array(fresh.length).fill(null);
+    const rendered = new Array(fresh.length).fill(false);
+    let progressive = false;
+    const promises = wanted.slice(keep).map((segment, i) =>
+      fetchView(segment).then(
+        value => { results[i] = {status:'fulfilled', value}; },
+        reason => { results[i] = {status:'rejected', reason}; },
+      )
+    );
+    const renderReady = () => {
+      const firstErr = results.findIndex(r => r?.status === 'rejected');
+      const limit = firstErr === -1 ? results.length : firstErr;
+      const newly = [];
+      for (let i = 0; i < limit; i++) {
+        if (results[i]?.status === 'fulfilled' && !rendered[i]) {
+          rendered[i] = true;
+          newly.push(i);
+        }
+      }
+      if (!newly.length) return [];
+      const fromSkeleton = newly.map(i => fresh[i].dataset.state === 'skeleton');
+      placed(move(() => {
+        for (const i of newly) render(fresh[i], results[i].value, keep + i);
+        markCurrent();
+        arrange();
+      }));
+      newly.forEach((i, idx) => {
+        if (fresh[i].dataset.place === 'open') keepCurrent(fresh[i]);
+        if (!fromSkeleton[idx]) annaMotion.arrive(fresh[i].querySelector('.tour-sheet'));
+      });
+      return newly;
+    };
+    const skeletonPromise = keep === 0 && !views.has('') && annaKit.tourSkeleton
+      ? annaKit.tourSkeleton().then(buildSkeletonView).catch(() => null)
+      : Promise.resolve(null);
+    skeletonPromise.then(skel => {
+      if (run !== generation || !skel || results[0] || rendered[0]) return;
+      render(fresh[0], skel, 0);
+      if (!opening && !leaving.length) open();
+      else if (opening) { markCurrent(); arrange(); }
+    });
+    waited.then(() => {
+      if (run !== generation || results.every(r => r !== null)) return;
+      progressive = true;
+      open();
+      renderReady();
+    });
+    promises.forEach((p, i) => p.then(() => {
+      if (run !== generation || !progressive) return;
+      if (results.slice(0, i).some(r => r?.status === 'rejected')) return;
+      renderReady();
+    }));
+    await Promise.all(promises);
     if (run !== generation) return;
-    const failure = loaded.findIndex(result => result.status === 'rejected'), error = loaded[failure]?.reason;
+    const failure = results.findIndex(result => result.status === 'rejected'), error = results[failure]?.reason;
     if (error) {
       const depth = keep + failure;
       if (error.status === 409) say(ui.bundleChanged);
@@ -468,20 +548,37 @@ const annaTour = (() => {
       fresh.slice(failure + 1).forEach(rest => rest.remove());
       fresh = fresh.slice(0, failure + 1);
     }
-    const draw = () => fresh.forEach((section, i) => i === failure ? failed(section, error, keep + i) : render(section, loaded[i].value, keep + i));
+    const draw = () => {
+      let changed = false;
+      fresh.forEach((section, i) => {
+        if (i === failure) { failed(section, error, keep + i); changed = true; }
+        else if (!rendered[i]) { rendered[i] = true; render(section, results[i].value, keep + i); changed = true; }
+      });
+      return changed;
+    };
     /* A level that takes the place of its own loading state, or of another level at its depth, fades in where it
        stands; a level in a new column is uncovered by the column's moving edge instead. */
     const shownLoading = !!opening, replaced = new Set(leaving.map(section => section.dataset.depth));
     let moved;
-    if (opening) moved = placed(move(() => { draw(); markCurrent(); arrange(); }));
-    else {
+    if (opening) {
+      const hadUnrendered = fresh.some((section, i) => i === failure || !rendered[i]);
+      if (hadUnrendered) {
+        const arrived = fresh.map((section, i) => (i === failure || !rendered[i]) && section.dataset.state !== 'skeleton');
+        moved = placed(move(() => { draw(); markCurrent(); arrange(); }));
+        fresh.forEach((section, i) => {
+          if (!arrived[i]) return;
+          if (section.dataset.place === 'open') keepCurrent(section);
+          annaMotion.arrive(section.querySelector('.tour-sheet'));
+        });
+      }
+    } else {
       draw();
       if (fresh.length) await Promise.race([expand(fresh.at(-1)), waited]);
       if (run !== generation) return;
       moved = open();
+      fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
+      for (const section of fresh) if (shownLoading || replaced.has(section.dataset.depth)) annaMotion.arrive(section.querySelector('.tour-sheet'));
     }
-    fresh.forEach(section => { if (section.dataset.place === 'open') keepCurrent(section); });
-    for (const section of fresh) if (shownLoading || replaced.has(section.dataset.depth)) annaMotion.arrive(section.querySelector('.tour-sheet'));
     settle();
     shown = run;
     land();

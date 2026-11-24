@@ -415,3 +415,70 @@ test('curated routes cover combat, resting/downtime and DM session prep',async({
   expect(at(page)).toBe('dm-prep');
   await expect(level(page,1).locator('[data-group=choices] .tour-item-title')).toHaveText(['创建冒险与遭遇','运作游戏','怪物图鉴','随机表与战利品表']);
 });
+
+test('a slow multi-level path renders shallower levels as they arrive without waiting for the deepest',async({page})=>{
+  await page.setViewportSize({width:1440,height:900});
+  let releaseStep;
+  const stepHeld=new Promise(resolve=>{releaseStep=resolve;});
+  await page.route('**/api/tour?**',async route=>{
+    const atParam=new URL(route.request().url()).searchParams.get('at');
+    if(atParam===bookAddress('n924'))await stepHeld;
+    await route.continue();
+  });
+  await page.goto(anna+tourHref(firstStep));
+  await expect(level(page,0)).toHaveAttribute('data-state','ready');
+  await expect(level(page,1)).toHaveAttribute('data-state','ready');
+  await expect(level(page,1).locator('h2')).toHaveText('创建角色');
+  await expect(level(page,2)).toHaveAttribute('aria-busy','true');
+  releaseStep();
+  await ready(page,2);
+  await expect(level(page,2).locator('h2')).toHaveText('第一步：选择职业');
+});
+
+test('custom narrowed scope renders curation skeleton immediately and patches counts and shelf in place',async({page})=>{
+  await page.setViewportSize({width:1440,height:600});
+  const tourFile='tour.abcdef0123456789.json';
+  const extraTopics=Array.from({length:18},(_,i)=>({id:`topic-${i}`,label:{zh:`占位条目 ${i+1}`,en:`Topic ${i+1}`},ruleset:null,collections:['5echm'],global:true}));
+  const skeletonPayload=JSON.stringify({
+    schema:1,
+    snapshot:'snap-skel',
+    skeleton:{sections:[{key:'start',label:{zh:'开始游戏',en:'Getting started'},topics:[
+      {id:'create',label:{zh:'创建角色',en:'Create a character'},ruleset:'5r',collections:['5echm'],global:false},
+      {id:'spells',label:{zh:'法术（按环阶）',en:'Spells by level'},ruleset:null,collections:[],global:true},
+      ...extraTopics,
+    ]}]},
+    responses:{},
+  });
+  let releaseRoot;
+  const rootHeld=new Promise(resolve=>{releaseRoot=resolve;});
+  await page.route('**/*',async route=>{
+    const u=new URL(route.request().url());
+    if(u.pathname==='/tour'){
+      const resp=await route.fetch();
+      const html=(await resp.text()).replace('<html',`<html data-anna-tour="${tourFile}"`);
+      return route.fulfill({status:resp.status(),headers:resp.headers(),body:html});
+    }
+    if(u.pathname===`/${tourFile}`){
+      return route.fulfill({status:200,contentType:'application/json',body:skeletonPayload});
+    }
+    if(u.pathname==='/api/tour'&&u.searchParams.get('at')===''){
+      await rootHeld;
+    }
+    return route.continue();
+  });
+  await page.addInitScript(()=>{
+    localStorage.setItem('anna.library',JSON.stringify({order:['5echm'],enabled:['5echm'],rulesets:['5r']}));
+  });
+  await page.goto(`${anna}/tour`);
+  await expect(level(page,0)).toHaveAttribute('data-state','skeleton');
+  await expect(row(page,0,'创建角色')).toBeVisible();
+  await expect(level(page,0).locator('.tour-shelf-loading')).toBeVisible();
+  await level(page,0).evaluate(el=>{el.scrollTop=32;});
+  expect(await level(page,0).evaluate(el=>el.scrollTop)).toBe(32);
+  releaseRoot();
+  await ready(page,0);
+  await expect(level(page,0).locator('.tour-shelf-loading')).toHaveCount(0);
+  await expect(level(page,0).locator('[data-group=shelf]')).toBeVisible();
+  await expect(row(page,0,'创建角色').locator('.tour-item-count')).not.toHaveText('');
+  expect(await level(page,0).evaluate(el=>el.scrollTop)).toBe(32);
+});

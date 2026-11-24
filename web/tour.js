@@ -729,6 +729,13 @@ const annaTour = (() => {
   });
   const start = segmentsOf(location.search);
   history.replaceState({tour:joinSegments(start)}, '', tourHref(start));
-  show(start).finally(annaMotion.settle);
+  show(start).finally(() => {
+    annaMotion.settle();
+    if (annaKit.pages) {
+      const startWarm = () => annaKit.warm();
+      if (typeof requestIdleCallback === 'function') requestIdleCallback(startWarm, {timeout:1500});
+      else setTimeout(startWarm, 300);
+    }
+  });
   return {show, go};
 })();

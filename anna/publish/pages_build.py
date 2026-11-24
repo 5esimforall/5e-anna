@@ -10,6 +10,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from anna.paths import BOOK, PROJECT, WEB
 from anna.presentation.catalog import DB
 from anna.server.home import mark_home, mark_home_scopes
+from anna.server.tour_cache import mark_tour, mark_tour_scopes
 from anna.publish.pages_assets import stage_browser_runtime
 from anna.publish.pages_data import PAGES_LIMIT, export_pages_data
 
@@ -101,6 +102,8 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
         pages_attrs = f'data-anna-pages data-anna-entries="{entries_attr}"'.encode('ascii')
         home_default = None
         home_scopes = {}
+        tour_default = None
+        tour_scopes = {}
         if home_cache:
             home_index = stage / 'home-index.json'
             if home_index.is_file():
@@ -111,6 +114,16 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
                 home_scopes = info.get('scopes') or {}
             else:
                 home_default = next(stage.glob('home.*.json')).name
+            tour_index = stage / 'tour-index.json'
+            if tour_index.is_file():
+                total -= tour_index.stat().st_size
+                tour_info = json.loads(tour_index.read_text(encoding='utf-8'))
+                tour_index.unlink()
+                tour_default = tour_info.get('default')
+                tour_scopes = tour_info.get('scopes') or {}
+            else:
+                found_tour = next(stage.glob('tour.*.json'), None)
+                tour_default = found_tour.name if found_tour else None
         for source_name, target_name in DOCUMENTS.values():
             target = stage / target_name
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -118,6 +131,9 @@ def build(output, source, db, book, base, *, our5etools_data=None, home_cache=Fa
             if home_default and source_name == 'index.html':
                 html = mark_home(html, home_default)
                 html = mark_home_scopes(html, home_scopes)
+            if tour_default and source_name == 'tour.html':
+                html = mark_tour(html, tour_default)
+                html = mark_tour_scopes(html, tour_scopes)
             target.write_bytes(rebase_links(html, lambda url: mount_url(url, base)))
         with ZipFile(stage / 'pages-runtime.zip', 'w', ZIP_DEFLATED) as runtime:
             for module in sorted((PROJECT / 'anna').rglob('*.py')):

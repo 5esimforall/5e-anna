@@ -15,7 +15,7 @@ const annaKit = (() => {
       window.addEventListener('storage', event => { if (event.key === key || event.key === null) listener(); });
     }
   };
-  // Both hosts mark cached homepages, and only Pages marks its worker transport.
+  // Both hosts mark cached homepages and tour caches, and only Pages marks its worker transport.
   const root = typeof document === 'undefined' ? null : document.documentElement;
   const pages = root?.hasAttribute('data-anna-pages') ?? false;
   // Keep deep links on the normal transport even if app.js later rewrites their address.
@@ -31,7 +31,19 @@ const annaKit = (() => {
       }
     }
   }
-  const base = pages || home ? new URL('.', document.currentScript.src) : null;
+  const tour = root?.hasAttribute('data-anna-tour') && root.getAttribute('data-anna-tour');
+  const tourScopes = new Map();
+  if (tour && root?.hasAttribute('data-anna-tour-scopes')) {
+    for (const pair of (root.getAttribute('data-anna-tour-scopes') || '').split(';')) {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const scope = pair.slice(0, eq).trim(), file = pair.slice(eq + 1).trim();
+      if (/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(scope) && /^tour\.[a-f0-9]{16}\.json$/.test(file)) {
+        tourScopes.set(scope, file);
+      }
+    }
+  }
+  const base = pages || home || tour ? new URL('.', document.currentScript.src) : null;
   function href(path) {
     if (!pages || !/^\/(?!\/)/.test(path)) return path;
     const route = path.replace(/^\/(read|tour|source)(?=[?#]|$)/, '/$1/');
@@ -74,13 +86,34 @@ const annaKit = (() => {
     if (p.length === 1 && p[0][0] === 'libraries') return homeScopes.get(p[0][1]) || null;
     return null;
   }
+  function tourArtifact() {
+    if (!tour) return null;
+    const p = typeof annaLibrary === 'undefined' ? [] : annaLibrary.params();
+    if (!p.length) return tour;
+    if (p.length === 1 && p[0][0] === 'libraries') return tourScopes.get(p[0][1]) || null;
+    return null;
+  }
+  async function tourSkeleton(signal) {
+    if (!tour) return null;
+    signal?.throwIfAborted();
+    const cache = await import(new URL('tour-cache.js', base).href).catch(() => null);
+    return cache ? await cache.skeleton(tour, signal) : null;
+  }
   async function request(path, options) {
     const signal = options?.signal;
     signal?.throwIfAborted();
+    const isGet = options?.method === undefined || /^GET$/i.test(options.method);
     const artifact = homeArtifact();
-    if (artifact && (options?.method === undefined || /^GET$/i.test(options.method))) {
+    if (artifact && isGet) {
       const cache = await import(new URL('home.js', base).href).catch(() => null);
       const response = await cache?.request(path, artifact, signal);
+      signal?.throwIfAborted();
+      if (response) return response;
+    }
+    const tArtifact = tourArtifact();
+    if (tArtifact && isGet) {
+      const cache = await import(new URL('tour-cache.js', base).href).catch(() => null);
+      const response = await cache?.request(path, tArtifact, signal);
       signal?.throwIfAborted();
       if (response) return response;
     }
@@ -94,6 +127,6 @@ const annaKit = (() => {
       .then(transport => transport.warm())
       .catch(() => {});
   }
-  return {esc, stored, pages, href, rebaseLinks, hydrateImages, request, warm};
+  return {esc, stored, pages, href, rebaseLinks, hydrateImages, request, warm, tourSkeleton};
 })();
 if (typeof module !== 'undefined') module.exports = annaKit;

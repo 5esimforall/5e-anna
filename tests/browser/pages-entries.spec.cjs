@@ -252,3 +252,63 @@ test('Multi-scope static home cache serves dual-library homepage with 0 worker l
   expect(seen.defaultHome).toBe(0);
   expect(seen.worker).toBe(0);
 });
+
+test('Multi-scope static tour cache serves root and level-1 topic with 0 worker loads', async ({page}) => {
+  await page.setViewportSize({width: 1440, height: 900});
+  const libData = await (await page.request.get(`${anna}/api/library`)).json();
+  const rootData = await (await page.request.get(`${anna}/api/tour?at=`)).json();
+  const createData = await (await page.request.get(`${anna}/api/tour?at=create`)).json();
+  const createLayout = await (await page.request.get(`${anna}/api/tour-layout?at=create`)).json();
+
+  const tourDefault = 'tour.1111111111111111.json';
+  const tourScoped = 'tour.2222222222222222.json';
+  const scopedPayload = JSON.stringify({
+    schema: 1,
+    snapshot: rootData.snapshot,
+    skeleton: {sections: []},
+    responses: {
+      '/api/library': libData,
+      '/api/tour?at=&libraries=5echm,demo': rootData,
+      '/api/tour?at=create&libraries=5echm,demo': createData,
+      '/api/tour-layout?at=create&libraries=5echm,demo': createLayout,
+    },
+  });
+
+  const seen = {defaultTour: 0, scopedTour: 0, worker: 0};
+  await page.route('**/*', async route => {
+    const u = new URL(route.request().url());
+    if (u.pathname === '/tour') {
+      const resp = await route.fetch();
+      const html = (await resp.text()).replace(
+        '<html',
+        `<html data-anna-pages data-anna-entries="1" data-anna-tour="${tourDefault}" data-anna-tour-scopes="5echm,demo=${tourScoped}"`,
+      );
+      return route.fulfill({status: resp.status(), headers: resp.headers(), body: html});
+    }
+    if (u.pathname === `/${tourDefault}`) {
+      seen.defaultTour++;
+      return route.abort();
+    }
+    if (u.pathname === `/${tourScoped}`) {
+      seen.scopedTour++;
+      return route.fulfill({status: 200, contentType: 'application/json', body: scopedPayload});
+    }
+    if (u.pathname === '/pages-worker.js') {
+      seen.worker++;
+      return route.abort();
+    }
+    return route.continue();
+  });
+
+  await page.addInitScript(() => {
+    localStorage.setItem('anna.library', JSON.stringify({order: ['5echm', 'demo'], enabled: ['5echm', 'demo']}));
+  });
+  await page.goto(`${anna}/tour`);
+  await expect(page.locator('.tour-column[data-depth="0"]')).toHaveAttribute('data-state', 'ready');
+  await page.locator('.tour-column[data-depth="0"] .tour-item').first().click();
+  await expect(page.locator('.tour-column[data-depth="1"]')).toHaveAttribute('data-state', 'ready');
+  await expect(page.locator('.tour-column[data-depth="1"] .tour-body')).toBeVisible();
+  expect(seen.scopedTour).toBe(1);
+  expect(seen.defaultTour).toBe(0);
+  expect(seen.worker).toBe(0);
+});

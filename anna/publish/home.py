@@ -3,13 +3,26 @@ import argparse
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from urllib.parse import urlsplit
+
 from anna.paths import BOOK, FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
 from anna.presentation.catalog import DB
-from anna.server.app import Bundle, _try_load_fivetools, _try_load_our5etools, validate_bundle
+from anna.server import tour_cache
+from anna.server.app import AnnaHandler, Bundle, READER_ROUTES, _try_load_fivetools, _try_load_our5etools, validate_bundle
 from anna.server.home import (
     LOCAL_CACHE, LOCAL_SCOPES_CACHE, encode_home, encode_local_scopes,
 )
-from anna.server.query import QueryRequest
+from anna.server.query import CapturedResponse, QueryRequest
+
+
+class _LocalCacheRequest(CapturedResponse, AnnaHandler):
+    def handle_path(self, path):
+        url = urlsplit(path)
+        if url.path in READER_ROUTES:
+            self.serve_reader(url)
+        else:
+            self.serve_query(url)
+        return self.response
 
 
 def _write_atomic(target: Path, payload: bytes) -> None:
@@ -36,6 +49,14 @@ def build_local(our5etools_data, fivetools_data, *, web=WEB, lazy_media=False):
         _write_atomic(LOCAL_SCOPES_CACHE, scopes_payload)
     else:
         LOCAL_SCOPES_CACHE.unlink(missing_ok=True)
+
+    tour_handle = _LocalCacheRequest(registry).handle_path
+    _write_atomic(tour_cache.LOCAL_CACHE, tour_cache.encode_tour(tour_handle))
+    tour_scopes_payload = tour_cache.encode_local_scopes(tour_handle, registry.ready())
+    if tour_scopes_payload is not None:
+        _write_atomic(tour_cache.LOCAL_SCOPES_CACHE, tour_scopes_payload)
+    else:
+        tour_cache.LOCAL_SCOPES_CACHE.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':

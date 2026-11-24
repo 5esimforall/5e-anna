@@ -13,7 +13,7 @@ import sys
 import threading
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from anna.server import home
+from anna.server import home, tour_cache
 from anna.paths import BOOK, FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
 from anna.presentation.reader import SCHEMA, BookReader, ReaderError, fingerprint
 from anna.review.store import load_annotations
@@ -540,6 +540,28 @@ class AnnaHandler(serve.Handler):
                 html = home.mark_home((serve.WEB / 'index.html').read_bytes(), cache[0])
                 if scope_names:
                     html = home.mark_home_scopes(html, scope_names)
+                self.send(html, 'text/html; charset=utf-8')
+                return
+        if url.path == '/tour' or url.path.startswith('/tour.') and url.path.endswith('.json'):
+            if self.server.bundle_intact(self.current):
+                registry = self.collection_registry()
+                cache = tour_cache.local_cache(registry)
+                scope_names, scope_payloads = tour_cache.local_scope_caches(registry)
+            else:
+                cache = None
+                scope_names, scope_payloads = {}, {}
+            if url.path != '/tour':
+                if cache and url.path == '/' + cache[0]:
+                    self.send(cache[1])
+                elif (scoped := scope_payloads.get(url.path[1:])) is not None:
+                    self.send(scoped)
+                else:
+                    self.send_error(404)
+                return
+            if cache:
+                html = tour_cache.mark_tour((serve.WEB / 'tour.html').read_bytes(), cache[0])
+                if scope_names:
+                    html = tour_cache.mark_tour_scopes(html, scope_names)
                 self.send(html, 'text/html; charset=utf-8')
                 return
         if url.path.startswith('/book/'):

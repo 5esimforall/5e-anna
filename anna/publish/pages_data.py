@@ -26,7 +26,7 @@ from anna.presentation.our5etools import (
 )
 from anna.presentation.tour import LEAD_LIMIT, RULESETS, Tour, clip, first_sentence, load as load_curation
 from anna.review.store import load_annotations, require_current_annotations
-from anna.server import home
+from anna.server import home, tour_cache
 from anna.server.pages import PublishedSite
 from anna.server.pages_publications import PATH as PUBLICATIONS, build_publications
 from anna.source.html import Document
@@ -1022,16 +1022,26 @@ def _write_home_cache(stage, work, files):
         mounted.parent.mkdir(parents=True, exist_ok=True)
         mounted.symlink_to(file)
     site = PublishedSite(root)
+    curation_path = getattr(site, 'curation', PROJECT / CURATION)
     payload = home.encode_home(site.handle)
     default_name = home.filename(payload)
     (stage / default_name).write_bytes(payload)
     scopes = {}
+    tour_payload = tour_cache.encode_tour(site.handle, curation_path=curation_path)
+    tour_default_name = tour_cache.filename(tour_payload)
+    (stage / tour_default_name).write_bytes(tour_payload)
+    tour_scopes = {}
     for libs in home.extra_scopes(site.registry.ready()):
         scoped = home.encode_home(site.handle, libs)
         name = home.filename(scoped)
         (stage / name).write_bytes(scoped)
         scopes[','.join(libs)] = name
+        tour_scoped = tour_cache.encode_tour(site.handle, libs, curation_path=curation_path)
+        tour_name = tour_cache.filename(tour_scoped)
+        (stage / tour_name).write_bytes(tour_scoped)
+        tour_scopes[','.join(libs)] = tour_name
     (stage / 'home-index.json').write_bytes(_json({'default': default_name, 'scopes': scopes}))
+    (stage / 'tour-index.json').write_bytes(_json({'default': tour_default_name, 'scopes': tour_scopes}))
 
 
 def entry_bucket_index(entry_id: str, buckets: int) -> int:

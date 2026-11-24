@@ -53,7 +53,7 @@ class Handler(BaseHTTPRequestHandler):
         static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
         static['/favicon.ico']=('favicon.ico','image/x-icon')
         static['/anna-logo.png']=('anna-logo.png','image/png')
-        static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','motion','menu','topbar','workspace','companions','library','differences','home')})
+        static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','motion','menu','topbar','workspace','companions','library','differences','home','tour-cache')})
         static['/read']=('reader.html','text/html; charset=utf-8')
         static['/tour']=('tour.html','text/html; charset=utf-8')
         static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})

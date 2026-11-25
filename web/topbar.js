@@ -35,7 +35,7 @@ const annaTopbar = (() => {
   function pageSwitch(page) {
     const siblings = Object.keys(pages).filter(key => pages[key].companion === pages[page].companion);
     if (siblings.length < 2) return null;
-    const labels = switchLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+    const labels = switchLabels[annaKit.lang()];
     const nav = document.createElement('nav'); nav.className = 'page-switch'; nav.setAttribute('aria-label', labels.label);
     for (const key of ['tour', 'query'].filter(key => siblings.includes(key))) {
       const link = document.createElement('a');

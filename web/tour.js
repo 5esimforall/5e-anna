@@ -34,8 +34,8 @@ const annaTourLabels = {
     rulesets:{'5e':['2014','2014 rules (5e)'],'5r':['2024','2024 rules (5r)'],'待核':['Unverified','Rules version unverified']}}
 };
 const annaTour = (() => {
-  const lang = document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
-  const ui = annaTourLabels[lang], {esc, stored} = annaKit;
+  const lang = annaKit.lang();
+  const ui = annaTourLabels[lang], {esc, stored, fill} = annaKit;
   // A level is named by one segment: a topic key, or `collection:segment` for a level of one collection's own.
   const MEMORY = 'anna.tour', SEGMENT = /^(?!\.\.?$)[A-Za-z0-9_.:-]+$/, FILTER_THRESHOLD = 24;
   const columns = document.querySelector('#tour-columns'), notice = document.querySelector('#tour-notice');
@@ -59,7 +59,6 @@ const annaTour = (() => {
   let restTimer = 0, openOnRest = null;
   for (const el of document.querySelectorAll('[data-ui]')) el.textContent = ui[el.dataset.ui];
 
-  const fill = (template, values) => Object.entries(values).reduce((s, [k, v]) => s.replaceAll('{' + k + '}', v), template);
   const fmt = n => Number(n).toLocaleString(lang === 'en' ? 'en' : 'zh-CN');
   const labelText = value => value && typeof value === 'object' ? (value[lang] || value.zh || value.en || '') : (value || '');
   const nameOf = item => item.label ? labelText(item.label) : item.title || '';
@@ -268,15 +267,7 @@ const annaTour = (() => {
       annaKit.rebaseLinks(template.content);
       box.innerHTML = template.innerHTML;
     } else box.innerHTML = layout.html;
-    box.addEventListener('error', event => {
-      const img = event.target;
-      if (!(img instanceof HTMLImageElement) || !img.hasAttribute('data-o5e-fallback')) return;
-      const fig = img.closest('figure.o5e-figure');
-      if (!fig) return;
-      fig.classList.add('o5e-img-failed', 'o5e-media-remote');
-      const note = fig.querySelector('.o5e-media-fallback-note');
-      if (note) note.hidden = false;
-    }, true);
+    annaKit.bindFallbackImages(box);
     const lead = section.querySelector('.tour-lead');
     lead ? lead.after(box) : section.querySelector('.tour-main').append(box);
     annaKit.hydrateImages(box);
@@ -828,11 +819,7 @@ const annaTour = (() => {
   history.replaceState({tour:joinSegments(start)}, '', tourHref(start));
   show(start).finally(() => {
     annaMotion.settle();
-    if (annaKit.pages) {
-      const startWarm = () => annaKit.warm();
-      if (typeof requestIdleCallback === 'function') requestIdleCallback(startWarm, {timeout:1500});
-      else setTimeout(startWarm, 300);
-    }
+    if (annaKit.pages) annaKit.warmWhenIdle();
   });
   return {show, go};
 })();

@@ -81,7 +81,6 @@ const relationNames = {uses_statblock:'使用数据卡',catalog_offer:'购置条
 const LEVELS=['戏法','一环','二环','三环','四环','五环','六环','七环','八环','九环'];
 const NONE='__none__';
 const BOOL_FIELDS=new Set(['concentration','ritual','verbal','somatic','material','special_material','attunement','legendary_actions','lair_actions','has_local_audio']);
-const COMMON=new Set(['ruleset','source','origin','package','status','legacy','conflict','sections']);
 let metadata, schema, groups=[], params=new URLSearchParams(location.search), request, generation=0, panelGeneration=0, timer;
 let currentData, currentEntry, detailGeneration=0, ready=false, facetData=null, facetGeneration=0, facetsController=null, panelShape='', focusSections=false;
 const badge=(text,tone='gray')=>`<span class="badge ${tone}">${esc(text)}</span>`;
@@ -653,7 +652,6 @@ function failResults(message,status){
   currentData=null;$('#error').hidden=false;$('#error').textContent=message;$('#result-count').textContent=status;
   $('#results').replaceChildren();$('#empty').hidden=true;$('#range').textContent='';renderLoadState();
 }
-const RULESET_ORDER=['5e','5r','待核'];
 // Server groups carry counts; the interface supplies its own words for rules versions.
 function readGroups(data){
   return data.groups.map(g=>({...g,options:g.options.map(o=>g.key==='ruleset'?{...o,label:rulesetShort(o.value),title:rulesetFull(o.value)}:o)}));
@@ -1329,11 +1327,7 @@ async function init(){
     const resumed=resumedUi(annaWorkspace.takeResume('query'));saved=saved||resumed;restoreRows=saved?.loadedRows||0;quietTopic=!!saved;
     await changeTable();if(params.has('entry'))await openEntry(params.get('entry'),false,saved?.readerId===params.get('entry')?saved.readerTab:'body');
     restoreUiState(saved);
-    if(annaKit.pages&&!params.has('entry')){
-      const startWarm=()=>annaKit.warm();
-      if(typeof requestIdleCallback==='function')requestIdleCallback(startWarm,{timeout:1500});
-      else setTimeout(startWarm,300);
-    }
+    if(annaKit.pages&&!params.has('entry'))annaKit.warmWhenIdle();
   }catch(e){
     const error=$('#error');error.hidden=false;error.textContent=e.message;
     $('#result-count').textContent='服务未就绪';

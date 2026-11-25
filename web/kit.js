@@ -2,6 +2,8 @@
 const annaKit = (() => {
   const entities = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => entities[c]);
+  const lang = () => (typeof document !== 'undefined' && document.documentElement.lang.startsWith('en')) ? 'en' : 'zh';
+  const fill = (template, values = {}) => Object.entries(values).reduce((s, [k, v]) => s.replaceAll('{' + k + '}', v), template);
   // Preferences and remembered places live in localStorage; a refusal leaves the current page working.
   const stored = {
     get(key) { try { return localStorage.getItem(key); } catch { return null; } },
@@ -108,12 +110,27 @@ const annaKit = (() => {
     const transport = await import(new URL('pages.js', base).href);
     return transport.request(path, options);
   }
+  function bindFallbackImages(container = document) {
+    container.addEventListener('error', event => {
+      const img = event.target;
+      if (!(img instanceof HTMLImageElement) || !img.hasAttribute('data-o5e-fallback')) return;
+      const fig = img.closest('figure.o5e-figure');
+      if (!fig) return;
+      fig.classList.add('o5e-img-failed', 'o5e-media-remote');
+      const note = fig.querySelector('.o5e-media-fallback-note');
+      if (note) note.hidden = false;
+    }, true);
+  }
   function warm() {
     if (!pages) return;
     import(new URL('pages.js', base).href)
       .then(transport => transport.warm())
       .catch(() => {});
   }
-  return {esc, stored, pages, href, rebaseLinks, hydrateImages, request, warm, tourSkeleton};
+  function warmWhenIdle(fn = warm) {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn, {timeout: 1500});
+    else setTimeout(fn, 300);
+  }
+  return {esc, stored, pages, lang, fill, href, rebaseLinks, hydrateImages, bindFallbackImages, request, warm, warmWhenIdle, tourSkeleton};
 })();
 if (typeof module !== 'undefined') module.exports = annaKit;

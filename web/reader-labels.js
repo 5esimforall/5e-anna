@@ -1,7 +1,7 @@
 /* Reader chrome only; source titles and text always retain their original spelling. */
 const annaReaderLabels = {
   zh: {
-    title:annaBrands.book, chapters:'章节导航', skip:'跳到正文', navigation:'阅读导航', location:'当前位置',
+    title:annaBrands.book, skip:'跳到正文', navigation:'阅读导航', location:'当前位置',
     openNavigation:'打开阅读导航', closeNavigation:'收起阅读导航', contents:'目录', outline:'本页', search:'搜索',
     filter:'筛选目录', filterPlaceholder:'查找书籍或章节…', clearFilter:'清空目录筛选', collapse:'全部收起', expandChapter:'展开当前章节', locate:'定位当前章节',
     followingContents:'目录跟随中', pausedContents:'目录跟随已暂停', locateAndFollow:'定位当前章节并恢复目录跟随', locateFollowing:'定位当前章节（目录跟随中）',
@@ -11,7 +11,7 @@ const annaReaderLabels = {
     searching:'正在搜索…', found:'找到 {count} 页', searchEmpty:'没有匹配页面。试试更短的词语。', searchError:'搜索失败，请重试。',
     anyMatch:'没有全部词语同时命中的页面；以下为任一词语命中。', searchPage:'第 {page} / {pages} 页',
     previousResults:'上一批结果', nextResults:'下一批结果', noOutline:'本页尚未提取到可定位条目；原文仍完整展示。',
-    entry:'在 Anna 查看条目', pageEntries:'本页条目', previous:'本章节上一页', next:'本章节下一页',
+    entry:'在 Anna 查看条目', previous:'本章节上一页', next:'本章节下一页',
     original:'原貌正文', loading:'正在打开原文…', ready:'原文已就绪',
     notInContents:'未编入目录的页面', sourceVersion:'不全书 v{version}', retry:'重试', home:'回到阅读首页',
     keyboard:'/ 搜索', backToTour:'回到导览',
@@ -42,7 +42,7 @@ const annaReaderLabels = {
     }
   },
   en: {
-    title:annaBrands.book, chapters:'Chapter navigation', skip:'Skip to the text', navigation:'Reading navigation', location:'Current location',
+    title:annaBrands.book, skip:'Skip to the text', navigation:'Reading navigation', location:'Current location',
     openNavigation:'Open reading navigation', closeNavigation:'Close reading navigation', contents:'Contents', outline:'On this page', search:'Search',
     filter:'Filter contents', filterPlaceholder:'Find a book or chapter…', clearFilter:'Clear contents filter', collapse:'Collapse all', expandChapter:'Expand current chapter', locate:'Locate current chapter',
     followingContents:'Contents follow reading', pausedContents:'Contents following paused', locateAndFollow:'Locate the current chapter and resume following', locateFollowing:'Locate current chapter (following)',
@@ -52,7 +52,7 @@ const annaReaderLabels = {
     searching:'Searching…', found:'Found {count} pages', searchEmpty:'No matching pages. Try a shorter phrase.', searchError:'Search failed. Please retry.',
     anyMatch:'No page matches every term; showing pages matching any term.', searchPage:'Page {page} / {pages}',
     previousResults:'Previous results', nextResults:'Next results', noOutline:'No locatable entries have been extracted on this page. The complete source is still available.',
-    entry:'Open entry in Anna', pageEntries:'Entries on this page', previous:'Previous page in chapter', next:'Next page in chapter',
+    entry:'Open entry in Anna', previous:'Previous page in chapter', next:'Next page in chapter',
     original:'Original layout', loading:'Opening the source…', ready:'Source ready',
     notInContents:'Page outside the contents', sourceVersion:'Incomplete Book v{version}', retry:'Retry', home:'Reader home',
     keyboard:'/ Search', backToTour:'Back to tour',

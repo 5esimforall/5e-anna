@@ -42,11 +42,9 @@ const annaLibrary = (() => {
       reset:'Reset', done:'Done', close:'Close', summary:'{libraries} · {works} of {total} works',
       loading:'Loading the library…', loadError:'Unable to load the library: {message}', retry:'Try again'}
   };
-  const lang = () => document.documentElement.lang.startsWith('en') ? 'en' : 'zh';
+  const {esc, fill, lang} = annaKit;
   const ui = () => labels[lang()];
-  const fill = (template, values) => Object.entries(values).reduce((s, [k, v]) => s.replaceAll('{' + k + '}', v), template);
   const fmt = n => Number(n).toLocaleString(lang() === 'en' ? 'en' : 'zh-CN');
-  const esc = value => annaKit.esc(value);
   const parse = raw => { try { return JSON.parse(raw); } catch { return null; } };
 
   // --- The setting, as stored ---

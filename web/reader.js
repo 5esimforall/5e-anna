@@ -3,10 +3,11 @@
 (() => {
   'use strict';
   const $ = selector => document.querySelector(selector);
-  const labels = annaReaderLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+  const lang = annaKit.lang();
+  const labels = annaReaderLabels[lang];
   const ui = annaKit.pages ? {...labels, errors:{...labels.errors,...labels.pagesErrors}} : labels;
-  const {esc, stored} = annaKit;
-  const text = (key, values = {}) => Object.entries(values).reduce((s, [k,v]) => s.replaceAll('{'+k+'}', v), ui[key]);
+  const {esc, stored, fill} = annaKit;
+  const text = (key, values = {}) => fill(ui[key], values);
   for (const element of document.querySelectorAll('[data-text]')) element.textContent = ui[element.dataset.text];
   for (const element of document.querySelectorAll('[data-label]')) {
     element.setAttribute('aria-label', ui[element.dataset.label]); element.title = ui[element.dataset.label];
@@ -32,7 +33,7 @@
   const shelfCollection = key => metadata?.collections.find(c => c.id === key);
   const snapshotOf = key => shelfCollection(key)?.snapshot || '';
   const snapshots = () => Object.fromEntries((metadata?.collections || []).map(c => [c.id, c.snapshot]));
-  const collectionName = key => { const c = shelfCollection(key); return c?.label?.[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'] || c?.label?.zh || key; };
+  const collectionName = key => { const c = shelfCollection(key); return c?.label?.[lang] || c?.label?.zh || key; };
   // A saved place is good while the build of its page's collection is the one it was saved in.
   const restorable = saved => saved && typeof saved.page === 'string' && saved.snapshot === snapshotOf(collectionOf(saved.page)) ? saved : null;
   // Anna names an entry by its own id; the collection that holds it answers.

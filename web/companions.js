@@ -12,7 +12,6 @@ const annaCompanions = (() => {
   let labels;
   // The companion each page turns to; Anna's tour faces Stella like her query page does.
   const other = {query:'book', tour:'book', book:'query'};
-  const fill = (template, values) => Object.entries(values).reduce((s,[k,v]) => s.replaceAll('{'+k+'}', v), template);
   // `snapshots` are the builds of the collections the page reads, {collection: snapshot}.
   let page, snapshots, slot, go, more, menu;
   const homeHref = companion => annaKit.href(annaTopbar.pages[companion].home);
@@ -45,8 +44,8 @@ const annaCompanions = (() => {
   }
   function action(choice) {
     const companion = other[page];
-    if (choice.kind === 'topic') return fill(labels.topic[companion], {name:choice.topic.name || choice.topic.entry});
-    if (choice.kind === 'resume') return fill(labels.resume[companion], {name:memoryName(companion, choice.memory)});
+    if (choice.kind === 'topic') return annaKit.fill(labels.topic[companion], {name:choice.topic.name || choice.topic.entry});
+    if (choice.kind === 'resume') return annaKit.fill(labels.resume[companion], {name:memoryName(companion, choice.memory)});
     return '';
   }
   function link(choice, state, className) {
@@ -63,7 +62,7 @@ const annaCompanions = (() => {
     if (choice.kind === 'resume') go.dataset.resume = annaWorkspace.memoryId[companion](choice.memory);
     else delete go.dataset.resume;
     go.querySelector('.companion-label').textContent = text || brand;
-    const name = text ? fill(labels.go, {brand, action:text}) : brand;
+    const name = text ? annaKit.fill(labels.go, {brand, action:text}) : brand;
     go.setAttribute('aria-label', name); go.title = name;
     // The menu adds something only when it holds more than the one choice the button already makes;
     // in Stella it also keeps Anna's Tour reachable alongside Query.
@@ -77,7 +76,7 @@ const annaCompanions = (() => {
     const avatar = document.createElement('img'); avatar.className = 'popup-menu-avatar';
     avatar.src = annaKit.href(annaTopbar.pages.tour.logo); avatar.width = avatar.height = 18; avatar.alt = '';
     const main = document.createElement('span'); main.className = 'popup-menu-label';
-    main.textContent = state.tour ? fill(labels.resume.tour, {name:state.tour.title || labels.tour}) : labels.tourHome;
+    main.textContent = state.tour ? annaKit.fill(labels.resume.tour, {name:state.tour.title || labels.tour}) : labels.tourHome;
     anchor.append(avatar, main);
     return anchor;
   }
@@ -121,7 +120,7 @@ const annaCompanions = (() => {
   // Pages mount the companion once they know their collections' builds; without the other page there is nobody to turn to.
   function mount(options) {
     ({page, snapshots} = options);
-    labels = annaCompanionLabels[document.documentElement.lang.startsWith('en') ? 'en' : 'zh'];
+    labels = annaCompanionLabels[annaKit.lang()];
     slot = document.querySelector('.topbar .companion');
     go = slot.querySelector('.companion-go') || annaTopbar.companionHome(page);
     more = document.createElement('button'); more.type = 'button'; more.className = 'companion-more'; more.id = 'companion-more';

@@ -32,17 +32,17 @@ Python 实现集中在 `anna/`，用包导入表达依赖；`scripts/` 只保存
 | --- | --- |
 | `anna/source/` | 原文解码、HTML 与表格结构、来源名录与库内全文搜索索引 |
 | `anna/catalog/` | 条目分类与构建、概念与引用、只读命令行查询及审计 |
-| `anna/review/` | 引用裁定事件日志、可迁移锚点与候选检索 |
+| `anna/review/` | 引用裁定事件日志、只读审阅工作流（`workflow.py`）、可迁移锚点与候选检索 |
 | `anna/compare/` | 5etools 对照索引与字段核对 |
-| `anna/our5etools/` | our5etools 镜像盘点、类型与语义解析、块与标签渲染、整书章节构建、只读库发布及审计 |
+| `anna/our5etools/` | our5etools 镜像盘点、共享词表（`vocab.py`）、类型与语义解析、块与标签渲染、整书章节构建、只读库发布及审计 |
 | `anna/presentation/` | 只读查询、读者资料库的合表（`library.py`）、书架（`shelf.py`）与统一导览（`library_tour.py`）、原文排版、阅读模型与显式响应投影（含 `our5etools.py`）；[消费契约](anna/presentation/README.md)独立于提取实现 |
-| `anna/server/` | 运行时的统一 HTTP 传输、多资料库路由与快照发布校验；Pages 工作线程复用同一套请求处理 |
-| `anna/publish/` | 构建期发布：链接版生成、本机首页缓存与 GitHub Pages 打包；运行时不导入本包 |
+| `anna/server/` | 运行时的统一 HTTP 传输、多资料库路由、静态缓存读取（`static_cache.py`）与快照发布校验；Pages 工作线程复用同一套请求处理 |
+| `anna/publish/` | 构建期发布：链接版生成、本机首页缓存与 GitHub Pages 打包（`pages_data.py`、`pages_project.py`、`pages_buckets.py`）；运行时不导入本包 |
 | `anna/paths.py`、`anna/serialization.py` | 项目路径、确定性序列化与导出格式 |
 | `tour/` | 导览的精选入口（`tour.json`，各资料库共用）：第一列的主题、它们在各库中的章节，以及各步骤通向的选项集合 |
 | `annotations/` | 内容与上下文双哈希版本化的引用裁定日志（`annotations.jsonl`）；历史 `grant`／`procedure` 事件保留但不进入当前构建 |
 | `sources.json` | 三个源码镜像的仓库、分支与固定版本，本地构建与 GitHub Pages 共用 |
 | `scripts/` | 图标导出、生成产物清理、源码版本锁读写等离线维护脚本，不承载应用入口或领域模块 |
-| `web/`、`tests/` | 前端资源（`web/book/` 为链接版注入正文页的脚本）与项目测试 |
+| `web/`、`tests/` | 前端资源（`kit.js`、`cache-util.js` 等，以及注入正文与章节页的 `web/book/` 脚本及 `our5etools-book.css` 样式表）与项目测试 |
 
 日常入口仍是 Makefile。需要直接传递参数时，在仓库根目录用 `python -m anna.…` 运行对应命令，具体示例见 [USAGE.md](USAGE.md)。旧 `scripts/*.py` 应用入口已移除，不保留转发层；HTTP 服务只有 `make up`／`make upper` 对应的统一服务入口。命令行查询仍保留独立的只读数据分析用途。

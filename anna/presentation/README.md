@@ -17,7 +17,7 @@
 | `tour.py` | 读者从哪里开始，每一层通向哪里？精选入口之下按目录、页面条目与条目关系展开导览的各层 |
 | `contracts.py` | 哪些存储字段进入现有的条目与引用响应？ |
 
-HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；条目查询、导出和引用候选命令行共用同一只读消费边界。来源上下文位于 `anna/review/context.py`，可迁移锚点位于 `anna/review/anchors.py`，供构建与引用裁定共同使用。
+HTTP 路由、状态码、下载头和快照切换由 `anna/server/` 负责；条目查询、导出和引用候选命令行共用同一只读消费边界。来源上下文位于 `anna/review/context.py`，可迁移锚点位于 `anna/review/anchors.py`，交互式审阅工作流位于 `anna/review/workflow.py`，供构建与引用裁定按职责使用。
 
 ## 保持什么稳定
 

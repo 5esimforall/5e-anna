@@ -12,7 +12,7 @@ from anna import paths
 from anna.presentation import tour as tour_curation
 from anna.publish.pages_build import build as build_pages
 from anna.publish.pages_data import export_pages_data
-from anna.server import tour_cache
+from anna.server import static_cache, tour_cache
 from test_pages_perf import _make_5echm_fixture
 
 
@@ -66,7 +66,7 @@ class TourCacheTests(unittest.TestCase):
             })
             self.assertEqual(len(decoded['skeleton']['sections'][0]['topics']), 2)
 
-            tour_cache._read_local.cache_clear()
+            static_cache.clear_cache()
             with patch.object(tour_cache, 'LOCAL_CACHE', root / 'tour.json.cache'):
                 self.assertIsNone(tour_cache.local_cache(registry, curation_file))
                 tour_cache.LOCAL_CACHE.write_bytes(payload)

@@ -19,30 +19,23 @@ const annaKit = (() => {
   const root = typeof document === 'undefined' ? null : document.documentElement;
   const pages = root?.hasAttribute('data-anna-pages') ?? false;
   // Keep deep links on the normal transport even if app.js later rewrites their address.
+  function parseScopeMap(attrName, fileRe) {
+    const scopes = new Map();
+    if (!root?.hasAttribute(attrName)) return scopes;
+    for (const pair of (root.getAttribute(attrName) || '').split(';')) {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const scope = pair.slice(0, eq).trim(), file = pair.slice(eq + 1).trim();
+      if (/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(scope) && fileRe.test(file)) {
+        scopes.set(scope, file);
+      }
+    }
+    return scopes;
+  }
   const home = root?.hasAttribute('data-anna-home') && !location.search && !location.hash && root.getAttribute('data-anna-home');
-  const homeScopes = new Map();
-  if (home && root?.hasAttribute('data-anna-home-scopes')) {
-    for (const pair of (root.getAttribute('data-anna-home-scopes') || '').split(';')) {
-      const eq = pair.indexOf('=');
-      if (eq <= 0) continue;
-      const scope = pair.slice(0, eq).trim(), file = pair.slice(eq + 1).trim();
-      if (/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(scope) && /^home\.[a-f0-9]{16}\.json$/.test(file)) {
-        homeScopes.set(scope, file);
-      }
-    }
-  }
+  const homeScopes = home ? parseScopeMap('data-anna-home-scopes', /^home\.[a-f0-9]{16}\.json$/) : new Map();
   const tour = root?.hasAttribute('data-anna-tour') && root.getAttribute('data-anna-tour');
-  const tourScopes = new Map();
-  if (tour && root?.hasAttribute('data-anna-tour-scopes')) {
-    for (const pair of (root.getAttribute('data-anna-tour-scopes') || '').split(';')) {
-      const eq = pair.indexOf('=');
-      if (eq <= 0) continue;
-      const scope = pair.slice(0, eq).trim(), file = pair.slice(eq + 1).trim();
-      if (/^[a-z0-9]+(?:-[a-z0-9]+)*(?:,[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(scope) && /^tour\.[a-f0-9]{16}\.json$/.test(file)) {
-        tourScopes.set(scope, file);
-      }
-    }
-  }
+  const tourScopes = tour ? parseScopeMap('data-anna-tour-scopes', /^tour\.[a-f0-9]{16}\.json$/) : new Map();
   const base = pages || home || tour ? new URL('.', document.currentScript.src) : null;
   function href(path) {
     if (!pages || !/^\/(?!\/)/.test(path)) return path;
@@ -79,22 +72,22 @@ const annaKit = (() => {
       .then(media => media.hydrateImages(root, {measure}))
       .catch(() => {});
   }
-  function homeArtifact() {
-    if (!home || location.search || location.hash) return null;
+  function scopeArtifact(baseName, scopesMap) {
+    if (!baseName) return null;
     const p = typeof annaLibrary === 'undefined' ? [] : annaLibrary.params();
-    if (!p.length) return home;
-    if (p.length === 1 && p[0][0] === 'libraries') return homeScopes.get(p[0][1]) || null;
+    if (!p.length) return baseName;
+    if (p.length === 1 && p[0][0] === 'libraries') return scopesMap.get(p[0][1]) || null;
     return null;
   }
-  function tourArtifact() {
-    if (!tour) return null;
-    const p = typeof annaLibrary === 'undefined' ? [] : annaLibrary.params();
-    if (!p.length) return tour;
-    if (p.length === 1 && p[0][0] === 'libraries') return tourScopes.get(p[0][1]) || null;
-    return null;
+  async function tryStaticCache(moduleName, path, artifact, signal) {
+    if (!artifact) return null;
+    const cache = await import(new URL(moduleName, base).href).catch(() => null);
+    const response = await cache?.request(path, artifact, signal);
+    signal?.throwIfAborted();
+    return response || null;
   }
   async function tourSkeleton(signal) {
-    if (!tour || tourArtifact()) return null;
+    if (!tour || scopeArtifact(tour, tourScopes)) return null;
     signal?.throwIfAborted();
     const cache = await import(new URL('tour-cache.js', base).href).catch(() => null);
     return cache ? await cache.skeleton(tour, signal) : null;
@@ -103,19 +96,13 @@ const annaKit = (() => {
     const signal = options?.signal;
     signal?.throwIfAborted();
     const isGet = options?.method === undefined || /^GET$/i.test(options.method);
-    const artifact = homeArtifact();
-    if (artifact && isGet) {
-      const cache = await import(new URL('home.js', base).href).catch(() => null);
-      const response = await cache?.request(path, artifact, signal);
-      signal?.throwIfAborted();
-      if (response) return response;
-    }
-    const tArtifact = tourArtifact();
-    if (tArtifact && isGet) {
-      const cache = await import(new URL('tour-cache.js', base).href).catch(() => null);
-      const response = await cache?.request(path, tArtifact, signal);
-      signal?.throwIfAborted();
-      if (response) return response;
+    if (isGet) {
+      const hResp = !location.search && !location.hash
+        ? await tryStaticCache('home.js', path, scopeArtifact(home, homeScopes), signal)
+        : null;
+      if (hResp) return hResp;
+      const tResp = await tryStaticCache('tour-cache.js', path, scopeArtifact(tour, tourScopes), signal);
+      if (tResp) return tResp;
     }
     if (!pages) return fetch(path, options);
     const transport = await import(new URL('pages.js', base).href);

@@ -1,4 +1,6 @@
 /* Direct static bucket transport for /api/entry and /api/entry-layout on GitHub Pages. */
+import {waitWithAbort} from './cache-util.js';
+
 const siteBase = new URL('.', import.meta.url);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -90,19 +92,6 @@ function loadBucket(url, encoding) {
   }
   bucketCache.set(url, pending);
   return pending;
-}
-
-function waitWithAbort(promise, signal) {
-  if (!signal) return promise;
-  signal.throwIfAborted();
-  return new Promise((resolve, reject) => {
-    const onAbort = () => reject(signal.reason);
-    signal.addEventListener('abort', onAbort, {once:true});
-    promise.then(
-      value => { signal.removeEventListener('abort', onAbort); resolve(value); },
-      error => { signal.removeEventListener('abort', onAbort); reject(error); },
-    );
-  });
 }
 
 function parseEntryScope(searchParams) {

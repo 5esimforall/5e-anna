@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from anna.server import home
+from anna.server import home, static_cache
 
 
 class HomeCacheTests(unittest.TestCase):
@@ -64,7 +64,7 @@ class HomeCacheTests(unittest.TestCase):
             body = {'collections': collections} if route == '/api/library' else {'route': route}
             return 200, {}, json.dumps(body).encode()
 
-        home._read_local_scopes.cache_clear()
+        static_cache.clear_cache()
         self.assertIsNone(home.encode_local_scopes(handle, ('5echm',)))
         scopes_payload = home.encode_local_scopes(handle, ('5echm', 'our5etools'))
         self.assertIsNotNone(scopes_payload)

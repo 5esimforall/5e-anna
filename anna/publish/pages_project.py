@@ -13,6 +13,7 @@ from anna.presentation.layout import (
 )
 from anna.presentation.library import name_fold
 from anna.presentation.tour import LEAD_LIMIT, RULESETS, Tour, clip, first_sentence, load as load_curation
+from anna.review.store import file_sha256 as _file_hash
 from anna.source.html import Document
 from anna.source.pages import decode_page
 import anna.catalog.views as browse
@@ -41,14 +42,6 @@ def _json(data):
 
 def _read_json(file):
     return json.loads(file.read_text(encoding='utf-8'))
-
-
-def _file_hash(file):
-    digest = sha256()
-    with Path(file).open('rb') as f:
-        for block in iter(lambda: f.read(1024 * 1024), b''):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def _db_schema(conn, original):

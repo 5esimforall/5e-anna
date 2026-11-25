@@ -9,7 +9,9 @@ from pathlib import Path
 import sqlite3
 import sys
 
+from anna.catalog.references import bind_reference_anchor
 from anna.review.context import Context
+from anna.review.search import search_candidates
 from anna.review.store import (
     DEFAULT_ANNOTATIONS,
     append_annotation_events,
@@ -20,7 +22,18 @@ from anna.review.store import (
     reference_annotations,
     require_annotations_appendable,
 )
+from anna.review.workflow import (
+    build_reference_event,
+    inspect_reference,
+    preview_annotations,
+)
 from anna.paths import BOOK, PROJECT
+
+
+def _require_reviewer_and_reason(reviewer, reason):
+    if not isinstance(reviewer, str) or not reviewer.strip() or not isinstance(reason, str) or not reason.strip():
+        raise ValueError('Reviewer and reason are required')
+    return reviewer.strip(), reason.strip()
 
 
 def _prepare_reference_event(db, path, subject_id, kind, reviewer='', reason='', *,
@@ -29,16 +42,14 @@ def _prepare_reference_event(db, path, subject_id, kind, reviewer='', reason='',
                              supersedes=None, context=None):
     if kind != 'reference':
         raise ValueError('Only reference annotations are supported')
-    if not isinstance(reviewer, str) or not reviewer.strip() or not isinstance(reason, str) or not reason.strip():
-        raise ValueError('Reviewer and reason are required')
+    reviewer, reason = _require_reviewer_and_reason(reviewer, reason)
     context = context or Context(db)
     require_annotations_appendable(db, path)
     events, log_hash = load_annotations(path)
     states, _ = annotation_lifecycle(events)
-    from anna.catalog.references import bind_reference_anchor, build_reference_event
     by_id = {e['id']: e for e in events if e['operation'] == 'annotate'}
     pending, ref = build_reference_event(
-        db, context, subject_id, ruling=ruling, reviewer=reviewer.strip(), reason=reason.strip(),
+        db, context, subject_id, ruling=ruling, reviewer=reviewer, reason=reason,
         target=target, path=path, expected_content_sha256=expected_content_sha256,
         expected_context_sha256=expected_context_sha256, search_query=search_query,
         annotation_id=annotation_id, supersedes=supersedes, events_by_id=by_id,
@@ -88,13 +99,11 @@ def preview_annotate(db, path, subject_id, kind, reviewer='', reason='', *,
         expected_context_sha256=expected_context_sha256, search_query=search_query,
         annotation_id=annotation_id, supersedes=supersedes,
     )
-    from anna.catalog.references import preview_annotations
     return preview_annotations(db, path, pending_events=[pending], context=context)
 
 
 def _validate_revoke(path, rev_id, reviewer, reason):
-    if not isinstance(reviewer, str) or not reviewer.strip() or not isinstance(reason, str) or not reason.strip():
-        raise ValueError('Reviewer and reason are required')
+    reviewer, reason = _require_reviewer_and_reason(reviewer, reason)
     events, log_hash = load_annotations(path)
     by_id = {e['id']: e for e in events if e['operation'] == 'annotate'}
     target = by_id.get(rev_id)
@@ -109,15 +118,14 @@ def _validate_revoke(path, rev_id, reviewer, reason):
     pending = {
         'operation': 'revoke',
         'target_revision_id': rev_id,
-        'reviewer': reviewer.strip(),
-        'reason': reason.strip(),
+        'reviewer': reviewer,
+        'reason': reason,
     }
     return pending, log_hash
 
 
 def revoke_annotation(path, rev_id, reviewer, reason):
-    if not isinstance(reviewer, str) or not reviewer.strip() or not isinstance(reason, str) or not reason.strip():
-        raise ValueError('Reviewer and reason are required')
+    _require_reviewer_and_reason(reviewer, reason)
     with locked(path):
         pending, log_hash = _validate_revoke(path, rev_id, reviewer, reason)
         return append_annotation_events(path, [pending], log_hash)[0]
@@ -126,7 +134,6 @@ def revoke_annotation(path, rev_id, reviewer, reason):
 def preview_revoke(db, path, rev_id, reviewer, reason):
     """Dry-run revoking one active/conflicting reference revision without writing."""
     pending, _ = _validate_revoke(path, rev_id, reviewer, reason)
-    from anna.catalog.references import preview_annotations
     return preview_annotations(db, path, pending_events=[pending])
 
 
@@ -308,7 +315,6 @@ def main():
                 elif args.command == 'revoke':
                     result = preview_revoke(db, args.annotations, args.id, args.reviewer, args.reason)
                 elif args.command == 'preview':
-                    from anna.catalog.references import preview_annotations
                     result = preview_annotations(db, args.annotations)
                 elif args.command == 'gate':
                     book = args.book
@@ -323,11 +329,9 @@ def main():
                                               review_status=args.review_status, reason=args.reason, kind=args.kind,
                                               limit=args.limit, offset=args.offset)
                 elif args.command == 'ref-inspect':
-                    from anna.catalog.references import inspect_reference
                     result = inspect_reference(db, args.id, args.target, path=args.annotations,
                                                missing_definition=args.missing_definition, query=args.query)
                 elif args.command == 'candidates':
-                    from anna.review.search import search_candidates
                     result = search_candidates(db, args.id, query=args.query, entry_type=args.type,
                                                ruleset=args.ruleset, source_id=args.source,
                                                locatable_only=args.locatable, exclude_sections=args.exclude_sections,

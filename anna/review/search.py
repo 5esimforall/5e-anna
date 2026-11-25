@@ -2,6 +2,7 @@
 from pathlib import PurePosixPath
 import re
 from anna.catalog.concepts import aliases, RULE_TYPES
+from anna.review.store import read_effective_reference
 from anna.source.html import key, compact
 
 SEARCH_VERSION = 1
@@ -89,14 +90,11 @@ def candidate_matches(context, ref, query=''):
 
 def search_candidates(db, reference_id, *, query='', entry_type='', ruleset='', source_id='',
                       locatable_only=False, exclude_sections=False, limit=20, offset=0, context=None):
-    import json
     from anna.review.context import Context
     if not 1 <= limit <= 100 or offset < 0: raise ValueError('候选查询范围无效')
-    cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
-    where = 'id=? AND is_effective=1' if 'is_effective' in cols else 'id=?'
-    row = db.execute('SELECT data FROM effective_references WHERE ' + where, (reference_id,)).fetchone()
-    if not row: raise LookupError('引用不存在，请重新查询有效引用 ID')
-    ref = json.loads(row[0]); context = context or Context(db)
+    ref = read_effective_reference(db, reference_id)
+    if ref is None: raise LookupError('引用不存在，请重新查询有效引用 ID')
+    context = context or Context(db)
     matches = candidate_matches(context, ref, query)
     matches = [m for m in matches if (not entry_type or m['entry']['type'] == entry_type)
                and (not ruleset or m['entry']['ruleset'] == ruleset)

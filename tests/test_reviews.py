@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from anna.catalog.concepts import build_concepts
-from anna.catalog.references import build_references, inspect_reference, preview_annotations
+from anna.catalog.references import build_references
 from anna.presentation.collections import _clear_book_connections
 from anna.presentation.layout import entry_layout, span_layout
 from anna.presentation.references import (
@@ -28,6 +28,7 @@ from anna.review.repository import (
     save_annotation,
 )
 from anna.review.search import search_candidates
+from anna.review.workflow import inspect_reference, preview_annotations
 from anna.review.store import (
     annotation_snapshot,
     append_annotation_events,

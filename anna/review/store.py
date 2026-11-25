@@ -2,7 +2,7 @@
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
-from hashlib import sha256
+from hashlib import file_digest, sha256
 import json
 import os
 from pathlib import Path
@@ -252,12 +252,18 @@ def require_current_annotations(db, path=None):
     return saved
 
 
-def _file_sha256(path):
-    hasher = sha256()
+def file_sha256(path):
+    """Stream-compute hex SHA-256 of a local file."""
     with Path(path).open('rb') as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+        return file_digest(stream, 'sha256').hexdigest()
+
+
+def read_effective_reference(db, reference_id):
+    """Load one effective reference payload by ID, or return None if absent."""
+    cols = {r[1] for r in db.execute('PRAGMA table_info(effective_references)')}
+    where = 'id=? AND is_effective=1' if 'is_effective' in cols else 'id=?'
+    row = db.execute('SELECT data FROM effective_references WHERE ' + where, (reference_id,)).fetchone()
+    return json.loads(row[0]) if row else None
 
 
 def check_rebuild_gate(db, annotations_path=DEFAULT_ANNOTATIONS, *, db_path=None, book=None, strict=False):
@@ -359,7 +365,7 @@ def check_rebuild_gate(db, annotations_path=DEFAULT_ANNOTATIONS, *, db_path=None
                 linked_book = {'path': str(book_path), 'present': True, 'error': str(exc), 'current': False}
                 issues.append({'code': 'linked_book_invalid', 'severity': 'error', 'message': str(exc)})
             else:
-                db_matches = None if db_path is None else (_file_sha256(Path(db_path)) == manifest.get('database_sha256'))
+                db_matches = None if db_path is None else (file_sha256(Path(db_path)) == manifest.get('database_sha256'))
                 m_ann = manifest.get('annotation_snapshot')
                 ann_matches = bool(
                     m_ann

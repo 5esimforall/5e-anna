@@ -76,23 +76,28 @@ def format_evidence(tag_paths,markup,profile,linked):
 BILINGUAL_LIST_ZH_RE = re.compile(r'[，、；;,]|[\u3400-\u9fff][ \t]*[A-Za-z][a-z]{2,}')
 
 
+def _matching_entries(resolver, name_key, wanted):
+    return {
+        i for i in resolver.names.get(name_key, ())
+        if not slot_only(resolver.entries[i]) and resolver.entries[i]['type'] in wanted
+    }
+
+
 def reference_spans(text,start,end,kind,resolver):
     """Split verified name lists, never treat a markup element as a single rule identity."""
     wanted=RULE_TYPES|{'class_feature'} if kind=='concept' else {kind}
-    def matching(name_key):
-        return {i for i in resolver.names.get(name_key,())
-                if not slot_only(resolver.entries[i]) and resolver.entries[i]['type'] in wanted}
     def known(a,b):
         clean=compact(text[a:b]).rstrip('*†‡ ')
         if not clean:return False
-        if matching(key(clean)):return True
+        if _matching_entries(resolver, key(clean), wanted):return True
         if kind!='concept':
             zh,en=split_name(clean)
             if zh and en and not BILINGUAL_LIST_ZH_RE.search(zh):
-                z_ids=matching(key(zh));e_ids=matching(key(en))
+                z_ids=_matching_entries(resolver, key(zh), wanted)
+                e_ids=_matching_entries(resolver, key(en), wanted)
                 if e_ids and not (z_ids-e_ids):return True
                 if not e_ids and z_ids:
-                    s_ids={i for sk in _singular_en_keys(en) for i in matching(sk)}
+                    s_ids={i for sk in _singular_en_keys(en) for i in _matching_entries(resolver, sk, wanted)}
                     if z_ids&s_ids:return True
         return False
     if known(start,end):return [(start,end)]  # punctuation may be part of a real name
@@ -417,16 +422,14 @@ class Resolver:
     def _bilingual_lookup(self,clean,wanted):
         zh,en=split_name(clean)
         if not (zh and en) or BILINGUAL_LIST_ZH_RE.search(zh):return None
-        def matching(name_key):
-            return {i for i in self.names.get(name_key,())
-                    if not slot_only(self.entries[i]) and self.entries[i]['type'] in wanted}
-        z_ids=matching(key(zh));e_ids=matching(key(en))
+        z_ids=_matching_entries(self, key(zh), wanted)
+        e_ids=_matching_entries(self, key(en), wanted)
         if e_ids:
             if z_ids-e_ids:
                 return ('ambiguous','bilingual_conflict',[self.entries[i] for i in sorted(z_ids|e_ids)],'bilingual_conflict')
             return (None,None,[self.entries[i] for i in sorted(e_ids)],'bilingual_exact_en')
         if z_ids:
-            s_ids={i for sk in _singular_en_keys(en) for i in matching(sk)}
+            s_ids={i for sk in _singular_en_keys(en) for i in _matching_entries(self, sk, wanted)}
             both=z_ids&s_ids
             if both:
                 return (None,None,[self.entries[i] for i in sorted(both)],'bilingual_plural_en')

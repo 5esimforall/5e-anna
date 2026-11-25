@@ -1,5 +1,4 @@
 """View-specific quick-reference semantics. Derived values never overwrite source fields."""
-from collections import Counter
 from fractions import Fraction
 from functools import lru_cache
 import json

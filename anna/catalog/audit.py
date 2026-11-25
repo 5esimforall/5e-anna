@@ -2,7 +2,6 @@
 """Read-only corpus audit, optional before/after diff; writes reports, never edits the DB."""
 import argparse
 from collections import Counter, defaultdict
-import csv
 import json
 from pathlib import Path
 from anna.paths import PROJECT
@@ -32,7 +31,7 @@ def connect(path):
     return db
 
 
-def audit_concepts(db,folder=None):
+def audit_concepts(db):
     """Validate occurrence accounting independently of semantic review completion."""
     errors=[];ids=set();outcomes=Counter()
     texts=dict(db.execute('SELECT path,text FROM pages'))
@@ -125,7 +124,7 @@ def audit_concepts(db,folder=None):
             'gap_counts':{k:len(v) for k,v in coverage['gaps'].items()}}
 
 
-def audit_counterparts(db,folder=None):
+def audit_counterparts(db):
     """Counterpart outcomes must be internally consistent; agreement with 5etools-cn is reported, not required."""
     errors=[]
     records=set(r[0] for r in db.execute('SELECT id FROM counterpart_records'))
@@ -285,13 +284,13 @@ def audit(db_path,baseline=None,book_dir=None):
     reasons=dict(db.execute('SELECT reason,count(*) FROM review_queue GROUP BY reason'))
     catalog_reviews=[json.loads(r[0]) for r in db.execute("SELECT data FROM review_queue WHERE reason IN ('animal_statblock_unresolved','mount_example_unresolved','catalog_table_unhandled','catalog_row_layout_unresolved') ORDER BY reason,target")]
     coverage=[dict(r) for r in db.execute("SELECT type,classification_status,count(*) AS count FROM entries GROUP BY type,classification_status ORDER BY type,classification_status")]
-    concepts=audit_concepts(db,Path(db_path).parent) if (db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone() and db.execute("SELECT 1 FROM metadata WHERE key='concept_coverage'").fetchone()) else None
+    concepts=audit_concepts(db) if (db.execute("SELECT 1 FROM sqlite_master WHERE name='effective_references'").fetchone() and db.execute("SELECT 1 FROM metadata WHERE key='concept_coverage'").fetchone()) else None
     ref_coverage=reference_summary(db)
-    counterparts=audit_counterparts(db,Path(db_path).parent) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
+    counterparts=audit_counterparts(db) if db.execute("SELECT 1 FROM sqlite_master WHERE name='counterparts'").fetchone() else None
     gaps,gap_pages,gap_sections=classification_gaps(db)
     conflicts,conflict_rows=type_conflict_report(db)
     tour_gaps_summary,tour_gap_rows=tour_content_gaps(db_path,book_dir)
-    old_counts={};changes=[];same_manifest=None;gaps_before=None;conflicts_before=None;ref_coverage_before=None
+    old_counts={};change_counts=Counter();same_manifest=None;gaps_before=None;conflicts_before=None;ref_coverage_before=None
     if baseline:
         old=connect(baseline)
         prior=json.loads(old.execute("SELECT value FROM metadata WHERE key='summary'").fetchone()[0])
@@ -305,11 +304,7 @@ def audit(db_path,baseline=None,book_dir=None):
         for eid in sorted(entries.keys()|old_entries.keys()):
             a=old_entries.get(eid);b=entries.get(eid)
             if a==b:continue
-            e=b or a
-            changes.append({'id':eid,'name':e['name'],'page_path':e['page_path'],
-                'change':'added' if a is None else 'removed' if b is None else 'type_changed' if a['type']!=b['type'] else 'fields_changed',
-                'before_type':a['type'] if a else '', 'after_type':b['type'] if b else '',
-                'before_fields':json.loads(a['fields']) if a else {},'after_fields':json.loads(b['fields']) if b else {}})
+            change_counts['added' if a is None else 'removed' if b is None else 'type_changed' if a['type']!=b['type'] else 'fields_changed']+=1
         old.close()
     result={'snapshot_commit':summary['snapshot_commit'],'input_manifest_sha256':summary['input_manifest_sha256'],
         'full_scan':summary['full_scan'],'processed_pages':summary['processed_html_files'],
@@ -319,11 +314,11 @@ def audit(db_path,baseline=None,book_dir=None):
         'before_types':old_counts,'after_types':summary['types'],'classification_coverage':coverage,
         'review_reasons':reasons,'catalog_reviews':catalog_reviews,'concepts':concepts,
         'reference_coverage':ref_coverage,'reference_coverage_before':ref_coverage_before,
-        'counterparts':counterparts,'change_counts':dict(Counter(c['change'] for c in changes)),
+        'counterparts':counterparts,'change_counts':dict(change_counts),
         'classification_gaps':gaps,'classification_gaps_before':gaps_before,
         'type_conflicts':conflicts,'type_conflicts_before':conflicts_before,
         'tour_gaps':tour_gaps_summary}
-    db.close();return result,changes,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows,'tour':tour_gap_rows}
+    db.close();return result,{'pages':gap_pages,'sections':gap_sections,'conflicts':conflict_rows,'tour':tour_gap_rows}
 
 
 def gap_report(result,gaps):
@@ -440,7 +435,7 @@ def tour_gap_report(result,gaps):
     return lines
 
 
-def export_report(out,result,changes,gaps):
+def export_report(out,result,gaps):
     out.mkdir(parents=True,exist_ok=True)
     (out/'audit.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     lines=['# 提取规则审计','',
@@ -478,7 +473,7 @@ def main():
     p.add_argument('--db',type=Path,default=PROJECT/'data/extracted/catalog.sqlite')
     p.add_argument('--book',type=Path,default=PROJECT/'data/5echm-anna')
     p.add_argument('--baseline',type=Path);p.add_argument('--output',type=Path)
-    a=p.parse_args();result,changes,gaps=audit(a.db,a.baseline,book_dir=a.book);export_report(a.output or a.db.parent,result,changes,gaps)
+    a=p.parse_args();result,gaps=audit(a.db,a.baseline,book_dir=a.book);export_report(a.output or a.db.parent,result,gaps)
     report={k:result[k] for k in ['full_scan','parse_errors','same_input_as_baseline','integrity_check','foreign_key_errors','concepts','change_counts']}
     report['classification_gaps']={k:result['classification_gaps'][k] for k in ('untyped_pages','outside_sections','flagged_sections','signals')}
     if result.get('tour_gaps'):

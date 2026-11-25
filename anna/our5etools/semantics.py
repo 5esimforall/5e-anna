@@ -193,7 +193,6 @@ _RE_VAR = re.compile(r'<\$([^$]+)\$>')
 _RE_MUSTACHE = re.compile(r'\{\{([^}]+)\}\}')
 _RE_HIT_TAG = re.compile(r'\{@hit ([-+]?\d+)\}')
 _RE_DC_TAG = re.compile(r'\{@dc (\d+)(?:\|[^}]+)?\}')
-_RE_TAG_SPLIT = re.compile(r'(\{@[a-zA-Z0-9]+(?:\s[^}]*)?\})')
 _RE_ABIL_WORD = re.compile(r'\b(str|dex|con|int|wis|cha)\b', re.IGNORECASE)
 
 

@@ -315,7 +315,6 @@ def main():
     parser.add_argument('--web', type=Path, default=WEB)
     parser.add_argument('--limit', type=int, default=20)
     parser.add_argument('--page', type=int, default=1)
-    parser.add_argument('--regex', action='store_true')
     parser.add_argument('--json', action='store_true')
     args = parser.parse_args()
     entries = load_index(args.db, args.web, quiet=True)
@@ -323,10 +322,9 @@ def main():
         print(json.dumps({'indexed_pages': len(entries)}, ensure_ascii=False))
         return
     params = {
-        'q': [args.keyword],
+        'keyword': [args.keyword],
         'pageSize': [str(max(1, min(100, args.limit)))],
         'page': [str(max(1, args.page))],
-        'regex': ['1' if args.regex else '0'],
     }
     result = search_entries(entries, params)
     if args.json:

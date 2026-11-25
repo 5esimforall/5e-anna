@@ -1,5 +1,4 @@
 """Versioned, append-only structured annotations. Generated databases are never the authority."""
-from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import fcntl
@@ -161,14 +160,13 @@ def load_annotations(path=DEFAULT_ANNOTATIONS):
     return events, sha256(raw).hexdigest()
 
 
-def partition_annotations(events):
-    """Split unified events into rule-knowledge events and reference-ruling events, pairing revocations."""
+def reference_annotations(events):
+    """Filter unified events down to reference-ruling events, pairing revocations."""
     kinds = {e['id']: e['kind'] for e in events if e['operation'] == 'annotate'}
-    rule_events, ref_events = [], []
-    for event in events:
-        kind = event['kind'] if event['operation'] == 'annotate' else kinds[event['target_revision_id']]
-        (ref_events if kind == 'reference' else rule_events).append(event)
-    return rule_events, ref_events
+    return [
+        event for event in events
+        if (event['kind'] if event['operation'] == 'annotate' else kinds[event['target_revision_id']]) == 'reference'
+    ]
 
 
 def annotation_lifecycle(events):
@@ -272,7 +270,7 @@ def check_rebuild_gate(db, annotations_path=DEFAULT_ANNOTATIONS, *, db_path=None
     try:
         raw_bytes = ann_file.read_bytes() if ann_file.exists() else b''
         all_events, log_hash = load_annotations(ann_file)
-        _, ref_events = partition_annotations(all_events)
+        ref_events = reference_annotations(all_events)
         states, active_refs = annotation_lifecycle(ref_events)
         conflict_count = sum(1 for s in states.values() if s == 'conflict')
         annotations_log = {

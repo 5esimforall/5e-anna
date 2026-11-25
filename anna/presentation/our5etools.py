@@ -4,19 +4,14 @@ from __future__ import annotations
 from collections import Counter, OrderedDict, defaultdict
 from contextlib import closing, contextmanager
 import csv
-import dataclasses
-from functools import lru_cache
 import gzip
-import html as _html
 import io
 import ipaddress
 import json
-import math
 import mimetypes
 import os
 from pathlib import Path, PurePosixPath
 import re
-import shutil
 import socket
 import sqlite3
 import threading
@@ -34,19 +29,13 @@ from anna.presentation.collections import Collection, SearchHits
 from anna.presentation.expression import Query
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
 from anna.presentation import tour as tour_curation
-from anna.presentation.tour import DIVIDER, HINTED_GROUP, TourError, clip, divider, first_sentence
+from anna.presentation.tour import HINTED_GROUP, TourError, clip, divider, first_sentence
 
 COLLECTION_KEY = 'our5etools'
 COLLECTION_ZH = 'our5etools'
 COLLECTION_EN = 'our5etools'
-READER_BASE = '/our5etools-book/'
-MEDIA_BASE = '/our5etools-media/'
-TOUR_URL = '/tour?collection=our5etools'
-READER_URL = '/read?collection=our5etools'
 
 FIVETOOLS_COLLECTION_KEY = '5etools'
-FIVETOOLS_READER_BASE = '/5etools-book/'
-FIVETOOLS_MEDIA_BASE = '/5etools-media/'
 MAX_REMOTE_MEDIA_BYTES = 25 * 1024 * 1024
 NEGATIVE_MEDIA_TTL_SECONDS = 60.0
 REMOTE_IMG_BASES: tuple[str, ...] = (
@@ -73,7 +62,6 @@ TITLE_ATTR_RE = re.compile(r'\btitle="([^"]*)"')
 BATCH = 150
 RESTORE_LIMIT = 1500
 MAX_SOURCES_FILTER = 600
-ENTRY_LIST_LIMIT = 60
 GROUP_LIMIT = 400
 LEAD_LIMIT = 220
 
@@ -614,7 +602,7 @@ class Our5etoolsCatalog:
         self._pages_unfiltered_facets: dict[str, Any] | None = None
         self._pages_type_facets: dict[str, dict[str, dict[str, int]]] | None = None
         self._pages_type_facets_loaded = False
-        self._rank_index_cache: tuple[tuple[Any, ...] | None, list[dict[str, Any]], dict[tuple[str, str], dict[str, Any]]] | None = None
+        self._rank_index_cache: tuple[tuple[Any, ...] | None, list[dict[str, Any]]] | None = None
         self._manifest_types_cache: tuple[tuple[Any, ...] | None, frozenset[str]] | None = None
         self._name_fold_cache: dict[tuple[str, str], tuple[str, ...]] | None = None
         self._scope_universe_cache: dict[tuple[str, ...], tuple[int, dict[str, set[str]], dict[str, int]]] = {}
@@ -657,7 +645,6 @@ class Our5etoolsCatalog:
         *,
         need_fields: bool = False,
         need_meta: bool = False,
-        need_body: bool = False,
         need_body_text: bool = False,
         need_search_body: bool = False,
         need_layout: bool = False,
@@ -669,18 +656,16 @@ class Our5etoolsCatalog:
             parts.append('LEFT JOIN entry_fields efld ON efld.entry_rowid = e.rowid')
         if need_meta and self._has_entry_meta:
             parts.append('LEFT JOIN entry_meta em ON em.entry_rowid = e.rowid')
-        if need_body_text or (need_body and self._has_body_text_table and not need_search_body):
+        if need_body_text:
             if self._has_body_text_table:
                 parts.append('LEFT JOIN entry_body_text ebt ON ebt.entry_rowid = e.rowid')
             else:
                 parts.append('LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid')
-        if need_search_body or (need_body and self._has_search_body_table and not need_body_text):
+        if need_search_body:
             if self._has_search_body_table:
                 parts.append('LEFT JOIN entry_search_body esb ON esb.entry_rowid = e.rowid')
             elif 'entry_body eb' not in parts[-1]:
                 parts.append('LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid')
-        if need_body and not self._has_body_text_table and not self._has_search_body_table and 'entry_body eb' not in ' '.join(parts):
-            parts.append('LEFT JOIN entry_body eb ON eb.entry_rowid = e.rowid')
         if need_layout:
             parts.append('LEFT JOIN entry_layout el ON el.entry_rowid = e.rowid')
         return ' '.join(parts)
@@ -2076,7 +2061,7 @@ class Our5etoolsCatalog:
                 'search_name': search_name,
             })
         with self._lock:
-            self._rank_index_cache = (sig, parsed, {})
+            self._rank_index_cache = (sig, parsed)
         return parsed
 
     def ranked(self, params: dict[str, list[str]], restrict: Any = None, sort_field: str | None = None) -> list[dict[str, Any]]:
@@ -2443,6 +2428,7 @@ class Our5etoolsTour:
         *,
         lazy_media: bool = False,
         collection_key: str = COLLECTION_KEY,
+        catalog: Our5etoolsCatalog | None = None,
     ):
         self.data_dir = Path(data_dir).resolve()
         self.collection_key = (collection_key or COLLECTION_KEY).strip() or COLLECTION_KEY
@@ -2452,7 +2438,7 @@ class Our5etoolsTour:
         self.reader_path = self.data_dir / 'reader' / 'anna-reader.json'
         self.curation_path = Path(curation_path).resolve() if curation_path else tour_curation.CURATION
         self.lazy_media = bool(lazy_media)
-        self.catalog = Our5etoolsCatalog(
+        self.catalog = catalog if catalog is not None else Our5etoolsCatalog(
             self.data_dir,
             lazy_media=self.lazy_media,
             collection_key=self.collection_key,
@@ -2528,16 +2514,7 @@ class Our5etoolsTour:
 
         with self.catalog._db() as db:
             self.catalog._ensure_static_cache(db)
-            for r in db.execute('SELECT id, package_id, origin, ruleset, short_name, name, data_json FROM sources'):
-                self._sources_by_id[r['id']] = {
-                    'id': r['id'],
-                    'package_id': r['package_id'],
-                    'origin': r['origin'],
-                    'ruleset': r['ruleset'],
-                    'short_name': r['short_name'],
-                    'name': r['name'],
-                    'data': _json_loads(r['data_json'], {}),
-                }
+            self._sources_by_id = self.catalog._sources_map
 
             used_pack_slugs: set[str] = set()
             for r in db.execute(
@@ -3137,7 +3114,6 @@ class Our5etoolsReader:
     def __init__(
         self,
         data_dir: Path | str,
-        source_dir: Path | str | None = None,
         *,
         lazy_media: bool = False,
         collection_key: str = COLLECTION_KEY,
@@ -3158,7 +3134,6 @@ class Our5etoolsReader:
         self.media_dir = self.data_dir / 'media'
         self.remotes_path = self.data_dir / 'media-remotes.json'
         self.lazy_media = bool(lazy_media)
-        self._unused_source_dir = Path(source_dir).resolve() if source_dir else None
         self._lock = threading.Lock()
         self._nav_sig: tuple[int, int, int] | None = None
         self._nav_data: dict[str, Any] = {}
@@ -3518,7 +3493,6 @@ class Our5etoolsReader:
 
 def _load_5etools_family_collection(
     data_dir: Path | str,
-    source_dir: Path | str | None = None,
     curation_path: Path | str | None = None,
     *,
     collection_key: str,
@@ -3561,12 +3535,13 @@ def _load_5etools_family_collection(
         raw_media = str(reader_json.get('media_base') or f'/{collection_key}-media/')
     book_base = raw_book if raw_book.endswith('/') else (raw_book + '/')
     media_base = raw_media if raw_media.endswith('/') else (raw_media + '/')
+    provider = Our5etoolsCatalog(root, lazy_media=lazy_media, collection_key=collection_key)
     return Collection(
         collection_key, zh, en,
-        provider=Our5etoolsCatalog(root, lazy_media=lazy_media, collection_key=collection_key),
+        provider=provider,
         snapshot=snapshot,
-        tour=Our5etoolsTour(root, curation_path, lazy_media=lazy_media, collection_key=collection_key),
-        reader=Our5etoolsReader(root, source_dir, lazy_media=lazy_media, collection_key=collection_key,
+        tour=Our5etoolsTour(root, curation_path, lazy_media=lazy_media, collection_key=collection_key, catalog=provider),
+        reader=Our5etoolsReader(root, lazy_media=lazy_media, collection_key=collection_key,
                                 book_base=book_base, media_base=media_base),
         book_base=book_base,
         media_base=media_base,
@@ -3575,7 +3550,6 @@ def _load_5etools_family_collection(
 
 def load_our5etools_collection(
     data_dir: Path | str = paths.OUR5ETOOLS_DATA,
-    source_dir: Path | str | None = None,
     curation_path: Path | str | None = None,
     *,
     lazy_media: bool = False,
@@ -3583,7 +3557,7 @@ def load_our5etools_collection(
 ) -> Collection | None:
     """Load the read-only our5etools Collection when built artifacts are complete; else return None."""
     return _load_5etools_family_collection(
-        data_dir, source_dir, curation_path,
+        data_dir, curation_path,
         collection_key=COLLECTION_KEY, zh=COLLECTION_ZH, en=COLLECTION_EN,
         lazy_media=lazy_media, lazy_reader=lazy_reader,
     )
@@ -3591,7 +3565,6 @@ def load_our5etools_collection(
 
 def load_fivetools_collection(
     data_dir: Path | str = paths.FIVETOOLS_DATA,
-    source_dir: Path | str | None = None,
     curation_path: Path | str | None = None,
     *,
     lazy_media: bool = False,
@@ -3599,7 +3572,7 @@ def load_fivetools_collection(
 ) -> Collection | None:
     """Load the reserved standalone 5etools Collection when built separately; else return None."""
     return _load_5etools_family_collection(
-        data_dir, source_dir, curation_path,
+        data_dir, curation_path,
         collection_key=FIVETOOLS_COLLECTION_KEY, zh=FIVETOOLS_COLLECTION_KEY, en=FIVETOOLS_COLLECTION_KEY,
         lazy_media=lazy_media, lazy_reader=lazy_reader,
     )

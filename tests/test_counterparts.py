@@ -212,10 +212,10 @@ class CounterpartTests(unittest.TestCase):
     def test_export_and_audit(self):
         out = self.root / 'out'
         out.mkdir()
-        report = build_counterparts(self.db, self.counterparts, out)
+        report = build_counterparts(self.db, self.counterparts)
         self.assertEqual(report['entries'], len(ENTRIES))
         self.assertEqual(report['outcomes'], {'resolved': 12, 'ambiguous': 2, 'other_source': 1, 'unaligned': 1, 'unmatched': 2})
-        result = audit_counterparts(self.db, out)
+        result = audit_counterparts(self.db)
         self.assertEqual(result['errors'], [])
         self.assertFalse((out / 'counterparts.csv').exists())
         self.assertFalse((out / 'counterpart_coverage.json').exists())
@@ -226,7 +226,7 @@ class CounterpartTests(unittest.TestCase):
         self.assertTrue(row[1].startswith('data/spells/spells-xphb.json#/spell/'))
         unmatched = next(eid for eid, o in self.outcomes.items() if o['outcome'] == 'unmatched')
         self.db.execute('UPDATE counterparts SET record_id=? WHERE entry_id=?', (self.outcomes['fire14']['record_id'], unmatched))
-        self.assertIn(unmatched + ': unresolved record', audit_counterparts(self.db, out)['errors'])
+        self.assertIn(unmatched + ': unresolved record', audit_counterparts(self.db)['errors'])
 
 
 if __name__ == '__main__':

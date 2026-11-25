@@ -13,7 +13,6 @@ import re
 import shutil
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import time
 
@@ -564,15 +563,15 @@ class Build:
         db.executemany('INSERT INTO review_queue VALUES(?,?,?,?,?)',[(r['id'],r['target'],r['reason'],r['priority'],canonical(r)) for r in self.reviews])
         db.executemany('INSERT INTO identity_candidates VALUES(?,?,?,?)',[(r['group_id'],r['type'],r['status'],canonical(r)) for r in self.identity_candidates])
         from anna.catalog.concepts import build_concepts
-        concept_coverage=build_concepts(db,self.web,out,self.entries,self.pages,sources,dom_by_path=self.dom_by_path,field_facts=self.facts)
+        concept_coverage=build_concepts(db,self.web,self.entries,self.pages,sources,dom_by_path=self.dom_by_path,field_facts=self.facts)
         from anna.review.context import Context
         shared_context=Context(db)
         from anna.catalog.references import build_references
-        reference_coverage=build_references(db,self.web,out,annotations_path,dom_by_path=self.dom_by_path,context=shared_context)
+        reference_coverage=build_references(db,self.web,annotations_path,dom_by_path=self.dom_by_path,context=shared_context)
         counterpart_coverage=None
         if counterparts:
             from anna.compare.catalog import build_counterparts
-            counterpart_coverage=build_counterparts(db,counterparts,out)
+            counterpart_coverage=build_counterparts(db,counterparts)
         reviews=[json.loads(row[0]) for row in db.execute('SELECT data FROM review_queue ORDER BY reason,target,id')]
         summary={'snapshot_commit':self.commit,'input_html_files':total_inputs,'processed_html_files':len(self.pages),'full_scan':len(self.pages)==total_inputs,
             'page_roles':dict(Counter(p['role'] for p in self.pages.values())),'parse_status':dict(Counter(p['parse_status'] for p in self.pages.values())),

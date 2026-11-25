@@ -3,14 +3,12 @@ import argparse
 from collections import defaultdict
 from contextlib import closing
 from hashlib import sha256
-import html
 import json
 from pathlib import Path
 import re
 import shutil
 import sqlite3
 import tempfile
-from urllib.parse import quote
 from anna.source.html import Document
 from anna.source.pages import read_page
 from anna.paths import BOOK, PROJECT, WEB
@@ -42,7 +40,7 @@ def text_slice(doc,a,b):
     return {'a':pointer(doc,parts[0][0],parts[0][1]),'b':pointer(doc,parts[-1][0],parts[-1][2]),
             'text':''.join(str(n)[lo:hi] for n,lo,hi in parts)}
 
-def inject(raw,payload,encoding='utf-8'):
+def inject(raw,payload):
     # ASCII-only JSON also works for GB18030 pages. Original bytes remain untouched.
     data=json.dumps(payload,ensure_ascii=True,separators=(',',':')).replace('<','\\u003c')
     addition=MARKER+b'<script type="application/json" id="anna-bindings">'+data.encode('ascii')+b'</script><script charset="utf-8" src="/book/anna-assets/link-labels.js"></script><script charset="utf-8" src="/book/anna-assets/links.js"></script><script charset="utf-8" src="/book/anna-assets/topic.js"></script><!-- /anna-link-layer -->'
@@ -121,7 +119,7 @@ def build_book(source=WEB,db_path=PROJECT/'data/extracted/catalog.sqlite',output
             # Even pages without extracted entries participate in reader navigation and history.
             context={'snapshot':reader['snapshot'],'presentation_resources':reader['presentation_resources']}
             (stage/path).write_bytes(inject(strip_reader_scripts((source/path).read_bytes(),path),
-                                          {'definitions':definitions,'references':references,'reader':context},encoding))
+                                          {'definitions':definitions,'references':references,'reader':context}))
             doc.close()
         assets=stage/'anna-assets';assets.mkdir(exist_ok=True)
         shutil.copyfile(PROJECT/'web/book/links.js',assets/'links.js')

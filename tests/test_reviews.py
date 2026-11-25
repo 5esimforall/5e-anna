@@ -112,8 +112,8 @@ class ReferenceAnnotationTests(unittest.TestCase):
         self.db.execute('INSERT INTO pages VALUES(?,?,?,?)', (self.path, doc.text, page['sha256'], '[]'))
         self.db.executemany('INSERT INTO entries VALUES(?,?)', [(e['id'], json.dumps(e)) for e in entries])
         doc.close()
-        build_concepts(self.db, self.source, self.root, entries, {self.path: page})
-        build_references(self.db, self.source, self.root, self.log)
+        build_concepts(self.db, self.source, entries, {self.path: page})
+        build_references(self.db, self.source, self.log)
         self.db.execute(
             'INSERT INTO metadata VALUES(?,?)',
             ('summary', json.dumps({'full_scan': True, 'pipeline_sha256': pipeline_hash(), 'extraction_sha256': extraction_hash()})),
@@ -497,8 +497,8 @@ class ReferenceAnnotationTests(unittest.TestCase):
         self.db.execute('INSERT INTO pages VALUES(?,?,?,?)', (self.path, doc.text, page['sha256'], '[]'))
         self.db.executemany('INSERT INTO entries VALUES(?,?)', [(e['id'], json.dumps(e)) for e in entries])
         doc.close()
-        build_concepts(self.db, self.source, self.root, entries, {self.path: page})
-        build_references(self.db, self.source, self.root, self.log)
+        build_concepts(self.db, self.source, entries, {self.path: page})
+        build_references(self.db, self.source, self.log)
         self.db.execute('INSERT INTO metadata VALUES(?,?)',
                         ('summary', json.dumps({'full_scan': True, 'pipeline_sha256': pipeline_hash(), 'extraction_sha256': extraction_hash()})))
         self.db.commit()

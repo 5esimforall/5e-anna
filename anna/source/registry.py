@@ -95,7 +95,6 @@ class SourceRegistry:
         self.node_source={}
         self.catalog_matches=defaultdict(list)
         self.dir_sources=defaultdict(set)
-        self.issues=[]
         for r in self.rows:
             path=unquote(urlsplit(r['href']).path)
             if path.startswith('topics/'):self.page_toc[path].append(r)

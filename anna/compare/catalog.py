@@ -416,9 +416,9 @@ def compare(db, root):
     return records, snapshot, alignment, outcomes, findings, resolved_by
 
 
-def build_counterparts(db, root, out):
-    """Store counterpart tables and exports beside the catalog; returns the coverage report."""
-    from anna.serialization import csv_write, canonical
+def build_counterparts(db, root):
+    """Store counterpart tables beside the catalog; returns the coverage report."""
+    from anna.serialization import canonical
     records, snapshot, alignment, outcomes, findings, resolved_by = compare(db, root)
     db.executescript(f'''
     CREATE TABLE counterpart_records(id TEXT PRIMARY KEY,kind TEXT NOT NULL,name_zh TEXT,name_en TEXT,source TEXT,data TEXT NOT NULL);

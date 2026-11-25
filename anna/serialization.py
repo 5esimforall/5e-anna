@@ -19,8 +19,3 @@ def csv_write(path,rows,fields):
         for r in rows:
             w.writerow({k:canonical(v) if isinstance(v,(dict,list,tuple,set)) else v for k,v in r.items() if k in fields})
 
-
-def jsonl_write(path,rows):
-    with path.open('w',encoding='utf-8') as f:
-        for row in rows:f.write(canonical(row)+'\n')
-

@@ -14,7 +14,7 @@ from anna.review.store import (
     annotation_snapshot,
     input_snapshot,
     load_annotations,
-    partition_annotations,
+    reference_annotations,
 )
 from anna.serialization import canonical, digest
 from anna.source.html import Document, compact, key, resolve_link
@@ -313,7 +313,7 @@ def bind_reference_anchor(context, page_path, anchor, page_refs):
     return ('stale' if affected else 'missing'), None, affected, 'No matching reference at bound span'
 
 
-def _synthetic_binding(page_path, anchor, page_text=''):
+def _synthetic_binding(page_path, anchor):
     return {
         'reference_id': '',
         'path': page_path,
@@ -384,9 +384,8 @@ def replay_annotations(refs_by_page, events, context, results, states):
 
         resolved_target_id = None
         target_ok = True
-        tmatch = None
         if ruling == 'confirm':
-            tmatch, tentry = resolve_subject(context, statements['target'], non_empty=False)
+            _, tentry = resolve_subject(context, statements['target'], non_empty=False)
             resolved_target_id = tentry['id'] if tentry else None
             target_ok = resolved_target_id is not None and context.locatable(resolved_target_id)
 
@@ -516,11 +515,11 @@ def _init_decision_results(events, states):
     return results
 
 
-def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_by_path=None, context=None):
+def build_references(db, source, annotations_path=DEFAULT_ANNOTATIONS, dom_by_path=None, context=None):
     ann_file = Path(annotations_path).resolve()
     raw_bytes = ann_file.read_bytes() if ann_file.exists() else b''
     all_events, log_hash = load_annotations(ann_file)
-    _, events = partition_annotations(all_events)
+    events = reference_annotations(all_events)
     states, _ = annotation_lifecycle(events)
 
     context = context or Context(db)
@@ -605,7 +604,7 @@ def build_references(db, source, out, annotations_path=DEFAULT_ANNOTATIONS, dom_
                 (record['id'], record['target'], record['reason'], record['priority'], canonical(record)),
             )
 
-    missing_counts = build_missing_definitions(db, events, results, out)
+    missing_counts = build_missing_definitions(db, events, results)
     ann_snapshot = {
         'path': str(ann_file),
         'sha256': log_hash,
@@ -663,7 +662,7 @@ def _derive_missing_definitions(events, results):
     return records
 
 
-def build_missing_definitions(db, events, results, out):
+def build_missing_definitions(db, events, results):
     """Derive a durable issue queue from unified reference annotations."""
     db.executescript("""
         CREATE TABLE missing_definitions(id TEXT PRIMARY KEY,reference_id TEXT,page_path TEXT,status TEXT,data TEXT NOT NULL);
@@ -726,7 +725,7 @@ def preview_annotations(db, annotations_path=DEFAULT_ANNOTATIONS, *, pending_eve
         hypothetical.append(ev)
 
     combined_events = list(all_events) + hypothetical
-    _, ref_events = partition_annotations(combined_events)
+    ref_events = reference_annotations(combined_events)
     states, _ = annotation_lifecycle(ref_events)
 
     tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}

@@ -12,11 +12,10 @@ from collections import Counter, defaultdict
 import json
 from pathlib import Path, PurePosixPath
 import sqlite3
-import sys
 from typing import Any
 
 from anna.our5etools.inventory import DISPOSITIONS, TOOL_DATA_NAMES
-from anna.our5etools.types import BOOL_FIELDS, LABELS, NA, TYPES, TYPE_ORDER, UNKNOWN
+from anna.our5etools.types import BOOL_FIELDS, LABELS, TYPES, TYPE_ORDER, UNKNOWN
 from anna.paths import OUR5ETOOLS_DATA
 
 REQUIRED_ARTIFACTS: tuple[str, ...] = (

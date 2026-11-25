@@ -15,7 +15,7 @@ from html.parser import HTMLParser
 import math
 from pathlib import PurePosixPath
 import re
-from typing import Any, Protocol
+from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
 COLLECTION_ID = 'our5etools'
@@ -40,45 +40,6 @@ KNOWN_ENTITY_TAGS: frozenset[str] = frozenset({
     'charoption', 'language', 'variantrule', 'quickref', 'table',
     'itemProperty', 'itemMastery', 'legroup', 'sense', 'creatureFluff',
     'raceFluff', 'crochetFluff', 'cite',
-})
-
-# Formatting, mechanic, navigation, and media inline tags.
-KNOWN_NON_ENTITY_TAGS: frozenset[str] = frozenset({
-    'book', 'adventure', 'filter',
-    'b', 'bold', 'i', 'italic',
-    'u', 'underline', 'u2', 'underlineDouble',
-    's', 'strike', 's2', 'strikeDouble',
-    'sup', 'sub', 'code', 'kbd', 'note', 'tip', 'highlight',
-    'color', 'style', 'font',
-    'dice', 'autodice', 'damage', 'scaledamage', 'scaledice',
-    'hit', 'dc', 'd20', 'initiative', 'chance', 'coinflip', 'recharge',
-    'atk', 'atkr', 'h', 'm', 'hom',
-    'actSave', 'actSaveFail', 'actSaveFailBy', 'actSaveSuccess',
-    'actSaveSuccessOrFail', 'actTrigger', 'actResponse',
-    'ability', 'skillCheck', 'savingThrow',
-    'hitYourSpellAttack', 'dcYourSpellSave',
-    'area', 'unit', 'link', '5etools', '5etoolsImg', '5etoolsAudio',
-    'homebrew', 'loader', 'footnote',
-    'comic', 'comicH1', 'comicH2', 'comicH3', 'comicH4', 'comicNote',
-})
-
-KNOWN_TAGS: frozenset[str] = KNOWN_ENTITY_TAGS | KNOWN_NON_ENTITY_TAGS
-
-# All 40+ 5etools structured block types handled directly by render_blocks.
-KNOWN_BLOCK_TYPES: frozenset[str] = frozenset({
-    'entries', 'section', 'list', 'item', 'itemSub', 'itemSpell',
-    'table', 'tableGroup', 'row', 'cell', 'cellHeader',
-    'inset', 'insetReadaloud', 'quote',
-    'statblock', 'statblockInline',
-    'image', 'gallery', 'options',
-    'variant', 'variantInner', 'variantSub',
-    'abilityDc', 'abilityAttackMod', 'abilityGeneric',
-    'spellcasting',
-    'refClassFeature', 'refSubclassFeature', 'refOptionalfeature', 'refFeat',
-    'optfeature', 'flowchart', 'flowBlock',
-    'homebrew', 'wrapper', 'inline', 'inlineBlock',
-    'dice', 'bonus', 'bonusSpeed', 'link', 'hr',
-    'ingredient', 'itemUses',
 })
 
 # Lookup aliases so tags match either 5etools tag names, raw_kinds, or Anna types.
@@ -768,31 +729,6 @@ class ResolveResult:
     source: str = ''
 
 
-class LinkResolverProtocol(Protocol):
-    """Protocol for resolving our5etools entity, book, and filter references."""
-
-    collection: str
-
-    def resolve_entity(
-        self,
-        tag: str,
-        name: str,
-        source: str = '',
-        *,
-        extra: Mapping[str, str] | None = None,
-    ) -> ResolveResult: ...
-
-    def resolve_book(
-        self,
-        kind: str,
-        book_id: str,
-        chapter: str = '',
-        header: str = '',
-    ) -> tuple[str, str, str] | None: ...
-
-    def build_filter_href(self, page: str, filters: Sequence[str]) -> str: ...
-
-
 class LinkResolver:
     """Strict our5etools-only link resolver wrapping lookup_index and book_anchor_lookup."""
 
@@ -1128,7 +1064,7 @@ class LinkResolver:
 class RenderContext:
     """Per-render state accumulating diagnostics, link events, and media usage."""
 
-    resolver: LinkResolverProtocol = field(default_factory=LinkResolver)
+    resolver: LinkResolver = field(default_factory=LinkResolver)
     media_checker: Callable[[str], bool] = field(default=lambda _rel: False)
     default_source: str = ''
     heading_depth: int = 3
@@ -2494,7 +2430,7 @@ def render_block(block: Any, ctx: RenderContext) -> str:
 
 def render_blocks(
     blocks: Any,
-    resolver: LinkResolverProtocol | None = None,
+    resolver: LinkResolver | None = None,
     media_checker: Callable[[str], bool] | None = None,
     *,
     ctx: RenderContext | None = None,
@@ -2523,32 +2459,6 @@ def render_blocks(
     finally:
         if prev_depth is not None:
             ctx.heading_depth = prev_depth
-
-
-def render_blocks_with_meta(
-    blocks: Any,
-    resolver: LinkResolverProtocol | None = None,
-    media_checker: Callable[[str], bool] | None = None,
-    *,
-    heading_depth: int = 3,
-    default_source: str = '',
-) -> dict[str, Any]:
-    """Render blocks and return HTML together with plain text and diagnostics."""
-    ctx = RenderContext(
-        resolver=resolver or LinkResolver(),
-        media_checker=media_checker or (lambda _rel: False),
-        default_source=default_source,
-        heading_depth=heading_depth,
-    )
-    rendered_html = render_blocks(blocks, ctx=ctx, heading_depth=heading_depth)
-    return {
-        'html': rendered_html,
-        'body_text': strip_html_to_text(rendered_html),
-        'media_summary': ctx.media_summary(),
-        'link_events': ctx.link_events,
-        'unknown_tags': ctx.unknown_tags,
-        'unsupported_structures': ctx.unsupported_structures,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -3668,7 +3578,7 @@ def _render_copy_warning_banner(entry: Mapping[str, Any]) -> str:
 
 def render_entry_detail(
     entry: Mapping[str, Any],
-    resolver: LinkResolverProtocol | None = None,
+    resolver: LinkResolver | None = None,
     media_checker: Callable[[str], bool] | None = None,
     relations: Sequence[Mapping[str, Any]] = (),
     *,

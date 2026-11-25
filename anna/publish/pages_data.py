@@ -102,7 +102,7 @@ def _scrub_local_urls(raw):
     return LOCAL_URL.sub(replacement, raw)
 
 
-def _prerender_layouts(conn, original, source, *, tour=None):
+def _prerender_layouts(conn, source, *, tour=None):
     conn.execute('CREATE TABLE pages_entry_layout (entry_rowid INTEGER PRIMARY KEY, payload_gzip BLOB NOT NULL)')
     conn.execute('CREATE TABLE pages_tour_layout (span_key TEXT PRIMARY KEY, payload_gzip BLOB NOT NULL) WITHOUT ROWID')
 
@@ -498,7 +498,7 @@ def _project_db(original, target, source, *, align_works=False, reader_nodes=Non
                          "FROM original.counterpart_sources WHERE status = '上下文推得' AND code != ''")
         tour = (Tour(original, reader_nodes, locatable or set(), load_curation(curation), source)
                 if reader_nodes is not None and curation is not None else None)
-        _prerender_layouts(conn, original, source, tour=tour)
+        _prerender_layouts(conn, source, tour=tour)
         _build_name_fold_index(conn, browse.STACKABLE_TYPES)
         conn.execute('CREATE TABLE identity_candidate_members ('
                      'entry_id TEXT PRIMARY KEY, group_id TEXT NOT NULL, status TEXT NOT NULL) WITHOUT ROWID')

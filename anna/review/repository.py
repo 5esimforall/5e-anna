@@ -17,7 +17,7 @@ from anna.review.store import (
     check_rebuild_gate,
     load_annotations,
     locked,
-    partition_annotations,
+    reference_annotations,
     require_annotations_appendable,
 )
 from anna.paths import BOOK, PROJECT
@@ -102,7 +102,7 @@ def _validate_revoke(path, rev_id, reviewer, reason):
         raise ValueError('Only active or conflicting annotation revisions can be revoked')
     if target['kind'] != 'reference':
         raise ValueError('Only reference annotations can be revoked')
-    _, ref_events = partition_annotations(events)
+    ref_events = reference_annotations(events)
     states, _ = annotation_lifecycle(ref_events)
     if states.get(rev_id) not in {'active', 'conflict'}:
         raise ValueError('Only active or conflicting annotation revisions can be revoked')
@@ -135,7 +135,7 @@ def query_log_annotations(path=DEFAULT_ANNOTATIONS, *, db=None, status='', annot
     if not 1 <= limit <= 500 or offset < 0:
         raise ValueError('Annotation query range is invalid')
     events, log_hash = load_annotations(path)
-    _, ref_events = partition_annotations(events)
+    ref_events = reference_annotations(events)
     states, _ = annotation_lifecycle(ref_events)
     revoked_by = {
         e['target_revision_id']: e['id']

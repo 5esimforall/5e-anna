@@ -233,7 +233,7 @@ class AnimalLinkTests(unittest.TestCase):
             self.assertTrue((Path(td)/'summary.json').exists())
             self.assertEqual(db.execute('pragma integrity_check').fetchone()[0],'ok')
             db.close()
-            result,_,gaps=audit(Path(td)/'catalog.sqlite')
+            result,gaps=audit(Path(td)/'catalog.sqlite')
             self.assertEqual(result['foreign_key_errors'],0)
             self.assertEqual(result['classification_gaps']['untyped_pages'],len(gaps['pages']))
             self.assertEqual(result['classification_gaps']['flagged_sections'],len(gaps['sections']))

@@ -6,7 +6,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, parse_qsl, urlsplit
 import anna.paths as paths
 from anna.presentation import catalog
-from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
 from anna.presentation.expression import Query
 from anna.presentation.library import Library, describe_works, parse_scope
 
@@ -119,7 +119,6 @@ class Handler(BaseHTTPRequestHandler):
                 body, key = library.export(query())
                 filename = '5e-anna.csv' if key==DEFAULT else f'5e-anna-{key}.csv'
                 self.send(body,'text/csv; charset=utf-8',download=filename)
-        except CollectionError as exc: self.send({'code':exc.code},status=exc.status)
         except ValueError as exc: self.send({'error':str(exc)},status=400)
         except LookupError as exc: self.send({'error':str(exc)},status=404)
         except (BrokenPipeError,ConnectionResetError): pass

@@ -19,7 +19,7 @@ from anna.presentation.reader import SCHEMA, BookReader, ReaderError, fingerprin
 from anna.review.store import load_annotations
 import anna.server.query as serve
 from anna.presentation import catalog
-from anna.presentation.collections import BookCatalog, CollectionError, CollectionRegistry, DEFAULT
+from anna.presentation.collections import BookCatalog, CollectionRegistry, DEFAULT
 from anna.presentation.library import parse_scope
 from anna.presentation.library_tour import LibraryTour
 from anna.presentation.shelf import Shelf
@@ -30,7 +30,7 @@ import anna.source.search as search
 READER_ROUTES = {'/api/reader', '/api/reader-page', '/api/reader-counterpart', '/api/book-search', '/api/tour', '/api/tour-layout'}
 
 
-def _try_load_our5etools(data_dir, source_dir=None, *, lazy_media=False):
+def _try_load_our5etools(data_dir, *, lazy_media=False):
     """Lazily load the our5etools collection when its published manifest exists."""
     if not data_dir:
         return None
@@ -153,7 +153,7 @@ class AnnaServer(ThreadingHTTPServer):
     """Owns the bundle requests serve; in watch mode one thread swaps it after a rebuild."""
 
     def __init__(self, address, handler, bundle, watch=False, *, additional_collections=(),
-                 our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False,
+                 our5etools_data=None, our5etools_lazy_media=False,
                  fivetools_data=None, fivetools_lazy_media=None):
         # A failed bind closes the socket through server_close(), so the reload state must exist
         # before the socket is created; otherwise the bind error is masked by an AttributeError.
@@ -161,7 +161,6 @@ class AnnaServer(ThreadingHTTPServer):
         self.source = bundle.source
         self.additional_collections = tuple(additional_collections)
         self.our5etools_data = Path(our5etools_data).resolve() if our5etools_data else None
-        self.our5etools_source = Path(our5etools_source).resolve() if our5etools_source else None
         self.our5etools_lazy_media = bool(our5etools_lazy_media)
         self.fivetools_data = Path(fivetools_data).resolve() if fivetools_data else None
         self.fivetools_lazy_media = bool(our5etools_lazy_media if fivetools_lazy_media is None else fivetools_lazy_media)
@@ -380,15 +379,6 @@ class AnnaHandler(serve.Handler):
             for col in self.additional_collections
         )
 
-    def _our5etools_reader(self):
-        for col in self.additional_collections:
-            if col.key == 'our5etools' and col.reader is not None:
-                return col.reader
-        for col in self.additional_collections:
-            if col.reader is not None:
-                return col.reader
-        return None
-
     def _send_file(self, resolved, content_type, *, etag=None, cache_control='private, no-cache', support_range=False):
         try:
             stat = resolved.stat()
@@ -470,11 +460,7 @@ class AnnaHandler(serve.Handler):
         except FileNotFoundError:
             self.send_error(404)
 
-    def serve_our5etools_book(self, path, reader=None, book_base='/our5etools-book/'):
-        reader = self._our5etools_reader() if reader is None else reader
-        if reader is None:
-            self.send_error(404)
-            return
+    def serve_our5etools_book(self, path, reader, book_base='/our5etools-book/'):
         base = book_base if book_base.endswith('/') else (book_base + '/')
         decoded = unquote(path)
         if decoded.startswith('/definition/'):
@@ -496,11 +482,7 @@ class AnnaHandler(serve.Handler):
         resolved, content_type = found
         self._send_file(Path(resolved), content_type or mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream')
 
-    def serve_our5etools_media(self, path, reader=None):
-        reader = self._our5etools_reader() if reader is None else reader
-        if reader is None:
-            self.send_error(404)
-            return
+    def serve_our5etools_media(self, path, reader):
         relative = unquote(path).lstrip('/')
         found = reader.resolve_media_asset(relative)
         if not found:
@@ -617,7 +599,7 @@ class AnnaHandler(serve.Handler):
                 except ValueError:
                     raise ReaderError('invalid_search', 400) from None
                 self.send(shelf.search(one('keyword'), title_only=one('titleOnly').lower() in {'true', '1'}, page=page, page_size=size))
-        except (ReaderError, TourError, CollectionError) as exc:
+        except (ReaderError, TourError) as exc:
             self.send({'code': exc.code}, status=exc.status)
         except ValueError as exc:
             self.send({'error': str(exc)}, status=400)
@@ -701,13 +683,13 @@ class AnnaHandler(serve.Handler):
 
 
 def create_server(db, book, manifest, port, watch=False, bundle=None, *, additional_collections=(),
-                  our5etools_data=None, our5etools_source=None, our5etools_lazy_media=False,
+                  our5etools_data=None, our5etools_lazy_media=False,
                   fivetools_data=None, fivetools_lazy_media=None):
     """Build the one-port server; an already loaded bundle carries the search index."""
     bundle = bundle or Bundle(manifest['source_root'], db, book, manifest, [])
     return AnnaServer(('127.0.0.1', port), AnnaHandler, bundle, watch=watch,
                       additional_collections=additional_collections,
-                      our5etools_data=our5etools_data, our5etools_source=our5etools_source,
+                      our5etools_data=our5etools_data,
                       our5etools_lazy_media=our5etools_lazy_media,
                       fivetools_data=fivetools_data, fivetools_lazy_media=fivetools_lazy_media)
 
@@ -722,8 +704,6 @@ def main():
     parser.add_argument('--our5etools-data', type=Path, default=OUR5ETOOLS_DATA)
     parser.add_argument('--5etools-data', dest='fivetools_data', type=Path, default=FIVETOOLS_DATA,
                         help='reserved standalone 5etools snapshot directory (default: data/5etools)')
-    parser.add_argument('--our5etools', type=Path, default=None,
-                        help=argparse.SUPPRESS)
     parser.add_argument('--lazy-media', action='store_true', default=lazy_default,
                         help='lazily fetch and locally cache unbundled remote images on demand')
     parser.add_argument('--watch', action='store_true', help='swap in a rebuilt bundle without restarting')
@@ -742,7 +722,7 @@ def main():
         server = create_server(
             args.db, args.book, bundle.manifest, args.port, watch=args.watch, bundle=bundle,
             additional_collections=additional,
-            our5etools_data=args.our5etools_data, our5etools_source=args.our5etools,
+            our5etools_data=args.our5etools_data,
             our5etools_lazy_media=args.lazy_media,
             fivetools_data=args.fivetools_data, fivetools_lazy_media=args.lazy_media,
         )

@@ -66,6 +66,9 @@ class TourProvider(Protocol):
 
     def view(self, at: str = '') -> dict: ...
     def layout(self, segment: str) -> dict: ...
+    def resolve(self, label_path: str) -> tuple[str, str | None]: ...
+    def below(self, node_id: str) -> int | None: ...
+    def subclass_records(self) -> list[dict]: ...
 
 
 @dataclass(frozen=True)
@@ -264,8 +267,8 @@ class Collection:
     en: str
     provider: CatalogProvider | None = None
     snapshot: str | None = None
-    tour: TourProvider | object | None = None
-    reader: ReaderProvider | object | None = None
+    tour: TourProvider | None = None
+    reader: ReaderProvider | None = None
     book_base: str | None = None
     media_base: str | None = None
 
@@ -293,12 +296,6 @@ FIVETOOLS = Collection(
     book_base='/5etools-book/',
     media_base='/5etools-media/',
 )
-
-
-class CollectionError(ValueError):
-    def __init__(self, code, status):
-        super().__init__(code)
-        self.code, self.status = code, status
 
 
 class CollectionRegistry:
@@ -329,17 +326,3 @@ class CollectionRegistry:
 
     def ready(self):
         return [key for key, collection in self._items.items() if collection.provider is not None]
-
-    def select(self, requested, *, book_only=False):
-        if requested is None:
-            return self._items[DEFAULT]
-        if len(requested) != 1 or not requested[0]:
-            raise CollectionError('invalid_collection', 400)
-        collection = self._items.get(requested[0])
-        if collection is None:
-            raise CollectionError('unknown_collection', 404)
-        if collection.provider is None:
-            raise CollectionError('collection_unavailable', 409)
-        if book_only and collection.key != DEFAULT:
-            raise CollectionError('collection_unsupported', 400)
-        return collection

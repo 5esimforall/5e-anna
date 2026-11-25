@@ -114,22 +114,6 @@ class Inventory:
     media_files: dict[str, dict]
     checks: dict
 
-    def resolve_media(self, relpath: str) -> dict | None:
-        """Resolve a local media path (repo-relative or audio-subpath) to its metadata record."""
-        if not relpath:
-            return None
-        cleaned = relpath.lstrip('/').replace('\\', '/')
-        if cleaned in self.media_files:
-            return self.media_files[cleaned]
-        audio_candidate = f'audio/{cleaned}'
-        if audio_candidate in self.media_files:
-            return self.media_files[audio_candidate]
-        return None
-
-    def has_media(self, relpath: str) -> bool:
-        """Return True when relpath exists as an indexed local media file."""
-        return self.resolve_media(relpath) is not None
-
 
 def _checked_relative(name: str) -> PurePosixPath:
     """Validate a POSIX relative path and reject traversal or absolute paths."""

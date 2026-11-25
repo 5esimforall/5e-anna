@@ -25,7 +25,6 @@ from bs4 import BeautifulSoup, NavigableString, Tag
 
 READER_COLLECTION = 'our5etools'
 CONTENT_BASE = '/our5etools-book/'
-DEFINITION_BASE = '/our5etools-book/definition/'
 MEDIA_BASE = '/our5etools-media/'
 PAGE_PREFIXES = ('books/', 'adventures/', 'brew-books/', 'brew-adventures/')
 PRESENTATION_RESOURCES = (
@@ -140,40 +139,6 @@ class BookIndex:
     warnings: list[dict[str, Any]] = field(default_factory=list)
     notes: list[dict[str, Any]] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
-
-    def resolve_anchor(
-        self,
-        book_id: str,
-        chapter: str | int = '',
-        header: str = '',
-        header_index: int | str | None = None,
-        *,
-        kind: str = '',
-    ) -> tuple[str, str] | None:
-        """Resolve a `{@book ...}` or `{@adventure ...}` target to `(page_path, fragment)`."""
-        bid = _norm_key(book_id)
-        if not bid:
-            return None
-        ch = _norm_key(str(chapter)) if chapter is not None else ''
-        hdr = _norm_key(header)
-        prefixes = [f'{kind.lower()}:{bid}', bid] if kind else [bid]
-        for bkey in prefixes:
-            if hdr and header_index is not None and str(header_index).strip() != '':
-                indexed = self.anchor_lookup.get((bkey, ch, f'{hdr}#{str(header_index).strip()}'))
-                if indexed:
-                    return indexed
-            for key in (
-                (bkey, ch, hdr),
-                (bkey, '', hdr) if hdr else None,
-                (bkey, ch, '') if ch else None,
-                (bkey, '', ''),
-            ):
-                if key is None:
-                    continue
-                hit = self.anchor_lookup.get(key)
-                if hit is not None:
-                    return hit
-        return None
 
 
 def _norm_key(text: Any) -> str:

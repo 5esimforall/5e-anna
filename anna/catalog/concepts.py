@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import re
 from bs4 import BeautifulSoup
-from anna.source.html import EXAMPLE_CLASSES,LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name,underline_style
+from anna.source.html import LEVEL_LABEL,NOTATION_JOINER,Document,compact,digest,key,resolve_link,split_name,underline_style
 from anna.catalog.types import RULE_TYPES
 from anna.catalog.typed_mentions import column_mentions, damage_mentions, damage_notation
 from anna.catalog.frames import weapon_cells
@@ -481,7 +481,7 @@ class Resolver:
         if competitors:return pending('plain_competing_kind','ambiguous',[target_id,*competitors]),evidence
         return resolution,evidence
 
-def build_concepts(db,source,out,entries,pages,sources=(),dom_by_path=None,field_facts=()):
+def build_concepts(db,source,entries,pages,sources=(),dom_by_path=None,field_facts=()):
     resolver=Resolver(entries,sources);observations=[];definition_ids={e['id'] for e in entries if e['type'] in RULE_TYPES or e.get('table_span') and e['type']=='lore'}
     def observe(path,a,b,label,signal,kind,targets=(),reason='',status=None,role='mention',evidence=None,resolution_evidence=None):
         targets=sorted(set(targets));status=status or ('resolved' if len(targets)==1 else 'ambiguous' if targets else 'unresolved')

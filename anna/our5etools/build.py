@@ -24,7 +24,6 @@ from anna.our5etools import books, inventory, render, semantics, types
 MANIFEST_SCHEMA = 1
 READER_SCHEMA = 6
 COLLECTION_KEY = 'our5etools'
-PAGE_BASE = '/our5etools-book/'
 
 _CR_FRACTIONS: dict[str, float] = {
     '1/8': 0.125,

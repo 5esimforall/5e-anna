@@ -56,7 +56,3 @@ class Context:
             'after': text[ref['end']:ref['end'] + 80],
             'title_chain': [{'id': e['id'], 'name': e['name'], 'type': e['type']} for e in owners],
         }
-
-    def resolve(self, entry, name, kind):
-        return self.resolver.resolve(name, kind, entry['page_path'], entry['title_end'],
-            scope={'source_ids':entry['source_ids'], 'ruleset':entry['ruleset']})

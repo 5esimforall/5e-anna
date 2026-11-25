@@ -90,3 +90,39 @@ class ReaderModelTests(unittest.TestCase):
         import subprocess
         result = subprocess.run(['node', str(Path(__file__).with_name('differences.cjs'))], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+class SourceSearchCliTests(unittest.TestCase):
+    def test_cli_searches_by_keyword_and_reports_empty_when_unmatched(self):
+        import io
+        import json
+        import sqlite3
+        import sys
+        from contextlib import redirect_stdout
+        from unittest.mock import patch
+        from anna.source import search
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / 'source'
+            (source / 'topics').mkdir(parents=True)
+            (source / 'topics/fire.htm').write_text('<h1>火球术 Fireball</h1><p>造成火焰伤害。</p>')
+            db_path = root / 'catalog.sqlite'
+            db = sqlite3.connect(db_path)
+            db.executescript('CREATE TABLE pages(path TEXT,title TEXT,role TEXT,parse_status TEXT,text TEXT);')
+            db.execute("INSERT INTO pages VALUES('topics/fire.htm','火球术 Fireball','document','ok','火球术 Fireball 造成火焰伤害。')")
+            db.commit()
+            db.close()
+
+            def run_cli(*argv):
+                buf = io.StringIO()
+                with patch.object(sys, 'argv', ['anna.source.search', '--db', str(db_path), '--web', str(source), '--json', *argv]), redirect_stdout(buf):
+                    search.main()
+                return json.loads(buf.getvalue())
+
+            hit = run_cli('火球术')
+            self.assertEqual(hit['total'], 1)
+            self.assertEqual(hit['results'][0]['path'], 'topics/fire.htm')
+            miss = run_cli('不存在的关键词xyz')
+            self.assertEqual(miss['total'], 0)
+            self.assertEqual(miss['results'], [])

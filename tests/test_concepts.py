@@ -193,7 +193,7 @@ class ConceptTests(unittest.TestCase):
             db.executescript('CREATE TABLE entries(id PRIMARY KEY,ruleset,type);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
             db.executemany('INSERT INTO entries VALUES(?,?,?)',[(e['id'],e['ruleset'],e['type']) for e in entries])
             db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
-            report=build_concepts(db,root,root,entries,pages,sources)
+            report=build_concepts(db,root,entries,pages,sources)
             rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_references ORDER BY start')]
             empty_mark=next(r for r in rows if r['signal']=='format' and r['role']=='empty')
             self.assertEqual((empty_mark['status'],empty_mark['reason']),('excluded','empty_format'))
@@ -217,7 +217,7 @@ class ConceptTests(unittest.TestCase):
             self.assertEqual(tbl['骑乘斗士Mounted Combatant','feat'],'mounted')
             self.assertFalse(any('选择任意法术' in k[0] for k in tbl))
             from anna.catalog.audit import audit_concepts
-            self.assertEqual(audit_concepts(db,root)['errors'],[])
+            self.assertEqual(audit_concepts(db)['errors'],[])
             db.close()
     def test_version_and_ambiguity(self):
         a=entry('a','专注');b=entry('b','专注',ruleset='5e');context=entry('c','正文','topics/book/text.htm')
@@ -296,7 +296,7 @@ class ConceptTests(unittest.TestCase):
             db.executescript('CREATE TABLE entries(id PRIMARY KEY);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
             db.executemany('INSERT INTO entries VALUES(?)',[(e['id'],) for e in entries])
             db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
-            report=build_concepts(db,root,root,entries,pages)
+            report=build_concepts(db,root,entries,pages)
             self.assertEqual(report['outcomes']['table'],{'resolved':4})
             rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM effective_references WHERE signal='table' ORDER BY start")]
             self.assertEqual([r['text'] for r in rows],['专精','偷袭','灵巧动作','灵巧动作Cunning Action'])
@@ -307,7 +307,7 @@ class ConceptTests(unittest.TestCase):
                 self.assertEqual(row['evidence']['table']['headers'],['等级','职业特性'])
             self.assertFalse(any(r['text'] in {'子职特性','隐藏招式'} for r in rows))
             from anna.catalog.audit import audit_concepts
-            self.assertEqual(audit_concepts(db,root)['errors'],[])
+            self.assertEqual(audit_concepts(db)['errors'],[])
             doc.close();db.close()
 
     def test_no_arbitrary_registry_or_cross_source_preference(self):
@@ -347,16 +347,16 @@ class ConceptTests(unittest.TestCase):
             es=[e,entry('context','正文','topics/book/text.htm',kind='section')]
             db=sqlite3.connect(':memory:');db.executescript('CREATE TABLE entries(id PRIMARY KEY);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
             db.executemany('INSERT INTO entries VALUES(?)',[(e['id'],) for e in es]);db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
-            report=build_concepts(db,root,root,es,pages)
+            report=build_concepts(db,root,es,pages)
             self.assertEqual(report['outcomes']['index'],{'resolved':1,'unresolved':1})
             rows=[json.loads(r[0]) for r in db.execute('SELECT data FROM effective_references')]
             marked=next(r for r in rows if r['signal']=='format' and r['text']=='专注');self.assertEqual(marked['target_id'],'a')
             plain=next(r for r in rows if r['signal']=='plain' and r['text']=='专注');self.assertEqual(plain['status'],'review');self.assertIsNone(plain['target_id'])
             self.assertEqual([r['text'] for r in rows if r['signal']=='plain' and r['text'].lower()=='concentration'],['Concentration']);self.assertEqual(plain['candidates'],['a']);self.assertEqual(pages[plain['path']]['text'][plain['start']:plain['end']],'专注')
             from anna.catalog.audit import audit_concepts
-            self.assertEqual(audit_concepts(db,root)['errors'],[])
+            self.assertEqual(audit_concepts(db)['errors'],[])
             db.execute("UPDATE effective_references SET target_id='a' WHERE status='review'")
-            self.assertTrue(any('data mismatch' in e for e in audit_concepts(db,root)['errors']))
+            self.assertTrue(any('data mismatch' in e for e in audit_concepts(db)['errors']))
             self.assertFalse((root/'concept_observations.jsonl').exists())
             db.close()
     def test_roles_evidence_unknown_format_and_navigation_outside_quick_directory(self):
@@ -378,7 +378,7 @@ class ConceptTests(unittest.TestCase):
                 d.close()
             db=sqlite3.connect(':memory:');db.executescript('PRAGMA foreign_keys=ON;CREATE TABLE entries(id PRIMARY KEY);CREATE TABLE pages(path PRIMARY KEY,text);CREATE TABLE metadata(key PRIMARY KEY,value);')
             db.executemany('INSERT INTO entries VALUES(?)',[(e['id'],) for e in es]);db.executemany('INSERT INTO pages VALUES(?,?)',[(p,pages[p]['text']) for p in pages])
-            report=build_concepts(db,root,root,es,pages)
+            report=build_concepts(db,root,es,pages)
             rows=[json.loads(r[0]) for r in db.execute("SELECT data FROM effective_references WHERE signal='format'")]
             by_reason={r['reason']:r for r in rows}
             self.assertEqual(by_reason['definition_title']['role'],'definition')

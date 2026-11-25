@@ -126,7 +126,7 @@ class SlotTests(unittest.TestCase):
             db=sqlite3.connect(':memory:')
             db.executescript('create table metadata(key,value);')
             pages={path:{'text':text,'parse_status':'ok'},defs:{'text':'定义','parse_status':'excluded'}}
-            build_concepts(db,Path(td),None,entries,pages,
+            build_concepts(db,Path(td),entries,pages,
                            [] if unknown_scope else [{'id':'s','ruleset_hint':'5r'},{'id':'old','ruleset_hint':'5e'}],
                            dom_by_path={path:doc.dom_snapshot()},field_facts=list(reversed(facts)))
             rows=[json.loads(d) for d, in db.execute("select data from effective_references where signal in ('field','table') order by start")]
@@ -174,7 +174,7 @@ class SlotTests(unittest.TestCase):
             db.executemany('INSERT INTO entries VALUES(?,?,?)',[(x['id'],x['ruleset'],x['type']) for x in entries])
             pages={path:{'text':text,'parse_status':'ok'},defs:{'text':'定义','parse_status':'excluded'}}
             db.executemany('INSERT INTO pages VALUES(?,?)',[(k,v['text']) for k,v in pages.items()])
-            build_concepts(db,Path(td),None,entries,pages,[{'id':'s','ruleset_hint':'5r'}],
+            build_concepts(db,Path(td),entries,pages,[{'id':'s','ruleset_hint':'5r'}],
                            dom_by_path={path:doc.dom_snapshot()},field_facts=facts)
             rows=[json.loads(d) for d, in db.execute("SELECT data FROM effective_references WHERE signal='field' ORDER BY start")]
             self.assertEqual([(r['text'],r['target_id']) for r in rows],

@@ -18,17 +18,34 @@ import re
 from typing import Any
 from urllib.parse import quote, urlencode, urlsplit
 
+from anna.our5etools.vocab import (
+    ABILITY_ABVS as ABILITY_ORDER,
+    ABILITY_TO_CN,
+    ALIGNMENT_CODE_TO_CN,
+    CLASS_NAME_TO_CN,
+    CREATURE_TYPE_TO_CN,
+    CR_XP,
+    DMG_TYPE_TO_CN,
+    FACILITY_KIND_TO_CN,
+    FEAT_CATEGORY_TO_CN,
+    ITEM_TYPE_CODE_TO_CN,
+    OPT_FEATURE_TYPE_TO_CN,
+    PSIONIC_TYPE_TO_CN,
+    RARITY_TO_CN,
+    REMOTE_IMAGE_MIRRORS as REMOTE_IMG_URLS,
+    REWARD_TYPE_TO_CN,
+    SAFE_REMOTE_MEDIA_EXTS,
+    SIZE_TO_CN,
+    SPELL_SCHOOL_TO_CN,
+    VEHICLE_TYPE_TO_CN,
+    format_cr_number as _parse_cr_number,
+    safe_relpath,
+    split_by_tags,
+)
+
 COLLECTION_ID = 'our5etools'
 MEDIA_PREFIX = '/our5etools-media/'
 REMOTE_PATH_PREFIX = '/__remote/'
-REMOTE_IMG_URLS: tuple[str, ...] = (
-    'https://5e.kiwee.top/img/',
-    'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/',
-)
-SAFE_REMOTE_MEDIA_EXTS: frozenset[str] = frozenset({
-    '.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.avif',
-    '.opus', '.ogg', '.mp3', '.wav', '.m4a',
-})
 
 # All entity tags resolved against the our5etools lookup index.
 KNOWN_ENTITY_TAGS: frozenset[str] = frozenset({
@@ -191,17 +208,7 @@ FILTER_KEY_MAP: dict[str, str] = {
 }
 
 # Facet value normalization tables matching anna.our5etools.types.ORDERS exactly.
-_FILTER_SCHOOL_ZH: dict[str, str] = {
-    'a': '防护', 'abjuration': '防护',
-    'c': '咒法', 'conjuration': '咒法',
-    'd': '预言', 'divination': '预言',
-    'e': '惑控', 'enchantment': '惑控',
-    'v': '塑能', 'evocation': '塑能',
-    'i': '幻术', 'illusion': '幻术',
-    'n': '死灵', 'necromancy': '死灵',
-    't': '变化', 'transmutation': '变化',
-    'p': '灵能', 'psionic': '灵能',
-}
+_FILTER_SCHOOL_ZH: dict[str, str] = {k.lower(): v for k, v in SPELL_SCHOOL_TO_CN.items()}
 
 _FILTER_CASTING_TIME_ZH: dict[str, str] = {
     'action': '动作', '动作': '动作',
@@ -210,79 +217,20 @@ _FILTER_CASTING_TIME_ZH: dict[str, str] = {
     'other': '其他', '其他': '其他',
 }
 
-_FILTER_RARITY_ZH: dict[str, str] = {
-    'common': '普通', 'uncommon': '非普通', 'rare': '珍稀',
-    'very rare': '极珍稀', 'legendary': '传说', 'artifact': '神器',
-    'varies': '多种稀有度', 'unknown (magic)': '未知（魔法）',
-    'unknown': '未知', 'none': '无',
-}
-
-_FILTER_CREATURE_TYPE_ZH: dict[str, str] = {
-    'aberration': '异怪', 'beast': '野兽', 'celestial': '天族',
-    'construct': '构装', 'dragon': '龙类', 'elemental': '元素',
-    'fey': '妖精', 'fiend': '邪魔', 'giant': '巨人', 'humanoid': '类人',
-    'monstrosity': '怪兽', 'ooze': '泥怪', 'plant': '植物', 'undead': '亡灵',
-    '龙': '龙类',
-}
-
-_FILTER_SIZE_ZH: dict[str, str] = {
-    'f': '超微型', 'fine': '超微型',
-    'd': '微小型', 'diminutive': '微小型',
-    't': '微型', 'tiny': '微型',
-    's': '小型', 'small': '小型',
-    'm': '中型', 'medium': '中型',
-    'l': '大型', 'large': '大型',
-    'h': '巨型', 'huge': '巨型',
-    'g': '超巨型', 'gargantuan': '超巨型',
-    'c': '伟岸', 'colossal': '伟岸',
-    'v': '不定', 'varies': '不定',
-}
-
-_FILTER_FEAT_CATEGORY_ZH: dict[str, str] = {
-    'o': '起源', 'g': '通用', 'fs': '战斗风格',
-    'fs:p': '战斗风格（圣武士）', 'fs:r': '战斗风格（游侠）',
-    'eb': '传奇恩惠', 'd': '龙纹', 'dg': '黑暗赠礼',
-}
-
+_FILTER_RARITY_ZH: dict[str, str] = RARITY_TO_CN
+_FILTER_CREATURE_TYPE_ZH: dict[str, str] = CREATURE_TYPE_TO_CN
+_FILTER_SIZE_ZH: dict[str, str] = {k.lower(): v for k, v in SIZE_TO_CN.items() if k != '超型'}
+_FILTER_FEAT_CATEGORY_ZH: dict[str, str] = {k.lower(): v for k, v in FEAT_CATEGORY_TO_CN.items()}
 _FILTER_PSIONIC_TYPE_ZH: dict[str, str] = {
-    't': '天赋', 'talent': '天赋', 'd': '训练', 'discipline': '训练',
+    **{k.lower(): v for k, v in PSIONIC_TYPE_TO_CN.items()},
+    'talent': '天赋', 'discipline': '训练',
 }
-
-_FILTER_FACILITY_KIND_ZH: dict[str, str] = {
-    'basic': '基础设施', 'special': '特殊设施',
-}
-
-_FILTER_OPT_FEATURE_TYPE_ZH: dict[str, str] = {
-    'AI': '奇械师注法', 'ED': '法门', 'EI': '魔能祈唤', 'MM': '超魔法',
-    'MV': '战技', 'MV:B': '战技', 'MV:C2-UA': '战技（骑兵UA）',
-    'AS': '奥术射击', 'AS:V1-UA': '奥术射击（V1 UA）', 'AS:V2-UA': '奥术射击（V2 UA）',
-    'FS:F': '战斗风格（战士）', 'FS:B': '战斗风格（吟游诗人）',
-    'FS:P': '战斗风格（圣武士）', 'FS:R': '战斗风格（游侠）',
-    'PB': '魔契恩泽', 'OR': '真名共鸣', 'RN': '符文骑士符文',
-    'AF': '炼金配方', 'TT': '旅者技艺', 'RP': '声望特权', 'OTH': '其他',
-}
-
-_FILTER_CLASS_NAME_ZH: dict[str, str] = {
-    'artificer': '奇械师', 'barbarian': '野蛮人', 'bard': '吟游诗人',
-    'cleric': '牧师', 'druid': '德鲁伊', 'fighter': '战士', 'monk': '武僧',
-    'mystic': '秘术师', 'paladin': '圣武士', 'ranger': '游侠', 'rogue': '游荡者',
-    'sorcerer': '术士', 'warlock': '魔契师', 'wizard': '法师',
-    'blood hunter': '血猎', 'sidekick': '协力者', '邪术师': '魔契师',
-}
+_FILTER_FACILITY_KIND_ZH: dict[str, str] = FACILITY_KIND_TO_CN
+_FILTER_OPT_FEATURE_TYPE_ZH: dict[str, str] = OPT_FEATURE_TYPE_TO_CN
+_FILTER_CLASS_NAME_ZH: dict[str, str] = CLASS_NAME_TO_CN
 
 _FILTER_ITEM_TYPE_ZH: dict[str, str] = {
-    # 5etools item type codes -> types.py primary item_type facet values
-    'm': '武器', 'r': '武器',
-    'la': '护甲', 'ma': '护甲', 'ha': '护甲',
-    's': '盾牌', 'a': '弹药', 'af': '弹药',
-    'p': '药水', 'sc': '卷轴', 'rg': '戒指', 'rd': '权杖', 'wd': '魔杖',
-    'scf': '法器', 'g': '冒险用品', 't': '工具', 'at': '工匠工具',
-    'gs': '赌具', 'ins': '乐器', 'fd': '食物和饮品', 'mnt': '乘骑',
-    'tah': '鞍具和挽具', 'veh': '载具', 'shp': '载具', 'air': '载具', 'spc': '载具',
-    'tg': '贸易货物', 'tb': '贸易货物',
-    '$': '宝藏', '$a': '宝藏', '$c': '宝藏', '$g': '宝藏',
-    'exp': '爆炸物', 'oth': '其他', 'gv': '通用变体',
-    # English item type names
+    **{k.lower(): primary for k, (primary, _) in ITEM_TYPE_CODE_TO_CN.items()},
     'potion': '药水', 'scroll': '卷轴', 'ring': '戒指', 'rod': '权杖',
     'wand': '魔杖', 'staff': '法杖', 'wondrous item': '奇物',
     'weapon': '武器', 'melee weapon': '武器', 'ranged weapon': '武器',
@@ -291,17 +239,12 @@ _FILTER_ITEM_TYPE_ZH: dict[str, str] = {
     'shield': '盾牌', 'ammunition': '弹药', 'spellcasting focus': '法器',
     'adventuring gear': '冒险用品', 'tool': '工具', "artisan's tools": '工匠工具',
     'gaming set': '赌具', 'instrument': '乐器', 'mount': '乘骑', 'vehicle': '载具',
-    # Chinese weapon/armor subtypes -> primary item_type facet values
     '简易武器': '武器', '军用武器': '武器', '近战武器': '武器', '远程武器': '武器',
     '轻甲': '护甲', '中甲': '护甲', '重甲': '护甲',
     '施法法器': '法器', '冒险装备': '冒险用品', '坐骑': '乘骑',
 }
 
-_FILTER_REWARD_KIND_ZH: dict[str, str] = {
-    'blessing': '祝福', 'boon': '恩赐', 'charm': '护咒', 'curse': '诅咒',
-    'draconic gift': '龙族赠礼', 'fragment of suffering': '痛苦碎片',
-    'inhabitation': '附体', 'piety trait': '虔信特质', 'other': '其他',
-}
+_FILTER_REWARD_KIND_ZH: dict[str, str] = {k.lower(): v for k, v in REWARD_TYPE_TO_CN.items()}
 
 _FILTER_BOOL_VAL: dict[str, str] = {
     '1': 'true', 'true': 'true', 'yes': 'true', '是': 'true',
@@ -310,30 +253,6 @@ _FILTER_BOOL_VAL: dict[str, str] = {
 
 _FILTER_MODE_SUFFIX_RE = re.compile(r'=(?:sand|sor|snot)$', re.IGNORECASE)
 _CR_RANGE_RE = re.compile(r'^\[([^\]]+)\]$')
-
-
-def _parse_cr_number(raw: str) -> str | None:
-    cleaned = raw.strip().lstrip('&!').strip()
-    if not cleaned:
-        return None
-    if '/' in cleaned:
-        parts = cleaned.split('/', 1)
-        try:
-            num = float(parts[0].strip())
-            den = float(parts[1].strip())
-            if den == 0:
-                return None
-            val = num / den
-        except ValueError:
-            return None
-    else:
-        try:
-            val = float(cleaned)
-        except ValueError:
-            return None
-    if val == int(val):
-        return str(int(val))
-    return f'{val:g}'
 
 
 def _normalize_filter_facet_value(facet: str, raw_val: str) -> str:
@@ -398,39 +317,22 @@ _STYLE_CLASS_MAP: dict[str, str] = {
 }
 
 # Domain translation tables (aligned with our5etools parser.js Chinese labels).
-ABILITY_ABV_ZH: dict[str, str] = {
-    'str': '力量', 'strength': '力量',
-    'dex': '敏捷', 'dexterity': '敏捷',
-    'con': '体质', 'constitution': '体质',
-    'int': '智力', 'intelligence': '智力',
-    'wis': '感知', 'wisdom': '感知',
-    'cha': '魅力', 'charisma': '魅力',
-    'special': '特殊', 'spellcasting': '施法',
-}
+ABILITY_ABV_ZH: dict[str, str] = {**ABILITY_TO_CN, 'special': '特殊', 'spellcasting': '施法'}
 
-ABILITY_ORDER: tuple[str, ...] = ('str', 'dex', 'con', 'int', 'wis', 'cha')
-
-SIZE_ABV_ZH: dict[str, str] = {
-    'F': '超微型', 'D': '微小型', 'T': '微型', 'S': '小型', 'M': '中型',
-    'L': '大型', 'H': '巨型', 'G': '超巨型', 'C': '伟岸', 'V': '不定',
-}
+SIZE_ABV_ZH: dict[str, str] = {k: v for k, v in SIZE_TO_CN.items() if k.isupper() and len(k) == 1}
 
 CREATURE_TYPE_ZH: dict[str, str] = {
-    'aberration': '异怪', 'beast': '野兽', 'celestial': '天界生物',
-    'construct': '构装体', 'dragon': '龙类', 'elemental': '元素生物',
-    'fey': '精类', 'fiend': '邪魔', 'giant': '巨人', 'humanoid': '类人生物',
-    'monstrosity': '怪兽', 'ooze': '泥怪', 'plant': '植物', 'undead': '亡灵',
+    **{k: v for k, v in CREATURE_TYPE_TO_CN.items() if k != '龙'},
+    'celestial': '天界生物',
+    'construct': '构装体',
+    'elemental': '元素生物',
+    'fey': '精类',
+    'humanoid': '类人生物',
 }
 
-ALIGNMENT_ABV_ZH: dict[str, str] = {
-    'L': '守序', 'N': '中立', 'NX': '中立', 'NY': '中立', 'C': '混乱',
-    'G': '善良', 'E': '邪恶', 'U': '无阵营', 'A': '任意阵营',
-}
+ALIGNMENT_ABV_ZH: dict[str, str] = {**ALIGNMENT_CODE_TO_CN, 'NX': '中立', 'NY': '中立'}
 
-SPELL_SCHOOL_ZH: dict[str, str] = {
-    'A': '防护', 'C': '咒法', 'D': '预言', 'E': '惑控',
-    'V': '塑能', 'I': '幻术', 'N': '死灵', 'T': '变化', 'P': '灵能',
-}
+SPELL_SCHOOL_ZH: dict[str, str] = {k: v for k, v in SPELL_SCHOOL_TO_CN.items() if k.isupper()}
 
 TIME_UNIT_ZH: dict[str, str] = {
     'action': '动作', 'bonus': '附赠动作', 'reaction': '反应',
@@ -450,11 +352,7 @@ DISTANCE_TYPE_ZH: dict[str, str] = {
     'special': '特殊',
 }
 
-RARITY_ZH: dict[str, str] = {
-    'none': '无', 'common': '普通', 'uncommon': '非普通', 'rare': '珍稀',
-    'very rare': '极珍稀', 'legendary': '传说', 'artifact': '神器',
-    'unknown': '未知', 'unknown (magic)': '未知（魔法）', 'varies': '不定',
-}
+RARITY_ZH: dict[str, str] = {**RARITY_TO_CN, 'varies': '不定'}
 
 ITEM_TYPE_ZH: dict[str, str] = {
     'M': '近战武器', 'R': '远程武器', 'LA': '轻甲', 'MA': '中甲',
@@ -468,11 +366,7 @@ ITEM_TYPE_ZH: dict[str, str] = {
     '$': '宝藏', '$A': '艺术品', '$C': '货币', '$G': '宝石',
 }
 
-DAMAGE_TYPE_ZH: dict[str, str] = {
-    'A': '强酸', 'B': '钝击', 'C': '寒冷', 'F': '火焰', 'O': '力场',
-    'L': '闪电', 'N': '暗蚀', 'P': '穿刺', 'I': '毒素', 'Y': '心灵',
-    'R': '光耀', 'S': '挥砍', 'T': '雷鸣',
-}
+DAMAGE_TYPE_ZH: dict[str, str] = {**DMG_TYPE_TO_CN, 'N': '暗蚀'}
 
 WEAPON_PROP_ZH: dict[str, str] = {
     '2H': '双手', 'A': '弹药', 'AF': '弹药（枪械）', 'BF': '连发',
@@ -481,18 +375,10 @@ WEAPON_PROP_ZH: dict[str, str] = {
 }
 
 VEHICLE_TYPE_ZH: dict[str, str] = {
-    'SHIP': '船只', 'SPELLJAMMER': '魔法船', 'INFWAR': '炼狱战争机器',
-    'CREATURE': '生物坐骑', 'OBJECT': '载具物件', 'ELEMENTAL_AIRSHIP': '元素飞艇',
-}
-
-CR_XP: dict[str, int] = {
-    '0': 10, '1/8': 25, '1/4': 50, '1/2': 100,
-    '1': 200, '2': 450, '3': 700, '4': 1100, '5': 1800,
-    '6': 2300, '7': 2900, '8': 3900, '9': 5000, '10': 5900,
-    '11': 7200, '12': 8400, '13': 10000, '14': 11500, '15': 13000,
-    '16': 15000, '17': 18000, '18': 20000, '19': 22000, '20': 25000,
-    '21': 33000, '22': 41000, '23': 50000, '24': 62000, '25': 75000,
-    '26': 90000, '27': 105000, '28': 120000, '29': 135000, '30': 155000,
+    **VEHICLE_TYPE_TO_CN,
+    'INFWAR': '炼狱战争机器',
+    'CREATURE': '生物坐骑',
+    'OBJECT': '载具物件',
 }
 
 COPY_STATUS_ZH: dict[str, str] = {
@@ -538,14 +424,8 @@ def sanitize_media_path(path: str) -> str | None:
     """Normalize a relative media path and reject traversal or absolute paths."""
     if not isinstance(path, str):
         return None
-    cleaned = _CONTROL_CHARS_RE.sub('', path).strip().replace('\\', '/')
-    cleaned = cleaned.lstrip('/')
-    if not cleaned:
-        return None
-    parts = [p for p in cleaned.split('/') if p and p != '.']
-    if not parts or any(p == '..' for p in parts):
-        return None
-    return '/'.join(parts)
+    posix = safe_relpath(_CONTROL_CHARS_RE.sub('', path).strip(), allow_leading_slash=True)
+    return posix.as_posix() if posix is not None else None
 
 
 def _media_url(relpath: str, prefix: str = MEDIA_PREFIX) -> str:
@@ -644,53 +524,6 @@ def strip_html_to_text(html_text: str) -> str:
     parser.feed(html_text)
     parser.close()
     return parser.text()
-
-
-def split_by_tags(text: str) -> list[str]:
-    """Split a 5etools string into plain segments and balanced ``{@...}`` / ``{=...}`` tokens."""
-    if not text:
-        return []
-    out: list[str] = []
-    buf: list[str] = []
-    depth = 0
-    i = 0
-    n = len(text)
-    while i < n:
-        ch = text[i]
-        nxt = text[i + 1] if i + 1 < n else ''
-        if ch == '{' and nxt in ('@', '='):
-            if depth == 0:
-                if buf:
-                    out.append(''.join(buf))
-                    buf = []
-                buf.append('{')
-                buf.append(nxt)
-                depth = 1
-                i += 2
-                continue
-            depth += 1
-            buf.append('{')
-            buf.append(nxt)
-            i += 2
-            continue
-        if ch == '{' and depth > 0:
-            depth += 1
-            buf.append(ch)
-            i += 1
-            continue
-        if ch == '}' and depth > 0:
-            depth -= 1
-            buf.append(ch)
-            if depth == 0:
-                out.append(''.join(buf))
-                buf = []
-            i += 1
-            continue
-        buf.append(ch)
-        i += 1
-    if buf:
-        out.append(''.join(buf))
-    return out
 
 
 def split_tag_by_pipe(text: str) -> list[str]:
@@ -1095,30 +928,26 @@ class RenderContext:
     def media_url(self, relpath: str) -> str:
         return _media_url(relpath, self.media_prefix)
 
+    @staticmethod
+    def _record_unique(items: list[str], seen: set[str], value: str) -> None:
+        if value and value not in seen:
+            seen.add(value)
+            items.append(value)
+
     def record_unknown_tag(self, tag: str) -> None:
-        if tag and tag not in self._seen_unknown_tags:
-            self._seen_unknown_tags.add(tag)
-            self.unknown_tags.append(tag)
+        self._record_unique(self.unknown_tags, self._seen_unknown_tags, tag)
 
     def record_unsupported(self, block_type: str) -> None:
-        if block_type and block_type not in self._seen_unsupported:
-            self._seen_unsupported.add(block_type)
-            self.unsupported_structures.append(block_type)
+        self._record_unique(self.unsupported_structures, self._seen_unsupported, block_type)
 
     def record_local_media(self, relpath: str) -> None:
-        if relpath and relpath not in self._seen_local_media:
-            self._seen_local_media.add(relpath)
-            self.local_media.append(relpath)
+        self._record_unique(self.local_media, self._seen_local_media, relpath)
 
     def record_remote_media(self, ref: str) -> None:
-        if ref and ref not in self._seen_remote_media:
-            self._seen_remote_media.add(ref)
-            self.remote_media.append(ref)
+        self._record_unique(self.remote_media, self._seen_remote_media, ref)
 
     def record_missing_local_media(self, relpath: str) -> None:
-        if relpath and relpath not in self._seen_missing_media:
-            self._seen_missing_media.add(relpath)
-            self.missing_local_media.append(relpath)
+        self._record_unique(self.missing_local_media, self._seen_missing_media, relpath)
 
     def record_remote_urls(self, cache_rel: str, urls: Sequence[str]) -> None:
         if not cache_rel or not urls:
@@ -1327,13 +1156,17 @@ def _render_entity_ref(
         q_header = parts[3] if len(parts) > 3 else q_name
         q_display = parts[4] if len(parts) > 4 and parts[4] else q_name
         display_html = render_inline(q_display, ctx) if '{@' in q_display else escape_html(q_display)
-        book_hit = ctx.resolver.resolve_book('quickref', q_source or 'quickref', q_chapter, q_header)
+        resolve_book = getattr(ctx.resolver, 'resolve_book', None)
+        book_hit = resolve_book('quickref', q_source or 'quickref', q_chapter, q_header) if callable(resolve_book) else None
+        col_name = str(getattr(ctx.resolver, 'collection', '') or COLLECTION_ID)
         if book_hit is not None:
-            return _render_book_anchor(book_hit, display_html, ctx.resolver.collection)
-        res = ctx.resolver.resolve_entity('quickref', q_name, q_source)
+            return _render_book_anchor(book_hit, display_html, col_name)
+        resolve_entity = getattr(ctx.resolver, 'resolve_entity', None)
+        res = resolve_entity('quickref', q_name, q_source) if callable(resolve_entity) else ResolveResult('unresolved')
         name, source = q_name, q_source
     else:
-        res = ctx.resolver.resolve_entity(tag, name, source, extra=extra)
+        resolve_entity = getattr(ctx.resolver, 'resolve_entity', None)
+        res = resolve_entity(tag, name, source, extra=extra) if callable(resolve_entity) else ResolveResult('unresolved')
 
     if res.status == 'resolved' and res.entry_id and _is_our5etools_id(res.entry_id):
         return f'<button type="button" class="ref" data-entry="{escape_html(res.entry_id)}">{display_html}</button>'
@@ -1431,9 +1264,10 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         chapter = parts[2] if len(parts) > 2 else ''
         header = parts[3] if len(parts) > 3 else ''
         display_html = render_inline(display, ctx) if '{@' in display else escape_html(display)
-        hit = ctx.resolver.resolve_book(tag, book_id, chapter, header)
+        resolve_book = getattr(ctx.resolver, 'resolve_book', None)
+        hit = resolve_book(tag, book_id, chapter, header) if callable(resolve_book) else None
         if hit is not None:
-            return _render_book_anchor(hit, display_html, ctx.resolver.collection)
+            return _render_book_anchor(hit, display_html, str(getattr(ctx.resolver, 'collection', '') or COLLECTION_ID))
         return display_html
 
     # 3. Filter links.
@@ -1443,8 +1277,9 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         page = parts[1] if len(parts) > 1 else ''
         filters = parts[2:] if len(parts) > 2 else []
         display_html = render_inline(display, ctx) if '{@' in display else escape_html(display)
-        href = ctx.resolver.build_filter_href(page, filters)
-        return f'<a class="ref-filter" href="{escape_html(href)}">{display_html}</a>'
+        build_filter = getattr(ctx.resolver, 'build_filter_href', None)
+        href = build_filter(page, filters) if callable(build_filter) else ''
+        return f'<a class="ref-filter" href="{escape_html(href)}">{display_html}</a>' if href else display_html
 
     # 4. Formatting & Styling tags.
     if tag in ('b', 'bold'):

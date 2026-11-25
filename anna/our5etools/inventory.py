@@ -6,11 +6,13 @@ from collections import Counter
 from dataclasses import dataclass
 import hashlib
 import json
-import mimetypes
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
 from typing import Any
+
+from anna.our5etools.vocab import guess_mime as _guess_mime, safe_relpath
+from anna.serialization import canonical
 
 
 TOOL_DATA_NAMES: frozenset[str] = frozenset({
@@ -86,16 +88,6 @@ SKIP_TOP_DIRS: frozenset[str] = frozenset({'.git', 'resource-export'})
 
 XPHB_DEFAULT_DATE = '2024-09-17'
 
-_MIME_OVERRIDES: dict[str, str] = {
-    '.opus': 'audio/opus',
-    '.webp': 'image/webp',
-    '.woff': 'font/woff',
-    '.woff2': 'font/woff2',
-    '.ttf': 'font/ttf',
-    '.otf': 'font/otf',
-    '.svg': 'image/svg+xml',
-}
-
 
 @dataclass
 class Inventory:
@@ -117,8 +109,8 @@ class Inventory:
 
 def _checked_relative(name: str) -> PurePosixPath:
     """Validate a POSIX relative path and reject traversal or absolute paths."""
-    p = PurePosixPath(name)
-    if not p.parts or p.is_absolute() or '..' in p.parts or '\\' in name:
+    p = safe_relpath(name)
+    if p is None:
         raise ValueError(f'Not a safe relative path: {name!r}')
     return p
 
@@ -129,13 +121,6 @@ def _sha256_bytes(data: bytes) -> str:
 
 def _read_json_bytes(path: Path) -> Any:
     return json.loads(path.read_bytes())
-
-
-def _guess_mime(ext: str) -> str:
-    if ext in _MIME_OVERRIDES:
-        return _MIME_OVERRIDES[ext]
-    mime, _ = mimetypes.guess_type(f'file{ext}')
-    return mime or 'application/octet-stream'
 
 
 def _strip_js_comments(source: str) -> str:
@@ -520,15 +505,11 @@ def _git_commit(source_root: Path) -> str:
     return 'unversioned'
 
 
-def _canonical_json(obj: Any) -> str:
-    return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
-
-
 def _raw_record_natural_key(raw_kind: str, item: dict) -> tuple[Any, ...]:
     """Compute a natural identity tuple for duplicate detection inside one package & kind."""
     def _norm(val: Any) -> Any:
         if isinstance(val, (dict, list)):
-            return _canonical_json(val)
+            return canonical(val)
         return val
 
     name = item.get('name')
@@ -600,7 +581,7 @@ def _detect_package_duplicates(
             key_counts[nkey] += 1
             if nkey not in sample_names:
                 sample_names[nkey] = item.get('name') or item.get('id') or item.get('abbreviation')
-            exact_counts[_canonical_json(item)] += 1
+            exact_counts[canonical(item)] += 1
 
         for nkey, count in key_counts.items():
             if count > 1:

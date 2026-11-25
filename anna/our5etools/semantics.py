@@ -10,6 +10,7 @@ import math
 import re
 from typing import Any, TYPE_CHECKING
 
+from anna.our5etools.vocab import split_by_tags
 from anna.serialization import canonical
 
 if TYPE_CHECKING:
@@ -359,32 +360,7 @@ def _walk_strings(obj: Any, fn) -> Any:
 
 def _split_by_tags(text: str) -> list[str]:
     """Split a 5etools string into non-tag text and balanced {@...} tag tokens."""
-    if '{@' not in text:
-        return [text]
-    out: list[str] = []
-    i = 0
-    n = len(text)
-    buf_start = 0
-    while i < n:
-        if text[i] == '{' and i + 1 < n and text[i + 1] == '@':
-            if i > buf_start:
-                out.append(text[buf_start:i])
-            depth = 1
-            j = i + 2
-            while j < n and depth > 0:
-                if text[j] == '{':
-                    depth += 1
-                elif text[j] == '}':
-                    depth -= 1
-                j += 1
-            out.append(text[i:j])
-            i = j
-            buf_start = i
-        else:
-            i += 1
-    if buf_start < n:
-        out.append(text[buf_start:])
-    return out
+    return split_by_tags(text, prefixes=('@',))
 
 
 def _js_flags_to_re(flags: str | None) -> int:

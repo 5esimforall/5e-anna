@@ -22,6 +22,7 @@ import urllib.request
 import weakref
 
 import anna.our5etools.types as otypes
+from anna.our5etools.vocab import MIME_OVERRIDES, REMOTE_IMAGE_MIRRORS as REMOTE_IMG_BASES, safe_relpath as _vocab_safe_relpath
 import anna.paths as paths
 from anna.presentation import catalog, expression
 from anna.presentation.catalog import _ascii_lower
@@ -38,10 +39,6 @@ COLLECTION_EN = 'our5etools'
 FIVETOOLS_COLLECTION_KEY = '5etools'
 MAX_REMOTE_MEDIA_BYTES = 25 * 1024 * 1024
 NEGATIVE_MEDIA_TTL_SECONDS = 60.0
-REMOTE_IMG_BASES: tuple[str, ...] = (
-    'https://5e.kiwee.top/img/',
-    'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/',
-)
 SAFE_ROOT_MEDIA_EXTS: frozenset[str] = frozenset({
     '.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.ico',
 })
@@ -87,31 +84,6 @@ CONTENTS_SEGMENT_RE = re.compile(r'^n(.+)$')
 ENTRY_SEGMENT_RE = re.compile(r'^o5e_[0-9a-f]{16}$')
 FLUFF_SECTION_RE = re.compile(r'<section class="o5e-fluff">.*?</section>', re.DOTALL)
 ORIGIN_RANK: dict[str, int] = {'官方': 0, '合作': 1, '本站精选': 2, '社区': 3, '待核': 4}
-
-MIME_OVERRIDES: dict[str, str] = {
-    '.opus': 'audio/ogg; codecs=opus',
-    '.ogg': 'audio/ogg',
-    '.mp3': 'audio/mpeg',
-    '.wav': 'audio/wav',
-    '.webp': 'image/webp',
-    '.png': 'image/png',
-    '.avif': 'image/avif',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif',
-    '.svg': 'image/svg+xml',
-    '.ico': 'image/x-icon',
-    '.woff2': 'font/woff2',
-    '.woff': 'font/woff',
-    '.ttf': 'font/ttf',
-    '.otf': 'font/otf',
-    '.css': 'text/css; charset=utf-8',
-    '.js': 'text/javascript; charset=utf-8',
-    '.html': 'text/html; charset=utf-8',
-    '.htm': 'text/html; charset=utf-8',
-    '.json': 'application/json; charset=utf-8',
-    '.m4a': 'audio/mp4',
-}
 
 ALLOWED_MEDIA_ROOTS = frozenset({'audio', 'img', 'fonts', 'ext'})
 FALLBACK_BOOK_ASSETS = frozenset({'links.js', 'topic.js', 'link-labels.js'})
@@ -238,15 +210,7 @@ def _slug(value: str, fallback: str = 'item') -> str:
 
 
 def _safe_relpath(relpath: str) -> PurePosixPath | None:
-    if not relpath or '\x00' in relpath or '\\' in relpath:
-        return None
-    stripped = relpath.lstrip('/')
-    if not stripped:
-        return None
-    posix = PurePosixPath(stripped)
-    if posix.is_absolute() or any(part in {'', '.', '..'} for part in posix.parts):
-        return None
-    return posix
+    return _vocab_safe_relpath(relpath, allow_leading_slash=True)
 
 
 def _sniff_media_mime(path: Path) -> str | None:

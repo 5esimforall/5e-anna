@@ -16,6 +16,7 @@ from typing import Any
 
 from anna.our5etools.inventory import DISPOSITIONS, TOOL_DATA_NAMES
 from anna.our5etools.types import BOOL_FIELDS, LABELS, TYPES, TYPE_ORDER, UNKNOWN
+from anna.our5etools.vocab import safe_relpath
 from anna.paths import OUR5ETOOLS_DATA
 
 REQUIRED_ARTIFACTS: tuple[str, ...] = (
@@ -90,12 +91,7 @@ def _load_json(path: Path) -> tuple[Any | None, str | None]:
 
 
 def _is_safe_relpath(relpath: str) -> bool:
-    if not isinstance(relpath, str) or not relpath.strip():
-        return False
-    if '\\' in relpath or relpath.startswith('/'):
-        return False
-    p = PurePosixPath(relpath)
-    return bool(p.parts) and not p.is_absolute() and '..' not in p.parts
+    return isinstance(relpath, str) and bool(relpath.strip()) and safe_relpath(relpath) is not None
 
 
 def _is_excluded_entity_path(path_str: str) -> bool:

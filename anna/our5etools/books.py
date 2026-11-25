@@ -22,6 +22,9 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from bs4 import BeautifulSoup, NavigableString, Tag
 
+from anna.our5etools import render
+from anna.source.search import extract_body_text
+
 
 READER_COLLECTION = 'our5etools'
 CONTENT_BASE = '/our5etools-book/'
@@ -88,12 +91,6 @@ ANCHORABLE_TYPES = frozenset({
 
 SAFE_SLUG_RE = re.compile(r'[^a-z0-9_-]+')
 TAG_RE = re.compile(r'\{@([a-zA-Z0-9]+)(?:\s+([^{}]*))?\}')
-HTML_TAG_RE = re.compile(r'(?s)<[^>]+>')
-SCRIPT_STYLE_RE = re.compile(r'(?is)<(script|style)\b[^>]*>.*?</\1>')
-BLOCK_BREAK_RE = re.compile(
-    r'(?i)<(?:br|/p|/div|/h[1-6]|/li|/tr|/table|/section|/article|/aside|/ul|/ol|/blockquote|/figcaption)\b[^>]*>'
-)
-SAFE_URL_RE = re.compile(r'^(?:https?://|/)', re.I)
 
 
 @dataclass
@@ -230,12 +227,6 @@ def _validate_rel_path(rel_path: str) -> str:
     if not any(rel_path.startswith(prefix) for prefix in PAGE_PREFIXES):
         raise ValueError(f'Chapter path outside allowed prefixes: {rel_path!r}')
     return p.as_posix()
-
-
-def _get_attr(obj: Any, name: str, default: Any = None) -> Any:
-    if isinstance(obj, dict):
-        return obj.get(name, default)
-    return getattr(obj, name, default)
 
 
 def _load_json(path: Path) -> Any:
@@ -597,7 +588,7 @@ def _populate_book_anchors(
 
 
 def _load_maps_lookup(inventory: Any, source_root: Path) -> dict[str, Any]:
-    lookups = _get_attr(inventory, 'generated_lookups', {}) or {}
+    lookups = getattr(inventory, 'generated_lookups', None) or {}
     for key in ('data/generated/gendata-maps.json', 'gendata-maps.json', 'maps'):
         val = lookups.get(key)
         if isinstance(val, dict):
@@ -645,9 +636,9 @@ def _package_origin(pkg_id: str, pkg_record: dict[str, Any]) -> str:
 
 def collect_book_index(inventory: Any) -> BookIndex:
     """Phase 1: Collect all official, brew, and site books/adventures + build `anchor_lookup`."""
-    source_root = Path(_get_attr(inventory, 'source_root')).resolve()
-    official_sources = _get_attr(inventory, 'official_sources', {}) or {}
-    official_casefold = _get_attr(inventory, 'official_source_casefold', {}) or {}
+    source_root = Path(inventory.source_root).resolve()
+    official_sources = inventory.official_sources or {}
+    official_casefold = inventory.official_source_casefold or {}
     maps_data = _load_maps_lookup(inventory, source_root)
 
     warnings: list[dict[str, Any]] = []
@@ -810,8 +801,8 @@ def collect_book_index(inventory: Any) -> BookIndex:
                 notes.append(note)
 
     # 3 & 4 & 5. Brew books, brew adventures, and standalone site books/comics.
-    packages = list(_get_attr(inventory, 'packages', []) or [])
-    package_docs = _get_attr(inventory, 'package_docs', {}) or {}
+    packages = list(inventory.packages or [])
+    package_docs = inventory.package_docs or {}
     seen_package_ids: set[str] = set()
     seen_site_files: set[str] = set()
 
@@ -1081,62 +1072,6 @@ def collect_book_index(inventory: Any) -> BookIndex:
 # Phase 2: Stella-ready HTML chapters, TOC nodes, DOM bindings, search rows
 # ---------------------------------------------------------------------------
 
-def _load_render_module() -> Any | None:
-    try:
-        from anna.our5etools import render as render_mod
-        return render_mod
-    except Exception:
-        return None
-
-
-def _safe_url(url: str) -> str | None:
-    u = str(url or '').strip()
-    if not u:
-        return None
-    if u.startswith('/__remote/'):
-        rest = u[len('/__remote/'):].lstrip('/')
-        if not rest or rest.startswith('/'):
-            return None
-        u = f'https://{rest}'
-    if SAFE_URL_RE.match(u):
-        return u
-    return None
-
-
-def _media_route(relpath: str, media_base: str = MEDIA_BASE) -> str:
-    base = media_base if media_base.endswith('/') else (media_base + '/')
-    return base + '/'.join(quote(seg, safe='-._~') for seg in relpath.split('/'))
-
-
-def _remote_media_helpers(render_mod: Any, href_type: str, raw_value: str) -> tuple[str | None, list[str]]:
-    """Resolve deterministic cache key and upstream mirror URLs via ``render`` when available."""
-    if href_type == 'internal':
-        if render_mod is not None and hasattr(render_mod, 'normalize_internal_media_path'):
-            san = render_mod.normalize_internal_media_path(raw_value, 'img/')
-            urls = render_mod.internal_image_remote_urls(san) if san else []
-            return san, urls
-        cleaned = '/'.join(p for p in raw_value.strip().replace('\\', '/').lstrip('/').split('/') if p and p != '.')
-        if not cleaned or '..' in cleaned.split('/'):
-            return None, []
-        san = cleaned if cleaned.startswith('img/') else f'img/{cleaned}'
-        sub = san.removeprefix('img/')
-        quoted = '/'.join(quote(seg, safe="()'!,;-_~") for seg in sub.split('/'))
-        return san, [
-            f'https://5e.kiwee.top/img/{quoted}',
-            f'https://raw.githubusercontent.com/5etools-mirror-3/5etools-img/main/{quoted}',
-        ]
-    safe = _safe_url(raw_value)
-    if not safe or not safe.lower().startswith(('http://', 'https://')):
-        return None, []
-    if render_mod is not None and hasattr(render_mod, 'remote_media_cache_path'):
-        cache_rel = render_mod.remote_media_cache_path(safe)
-        return cache_rel, ([safe] if cache_rel else [])
-    ext = PurePosixPath(urlparse(safe).path).suffix.lower()
-    if ext not in {'.png', '.webp', '.jpg', '.jpeg', '.gif', '.svg', '.avif', '.opus', '.ogg', '.mp3', '.wav', '.m4a'}:
-        ext = ''
-    return f'ext/{sha256(safe.encode("utf-8")).hexdigest()[:24]}{ext}', [safe]
-
-
 def _rewrite_reader_hrefs(fragment_html: str, content_base: str = CONTENT_BASE) -> str:
     """Rewrite `/read?collection=...&page=...` links to reader `content_base` URLs for Stella."""
     if '/read?' not in fragment_html:
@@ -1166,292 +1101,42 @@ def _rewrite_reader_hrefs(fragment_html: str, content_base: str = CONTENT_BASE) 
     return str(soup) if changed else fragment_html
 
 
-def _render_inline_fallback(text: str, resolver: Any = None, content_base: str = CONTENT_BASE) -> str:
-    """Safe, XSS-escaped inline 5etools tag renderer used when render.py inline helper is unavailable."""
-    if not text:
-        return ''
-    out: list[str] = []
-    pos = 0
-    for m in TAG_RE.finditer(text):
-        if m.start() > pos:
-            out.append(html.escape(text[pos:m.start()], quote=True))
-        tag = m.group(1)
-        body = (m.group(2) or '').strip()
-        parts = body.split('|') if body else ['']
-        if tag in ('b', 'bold'):
-            out.append(f'<strong>{_render_inline_fallback(body, resolver)}</strong>')
-        elif tag in ('i', 'italic'):
-            out.append(f'<em>{_render_inline_fallback(body, resolver)}</em>')
-        elif tag in ('u', 'underline', 'u2', 'underlineDouble'):
-            out.append(f'<u>{_render_inline_fallback(body, resolver)}</u>')
-        elif tag in ('s', 'strike', 's2', 'strikeDouble'):
-            out.append(f'<s>{_render_inline_fallback(body, resolver)}</s>')
-        elif tag in ('sup',):
-            out.append(f'<sup>{_render_inline_fallback(body, resolver)}</sup>')
-        elif tag in ('sub',):
-            out.append(f'<sub>{_render_inline_fallback(body, resolver)}</sub>')
-        elif tag in ('code',):
-            out.append(f'<code>{html.escape(body, quote=True)}</code>')
-        elif tag in ('kbd',):
-            out.append(f'<kbd>{html.escape(body, quote=True)}</kbd>')
-        elif tag in ('dice', 'damage', 'scaledamage', 'scaledice', 'hit', 'dc', 'd20', 'chance', 'recharge'):
-            display = parts[1].strip() if len(parts) > 1 and parts[1].strip() else parts[0].strip()
-            if tag == 'hit' and display and not display.startswith(('+', '-')):
-                display = '+' + display
-            elif tag == 'dc' and display and not display.upper().startswith('DC'):
-                display = 'DC ' + display
-            elif tag == 'recharge':
-                display = f'（充能 {display}–6）' if display else '（充能 6）'
-            out.append(f'<span class="o5e-roll">{html.escape(display, quote=True)}</span>')
-        elif tag in ('book', 'adventure'):
-            display = parts[0].strip()
-            bid = parts[1].strip() if len(parts) > 1 else ''
-            ch = parts[2].strip() if len(parts) > 2 else ''
-            hdr = parts[3].strip() if len(parts) > 3 else ''
-            target = None
-            if resolver is not None and hasattr(resolver, 'resolve_book'):
-                try:
-                    target = resolver.resolve_book(tag, bid, ch, hdr)
-                except TypeError:
-                    target = resolver.resolve_book(bid, ch, hdr)
-            elif resolver is not None and hasattr(resolver, 'book_anchor_lookup'):
-                lookup = resolver.book_anchor_lookup
-                if isinstance(lookup, dict):
-                    bid_k, ch_k, hdr_k = _norm_key(bid), _norm_key(ch), _norm_key(hdr)
-                    for bkey in (f'{tag}:{bid_k}', bid_k):
-                        target = (
-                            lookup.get((bkey, ch_k, hdr_k))
-                            or lookup.get((bkey, ch_k, ''))
-                            or (lookup.get((bkey, '', hdr_k)) if hdr_k else None)
-                            or lookup.get((bkey, '', ''))
-                        )
-                        if target:
-                            break
-            page_rel, frag = '', ''
-            if isinstance(target, dict):
-                page_rel = str(target.get('page') or '')
-                frag = str(target.get('fragment') or target.get('anchor') or '')
-            elif isinstance(target, (tuple, list)):
-                if len(target) >= 3:
-                    page_rel, frag = str(target[1] or ''), str(target[2] or '')
-                elif len(target) == 2:
-                    page_rel, frag = str(target[0] or ''), str(target[1] or '')
-                elif len(target) == 1:
-                    page_rel = str(target[0] or '')
-            if page_rel:
-                base = content_base if content_base.endswith('/') else (content_base + '/')
-                href = base + '/'.join(quote(seg, safe='') for seg in page_rel.split('/'))
-                if frag:
-                    href += '#' + quote(frag, safe='-_.~')
-                out.append(f'<a class="ref-book" href="{html.escape(href, quote=True)}">{html.escape(display, quote=True)}</a>')
-            else:
-                out.append(html.escape(display, quote=True))
-        elif tag == 'link':
-            display = parts[0].strip()
-            href = _safe_url(parts[1].strip()) if len(parts) > 1 else None
-            if href:
-                out.append(
-                    f'<a href="{html.escape(href, quote=True)}" target="_blank" rel="noopener noreferrer">'
-                    f'{html.escape(display, quote=True)}</a>'
-                )
-            else:
-                out.append(html.escape(display, quote=True))
-        else:
-            display = _tag_to_plain(m)
-            out.append(html.escape(display, quote=True))
-        pos = m.end()
-    if pos < len(text):
-        out.append(html.escape(text[pos:], quote=True))
-    return ''.join(out)
-
-
 def _make_render_context(
-    render_mod: Any,
     resolver: Any,
     media_checker: Callable[[str], bool] | None,
     default_source: str = '',
     *,
     media_base: str = '',
     content_base: str = CONTENT_BASE,
-) -> Any | None:
-    if render_mod is None or not hasattr(render_mod, 'RenderContext'):
-        return None
-    kwargs: dict[str, Any] = {'default_source': default_source}
-    if resolver is not None:
-        kwargs['resolver'] = resolver
-    if callable(media_checker):
-        kwargs['media_checker'] = media_checker
-    if media_base:
-        kwargs['media_prefix'] = media_base
-    try:
-        ctx = render_mod.RenderContext(**kwargs)
-        ctx._content_base = content_base
-        return ctx
-    except Exception:
-        return None
+) -> render.RenderContext:
+    ctx = render.RenderContext(
+        resolver=resolver if resolver is not None else render.LinkResolver(),
+        media_checker=media_checker if callable(media_checker) else (lambda _rel: False),
+        default_source=default_source,
+        media_prefix=media_base or MEDIA_BASE,
+    )
+    ctx._content_base = content_base
+    return ctx
 
 
-def _render_inline_text(
-    text: Any,
-    resolver: Any,
-    render_mod: Any,
-    render_ctx: Any = None,
-) -> str:
+def _render_inline_text(text: Any, render_ctx: render.RenderContext) -> str:
     if text is None:
         return ''
-    s = str(text)
-    cbase = getattr(render_ctx, '_content_base', CONTENT_BASE)
-    if render_mod is not None and render_ctx is not None:
-        fn = getattr(render_mod, 'render_inline', None)
-        if callable(fn):
-            try:
-                rendered = fn(s, render_ctx)
-                if isinstance(rendered, str):
-                    return _rewrite_reader_hrefs(rendered, content_base=cbase)
-            except Exception:
-                pass
-    return _render_inline_fallback(s, resolver, content_base=cbase)
+    rendered = render.render_inline(str(text), render_ctx)
+    return _rewrite_reader_hrefs(rendered, content_base=getattr(render_ctx, '_content_base', CONTENT_BASE))
 
 
 def _render_image_figure(
     img: dict[str, Any],
-    media_checker: Callable[[str], bool] | None,
-    resolver: Any,
-    render_mod: Any,
+    render_ctx: render.RenderContext,
     *,
     extra_class: str = '',
-    render_ctx: Any = None,
-    remote_media_map: dict[str, list[str]] | None = None,
-    media_base: str = '',
 ) -> str:
-    """Render local offline vs remote image cleanly without ever faking offline assets."""
-    href = img.get('href') if isinstance(img.get('href'), dict) else {}
-    href_type = str(href.get('type') or '').strip().lower()
-    title = _strip_tags_plain(img.get('title') or img.get('altText') or '')
-    credit = _strip_tags_plain(img.get('credit') or '')
-    caption_parts: list[str] = []
-    if title:
-        caption_parts.append(html.escape(title, quote=True))
-    if credit:
-        caption_parts.append(f'<span class="o5e-media-credit">（{html.escape(credit, quote=True)}）</span>')
-    caption_html = f'<figcaption>{"".join(caption_parts)}</figcaption>' if caption_parts else ''
-
-    resolved_media_base = media_base or getattr(render_ctx, 'media_prefix', '') or MEDIA_BASE
-    cls = 'o5e-figure' + (f' {extra_class}' if extra_class else '')
-    if href_type == 'internal':
-        rel = str(href.get('path') or '').lstrip('/')
-        san, remote_urls = _remote_media_helpers(render_mod, 'internal', rel)
-        local_rel = san or (rel if rel.startswith('img/') else f'img/{rel}')
-        is_local = False
-        if callable(media_checker):
-            is_local = bool(media_checker(local_rel) or media_checker(rel))
-        alt = html.escape(title or (Path(rel).stem if rel else '配图'), quote=True)
-        if is_local:
-            served = local_rel if callable(media_checker) and media_checker(local_rel) else rel
-            src = _media_route(served, resolved_media_base)
-            return (
-                f'<figure class="{cls}">'
-                f'<img src="{html.escape(src, quote=True)}" alt="{alt}" loading="lazy" decoding="async" data-o5e-fallback="1">'
-                f'<span class="o5e-media-fallback-note" hidden>远端配图（未离线收录）</span>'
-                f'{caption_html}</figure>'
-            )
-        if san and remote_urls:
-            if render_ctx is not None and hasattr(render_ctx, 'record_remote_urls'):
-                render_ctx.record_remote_urls(san, remote_urls)
-            if remote_media_map is not None:
-                bucket = remote_media_map.setdefault(san, [])
-                for u in remote_urls:
-                    if u not in bucket:
-                        bucket.append(u)
-        lazy_attr = f' data-lazy-media="{html.escape(_media_route(san, resolved_media_base), quote=True)}"' if san else ''
-        title_attr = f' title="{html.escape(san or rel, quote=True)}"' if (san or rel) else ''
-        return (
-            f'<figure class="{cls} o5e-media-remote"{lazy_attr} data-media-alt="{alt}"{title_attr}>'
-            f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
-            f'{caption_html}</figure>'
-        )
-
-    url = _safe_url(str(href.get('url') or ''))
-    cache_rel, remote_urls = _remote_media_helpers(render_mod, 'external', url or '')
-    if cache_rel and remote_urls:
-        if render_ctx is not None and hasattr(render_ctx, 'record_remote_urls'):
-            render_ctx.record_remote_urls(cache_rel, remote_urls)
-        if remote_media_map is not None:
-            bucket = remote_media_map.setdefault(cache_rel, [])
-            for u in remote_urls:
-                if u not in bucket:
-                    bucket.append(u)
-    alt = html.escape(title or '配图', quote=True)
-    lazy_attr = f' data-lazy-media="{html.escape(_media_route(cache_rel, resolved_media_base), quote=True)}"' if cache_rel else ''
-    link_html = (
-        f'<a class="o5e-media-link" href="{html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">查看原图 ↗</a>'
-        if url
-        else ''
-    )
-    return (
-        f'<figure class="{cls} o5e-media-remote"{lazy_attr} data-media-alt="{alt}">'
-        f'<span class="o5e-media-badge">远端配图（未离线收录）</span>'
-        f'{caption_html}{link_html}</figure>'
-    )
-
-
-def _render_cell(cell: Any, resolver: Any, render_mod: Any, render_ctx: Any = None) -> str:
-    if isinstance(cell, dict):
-        if cell.get('type') == 'cell':
-            if 'entry' in cell:
-                return _render_inline_text(cell['entry'], resolver, render_mod, render_ctx)
-            if 'roll' in cell and isinstance(cell['roll'], dict):
-                roll = cell['roll']
-                if 'exact' in roll:
-                    return html.escape(str(roll['exact']), quote=True)
-                lo = roll.get('min', '')
-                hi = roll.get('max', '')
-                return html.escape(f'{lo}–{hi}', quote=True)
-        return _render_inline_text(cell.get('entry') or cell.get('name') or '', resolver, render_mod, render_ctx)
-    return _render_inline_text(cell, resolver, render_mod, render_ctx)
-
-
-def _render_table_block(
-    block: dict[str, Any],
-    anchor_id: str | None,
-    resolver: Any,
-    render_mod: Any,
-    render_ctx: Any = None,
-) -> str:
-    """Render a 5etools table with explicit `<thead>` and `<tbody>` (HTML5 DOM safe)."""
-    id_attr = f' id="{html.escape(anchor_id, quote=True)}"' if anchor_id else ''
-    parts: list[str] = [f'<div class="table-frame o5e-table-wrap"{id_attr}><table>']
-    caption = block.get('caption') or block.get('name')
-    if caption:
-        parts.append(f'<caption>{_render_inline_text(caption, resolver, render_mod, render_ctx)}</caption>')
-    col_labels = block.get('colLabels') or []
-    if isinstance(col_labels, list) and col_labels:
-        parts.append('<thead><tr>')
-        for label in col_labels:
-            parts.append(f'<th>{_render_inline_text(label, resolver, render_mod, render_ctx)}</th>')
-        parts.append('</tr></thead>')
-    rows = block.get('rows') or []
-    parts.append('<tbody>')
-    for row in rows:
-        if isinstance(row, dict) and row.get('type') == 'row':
-            cells = row.get('row') or []
-        elif isinstance(row, list):
-            cells = row
-        else:
-            continue
-        parts.append('<tr>')
-        for cell in cells:
-            parts.append(f'<td>{_render_cell(cell, resolver, render_mod, render_ctx)}</td>')
-        parts.append('</tr>')
-    parts.append('</tbody></table>')
-    footnotes = block.get('footnotes') or []
-    if isinstance(footnotes, list) and footnotes:
-        parts.append('<div class="o5e-table-footnotes">')
-        for fn in footnotes:
-            parts.append(f'<p>{_render_inline_text(fn, resolver, render_mod, render_ctx)}</p>')
-        parts.append('</div>')
-    parts.append('</div>')
-    return ''.join(parts)
+    """Delegate image rendering to ``render._render_image_block`` and tag optional cover/map classes."""
+    fig = render._render_image_block(img, render_ctx)
+    if extra_class and '<figure class="o5e-figure' in fig:
+        return fig.replace('<figure class="o5e-figure', f'<figure class="o5e-figure {extra_class}', 1)
+    return fig
 
 
 def _resolve_statblock_entry(
@@ -1508,21 +1193,17 @@ def _render_chapter_node(
     depth: int,
     anchors: dict[tuple[int, ...], str],
     resolver: Any,
-    media_checker: Callable[[str], bool] | None,
-    render_mod: Any,
     entry_lookup: dict[str, list[dict[str, Any]]],
-    render_ctx: Any = None,
+    render_ctx: render.RenderContext,
 ) -> str:
     """Recursively render a chapter block tree with exact `sec-...` anchors and clean HTML5."""
     if node is None:
         return ''
     if isinstance(node, str):
-        return f'<p>{_render_inline_text(node, resolver, render_mod, render_ctx)}</p>'
+        return f'<p>{_render_inline_text(node, render_ctx)}</p>'
     if isinstance(node, list):
         return ''.join(
-            _render_chapter_node(
-                item, path + (idx,), depth, anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx
-            )
+            _render_chapter_node(item, path + (idx,), depth, anchors, resolver, entry_lookup, render_ctx)
             for idx, item in enumerate(node)
         )
     if not isinstance(node, dict):
@@ -1535,22 +1216,25 @@ def _render_chapter_node(
     name_plain = _strip_tags_plain(name)
     h_level = min(6, max(2, depth + 2))
     child_depth = depth + (1 if path and (name_plain or btype in ('section', 'entries')) else 0)
+    cbase = getattr(render_ctx, '_content_base', CONTENT_BASE)
 
     def render_children(items: Any, offset: int = 0) -> str:
         if not isinstance(items, list):
             return ''
         return ''.join(
             _render_chapter_node(
-                child, path + (offset + idx,), child_depth, anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx
+                child, path + (offset + idx,), child_depth, anchors, resolver, entry_lookup, render_ctx
             )
             for idx, child in enumerate(items)
         )
 
     if btype in ('section', 'entries', 'variant', 'variantInner', 'variantSub', 'options', 'homebrew', 'wrapper'):
         cls = f'o5e-block o5e-{_safe_ascii_slug(btype, "section")}'
-        heading_html = ''
-        if path and name_plain:
-            heading_html = f'<h{h_level} class="o5e-heading">{_render_inline_text(name, resolver, render_mod, render_ctx)}</h{h_level}>'
+        heading_html = (
+            f'<h{h_level} class="o5e-heading">{_render_inline_text(name, render_ctx)}</h{h_level}>'
+            if path and name_plain
+            else ''
+        )
         inner = render_children(node.get('entries'))
         if btype == 'section' and not path:
             return inner
@@ -1558,21 +1242,17 @@ def _render_chapter_node(
 
     if btype in ('inset', 'insetReadaloud'):
         cls = 'o5e-inset o5e-inset-readaloud' if btype == 'insetReadaloud' else 'o5e-inset'
-        heading_html = ''
-        if name_plain:
-            heading_html = f'<h{h_level} class="o5e-inset-title">{_render_inline_text(name, resolver, render_mod, render_ctx)}</h{h_level}>'
+        heading_html = (
+            f'<h{h_level} class="o5e-inset-title">{_render_inline_text(name, render_ctx)}</h{h_level}>'
+            if name_plain
+            else ''
+        )
         inner = render_children(node.get('entries'))
         return f'<aside class="{cls}"{id_attr}>{heading_html}{inner}</aside>'
 
     if btype == 'quote':
         inner = render_children(node.get('entries'))
-        by = node.get('by')
-        from_src = node.get('from')
-        cite_parts = []
-        if by:
-            cite_parts.append(_render_inline_text(by, resolver, render_mod, render_ctx))
-        if from_src:
-            cite_parts.append(_render_inline_text(from_src, resolver, render_mod, render_ctx))
+        cite_parts = [_render_inline_text(v, render_ctx) for v in (node.get('by'), node.get('from')) if v]
         footer = f'<footer>— {", ".join(cite_parts)}</footer>' if cite_parts else ''
         return f'<blockquote class="o5e-quote"{id_attr}>{inner}{footer}</blockquote>'
 
@@ -1581,41 +1261,42 @@ def _render_chapter_node(
         parts = [f'<ul class="o5e-list"{id_attr}>']
         for idx, item in enumerate(items):
             if isinstance(item, str):
-                parts.append(f'<li>{_render_inline_text(item, resolver, render_mod, render_ctx)}</li>')
+                parts.append(f'<li>{_render_inline_text(item, render_ctx)}</li>')
             elif isinstance(item, dict) and item.get('type') in ('item', 'itemSub', 'itemSpell'):
                 item_name = item.get('name') or ''
-                lead = f'<strong class="o5e-item-name">{_render_inline_text(item_name, resolver, render_mod, render_ctx)}</strong> ' if item_name else ''
+                lead = f'<strong class="o5e-item-name">{_render_inline_text(item_name, render_ctx)}</strong> ' if item_name else ''
                 if 'entry' in item:
-                    parts.append(f'<li>{lead}{_render_inline_text(item["entry"], resolver, render_mod, render_ctx)}</li>')
+                    parts.append(f'<li>{lead}{_render_inline_text(item["entry"], render_ctx)}</li>')
                 else:
                     sub = _render_chapter_node(
                         item.get('entries') or [], path + (100000 + idx,), child_depth,
-                        anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx
+                        anchors, resolver, entry_lookup, render_ctx,
                     )
                     parts.append(f'<li>{lead}{sub}</li>')
             else:
                 sub = _render_chapter_node(
                     item, path + (100000 + idx,), child_depth,
-                    anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx
+                    anchors, resolver, entry_lookup, render_ctx,
                 )
                 parts.append(f'<li>{sub}</li>')
         parts.append('</ul>')
         return ''.join(parts)
 
     if btype == 'table':
-        return _render_table_block(node, anchor_id, resolver, render_mod, render_ctx)
+        table_html = _rewrite_reader_hrefs(render._render_table(node, render_ctx), content_base=cbase)
+        return f'<div class="table-frame o5e-table-wrap"{id_attr}>{table_html}</div>'
 
     if btype == 'tableGroup':
-        heading_html = f'<h{h_level} class="o5e-heading">{_render_inline_text(name, resolver, render_mod, render_ctx)}</h{h_level}>' if name_plain else ''
+        heading_html = f'<h{h_level} class="o5e-heading">{_render_inline_text(name, render_ctx)}</h{h_level}>' if name_plain else ''
         tables_html = render_children(node.get('tables'), offset=200000)
         return f'<section class="o5e-table-group"{id_attr}>{heading_html}{tables_html}</section>'
 
     if btype == 'image':
-        return _render_image_figure(node, media_checker, resolver, render_mod, render_ctx=render_ctx)
+        return _render_image_figure(node, render_ctx)
 
     if btype == 'gallery':
         imgs = ''.join(
-            _render_image_figure(im, media_checker, resolver, render_mod, render_ctx=render_ctx)
+            _render_image_figure(im, render_ctx)
             for im in (node.get('images') or ())
             if isinstance(im, dict)
         )
@@ -1645,67 +1326,30 @@ def _render_chapter_node(
                 body_parts.append(f'<p class="o5e-statblock-meta">来源：{html.escape(src, quote=True)}</p>')
         return f'<section class="o5e-statblock"{id_attr}>{title_html}{"".join(body_parts)}</section>'
 
-    if btype in ('abilityDc', 'abilityAttackMod', 'abilityGeneric'):
-        attrs = _join_str(node.get('attributes'))
-        text = str(node.get('text') or '')
-        label = name_plain or ('豁免 DC' if btype == 'abilityDc' else '攻击加值' if btype == 'abilityAttackMod' else '能力数值')
-        detail = f'{label} = {text}' if text else f'{label}（{attrs}）' if attrs else label
-        return f'<p class="o5e-ability-formula"{id_attr}><strong>{html.escape(detail, quote=True)}</strong></p>'
-
-    if btype == 'hr':
-        return '<hr class="o5e-hr">'
-
     if btype in ('inline', 'inlineBlock'):
         inner = ''.join(
-            _render_inline_text(c, resolver, render_mod, render_ctx) if isinstance(c, str)
-            else _render_chapter_node(c, path + (idx,), child_depth, anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx)
+            _render_inline_text(c, render_ctx) if isinstance(c, str)
+            else _render_chapter_node(c, path + (idx,), child_depth, anchors, resolver, entry_lookup, render_ctx)
             for idx, c in enumerate(node.get('entries') or ())
         )
         return f'<div class="o5e-inline-block"{id_attr}>{inner}</div>'
 
-    if btype == 'link':
-        display = _strip_tags_plain(node.get('text') or name or '')
-        href_obj = node.get('href') if isinstance(node.get('href'), dict) else {}
-        url = _safe_url(str(href_obj.get('url') or ''))
-        if url:
-            return (
-                f'<p><a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener noreferrer">'
-                f'{html.escape(display or url, quote=True)}</a></p>'
-            )
-        return f'<p>{html.escape(display, quote=True)}</p>' if display else ''
+    rendered = render.render_block(node, render_ctx)
+    if isinstance(rendered, str) and rendered.strip():
+        rewritten = _rewrite_reader_hrefs(rendered, content_base=cbase)
+        if not id_attr and btype in ('hr', 'link', 'abilityDc', 'abilityAttackMod', 'abilityGeneric'):
+            return rewritten
+        return f'<div class="o5e-block o5e-delegated"{id_attr}>{rewritten}</div>'
 
-    # Delegate specialized block types (spellcasting, flowchart, refClassFeature, etc.) to render.py when available.
-    if render_mod is not None:
-        render_block_fn = getattr(render_mod, 'render_block', None)
-        render_blocks_fn = getattr(render_mod, 'render_blocks', None)
-        try:
-            rendered = None
-            if callable(render_block_fn) and render_ctx is not None:
-                rendered = render_block_fn(node, render_ctx)
-            elif callable(render_blocks_fn):
-                rendered = render_blocks_fn([node], resolver, media_checker)
-            if isinstance(rendered, tuple):
-                rendered = rendered[0]
-            if isinstance(rendered, str) and rendered.strip():
-                rendered = _rewrite_reader_hrefs(rendered)
-                return f'<div class="o5e-block o5e-delegated"{id_attr}>{rendered}</div>'
-        except Exception:
-            pass
-
-    # Graceful fallback: never swallow unknown block content.
+    # Graceful fallback for non-renderable container dicts.
     fallback_parts: list[str] = []
     if name_plain:
-        fallback_parts.append(f'<h{h_level} class="o5e-heading">{_render_inline_text(name, resolver, render_mod, render_ctx)}</h{h_level}>')
+        fallback_parts.append(f'<h{h_level} class="o5e-heading">{_render_inline_text(name, render_ctx)}</h{h_level}>')
     if 'entry' in node:
-        fallback_parts.append(f'<p>{_render_inline_text(node["entry"], resolver, render_mod, render_ctx)}</p>')
-    if isinstance(node.get('entries'), list):
-        fallback_parts.append(render_children(node['entries']))
-    if isinstance(node.get('items'), list):
-        fallback_parts.append(render_children(node['items'], offset=100000))
-    if isinstance(node.get('headerEntries'), list):
-        fallback_parts.append(render_children(node['headerEntries'], offset=300000))
-    if isinstance(node.get('footerEntries'), list):
-        fallback_parts.append(render_children(node['footerEntries'], offset=400000))
+        fallback_parts.append(f'<p>{_render_inline_text(node["entry"], render_ctx)}</p>')
+    for key, offset in (('entries', 0), ('items', 100000), ('headerEntries', 300000), ('footerEntries', 400000)):
+        if isinstance(node.get(key), list):
+            fallback_parts.append(render_children(node[key], offset=offset))
     if not fallback_parts:
         return ''
     return f'<section class="o5e-block o5e-fallback"{id_attr}>{"".join(fallback_parts)}</section>'
@@ -1912,18 +1556,6 @@ def _collect_chapter_entries(
     return dict(by_name)
 
 
-def _extract_plain_search_text(raw_html: str) -> str:
-    cleaned = SCRIPT_STYLE_RE.sub(' ', raw_html)
-    body_match = re.search(r'(?is)<body[^>]*>(.*)</body>', cleaned)
-    body = body_match.group(1) if body_match else cleaned
-    body = BLOCK_BREAK_RE.sub('\n', body)
-    text = html.unescape(HTML_TAG_RE.sub('', body)).replace('\u00a0', ' ')
-    text = re.sub(r'[ \t\r\f\v]+', ' ', text)
-    text = re.sub(r' *\n *', '\n', text)
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
-
-
 def _inject_link_layer(raw_html_bytes: bytes, payload: dict[str, Any], content_base: str = CONTENT_BASE) -> bytes:
     """Append `<!-- anna-link-layer -->...` after `</html>`, matching `anna/publish/linked_book.py`."""
     base = (content_base if content_base.endswith('/') else (content_base + '/')).encode('ascii')
@@ -1998,7 +1630,6 @@ def build_reader_pages(
 
     out_root = Path(output_dir).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
-    render_mod = _load_render_module()
 
     col_key = (collection or READER_COLLECTION).strip() or READER_COLLECTION
     raw_cbase = content_base or f'/{col_key}-book/'
@@ -2152,7 +1783,6 @@ def build_reader_pages(
                     meta_pills.append(f'<span class="o5e-pill">{html.escape(book.published, quote=True)}</span>')
 
                 render_ctx = _make_render_context(
-                    render_mod,
                     resolver,
                     media_checker,
                     default_source=book.source_code,
@@ -2163,13 +1793,10 @@ def build_reader_pages(
                 cover_html = ''
                 if ch_idx == 0 and isinstance(book.cover, dict):
                     cover_img = {'href': book.cover, 'title': book.title}
-                    cover_html = _render_image_figure(
-                        cover_img, media_checker, resolver, render_mod, extra_class='o5e-cover',
-                        render_ctx=render_ctx, remote_media_map=shared_remote_media,
-                    )
+                    cover_html = _render_image_figure(cover_img, render_ctx, extra_class='o5e-cover')
 
                 body_html = _render_chapter_node(
-                    chapter_data, (), 0, anchors, resolver, media_checker, render_mod, entry_lookup, render_ctx
+                    chapter_data, (), 0, anchors, resolver, entry_lookup, render_ctx
                 )
 
                 ch_maps = _chapter_maps(book, ch_idx)
@@ -2177,10 +1804,7 @@ def build_reader_pages(
                 if ch_maps:
                     maps_rendered += len(ch_maps)
                     map_figs = ''.join(
-                        _render_image_figure(
-                            m, media_checker, resolver, render_mod, extra_class='o5e-map',
-                            render_ctx=render_ctx, remote_media_map=shared_remote_media,
-                        )
+                        _render_image_figure(m, render_ctx, extra_class='o5e-map')
                         for m in ch_maps
                     )
                     maps_html = (
@@ -2190,12 +1814,11 @@ def build_reader_pages(
                         '</section>'
                     )
 
-                if render_ctx is not None and isinstance(getattr(render_ctx, 'remote_media_map', None), dict):
-                    for k_rel, u_list in render_ctx.remote_media_map.items():
-                        bucket = shared_remote_media.setdefault(k_rel, [])
-                        for u in u_list:
-                            if u not in bucket:
-                                bucket.append(u)
+                for k_rel, u_list in render_ctx.remote_media_map.items():
+                    bucket = shared_remote_media.setdefault(k_rel, [])
+                    for u in u_list:
+                        if u not in bucket:
+                            bucket.append(u)
 
                 subtitle_html = (
                     f'<p class="o5e-chapter-subtitle">{html.escape(ch_en, quote=True)}</p>'
@@ -2323,7 +1946,7 @@ def build_reader_pages(
                     'chapter_title': ch_title,
                     'definitions': page_entries,
                 }
-                plain_text = _extract_plain_search_text(raw_doc_html)
+                plain_text = extract_body_text(raw_doc_html)
                 search_rows.append((page_path, doc_title, f'{category_label} / {book.title}', plain_text, file_sha))
                 chapters_written += 1
 

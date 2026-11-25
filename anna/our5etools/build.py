@@ -19,17 +19,12 @@ from typing import Any
 
 from anna.paths import OUR5ETOOLS, OUR5ETOOLS_DATA, PROJECT
 from anna.our5etools import books, inventory, render, semantics, types
+from anna.our5etools.vocab import parse_cr_number
 
 
 MANIFEST_SCHEMA = 1
 READER_SCHEMA = 6
 COLLECTION_KEY = 'our5etools'
-
-_CR_FRACTIONS: dict[str, float] = {
-    '1/8': 0.125,
-    '1/4': 0.25,
-    '1/2': 0.5,
-}
 
 _RULESET_PRIORITY: dict[str, int] = {
     '5r': 0,
@@ -311,19 +306,7 @@ def _parse_cr_num(fields: dict[str, Any], raw_data: dict[str, Any]) -> float | N
             cr = raw_cr
     if cr is None:
         return None
-    s = str(cr).strip()
-    if not s or s.lower() in {'unknown', 'none', '—', '-', 'varies'}:
-        return None
-    if s in _CR_FRACTIONS:
-        return _CR_FRACTIONS[s]
-    try:
-        return float(s)
-    except ValueError:
-        m = re.match(r'^(\d+(?:\.\d+)?)\s*/\s*(\d+(?:\.\d+)?)$', s)
-        if m:
-            den = float(m.group(2))
-            return float(m.group(1)) / den if den else None
-        return None
+    return parse_cr_number(cr)
 
 
 def _compute_legacy(entry: dict[str, Any], source: dict[str, Any]) -> str:

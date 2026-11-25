@@ -14,6 +14,7 @@ import threading
 from collections import OrderedDict, defaultdict
 
 import anna.catalog.views as browse
+from anna.presentation.alignment import UnionFind
 from anna.presentation.library import CONTENT_RANK, Library, PREFERENCES, capabilities_of, content_of, name_fold
 from anna.presentation.reader import ReaderError
 from anna.presentation.shelf import SEPARATOR, Shelf, qualify, split
@@ -331,29 +332,19 @@ class LibraryTour:
         if self.scope.versions == 'each':
             stacks = [[r] for r in records]
         else:
-            parent: dict = {}
-
-            def find(x):
-                parent.setdefault(x, x)
-                while parent[x] != x:
-                    parent[x] = parent[parent[x]]
-                    x = parent[x]
-                return x
-
-            def union(a, b):
-                parent[find(a)] = find(b)
+            uf = UnionFind()
 
             for r in records:
                 node = ('row', r['collection'], r['id'])
-                find(node)
+                uf.find(node)
                 if r.get('stack'):
-                    union(node, ('local', r['collection'], r['stack']))
+                    uf.union(node, ('local', r['collection'], r['stack']))
                 if folded := name_fold(r.get('name_en') or ''):
-                    union(node, ('name', folded))
+                    uf.union(node, ('name', folded))
 
             grouped: dict = {}
             for r in records:
-                grouped.setdefault(find(('row', r['collection'], r['id'])), []).append(r)
+                grouped.setdefault(uf.find(('row', r['collection'], r['id'])), []).append(r)
             stacks = [sorted(members, key=member_key) for members in grouped.values()]
 
         stacks.sort(key=lambda s: (s[0]['ruleset_rank'], browse.name_key(s[0]['title']) or '', s[0]['lib'], s[0]['id']))

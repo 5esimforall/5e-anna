@@ -14,8 +14,6 @@ group, as the same publication in another collection, as a copy of it, or by its
 from __future__ import annotations
 
 from collections import Counter, OrderedDict, defaultdict
-import csv
-import io
 import json
 import re
 import threading
@@ -25,7 +23,8 @@ from typing import Any
 
 import anna.catalog.views as browse
 from anna.presentation import expression
-from anna.presentation.alignment import Alignment, align
+from anna.presentation.alignment import Alignment, UnionFind, align
+from anna.presentation.catalog import first as _first, format_csv_bytes, result_window as _window
 from anna.presentation.collections import DEFAULT, Restriction
 from anna.presentation.expression import Query
 
@@ -50,10 +49,6 @@ BATCH, RESTORE_LIMIT = 150, 1500
 NONE = browse.NONE
 VERSION_FIELDS = ('id', 'collection', 'name', 'name_zh', 'name_en', 'ruleset', 'source_ids', 'source_names',
                   'fields', 'field_conflicts', 'quickref', 'legacy', 'package_id')
-
-
-def _first(params, name, default=''):
-    return params.get(name, [default])[0]
 
 
 def content_of(origin: str | None) -> str:
@@ -698,30 +693,19 @@ class Library:
         Returns the stacks, head first, and each other version's relation to its head."""
         if self.scope.versions == 'each':
             return [[(r['collection'], r['id'])] for r in rows], {}
-        parent: dict = {}
-
-        def find(x):
-            parent.setdefault(x, x)
-            while parent[x] != x:
-                parent[x] = parent[parent[x]]
-                x = parent[x]
-            return x
-
-        def union(a, b):
-            parent[find(a)] = find(b)
-
+        uf = UnionFind()
         for r in rows:
             node = ('row', r['collection'], r['id'])
-            find(node)
+            uf.find(node)
             if r['stack']:
-                union(node, ('local', r['collection'], r['stack']))
+                uf.union(node, ('local', r['collection'], r['stack']))
             # Every stackable version stacks by type and English name, published or homebrew; how it relates to the
             # version shown is told by the evidence between them, not assumed from the name.
             if r['stackable'] and (folded := name_fold(r['name_en'])):
-                union(node, ('name', r['type'], folded))
+                uf.union(node, ('name', r['type'], folded))
         groups: dict = {}
         for r in rows:
-            groups.setdefault(find(('row', r['collection'], r['id'])), []).append(r)
+            groups.setdefault(uf.find(('row', r['collection'], r['id'])), []).append(r)
         stacks, related = [], {}
         for members in groups.values():
             members.sort(key=self._head_key)
@@ -917,32 +901,24 @@ def _mark(rows, key):
             version.setdefault('collection', key)
 
 
-def _window(params):
-    try:
-        offset, limit = int(_first(params, 'offset', '0')), int(_first(params, 'limit', str(BATCH)))
-    except ValueError:
-        raise ValueError('offset 与 limit 必须是整数') from None
-    if offset < 0:
-        raise ValueError('offset 不能为负数')
-    if not 1 <= limit <= RESTORE_LIMIT:
-        raise ValueError(f'每次读取 1 至 {RESTORE_LIMIT} 行')
-    return offset, limit
-
-
 def csv_export(rows, config, types):
     """Every matching version across the reader's collections, one per row, with its collection named."""
-    out = io.StringIO(newline='')
-    writer = csv.writer(out)
     extras = [f for f in config['export_columns'] if f not in {'name', 'sources', 'ruleset', 'type', 'classification_status', 'legacy'}]
     labels = browse.COLUMN_LABELS
-    writer.writerow(['资料库', '版本ID', '中文名', '英文名', '类型', '版本', '来源', '来源性质', '旧版标记', '字段冲突']
-                    + [labels.get(f, f) for f in extras])
-    for r in rows:
-        cells = [r['collection'], r['id'], r.get('name_zh') or r.get('name'), r.get('name_en', ''), types.get(r['type'], r['type']),
-                 r.get('ruleset', ''), '；'.join(r.get('source_names') or []), r.get('origin', ''), r.get('legacy', ''),
-                 '；'.join(r.get('field_conflicts') or [])]
-        for f in extras:
-            value = r['fields'].get(f)
-            cells.append(json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else '' if value is None else str(value))
-        writer.writerow(["'" + s if s.lstrip().startswith(('=', '+', '-', '@')) else s for s in map(str, cells)])
-    return ('﻿' + out.getvalue()).encode('utf-8')
+    headers = ['资料库', '版本ID', '中文名', '英文名', '类型', '版本', '来源', '来源性质', '旧版标记', '字段冲突'] + [
+        labels.get(f, f) for f in extras
+    ]
+
+    def iter_rows():
+        for r in rows:
+            cells = [
+                r['collection'], r['id'], r.get('name_zh') or r.get('name'), r.get('name_en', ''),
+                types.get(r['type'], r['type']), r.get('ruleset', ''), '；'.join(r.get('source_names') or []),
+                r.get('origin', ''), r.get('legacy', ''), '；'.join(r.get('field_conflicts') or []),
+            ]
+            for f in extras:
+                value = r['fields'].get(f)
+                cells.append(json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else '' if value is None else str(value))
+            yield cells
+
+    return format_csv_bytes(headers, iter_rows())

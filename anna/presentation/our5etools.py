@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from collections import Counter, OrderedDict, defaultdict
 from contextlib import closing, contextmanager
-import csv
 import gzip
-import io
 import ipaddress
 import json
 import mimetypes
@@ -19,18 +17,18 @@ import time
 from typing import Any
 from urllib.parse import quote, unquote, urlsplit
 import urllib.request
-import weakref
 
 import anna.our5etools.types as otypes
 from anna.our5etools.vocab import MIME_OVERRIDES, REMOTE_IMAGE_MIRRORS as REMOTE_IMG_BASES, safe_relpath as _vocab_safe_relpath
 import anna.paths as paths
 from anna.presentation import catalog, expression
-from anna.presentation.catalog import _ascii_lower
-from anna.presentation.collections import Collection, SearchHits
+from anna.presentation.catalog import _ascii_lower, first as _first, format_csv_bytes, result_window as _result_window
+from anna.presentation.collections import Collection, SearchHits, _ConnectionSlot
 from anna.presentation.expression import Query
 from anna.presentation.reader import ReaderError, SCHEMA as READER_SCHEMA
 from anna.presentation import tour as tour_curation
 from anna.presentation.tour import HINTED_GROUP, TourError, clip, divider, first_sentence
+from anna.source.search import make_preview as _make_search_preview, parse_terms as _parse_search_terms
 
 COLLECTION_KEY = 'our5etools'
 COLLECTION_ZH = 'our5etools'
@@ -76,7 +74,6 @@ VERSION_FIELDS = (
     'fields', 'field_conflicts', 'quickref', 'legacy', 'package_id',
 )
 
-TERM_RE = re.compile(r'"([^"]+)"|(\S+)')
 SLUG_SAFE_RE = re.compile(r'[^a-zA-Z0-9._-]+')
 BOOK_SEGMENT_RE = re.compile(r'^book\.([A-Za-z0-9._-]+)$')
 PACK_SEGMENT_RE = re.compile(r'^pack\.([A-Za-z0-9._-]+)$')
@@ -97,13 +94,6 @@ COMMON_LABELS: dict[str, str] = {
     'legacy': '旧版标记',
     'copy_status': '继承状态',
 }
-
-
-def _first(params: dict[str, list[str]], name: str, default: str = '') -> str:
-    vals = params.get(name)
-    if not vals:
-        return default
-    return vals[0]
 
 
 def _file_sig(path: Path) -> tuple[int, int, int] | None:
@@ -191,19 +181,6 @@ def _entry_types(params: dict[str, list[str]]) -> list[str]:
     return chosen
 
 
-def _result_window(params: dict[str, list[str]]) -> tuple[int, int]:
-    try:
-        offset = int(_first(params, 'offset', '0'))
-        limit = int(_first(params, 'limit', str(BATCH)))
-    except ValueError:
-        raise ValueError('offset 与 limit 必须是整数') from None
-    if offset < 0:
-        raise ValueError('offset 不能为负数')
-    if not 1 <= limit <= RESTORE_LIMIT:
-        raise ValueError(f'每次读取 1 至 {RESTORE_LIMIT} 行')
-    return offset, limit
-
-
 def _slug(value: str, fallback: str = 'item') -> str:
     cleaned = SLUG_SAFE_RE.sub('-', value.strip()).strip('-.')
     return cleaned or fallback
@@ -213,12 +190,7 @@ def _safe_relpath(relpath: str) -> PurePosixPath | None:
     return _vocab_safe_relpath(relpath, allow_leading_slash=True)
 
 
-def _sniff_media_mime(path: Path) -> str | None:
-    try:
-        with path.open('rb') as f:
-            head = f.read(64)
-    except OSError:
-        return None
+def _sniff_bytes_mime(head: bytes) -> str | None:
     if head.startswith(b'\x89PNG\r\n\x1a\n'):
         return 'image/png'
     if head.startswith(b'\xff\xd8\xff'):
@@ -237,6 +209,14 @@ def _sniff_media_mime(path: Path) -> str | None:
     if low.startswith((b'<svg', b'<?xml')) and b'<svg' in low:
         return 'image/svg+xml'
     return None
+
+
+def _sniff_media_mime(path: Path) -> str | None:
+    try:
+        with path.open('rb') as f:
+            return _sniff_bytes_mime(f.read(64))
+    except OSError:
+        return None
 
 
 def _mime_for(path: Path) -> str:
@@ -339,16 +319,7 @@ def _sniff_bytes_valid_media(chunk: bytes, content_type: str) -> bool:
         return False
     if ct.startswith(('image/', 'audio/')):
         return True
-    if chunk.startswith((b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff', b'GIF87a', b'GIF89a', b'OggS', b'ID3')):
-        return True
-    if len(chunk) >= 12 and chunk[:4] == b'RIFF' and chunk[8:12] in {b'WEBP', b'WAVE'}:
-        return True
-    if len(chunk) >= 2 and chunk[0] == 0xFF and (chunk[1] & 0xE0) == 0xE0:
-        return True
-    low = chunk.lstrip().lower()
-    if low.startswith((b'<svg', b'<?xml')) and b'<svg' in low:
-        return True
-    return False
+    return _sniff_bytes_mime(chunk) is not None
 
 
 def _connect_ro(db_path: Path, *, check_same_thread: bool = True) -> sqlite3.Connection:
@@ -357,42 +328,6 @@ def _connect_ro(db_path: Path, *, check_same_thread: bool = True) -> sqlite3.Con
     db.execute('PRAGMA query_only=ON')
     otypes.register(db)
     return db
-
-
-class _ConnectionSlot:
-    """Own one thread-local read-only connection and close it cleanly if its thread or catalog dies."""
-
-    def __init__(self, conn: sqlite3.Connection):
-        self.conn = conn
-        self._close = weakref.finalize(self, conn.close)
-
-    def close(self) -> None:
-        self._close()
-
-
-def _parse_search_terms(keyword: str) -> list[str]:
-    terms: list[str] = []
-    for match in TERM_RE.finditer(keyword):
-        raw = match.group(1) or match.group(2) or ''
-        for part in raw.split('|'):
-            term = part.strip().lower()
-            if term and term not in terms:
-                terms.append(term)
-    return terms
-
-
-def _make_preview(text: str, text_lower: str, terms: list[str]) -> str:
-    pos = -1
-    for term in terms:
-        found = text_lower.find(term)
-        if found != -1 and (pos == -1 or found < pos):
-            pos = found
-    if pos == -1:
-        snippet = text[:420]
-        return snippet + ('…' if len(text) > 420 else '')
-    start = max(0, pos - 140)
-    end = min(len(text), pos + 320)
-    return ('…' if start > 0 else '') + text[start:end] + ('…' if end < len(text) else '')
 
 
 def build_sources_map(db: sqlite3.Connection) -> dict[str, dict[str, Any]]:
@@ -833,28 +768,26 @@ class Our5etoolsCatalog:
         """Each work's book root from nav-nodes.json.gz, reader-index.json, or anna-reader.json."""
         nav_sig = _file_sig(self.nav_path)
         index_sig = _file_sig(self.reader_index_path) if nav_sig is None else None
-        reader_sig = _file_sig(self.reader_path) if (nav_sig is None and index_sig is None) else None
-        sig: tuple[str, tuple[int, int, int] | None] | None = (
-            ('nav', nav_sig) if nav_sig is not None else (
-                ('index', index_sig) if index_sig is not None else (
-                    ('reader', reader_sig) if reader_sig is not None else None
-                )
-            )
-        )
+        if nav_sig is None and index_sig is not None:
+            sig: tuple[str, Any] | None = ('index', index_sig)
+        else:
+            reader_sig = _file_sig(self.reader_path) if nav_sig is None else None
+            sig = ('shared', nav_sig or reader_sig) if (nav_sig or reader_sig) else None
         with self._lock:
             if sig == self._roots_sig and sig is not None:
                 return self._reader_roots
-            roots: dict[str, str] = {}
-            if sig is not None:
-                try:
-                    if sig[0] == 'nav':
-                        raw = json.loads(gzip.decompress(self.nav_path.read_bytes()).decode('utf-8'))
-                    else:
-                        target = self.reader_index_path if sig[0] == 'index' else self.reader_path
-                        raw = json.loads(target.read_text('utf-8'))
-                    roots = self._extract_roots(raw)
-                except (OSError, ValueError):
-                    roots = {}
+        roots: dict[str, str] = {}
+        if sig is not None:
+            try:
+                raw = (
+                    json.loads(self.reader_index_path.read_text('utf-8'))
+                    if sig[0] == 'index'
+                    else _load_shared_nav(self.nav_path, self.reader_path)
+                )
+                roots = self._extract_roots(raw)
+            except (OSError, ValueError):
+                roots = {}
+        with self._lock:
             self._reader_roots, self._roots_sig = roots, sig
             return roots
 
@@ -1396,6 +1329,118 @@ class Our5etoolsCatalog:
             self._scope_universe_cache[cache_key] = res
         return res
 
+    def _build_facet_groups(
+        self,
+        config: dict[str, Any],
+        domain: list[str],
+        params: Query,
+        *,
+        type_counts: Counter[str],
+        rs_counts: Counter[str],
+        or_counts: Counter[str],
+        src_counts: Counter[str],
+        pkg_counts: Counter[str],
+        domain_counts: dict[str, Counter[str]] | None = None,
+        uni_map: dict[str, set[str]] | None = None,
+        unknown_cover: dict[str, int] | None = None,
+        always: int = 0,
+    ) -> list[dict[str, Any]]:
+        domain_counts = domain_counts or {}
+        uni_map = uni_map or {}
+        unknown_cover = unknown_cover or {}
+
+        type_group = {
+            'key': 'type',
+            'label': COMMON_LABELS['type'],
+            'mode': 'multi',
+            'options': [
+                {'value': t, 'label': otypes.TYPES[t], 'count': int(type_counts.get(t, 0)) + always}
+                for t in otypes.TYPE_ORDER if t in self._held_types
+            ],
+        }
+
+        domain_groups: list[dict[str, Any]] = []
+        for f in domain:
+            fkey = 'f_' + f
+            f_counts = domain_counts.get(f, Counter())
+            f_universe = set(uni_map.get(f, set())) | set(f_counts.keys())
+            for v in (*params.get(fkey, []), *params.get(NOT + fkey, [])):
+                if v and v != otypes.NONE:
+                    f_universe.add(v)
+            options = [
+                {
+                    'value': v,
+                    'label': otypes.option_label(f, v),
+                    'count': int(f_counts.get(v, 0)) + always,
+                }
+                for v in sorted(f_universe, key=lambda val: otypes.option_order(f, val))
+            ]
+            domain_groups.append({
+                'key': fkey,
+                'label': otypes.LABELS.get(f, f),
+                'mode': 'flag' if f in config['flags'] else 'multi',
+                'options': options,
+            })
+        if len(config['kinds']) > 1:
+            domain_groups.sort(key=lambda g: -unknown_cover.get(g['key'][2:], 0))
+
+        rs_group = {
+            'key': 'ruleset',
+            'label': COMMON_LABELS['ruleset'],
+            'mode': 'multi',
+            'options': [{'value': v, 'label': v, 'count': int(rs_counts.get(v, 0)) + always} for v in RULESETS],
+        }
+        or_group = {
+            'key': 'origin',
+            'label': COMMON_LABELS['origin'],
+            'mode': 'multi',
+            'options': [{'value': v, 'label': v, 'count': int(or_counts.get(v, 0)) + always} for v in ORIGINS],
+        }
+
+        def _universe_with_params(key: str, counts: Counter[str]) -> set[str]:
+            u = {s for s, c in counts.items() if c > 0}
+            for v in (*params.get(key, []), *params.get(NOT + key, [])):
+                if v and v != otypes.NONE:
+                    u.add(v)
+            return u
+
+        src_options = sorted(
+            (
+                {
+                    'value': sid,
+                    'label': self._sources_map[sid]['short_name'],
+                    'title': self._sources_map[sid]['name'],
+                    'search': ' '.join(filter(None, [
+                        self._sources_map[sid]['name'],
+                        self._sources_map[sid]['short_name'],
+                        self._sources_map[sid]['data'].get('code'),
+                    ])),
+                    'count': int(src_counts.get(sid, 0)) + always,
+                }
+                for sid in _universe_with_params('source', src_counts) if sid in self._sources_map
+            ),
+            key=lambda o: (o['label'].lower(), o['title'], o['value']),
+        )
+        src_group = {'key': 'source', 'label': COMMON_LABELS['source'], 'mode': 'multi', 'options': src_options}
+
+        pkg_options = sorted(
+            (
+                {
+                    'value': pid,
+                    'label': self._packages_map[pid]['name'],
+                    'title': self._packages_map[pid]['name'],
+                    'origin': self._packages_map[pid]['origin'],
+                    'ours': self._packages_map[pid]['ours'],
+                    'count': int(pkg_counts.get(pid, 0)) + always,
+                }
+                for pid in _universe_with_params('package', pkg_counts) if pid in self._packages_map
+            ),
+            key=lambda o: (0 if o['value'] == 'official' else (1 if o['ours'] else 2), o['label'], o['value']),
+        )
+        pkg_group = {'key': 'package', 'label': COMMON_LABELS['package'], 'mode': 'multi', 'options': pkg_options}
+
+        return [type_group, *domain_groups, rs_group, or_group, src_group, pkg_group]
+
     def facets(self, params: dict[str, list[str]], restrict: Any = None) -> dict[str, Any]:
         with self._db() as db:
             self._ensure_static_cache(db)
@@ -1426,63 +1471,13 @@ class Our5etoolsCatalog:
                     or_counts = Counter(dict(db.execute(
                         "SELECT facet_value, count(*) FROM entry_facets WHERE facet_key='origin' GROUP BY facet_value"
                     )))
-                type_group = {
-                    'key': 'type',
-                    'label': COMMON_LABELS['type'],
-                    'mode': 'multi',
-                    'options': [
-                        {'value': t, 'label': otypes.TYPES[t], 'count': int(type_counts.get(t, 0))}
-                        for t in otypes.TYPE_ORDER if t in self._held_types
-                    ],
-                }
-                rs_group = {
-                    'key': 'ruleset',
-                    'label': COMMON_LABELS['ruleset'],
-                    'mode': 'multi',
-                    'options': [{'value': v, 'label': v, 'count': int(rs_counts.get(v, 0))} for v in RULESETS],
-                }
-                or_group = {
-                    'key': 'origin',
-                    'label': COMMON_LABELS['origin'],
-                    'mode': 'multi',
-                    'options': [{'value': v, 'label': v, 'count': int(or_counts.get(v, 0))} for v in ORIGINS],
-                }
-                src_options = sorted(
-                    (
-                        {
-                            'value': sid,
-                            'label': self._sources_map[sid]['short_name'],
-                            'title': self._sources_map[sid]['name'],
-                            'search': ' '.join(filter(None, [
-                                self._sources_map[sid]['name'],
-                                self._sources_map[sid]['short_name'],
-                                self._sources_map[sid]['data'].get('code'),
-                            ])),
-                            'count': int(src_counts.get(sid, 0)),
-                        }
-                        for sid, c in src_counts.items() if c > 0 and sid in self._sources_map
-                    ),
-                    key=lambda o: (o['label'].lower(), o['title'], o['value']),
-                )
-                src_group = {'key': 'source', 'label': COMMON_LABELS['source'], 'mode': 'multi', 'options': src_options}
-                pkg_options = sorted(
-                    (
-                        {
-                            'value': pid,
-                            'label': self._packages_map[pid]['name'],
-                            'title': self._packages_map[pid]['name'],
-                            'origin': self._packages_map[pid]['origin'],
-                            'ours': self._packages_map[pid]['ours'],
-                            'count': int(pkg_counts.get(pid, 0)),
-                        }
-                        for pid, c in pkg_counts.items() if c > 0 and pid in self._packages_map
-                    ),
-                    key=lambda o: (0 if o['value'] == 'official' else (1 if o['ours'] else 2), o['label'], o['value']),
-                )
-                pkg_group = {'key': 'package', 'label': COMMON_LABELS['package'], 'mode': 'multi', 'options': pkg_options}
                 result = {
                     'schema': config,
-                    'groups': [type_group, rs_group, or_group, src_group, pkg_group],
+                    'groups': self._build_facet_groups(
+                        config, [], params,
+                        type_counts=type_counts, rs_counts=rs_counts, or_counts=or_counts,
+                        src_counts=src_counts, pkg_counts=pkg_counts,
+                    ),
                     'total': total,
                     'scope_total': total,
                     'without': {},
@@ -1542,77 +1537,14 @@ class Our5etoolsCatalog:
                         self._sources_map[r[1]]['origin']
                         for r in core_rows if r[1] in self._sources_map
                     )
-                domain_groups = []
-                for f in domain:
-                    fkey = 'f_' + f
-                    f_counts = batched_counts.get(f, Counter())
-                    f_universe = set(uni_map.get(f, set())) | set(f_counts.keys())
-                    for v in (*params.get(fkey, []), *params.get(NOT + fkey, [])):
-                        if v and v != otypes.NONE:
-                            f_universe.add(v)
-                    options = [
-                        {'value': v, 'label': otypes.option_label(f, v), 'count': int(f_counts.get(v, 0))}
-                        for v in sorted(f_universe, key=lambda val: otypes.option_order(f, val))
-                    ]
-                    domain_groups.append({
-                        'key': fkey,
-                        'label': otypes.LABELS.get(f, f),
-                        'mode': 'flag' if f in config['flags'] else 'multi',
-                        'options': options,
-                    })
-                if len(config['kinds']) > 1:
-                    domain_groups.sort(key=lambda g: -unknown_cover.get(g['key'][2:], 0))
-                rs_group = {
-                    'key': 'ruleset', 'label': COMMON_LABELS['ruleset'], 'mode': 'multi',
-                    'options': [{'value': v, 'label': v, 'count': int(rs_counts.get(v, 0))} for v in RULESETS],
-                }
-                or_group = {
-                    'key': 'origin', 'label': COMMON_LABELS['origin'], 'mode': 'multi',
-                    'options': [{'value': v, 'label': v, 'count': int(or_counts.get(v, 0))} for v in ORIGINS],
-                }
-                src_options = sorted(
-                    (
-                        {
-                            'value': sid,
-                            'label': self._sources_map[sid]['short_name'],
-                            'title': self._sources_map[sid]['name'],
-                            'search': ' '.join(filter(None, [
-                                self._sources_map[sid]['name'],
-                                self._sources_map[sid]['short_name'],
-                                self._sources_map[sid]['data'].get('code'),
-                            ])),
-                            'count': int(src_counts.get(sid, 0)),
-                        }
-                        for sid, c in src_counts.items() if c > 0 and sid in self._sources_map
-                    ),
-                    key=lambda o: (o['label'].lower(), o['title'], o['value']),
-                )
-                src_group = {'key': 'source', 'label': COMMON_LABELS['source'], 'mode': 'multi', 'options': src_options}
-                pkg_options = sorted(
-                    (
-                        {
-                            'value': pid,
-                            'label': self._packages_map[pid]['name'],
-                            'title': self._packages_map[pid]['name'],
-                            'origin': self._packages_map[pid]['origin'],
-                            'ours': self._packages_map[pid]['ours'],
-                            'count': int(pkg_counts.get(pid, 0)),
-                        }
-                        for pid, c in pkg_counts.items() if c > 0 and pid in self._packages_map
-                    ),
-                    key=lambda o: (0 if o['value'] == 'official' else (1 if o['ours'] else 2), o['label'], o['value']),
-                )
-                pkg_group = {'key': 'package', 'label': COMMON_LABELS['package'], 'mode': 'multi', 'options': pkg_options}
-                type_group = {
-                    'key': 'type', 'label': COMMON_LABELS['type'], 'mode': 'multi',
-                    'options': [
-                        {'value': t, 'label': otypes.TYPES[t], 'count': int(type_counts.get(t, 0))}
-                        for t in otypes.TYPE_ORDER if t in self._held_types
-                    ],
-                }
                 return {
                     'schema': config,
-                    'groups': [type_group, *domain_groups, rs_group, or_group, src_group, pkg_group],
+                    'groups': self._build_facet_groups(
+                        config, domain, params,
+                        type_counts=type_counts, rs_counts=rs_counts, or_counts=or_counts,
+                        src_counts=src_counts, pkg_counts=pkg_counts,
+                        domain_counts=batched_counts, uni_map=uni_map, unknown_cover=unknown_cover,
+                    ),
                     'total': total,
                     'scope_total': scope_total,
                     'without': without,
@@ -1725,33 +1657,6 @@ class Our5etoolsCatalog:
                     f_counts[fv] = int(cnt)
                 batched_counts[f] = f_counts
 
-            domain_groups: list[dict[str, Any]] = []
-            for f in domain:
-                fkey = 'f_' + f
-                f_counts = batched_counts.get(f, Counter())
-                f_universe = set(uni_map.get(f, set())) | set(f_counts.keys())
-                for v in (*params.get(fkey, []), *params.get(NOT + fkey, [])):
-                    if v and v != otypes.NONE:
-                        f_universe.add(v)
-                options = [
-                    {
-                        'value': v,
-                        'label': otypes.option_label(f, v),
-                        'count': int(f_counts.get(v, 0)) + always,
-                    }
-                    for v in sorted(f_universe, key=lambda val: otypes.option_order(f, val))
-                ]
-                mode = 'flag' if f in config['flags'] else 'multi'
-                domain_groups.append({
-                    'key': fkey,
-                    'label': otypes.LABELS.get(f, f),
-                    'mode': mode,
-                    'options': options,
-                })
-
-            if len(config['kinds']) > 1:
-                domain_groups.sort(key=lambda g: -unknown_cover.get(g['key'][2:], 0))
-
             # 6. Ruleset, Origin, Source, Package counts (reuse the counted rows whenever unfiltered!)
             if 'ruleset' not in active_fields:
                 rs_counts = Counter(r[1] for r in count_rows)
@@ -1759,12 +1664,6 @@ class Our5etoolsCatalog:
                 w_rs, v_rs = _conds_without_field('ruleset')
                 from_rs = self._from_entries(need_search_body=self._where_needs_body(w_rs))
                 rs_counts = Counter(dict(db.execute(f'SELECT e.ruleset, count(*) FROM {from_rs}' + w_rs + ' GROUP BY e.ruleset', v_rs)))
-            rs_group = {
-                'key': 'ruleset',
-                'label': COMMON_LABELS['ruleset'],
-                'mode': 'multi',
-                'options': [{'value': v, 'label': v, 'count': int(rs_counts.get(v, 0)) + always} for v in RULESETS],
-            }
 
             if 'origin' not in active_fields:
                 or_counts = Counter(
@@ -1783,12 +1682,6 @@ class Our5etoolsCatalog:
                     "WHERE ef.facet_key='origin'" + (f' AND ({w_or[7:]})' if w_or else '') + ' GROUP BY ef.facet_value',
                     v_or,
                 )))
-            or_group = {
-                'key': 'origin',
-                'label': COMMON_LABELS['origin'],
-                'mode': 'multi',
-                'options': [{'value': v, 'label': v, 'count': int(or_counts.get(v, 0)) + always} for v in ORIGINS],
-            }
 
             if 'source' not in active_fields:
                 src_counts = Counter(r[2] for r in count_rows if r[2])
@@ -1796,33 +1689,6 @@ class Our5etoolsCatalog:
                 w_src, v_src = _conds_without_field('source')
                 from_src = self._from_entries(need_search_body=self._where_needs_body(w_src))
                 src_counts = Counter(dict(db.execute(f'SELECT e.source_id, count(*) FROM {from_src}' + w_src + ' GROUP BY e.source_id', v_src)))
-            src_universe = {s for s, c in src_counts.items() if c > 0}
-            for v in (*params.get('source', []), *params.get(NOT + 'source', [])):
-                if v and v != otypes.NONE:
-                    src_universe.add(v)
-            src_options = sorted(
-                (
-                    {
-                        'value': sid,
-                        'label': self._sources_map[sid]['short_name'],
-                        'title': self._sources_map[sid]['name'],
-                        'search': ' '.join(filter(None, [
-                            self._sources_map[sid]['name'],
-                            self._sources_map[sid]['short_name'],
-                            self._sources_map[sid]['data'].get('code'),
-                        ])),
-                        'count': int(src_counts.get(sid, 0)) + always,
-                    }
-                    for sid in src_universe if sid in self._sources_map
-                ),
-                key=lambda o: (o['label'].lower(), o['title'], o['value']),
-            )
-            src_group = {
-                'key': 'source',
-                'label': COMMON_LABELS['source'],
-                'mode': 'multi',
-                'options': src_options,
-            }
 
             if 'package' not in active_fields:
                 pkg_counts = Counter(r[3] for r in count_rows if r[3])
@@ -1830,40 +1696,6 @@ class Our5etoolsCatalog:
                 w_pkg, v_pkg = _conds_without_field('package')
                 from_pkg = self._from_entries(need_search_body=self._where_needs_body(w_pkg))
                 pkg_counts = Counter(dict(db.execute(f'SELECT e.package_id, count(*) FROM {from_pkg}' + w_pkg + ' GROUP BY e.package_id', v_pkg)))
-            pkg_universe = {p for p, c in pkg_counts.items() if c > 0}
-            for v in (*params.get('package', []), *params.get(NOT + 'package', [])):
-                if v and v != otypes.NONE:
-                    pkg_universe.add(v)
-            pkg_options = sorted(
-                (
-                    {
-                        'value': pid,
-                        'label': self._packages_map[pid]['name'],
-                        'title': self._packages_map[pid]['name'],
-                        'origin': self._packages_map[pid]['origin'],
-                        'ours': self._packages_map[pid]['ours'],
-                        'count': int(pkg_counts.get(pid, 0)) + always,
-                    }
-                    for pid in pkg_universe if pid in self._packages_map
-                ),
-                key=lambda o: (0 if o['value'] == 'official' else (1 if o['ours'] else 2), o['label'], o['value']),
-            )
-            pkg_group = {
-                'key': 'package',
-                'label': COMMON_LABELS['package'],
-                'mode': 'multi',
-                'options': pkg_options,
-            }
-
-            type_group = {
-                'key': 'type',
-                'label': COMMON_LABELS['type'],
-                'mode': 'multi',
-                'options': [
-                    {'value': t, 'label': otypes.TYPES[t], 'count': int(type_counts.get(t, 0)) + always}
-                    for t in otypes.TYPE_ORDER if t in self._held_types
-                ],
-            }
 
             # 7. Elsewhere hints when current narrowed query returns 0 rows
             elsewhere: list[dict[str, Any]] = []
@@ -1883,7 +1715,12 @@ class Our5etoolsCatalog:
 
             return {
                 'schema': config,
-                'groups': [type_group, *domain_groups, rs_group, or_group, src_group, pkg_group],
+                'groups': self._build_facet_groups(
+                    config, domain, params,
+                    type_counts=type_counts, rs_counts=rs_counts, or_counts=or_counts,
+                    src_counts=src_counts, pkg_counts=pkg_counts,
+                    domain_counts=batched_counts, uni_map=uni_map, unknown_cover=unknown_cover, always=always,
+                ),
                 'total': total,
                 'scope_total': scope_total,
                 'without': without,
@@ -2267,38 +2104,24 @@ class Our5etoolsCatalog:
         config = result['schema']
         cols_cfg = config.get('export_columns') or config.get('columns') or []
         extras = [f for f in cols_cfg if f not in otypes.IDENTITY_COLUMNS]
+        headers = ['条目ID', '中文名', '英文名', '类型', '规则版本', '资料库', '来源', '资料包', '来源性质', '继承状态', '字段冲突'] + [
+            otypes.COLUMN_LABELS.get(f, f) for f in extras
+        ]
 
-        buf = io.StringIO(newline='')
-        writer = csv.writer(buf)
-        writer.writerow(
-            ['条目ID', '中文名', '英文名', '类型', '规则版本', '资料库', '来源', '资料包', '来源性质', '继承状态', '字段冲突']
-            + [otypes.COLUMN_LABELS.get(f, f) for f in extras]
-        )
-        for r in rows:
-            cells: list[Any] = [
-                r['id'],
-                r['name_zh'],
-                r['name_en'],
-                otypes.TYPES.get(r['type'], r['type']),
-                r['ruleset'],
-                r.get('collection') or self.collection_key,
-                '；'.join(r.get('source_names') or []),
-                r.get('package_id', ''),
-                r.get('origin', ''),
-                r.get('copy_status', 'ok'),
-                '；'.join(r.get('field_conflicts') or []),
-            ]
-            for f in extras:
-                val = r['fields'].get(f)
-                if val is None:
-                    cells.append('')
-                elif isinstance(val, (list, dict)):
-                    cells.append(json.dumps(val, ensure_ascii=False))
-                else:
-                    cells.append(str(val))
-            safe_cells = ["'" + s if s.lstrip().startswith(('=', '+', '-', '@')) else s for s in map(str, cells)]
-            writer.writerow(safe_cells)
-        return ('\ufeff' + buf.getvalue()).encode('utf-8')
+        def iter_rows():
+            for r in rows:
+                cells: list[Any] = [
+                    r['id'], r['name_zh'], r['name_en'], otypes.TYPES.get(r['type'], r['type']), r['ruleset'],
+                    r.get('collection') or self.collection_key, '；'.join(r.get('source_names') or []),
+                    r.get('package_id', ''), r.get('origin', ''), r.get('copy_status', 'ok'),
+                    '；'.join(r.get('field_conflicts') or []),
+                ]
+                for f in extras:
+                    val = r['fields'].get(f)
+                    cells.append(json.dumps(val, ensure_ascii=False) if isinstance(val, (list, dict)) else '' if val is None else str(val))
+                yield cells
+
+        return format_csv_bytes(headers, iter_rows())
 
 
 # ---------------------------------------------------------------------------
@@ -2341,6 +2164,14 @@ def build_subclass_records(
     return records
 
 
+def _pick_subclass_root_feature(feats: list[sqlite3.Row], name: str, name_zh: str) -> sqlite3.Row | None:
+    if not feats:
+        return None
+    min_level = feats[0]['owner_level']
+    wanted = {x for x in (name, name_zh) if x}
+    return next((f for f in feats if f['owner_level'] == min_level and (f['name'] in wanted or f['name_zh'] in wanted)), None)
+
+
 def subclass_root_feature_id(
     db: sqlite3.Connection,
     entry_table: str,
@@ -2358,14 +2189,7 @@ def subclass_root_feature_id(
         f'ORDER BY COALESCE(e.owner_level, 999), {order_col}',
         (entry_id,),
     ).fetchall()
-    if not feats:
-        return None
-    min_level = feats[0]['owner_level']
-    wanted = {x for x in (name, name_zh) if x}
-    root = next(
-        (f for f in feats if f['owner_level'] == min_level and (f['name'] in wanted or f['name_zh'] in wanted)),
-        None,
-    )
+    root = _pick_subclass_root_feature(feats, name, name_zh)
     return root['id'] if root is not None else None
 
 
@@ -2846,11 +2670,24 @@ class Our5etoolsTour:
 
     @staticmethod
     def _subclass_root_feature(feats: list[sqlite3.Row], name: str, name_zh: str) -> sqlite3.Row | None:
-        if not feats:
-            return None
-        min_level = feats[0]['owner_level']
-        wanted = {x for x in (name, name_zh) if x}
-        return next((f for f in feats if f['owner_level'] == min_level and (f['name'] in wanted or f['name_zh'] in wanted)), None)
+        return _pick_subclass_root_feature(feats, name, name_zh)
+
+    def _feature_group(self, feats: list[sqlite3.Row]) -> dict[str, Any]:
+        hinted = len(feats) <= HINTED_GROUP
+        part_items = []
+        for f in feats:
+            item: dict[str, Any] = {
+                'id': f['id'],
+                'kind': 'entry',
+                'title': self._feature_title(f['name'], f['owner_level']),
+                'type': 'class_feature',
+                'type_label': otypes.TYPES['class_feature'],
+                'ruleset': f['ruleset'],
+            }
+            if hinted:
+                item['hint'] = first_sentence(' '.join(self._decode_body(f['body_text']).split())) or None
+            part_items.append(item)
+        return self._group('parts', part_items)
 
     def _entry_view(self, entry_id: str) -> dict[str, Any]:
         try:
@@ -2875,21 +2712,7 @@ class Our5etoolsTour:
                 if prose:
                     lead_source = prose
             if feats:
-                hinted = len(feats) <= HINTED_GROUP
-                part_items = []
-                for f in feats:
-                    item: dict[str, Any] = {
-                        'id': f['id'],
-                        'kind': 'entry',
-                        'title': self._feature_title(f['name'], f['owner_level']),
-                        'type': 'class_feature',
-                        'type_label': otypes.TYPES['class_feature'],
-                        'ruleset': f['ruleset'],
-                    }
-                    if hinted:
-                        item['hint'] = first_sentence(' '.join(self._decode_body(f['body_text']).split())) or None
-                    part_items.append(item)
-                groups.append(self._group('parts', part_items))
+                groups.append(self._feature_group(feats))
             class_items = []
             for r in d.get('relations') or []:
                 tid = r.get('target_id')
@@ -2929,21 +2752,7 @@ class Our5etoolsTour:
                     (entry_id,),
                 ).fetchall()
             if cfeats:
-                hinted = len(cfeats) <= HINTED_GROUP
-                part_items = []
-                for f in cfeats:
-                    item = {
-                        'id': f['id'],
-                        'kind': 'entry',
-                        'title': self._feature_title(f['name'], f['owner_level']),
-                        'type': 'class_feature',
-                        'type_label': otypes.TYPES['class_feature'],
-                        'ruleset': f['ruleset'],
-                    }
-                    if hinted:
-                        item['hint'] = first_sentence(' '.join(self._decode_body(f['body_text']).split())) or None
-                    part_items.append(item)
-                groups.append(self._group('parts', part_items))
+                groups.append(self._feature_group(cfeats))
             if csubs:
                 def _sub_key(row: sqlite3.Row) -> tuple[Any, ...]:
                     srec = self._sources_by_id.get(row['source_id'] or '')
@@ -3301,7 +3110,7 @@ class Our5etoolsReader:
                 'rawTitle': title,
                 'path': r['page_path'],
                 'sourcePath': r['page_path'],
-                'preview': _make_preview(text, body_l, terms),
+                'preview': _make_search_preview(text, body_l, terms, max_len=420, before=140, after=320),
                 'category': r['scope_label'] or r['root_id'] or '',
             }
         scored.sort(key=lambda item: (-item[0], item[1]))

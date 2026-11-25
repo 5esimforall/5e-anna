@@ -4,6 +4,7 @@ from functools import lru_cache
 import json
 import math
 import re
+from typing import Any
 import unicodedata
 
 UNKNOWN = '__unknown__'
@@ -62,50 +63,97 @@ SCHEMAS = {
 }
 
 
-def configure(kind):
-    return finish({'kinds':[kind], **SCHEMAS[kind]})
-
-
-def finish(config):
-    config.setdefault('export_columns', config['columns'])
-    config['composites'] = {k:COMPOSITES[k] for k in config['columns'] if k in COMPOSITES}
-    return config
-
-
 # An entry's own type picks its quick-reference schema wherever it is read, whichever filter listed it.
 TYPE_KINDS = {'spell':'spell', 'creature':'creature', 'magic_item':'item', 'equipment':'equipment', 'feat':'feat', 'animal_offer':'animal', 'class_feature':'feature', 'skill':'skill'}
 GENERIC = 'generic'
 
 
-def combine(kinds):
-    """Mixed kinds read as the generic table (name, type, then identity columns)
-    widened by each kind's own columns, facets and sorts, in the kinds' reading order."""
-    base,own = SCHEMAS[GENERIC],[SCHEMAS[k] for k in kinds]
-    merge = lambda key:list(dict.fromkeys(x for s in [base,*own] for x in s.get(key,[])))
-    lead = [c for c in base['columns'] if c not in IDENTITY_COLUMNS or c in {'name','type'}]
-    tail = [c for c in base['columns'] if c not in lead]
-    readings = lambda key:[c for s in own for c in s.get(key,s['columns']) if c not in IDENTITY_COLUMNS]
-    return finish({'kinds':[GENERIC,*kinds], 'facets':merge('facets'), 'flags':merge('flags'),
-                   'range':next((s['range'] for s in own if s.get('range')),None),
-                   'columns':list(dict.fromkeys(lead+readings('columns')+tail)),
-                   'export_columns':list(dict.fromkeys(lead+readings('export_columns')+tail)),
-                   'sorts':merge('sorts'), 'default_sort':base['default_sort']})
+class ViewSpec:
+    """Quick-reference table schema engine shared by 5echm (`views.py`) and `our5etools` (`types.py`)."""
 
+    def __init__(
+        self,
+        *,
+        schemas: dict[str, dict[str, Any]],
+        type_kinds: dict[str, str],
+        type_order: tuple[str, ...] | list[str],
+        identity_columns: set[str] | frozenset[str],
+        composites: dict[str, list[str]],
+        metadata_fields: tuple[str, ...],
+        detail_suffix: str = '_detail',
+        generic: str = 'generic',
+    ) -> None:
+        self.schemas = schemas
+        self.type_kinds = type_kinds
+        self.type_order = tuple(type_order)
+        self.identity_columns = frozenset(identity_columns)
+        self.composites = composites
+        self.metadata_fields = tuple(metadata_fields)
+        self.detail_suffix = detail_suffix
+        self.generic = generic
 
-def type_conditions(entry_type):
-    """The type-specific conditions an entry type can answer: its kind's facets, flags and range."""
-    own=SCHEMAS[TYPE_KINDS.get(entry_type,GENERIC)]
-    return [*own['facets'],*own['flags'],*([own['range']] if own.get('range') else [])]
+    def finish(self, config: dict[str, Any]) -> dict[str, Any]:
+        config.setdefault('export_columns', config['columns'])
+        config['composites'] = {k: self.composites[k] for k in config['columns'] if k in self.composites}
+        return config
 
+    def configure(self, kind: str) -> dict[str, Any]:
+        return self.finish({'kinds': [kind], **self.schemas[kind]})
 
-def schema_for(types, widened=False):
-    """The table a set of entry types reads as: one kind's own schema, or the generic table
-    widened by every kind present when types mix (装备 lists mundane gear beside magic items).
-    `widened` says entries of other types match too, so the generic table leads."""
-    types = sorted(set(types),key=lambda t:TYPE_ORDER.index(t) if t in TYPE_ORDER else len(TYPE_ORDER))
-    kinds = list(dict.fromkeys([*(TYPE_KINDS.get(t,GENERIC) for t in types),*([GENERIC] if widened else [])]))
-    if len(kinds)<=1:return configure(kinds[0] if kinds else GENERIC)
-    return combine([k for k in kinds if k!=GENERIC])
+    def combine(self, kinds: list[str]) -> dict[str, Any]:
+        """Mixed kinds read as the generic table (name, type, then identity columns)
+        widened by each kind's own columns, facets and sorts, in the kinds' reading order."""
+        base, own = self.schemas[self.generic], [self.schemas[k] for k in kinds]
+        merge = lambda key: list(dict.fromkeys(x for s in [base, *own] for x in s.get(key, [])))
+        lead = [c for c in base['columns'] if c not in self.identity_columns or c in {'name', 'type'}]
+        tail = [c for c in base['columns'] if c not in lead]
+        readings = lambda key: [c for s in own for c in s.get(key, s['columns']) if c not in self.identity_columns]
+        return self.finish({
+            'kinds': [self.generic, *kinds],
+            'facets': merge('facets'),
+            'flags': merge('flags'),
+            'range': next((s['range'] for s in own if s.get('range')), None),
+            'columns': list(dict.fromkeys(lead + readings('columns') + tail)),
+            'export_columns': list(dict.fromkeys(lead + readings('export_columns') + tail)),
+            'sorts': merge('sorts'),
+            'default_sort': base['default_sort'],
+        })
+
+    def type_conditions(self, entry_type: str) -> list[str]:
+        """The type-specific conditions an entry type can answer: its kind's facets, flags and range."""
+        own = self.schemas[self.type_kinds.get(entry_type, self.generic)]
+        return [*own['facets'], *own['flags'], *([own['range']] if own.get('range') else [])]
+
+    def schema_for(self, types: Any, widened: bool = False) -> dict[str, Any]:
+        """The table a set of entry types reads as: one kind's own schema, or the generic table
+        widened by every kind present when types mix."""
+        ordered = sorted(
+            set(types),
+            key=lambda t: self.type_order.index(t) if t in self.type_order else len(self.type_order),
+        )
+        kinds = list(dict.fromkeys([
+            *(self.type_kinds.get(t, self.generic) for t in ordered),
+            *([self.generic] if widened else []),
+        ]))
+        if len(kinds) <= 1:
+            return self.configure(kinds[0] if kinds else self.generic)
+        return self.combine([k for k in kinds if k != self.generic])
+
+    def field_order(self, entry: dict[str, Any]) -> list[str]:
+        """Reader order: quick-reference columns first, remaining rule fields with X_detail after X, then metadata."""
+        fields = entry['fields']
+        config = self.configure(self.type_kinds.get(entry['type'], self.generic))
+        lead = [f for column in config['columns'] for f in [column, *config['composites'].get(column, [])]]
+        rules = [f for f in fields if f not in self.metadata_fields]
+        ordered = [f for f in dict.fromkeys(lead) if f in rules] + [f for f in rules if f not in lead]
+        details = [
+            f for f in ordered
+            if f.endswith(self.detail_suffix) and f[:-len(self.detail_suffix)] in ordered
+        ]
+        for f in details:
+            ordered.remove(f)
+            ordered.insert(ordered.index(f[:-len(self.detail_suffix)]) + 1, f)
+        return ordered + [f for f in self.metadata_fields if f in fields]
 
 
 # Presets name a common slice of one type: the type plus one facet value. They are ordinary filters
@@ -123,19 +171,6 @@ PRESETS = (
 # These fields name or locate a version (what it is, which book, which rules); they are not readings of its rules.
 METADATA_FIELDS = ('type','source_id','source_code','ruleset','legacy')
 DETAIL_SUFFIX = '_detail'
-
-
-def field_order(entry):
-    """Reader order: the type's quick-reference columns as the table shows them, the remaining rule
-    fields as extracted with each X_detail right after X, then the version's metadata."""
-    fields=entry['fields'];config=configure(TYPE_KINDS.get(entry['type'],GENERIC))
-    lead=[f for column in config['columns'] for f in [column,*config['composites'].get(column,[])]]
-    rules=[f for f in fields if f not in METADATA_FIELDS]
-    ordered=[f for f in dict.fromkeys(lead) if f in rules]+[f for f in rules if f not in lead]
-    details=[f for f in ordered if f.endswith(DETAIL_SUFFIX) and f[:-len(DETAIL_SUFFIX)] in ordered]
-    for f in details:
-        ordered.remove(f);ordered.insert(ordered.index(f[:-len(DETAIL_SUFFIX)])+1,f)
-    return ordered+[f for f in METADATA_FIELDS if f in fields]
 
 
 def scalar_values(v):
@@ -365,3 +400,21 @@ def option_order(field,value):
 def enrich(row):
     fields=row['fields'];row['quickref']={f:normalized(fields,f) for f in LABELS}
     return row
+
+
+VIEW_SPEC = ViewSpec(
+    schemas=SCHEMAS,
+    type_kinds=TYPE_KINDS,
+    type_order=TYPE_ORDER,
+    identity_columns=IDENTITY_COLUMNS,
+    composites=COMPOSITES,
+    metadata_fields=METADATA_FIELDS,
+    detail_suffix=DETAIL_SUFFIX,
+    generic=GENERIC,
+)
+finish = VIEW_SPEC.finish
+configure = VIEW_SPEC.configure
+combine = VIEW_SPEC.combine
+type_conditions = VIEW_SPEC.type_conditions
+schema_for = VIEW_SPEC.schema_for
+field_order = VIEW_SPEC.field_order

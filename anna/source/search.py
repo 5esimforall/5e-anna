@@ -196,17 +196,25 @@ def parse_terms(keyword: str) -> list[str]:
     return terms
 
 
-def make_preview(text: str, text_lower: str, terms: list[str]) -> str:
+def make_preview(
+    text: str,
+    text_lower: str,
+    terms: list[str],
+    *,
+    max_len: int = 600,
+    before: int = 180,
+    after: int = 460,
+) -> str:
     pos = -1
     for term in terms:
         found = text_lower.find(term)
         if found != -1 and (pos == -1 or found < pos):
             pos = found
     if pos == -1:
-        snippet = text[:600]
-        return snippet + ("…" if len(text) > 600 else "")
-    start = max(0, pos - 180)
-    end = min(len(text), pos + 460)
+        snippet = text[:max_len]
+        return snippet + ("…" if len(text) > max_len else "")
+    start = max(0, pos - before)
+    end = min(len(text), pos + after)
     return (
         ("…" if start > 0 else "")
         + text[start:end]

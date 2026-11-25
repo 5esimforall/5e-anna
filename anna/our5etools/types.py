@@ -7,6 +7,7 @@ import re
 import unicodedata
 from typing import Any
 
+from anna.catalog.views import ViewSpec
 from anna.our5etools.vocab import (
     ABILITY_TO_CN,
     ALIGNMENT_CODE_TO_CN,
@@ -571,245 +572,103 @@ COMPOSITES: dict[str, list[str]] = {
     'spell_markers': ['ritual', 'concentration'],
 }
 
+def _schema(
+    facets: list[str] = (),
+    *,
+    flags: list[str] = (),
+    cols: list[str] | None = None,
+    export_cols: list[str] | None = None,
+    sorts: list[str] = (),
+    default: str = 'name',
+    range_field: str | None = None,
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        'facets': list(facets),
+        'flags': list(flags),
+        'columns': list(cols) if cols is not None else ['name', *facets, *flags, 'sources', 'ruleset'],
+        'sorts': ['source', 'name', 'name_en', *sorts],
+        'default_sort': default,
+    }
+    if export_cols is not None:
+        out['export_columns'] = list(export_cols)
+    if range_field is not None:
+        out['range'] = range_field
+    return out
+
+
 SCHEMAS: dict[str, dict[str, Any]] = {
-    'class': {
-        'facets': ['hit_die', 'spellcasting_ability', 'caster_progression'],
-        'flags': [],
-        'columns': ['name', 'hit_die', 'spellcasting_ability', 'caster_progression', 'saving_throws', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'hit_die', 'caster_progression'],
-        'default_sort': 'name',
-    },
-    'subclass': {
-        'facets': ['owner_class', 'spellcasting_ability'],
-        'flags': [],
-        'columns': ['name', 'owner_class', 'spellcasting_ability', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'owner_class'],
-        'default_sort': 'owner_class',
-    },
-    'class_feature': {
-        'facets': ['owner_class', 'feature_kind', 'level'],
-        'flags': [],
-        'columns': ['name', 'owner_class', 'feature_kind', 'level', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'owner_class', 'feature_kind', 'level'],
-        'default_sort': 'level',
-    },
-    'species': {
-        'facets': ['size', 'darkvision'],
-        'flags': [],
-        'columns': ['name', 'size', 'darkvision', 'speed', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'size', 'darkvision'],
-        'default_sort': 'name',
-    },
-    'background': {
-        'facets': ['granted_feat', 'skills'],
-        'flags': [],
-        'columns': ['name', 'granted_feat', 'skills', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'granted_feat'],
-        'default_sort': 'name',
-    },
-    'feat': {
-        'facets': ['feat_category'],
-        'flags': [],
-        'columns': ['name', 'feat_category', 'prerequisite', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'feat_category'],
-        'default_sort': 'name',
-    },
-    'spell': {
-        'facets': ['spell_level', 'school', 'spell_classes', 'casting_time'],
-        'flags': ['concentration', 'ritual', 'verbal', 'somatic', 'material', 'special_material'],
-        'columns': ['name', 'spell_level', 'school', 'spell_classes', 'casting_time', 'components', 'spell_markers', 'sources', 'ruleset'],
-        'export_columns': ['name', 'spell_level', 'school', 'spell_classes', 'casting_time', 'verbal', 'somatic', 'material', 'special_material', 'ritual', 'concentration', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'spell_level', 'school', 'casting_time'],
-        'default_sort': 'spell_level',
-    },
-    'psionic': {
-        'facets': ['psionic_order', 'psionic_type'],
-        'flags': [],
-        'columns': ['name', 'psionic_order', 'psionic_type', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'psionic_order', 'psionic_type'],
-        'default_sort': 'psionic_order',
-    },
-    'equipment': {
-        'facets': ['item_type', 'mastery'],
-        'flags': [],
-        'columns': ['name', 'item_type', 'price', 'weight', 'damage', 'ac', 'mastery', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'item_type', 'mastery', 'ac'],
-        'default_sort': 'name',
-    },
-    'magic_item': {
-        'facets': ['rarity', 'item_type'],
-        'flags': ['attunement'],
-        'columns': ['name', 'rarity', 'item_type', 'item_subtypes', 'attunement', 'attunement_requirements', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'rarity', 'item_type'],
-        'default_sort': 'rarity',
-    },
-    'poison': {
-        'facets': ['poison_type'],
-        'flags': [],
-        'columns': ['name', 'poison_type', 'price', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'poison_type'],
-        'default_sort': 'name',
-    },
-    'creature': {
-        'facets': ['size', 'creature_type'],
-        'flags': ['legendary_actions', 'lair_actions', 'has_local_audio'],
-        'range': 'cr',
-        'columns': ['name', 'size', 'creature_type', 'cr', 'ac', 'hp', 'legendary_actions', 'lair_actions', 'has_local_audio', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'cr', 'size', 'creature_type', 'ac', 'hp'],
-        'default_sort': 'cr',
-    },
-    'vehicle': {
-        'facets': ['vehicle_type', 'size'],
-        'flags': [],
-        'columns': ['name', 'vehicle_type', 'size', 'crew', 'passengers', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'vehicle_type', 'size'],
-        'default_sort': 'name',
-    },
-    'facility': {
-        'facets': ['facility_kind', 'level'],
-        'flags': [],
-        'columns': ['name', 'facility_kind', 'level', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'facility_kind', 'level'],
-        'default_sort': 'level',
-    },
-    'object': {
-        'facets': ['size', 'object_type'],
-        'flags': [],
-        'columns': ['name', 'size', 'object_type', 'ac', 'hp', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'size', 'ac', 'hp'],
-        'default_sort': 'name',
-    },
-    'deck': {
-        'facets': ['deck_set'],
-        'flags': [],
-        'columns': ['name', 'deck_set', 'card_count', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'deck_set'],
-        'default_sort': 'deck_set',
-    },
-    'recipe': {
-        'facets': ['dish_types', 'diet'],
-        'flags': [],
-        'columns': ['name', 'dish_types', 'diet', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'diet'],
-        'default_sort': 'name',
-    },
-    'reward': {
-        'facets': ['reward_kind'],
-        'flags': [],
-        'columns': ['name', 'reward_kind', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'reward_kind'],
-        'default_sort': 'reward_kind',
-    },
-    'deity': {
-        'facets': ['pantheon', 'alignment', 'domains'],
-        'flags': [],
-        'columns': ['name', 'pantheon', 'alignment', 'domains', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'pantheon', 'alignment'],
-        'default_sort': 'pantheon',
-    },
-    'trap': {
-        'facets': ['trap_kind'],
-        'flags': [],
-        'columns': ['name', 'trap_kind', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'trap_kind'],
-        'default_sort': 'name',
-    },
-    'hazard': {
-        'facets': ['hazard_kind'],
-        'flags': [],
-        'columns': ['name', 'hazard_kind', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'hazard_kind'],
-        'default_sort': 'name',
-    },
-    'table': {
-        'facets': ['table_kind'],
-        'flags': [],
-        'columns': ['name', 'table_kind', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'table_kind'],
-        'default_sort': 'table_kind',
-    },
-    'condition': {
-        'facets': ['condition_kind'],
-        'flags': [],
-        'columns': ['name', 'condition_kind', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'condition_kind'],
-        'default_sort': 'name',
-    },
-    'action': {
-        'facets': ['action_time'],
-        'flags': [],
-        'columns': ['name', 'action_time', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'action_time'],
-        'default_sort': 'name',
-    },
-    'skill': {
-        'facets': ['ability'],
-        'flags': [],
-        'columns': ['name', 'ability', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'ability'],
-        'default_sort': 'ability',
-    },
-    'language': {
-        'facets': ['language_type', 'script'],
-        'flags': [],
-        'columns': ['name', 'language_type', 'script', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'language_type', 'script'],
-        'default_sort': 'language_type',
-    },
-    'rule': {
-        'facets': ['rule_kind'],
-        'flags': [],
-        'columns': ['name', 'rule_kind', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'rule_kind'],
-        'default_sort': 'name',
-    },
-    'book': {
-        'facets': ['book_kind', 'book_group'],
-        'flags': [],
-        'columns': ['name', 'book_kind', 'book_group', 'published', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'book_kind', 'book_group'],
-        'default_sort': 'book_kind',
-    },
-    'generic': {
-        'facets': [],
-        'flags': [],
-        'columns': ['name', 'type', 'sources', 'ruleset'],
-        'sorts': ['source', 'name', 'name_en', 'type', 'ruleset'],
-        'default_sort': 'type',
-    },
+    'class': _schema(
+        ['hit_die', 'spellcasting_ability', 'caster_progression'],
+        cols=['name', 'hit_die', 'spellcasting_ability', 'caster_progression', 'saving_throws', 'sources', 'ruleset'],
+        sorts=['hit_die', 'caster_progression'],
+    ),
+    'subclass': _schema(['owner_class', 'spellcasting_ability'], sorts=['owner_class'], default='owner_class'),
+    'class_feature': _schema(
+        ['owner_class', 'feature_kind', 'level'],
+        sorts=['owner_class', 'feature_kind', 'level'],
+        default='level',
+    ),
+    'species': _schema(
+        ['size', 'darkvision'],
+        cols=['name', 'size', 'darkvision', 'speed', 'sources', 'ruleset'],
+        sorts=['size', 'darkvision'],
+    ),
+    'background': _schema(['granted_feat', 'skills'], sorts=['granted_feat']),
+    'feat': _schema(['feat_category'], cols=['name', 'feat_category', 'prerequisite', 'sources', 'ruleset'], sorts=['feat_category']),
+    'spell': _schema(
+        ['spell_level', 'school', 'spell_classes', 'casting_time'],
+        flags=['concentration', 'ritual', 'verbal', 'somatic', 'material', 'special_material'],
+        cols=['name', 'spell_level', 'school', 'spell_classes', 'casting_time', 'components', 'spell_markers', 'sources', 'ruleset'],
+        export_cols=['name', 'spell_level', 'school', 'spell_classes', 'casting_time', 'verbal', 'somatic', 'material', 'special_material', 'ritual', 'concentration', 'sources', 'ruleset'],
+        sorts=['spell_level', 'school', 'casting_time'],
+        default='spell_level',
+    ),
+    'psionic': _schema(['psionic_order', 'psionic_type'], sorts=['psionic_order', 'psionic_type'], default='psionic_order'),
+    'equipment': _schema(
+        ['item_type', 'mastery'],
+        cols=['name', 'item_type', 'price', 'weight', 'damage', 'ac', 'mastery', 'sources', 'ruleset'],
+        sorts=['item_type', 'mastery', 'ac'],
+    ),
+    'magic_item': _schema(
+        ['rarity', 'item_type'],
+        flags=['attunement'],
+        cols=['name', 'rarity', 'item_type', 'item_subtypes', 'attunement', 'attunement_requirements', 'sources', 'ruleset'],
+        sorts=['rarity', 'item_type'],
+        default='rarity',
+    ),
+    'poison': _schema(['poison_type'], cols=['name', 'poison_type', 'price', 'sources', 'ruleset'], sorts=['poison_type']),
+    'creature': _schema(
+        ['size', 'creature_type'],
+        flags=['legendary_actions', 'lair_actions', 'has_local_audio'],
+        range_field='cr',
+        cols=['name', 'size', 'creature_type', 'cr', 'ac', 'hp', 'legendary_actions', 'lair_actions', 'has_local_audio', 'sources', 'ruleset'],
+        sorts=['cr', 'size', 'creature_type', 'ac', 'hp'],
+        default='cr',
+    ),
+    'vehicle': _schema(
+        ['vehicle_type', 'size'],
+        cols=['name', 'vehicle_type', 'size', 'crew', 'passengers', 'sources', 'ruleset'],
+        sorts=['vehicle_type', 'size'],
+    ),
+    'facility': _schema(['facility_kind', 'level'], sorts=['facility_kind', 'level'], default='level'),
+    'object': _schema(['size', 'object_type'], cols=['name', 'size', 'object_type', 'ac', 'hp', 'sources', 'ruleset'], sorts=['size', 'ac', 'hp']),
+    'deck': _schema(['deck_set'], cols=['name', 'deck_set', 'card_count', 'sources', 'ruleset'], sorts=['deck_set'], default='deck_set'),
+    'recipe': _schema(['dish_types', 'diet'], sorts=['diet']),
+    'reward': _schema(['reward_kind'], sorts=['reward_kind'], default='reward_kind'),
+    'deity': _schema(['pantheon', 'alignment', 'domains'], sorts=['pantheon', 'alignment'], default='pantheon'),
+    'trap': _schema(['trap_kind'], sorts=['trap_kind']),
+    'hazard': _schema(['hazard_kind'], sorts=['hazard_kind']),
+    'table': _schema(['table_kind'], sorts=['table_kind'], default='table_kind'),
+    'condition': _schema(['condition_kind'], sorts=['condition_kind']),
+    'action': _schema(['action_time'], sorts=['action_time']),
+    'skill': _schema(['ability'], sorts=['ability'], default='ability'),
+    'language': _schema(['language_type', 'script'], sorts=['language_type', 'script'], default='language_type'),
+    'rule': _schema(['rule_kind'], sorts=['rule_kind']),
+    'book': _schema(['book_kind', 'book_group'], cols=['name', 'book_kind', 'book_group', 'published', 'sources', 'ruleset'], sorts=['book_kind', 'book_group'], default='book_kind'),
+    'generic': _schema(cols=['name', 'type', 'sources', 'ruleset'], sorts=['type', 'ruleset'], default='type'),
 }
 
-TYPE_KINDS: dict[str, str] = {
-    'class': 'class',
-    'subclass': 'subclass',
-    'class_feature': 'class_feature',
-    'species': 'species',
-    'background': 'background',
-    'feat': 'feat',
-    'spell': 'spell',
-    'psionic': 'psionic',
-    'equipment': 'equipment',
-    'magic_item': 'magic_item',
-    'poison': 'poison',
-    'creature': 'creature',
-    'vehicle': 'vehicle',
-    'facility': 'facility',
-    'object': 'object',
-    'deck': 'deck',
-    'recipe': 'recipe',
-    'reward': 'reward',
-    'deity': 'deity',
-    'trap': 'trap',
-    'hazard': 'hazard',
-    'disease': 'generic',
-    'table': 'table',
-    'condition': 'condition',
-    'action': 'action',
-    'skill': 'skill',
-    'language': 'language',
-    'rule': 'rule',
-    'book': 'book',
-}
+TYPE_KINDS: dict[str, str] = {t: (t if t in SCHEMAS else GENERIC) for t in TYPES}
 
 PRESETS: tuple[dict[str, str], ...] = (
     {'name': '魔法武器', 'type': 'magic_item', 'field': 'item_type', 'value': '武器'},
@@ -886,62 +745,22 @@ COMPARE_EXTRA: dict[str, list[str]] = {
 # Schema & query helpers (API-compatible with anna.catalog.views)
 # ---------------------------------------------------------------------------
 
-def finish(config: dict[str, Any]) -> dict[str, Any]:
-    config.setdefault('export_columns', config['columns'])
-    config['composites'] = {k: COMPOSITES[k] for k in config['columns'] if k in COMPOSITES}
-    return config
-
-
-def configure(kind: str) -> dict[str, Any]:
-    return finish({'kinds': [kind], **SCHEMAS[kind]})
-
-
-def combine(kinds: list[str]) -> dict[str, Any]:
-    base, own = SCHEMAS[GENERIC], [SCHEMAS[k] for k in kinds]
-    merge = lambda key: list(dict.fromkeys(x for s in [base, *own] for x in s.get(key, [])))
-    lead = [c for c in base['columns'] if c not in IDENTITY_COLUMNS or c in {'name', 'type'}]
-    tail = [c for c in base['columns'] if c not in lead]
-    readings = lambda key: [c for s in own for c in s.get(key, s['columns']) if c not in IDENTITY_COLUMNS]
-    return finish({
-        'kinds': [GENERIC, *kinds],
-        'facets': merge('facets'),
-        'flags': merge('flags'),
-        'range': next((s['range'] for s in own if s.get('range')), None),
-        'columns': list(dict.fromkeys(lead + readings('columns') + tail)),
-        'export_columns': list(dict.fromkeys(lead + readings('export_columns') + tail)),
-        'sorts': merge('sorts'),
-        'default_sort': base['default_sort'],
-    })
-
-
-def type_conditions(entry_type: str) -> list[str]:
-    own = SCHEMAS[TYPE_KINDS.get(entry_type, GENERIC)]
-    return [*own['facets'], *own['flags'], *([own['range']] if own.get('range') else [])]
-
-
-def schema_for(types: Any, widened: bool = False) -> dict[str, Any]:
-    """The table a set of entry types reads as; `widened` says entries of other types match too."""
-    ordered_types = sorted(
-        set(types),
-        key=lambda t: TYPE_ORDER.index(t) if t in TYPE_ORDER else len(TYPE_ORDER),
-    )
-    kinds = list(dict.fromkeys([*(TYPE_KINDS.get(t, GENERIC) for t in ordered_types), *([GENERIC] if widened else [])]))
-    if len(kinds) <= 1:
-        return configure(kinds[0] if kinds else GENERIC)
-    return combine([k for k in kinds if k != GENERIC])
-
-
-def field_order(entry: dict[str, Any]) -> list[str]:
-    fields = entry['fields']
-    config = configure(TYPE_KINDS.get(entry['type'], GENERIC))
-    lead = [f for column in config['columns'] for f in [column, *config['composites'].get(column, [])]]
-    rules = [f for f in fields if f not in METADATA_FIELDS]
-    ordered = [f for f in dict.fromkeys(lead) if f in rules] + [f for f in rules if f not in lead]
-    details = [f for f in ordered if f.endswith(DETAIL_SUFFIX) and f[:-len(DETAIL_SUFFIX)] in ordered]
-    for f in details:
-        ordered.remove(f)
-        ordered.insert(ordered.index(f[:-len(DETAIL_SUFFIX)]) + 1, f)
-    return ordered + [f for f in METADATA_FIELDS if f in fields]
+VIEW_SPEC = ViewSpec(
+    schemas=SCHEMAS,
+    type_kinds=TYPE_KINDS,
+    type_order=TYPE_ORDER,
+    identity_columns=IDENTITY_COLUMNS,
+    composites=COMPOSITES,
+    metadata_fields=METADATA_FIELDS,
+    detail_suffix=DETAIL_SUFFIX,
+    generic=GENERIC,
+)
+finish = VIEW_SPEC.finish
+configure = VIEW_SPEC.configure
+combine = VIEW_SPEC.combine
+type_conditions = VIEW_SPEC.type_conditions
+schema_for = VIEW_SPEC.schema_for
+field_order = VIEW_SPEC.field_order
 
 
 def scalar_values(v: Any) -> list[Any]:

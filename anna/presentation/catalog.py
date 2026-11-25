@@ -251,26 +251,11 @@ _TYPE_RULESET_COUNTS_CACHE: OrderedDict[tuple[str, int, int, int], list[list]] =
 _TYPE_RULESET_COUNTS_LIMIT = 8
 
 
-def _db_file_sig(db):
-    try:
-        rows = db.execute('PRAGMA database_list').fetchall()
-    except sqlite3.Error:
-        return None
-    main_file = next((r[2] for r in rows if r[1] == 'main'), '')
-    if not main_file:
-        return None
-    try:
-        st = Path(main_file).stat()
-        return (main_file, st.st_ino, st.st_size, st.st_mtime_ns)
-    except OSError:
-        return None
-
-
 def _type_ruleset_counts(db):
     counts_rows = _meta_json(db, 'pages_type_ruleset_counts')
     if counts_rows is not None:
         return counts_rows
-    sig = _db_file_sig(db)
+    sig = _db_signature(db)
     if sig is None:
         return None
     with _TYPE_RULESET_COUNTS_LOCK:
@@ -432,34 +417,10 @@ def facets(db, params, restrict=None):
         case_vals + [v for _, values in columns for v in values] + scoped + extra_vals,
     )
     for row in rows_cur:
-        if single_type_card:
-            scope_total += 1
-            total += 1
-            parsed = None
-            raw_src = row['sources']
-            source_ids = (raw_src.split('\x1f') if '\x1f' in raw_src else [raw_src]) if raw_src else []
-            for key in counted[1:]:
-                if key.startswith('f_'):
-                    parsed = parsed or json.loads(row['fields'])
-                    vals = browse.normalized(parsed, key[2:])
-                elif key == 'source':
-                    vals = source_ids
-                elif key == 'origin':
-                    vals = list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
-                else:
-                    vals = [row[{'status': 'classification_status'}.get(key, key)]]
-                universe[key].update(vals)
-                counts[key].update(vals)
-            for f in domain:
-                parsed = parsed or json.loads(row['fields'])
-                unknown_cover[f] += browse.normalized(parsed, f) != [browse.UNKNOWN]
-            continue
-        result = {node: t(row) for node, t in tests.items()}
-        if not any(result.values()):
-            continue
         parsed = None
         raw_src = row['sources']
         source_ids = (raw_src.split('\x1f') if '\x1f' in raw_src else [raw_src]) if raw_src else []
+
         def values(key):
             nonlocal parsed
             if key == 'type':
@@ -472,6 +433,20 @@ def facets(db, params, restrict=None):
             if key == 'origin':
                 return list(dict.fromkeys(origin_of.get(s) for s in source_ids if origin_of.get(s)))
             return [row[{'status': 'classification_status'}.get(key, key)]]
+
+        if single_type_card:
+            scope_total += 1
+            total += 1
+            for key in counted[1:]:
+                vals = values(key)
+                universe[key].update(vals)
+                counts[key].update(vals)
+            for f in domain:
+                unknown_cover[f] += values('f_' + f) != [browse.UNKNOWN]
+            continue
+        result = {node: t(row) for node, t in tests.items()}
+        if not any(result.values()):
+            continue
         if result[in_scope]:
             scope_total += 1
             for key in counted[1:]:
@@ -542,8 +517,11 @@ _TYPE_ORDER_RANK = {t: i for i, t in enumerate(browse.TYPE_ORDER)}
 
 
 def _db_signature(db):
-    rows_list = db.execute('PRAGMA database_list').fetchall()
-    file_path = rows_list[0]['file'] if rows_list and rows_list[0]['file'] else ''
+    try:
+        rows_list = db.execute('PRAGMA database_list').fetchall()
+    except sqlite3.Error:
+        return None
+    file_path = next((r[2] for r in rows_list if r[1] == 'main'), '')
     if not file_path:
         return None
     try:
@@ -1143,12 +1121,35 @@ def versions(db, eid):
     entry['versions'] = version_compare(db, entry)
     return entry
 
+def format_csv_bytes(headers, row_iter):
+    """Write CSV headers and row iterables with formula-injection guarding and a UTF-8 BOM."""
+    out = io.StringIO(newline='')
+    writer = csv.writer(out)
+    writer.writerow(headers)
+    for cells in row_iter:
+        writer.writerow(["'" + s if s.lstrip().startswith(('=', '+', '-', '@')) else s for s in map(str, cells)])
+    return ('\ufeff' + out.getvalue()).encode('utf-8')
+
+
 def csv_export(rows, config=None):
-    out=io.StringIO(newline=''); writer=csv.writer(out)
-    extras=[f for f in (config or browse.configure(browse.GENERIC))['export_columns'] if f not in browse.IDENTITY_COLUMNS]
-    writer.writerow(['版本ID','中文名','英文名','类型','版本','来源','分类依据','旧版标记','字段冲突','正文路径']+[browse.COLUMN_LABELS.get(f,f) for f in extras])
-    for r in rows:
-        cells=[r['id'],r['name_zh'],r['name_en'],TYPES.get(r['type'],r['type']),r['ruleset'],'；'.join(r['source_names']),r['classification_status'],r['legacy'],'；'.join(r['field_conflicts']),r['page_path']]
-        cells.extend(json.dumps(r['fields'].get(f),ensure_ascii=False) if isinstance(r['fields'].get(f),(list,dict)) else str(r['fields'].get(f,'')) for f in extras)
-        writer.writerow(["'"+s if s.lstrip().startswith(('=','+','-','@')) else s for s in map(str,cells)])
-    return ('\ufeff'+out.getvalue()).encode('utf-8')
+    extras = [f for f in (config or browse.configure(browse.GENERIC))['export_columns'] if f not in browse.IDENTITY_COLUMNS]
+    headers = ['版本ID', '中文名', '英文名', '类型', '版本', '来源', '分类依据', '旧版标记', '字段冲突', '正文路径'] + [
+        browse.COLUMN_LABELS.get(f, f) for f in extras
+    ]
+
+    def iter_rows():
+        for r in rows:
+            cells = [
+                r['id'], r['name_zh'], r['name_en'], TYPES.get(r['type'], r['type']), r['ruleset'],
+                '；'.join(r['source_names']), r['classification_status'], r['legacy'],
+                '；'.join(r['field_conflicts']), r['page_path'],
+            ]
+            cells.extend(
+                json.dumps(r['fields'].get(f), ensure_ascii=False)
+                if isinstance(r['fields'].get(f), (list, dict))
+                else str(r['fields'].get(f, ''))
+                for f in extras
+            )
+            yield cells
+
+    return format_csv_bytes(headers, iter_rows())

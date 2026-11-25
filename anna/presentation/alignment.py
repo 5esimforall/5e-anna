@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 import re
+from typing import Any
 import unicodedata
 
 # Evidence from strongest to weakest.
@@ -77,6 +78,23 @@ class Alignment:
         return self.links.get((a, b)) or self.links.get((b, a))
 
 
+class UnionFind:
+    """Path-halving disjoint-set forest keyed by arbitrary hashable nodes."""
+
+    def __init__(self) -> None:
+        self.parent: dict[Any, Any] = {}
+
+    def find(self, x: Any) -> Any:
+        self.parent.setdefault(x, x)
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: Any, b: Any) -> None:
+        self.parent[self.find(a)] = self.find(b)
+
+
 def align(sides: list[tuple[str, list[dict], dict[str, set]]]) -> Alignment:
     """Align the works of each pair of collections.
 
@@ -87,21 +105,13 @@ def align(sides: list[tuple[str, list[dict], dict[str, set]]]) -> Alignment:
         for key_b, works_b, names_b in sides[i + 1:]:
             accepted.extend(_align_pair(key_a, works_a, names_a, key_b, works_b, names_b))
     out = Alignment()
-    parent: dict = {}
-
-    def find(x):
-        parent.setdefault(x, x)
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
+    uf = UnionFind()
     for a, b, link in accepted:
-        parent[find(a)] = find(b)
+        uf.union(a, b)
         out.links[(a, b)] = link
     groups: dict = defaultdict(list)
-    for node in list(parent):
-        groups[find(node)].append(node)
+    for node in list(uf.parent):
+        groups[uf.find(node)].append(node)
     for nodes in groups.values():
         nodes.sort()
         name = nodes[0][0] + ':' + nodes[0][1]

@@ -634,73 +634,79 @@ def _package_origin(pkg_id: str, pkg_record: dict[str, Any]) -> str:
     return 'brew'
 
 
-def collect_book_index(inventory: Any) -> BookIndex:
-    """Phase 1: Collect all official, brew, and site books/adventures + build `anchor_lookup`."""
-    source_root = Path(inventory.source_root).resolve()
-    official_sources = inventory.official_sources or {}
-    official_casefold = inventory.official_source_casefold or {}
-    maps_data = _load_maps_lookup(inventory, source_root)
+def _append_contents_mismatch_warning(
+    warnings: list[dict[str, Any]],
+    *,
+    package_id: str,
+    kind: str,
+    book_id: str,
+    contents: list[dict[str, Any]],
+    data_chapters: list[dict[str, Any]],
+) -> None:
+    if len(contents) != len(data_chapters):
+        warnings.append({
+            'code': 'contents_chapter_count_mismatch',
+            'package_id': package_id,
+            'kind': kind,
+            'book_id': book_id,
+            'contents_count': len(contents),
+            'data_count': len(data_chapters),
+        })
 
-    warnings: list[dict[str, Any]] = []
-    notes: list[dict[str, Any]] = []
-    books: list[BookMeta] = []
 
-    used_official_book_dirs: set[str] = set()
-    used_official_adv_dirs: set[str] = set()
-    used_brew_book_dirs: set[str] = set()
-    used_brew_adv_dirs: set[str] = set()
-
-    counts = {
-        'official_books': 0,
-        'official_adventures': 0,
-        'brew_books': 0,
-        'brew_adventures': 0,
-        'site_books': 0,
-        'site_adventures': 0,
-        'total': 0,
-    }
-
-    # 1. Official books (data/books.json + data/book/book-*.json)
-    books_json_path = source_root / 'data/books.json'
-    official_book_ids: set[str] = set()
-    if books_json_path.is_file():
-        books_raw = _load_json(books_json_path).get('book', [])
-        for meta in books_raw:
+def _collect_official_works(
+    source_root: Path,
+    official_sources: dict[str, Any],
+    official_casefold: dict[str, str],
+    maps_data: dict[str, Any],
+    warnings: list[dict[str, Any]],
+    notes: list[dict[str, Any]],
+    counts: dict[str, int],
+) -> list[BookMeta]:
+    """Collect official books, official adventures, and placeholder adventure notes."""
+    works: list[BookMeta] = []
+    specs = (
+        ('book', 'data/books.json', 'data/book/book-{id}.json', 'missing_official_book_file', 'book', 'books', 'official_books'),
+        ('adventure', 'data/adventures.json', 'data/adventure/adventure-{id}.json', 'missing_official_adventure_file', 'adv', 'adventures', 'official_adventures'),
+    )
+    seen_ids_by_kind: dict[str, set[str]] = {'book': set(), 'adventure': set()}
+    for kind, index_rel, data_tpl, missing_code, key_prefix, dir_prefix, count_key in specs:
+        used_dirs: set[str] = set()
+        index_path = source_root / index_rel
+        if not index_path.is_file():
+            continue
+        for meta in _load_json(index_path).get(kind, []):
             if not isinstance(meta, dict):
                 continue
             bid = str(meta.get('id') or '').strip()
             if not bid:
                 continue
-            official_book_ids.add(bid.lower())
-            data_file = source_root / f'data/book/book-{bid.lower()}.json'
+            seen_ids_by_kind[kind].add(bid.lower())
+            data_rel = data_tpl.format(id=bid.lower())
+            data_file = source_root / data_rel
             if data_file.is_file():
                 data_chapters = [c for c in (_load_json(data_file).get('data') or []) if isinstance(c, dict)]
             else:
                 data_chapters = []
-                warnings.append({
-                    'code': 'missing_official_book_file',
-                    'book_id': bid,
-                    'path': f'data/book/book-{bid.lower()}.json',
-                })
+                warnings.append({'code': missing_code, 'book_id': bid, 'path': data_rel})
             src = str(meta.get('source') or bid).strip()
-            dir_name = _safe_official_dir(bid, used_official_book_dirs)
+            dir_name = _safe_official_dir(bid, used_dirs)
             contents = [c for c in (meta.get('contents') or []) if isinstance(c, dict)]
-            if len(contents) != len(data_chapters):
-                warnings.append({
-                    'code': 'contents_chapter_count_mismatch',
-                    'package_id': 'official',
-                    'kind': 'book',
-                    'book_id': bid,
-                    'contents_count': len(contents),
-                    'data_count': len(data_chapters),
-                })
-            bm = BookMeta(
+            _append_contents_mismatch_warning(
+                warnings,
+                package_id='official',
+                kind=kind,
+                book_id=bid,
+                contents=contents,
+                data_chapters=data_chapters,
+            )
+            works.append(BookMeta(
                 book_id=bid,
                 title=_strip_tags_plain(meta.get('name') or meta.get('ENG_name') or bid),
                 title_en=_strip_tags_plain(meta.get('ENG_name') or ''),
                 source_code=src,
                 package_id='official',
-                kind='book',
+                kind=kind,
                 group=str(meta.get('group') or ''),
                 edition=_resolve_edition(meta, src, official_sources, official_casefold, is_official=True),
                 contents=contents,
@@ -708,79 +714,21 @@ def collect_book_index(inventory: Any) -> BookIndex:
                 author=_join_str(meta.get('author')),
                 translator=_join_str(meta.get('translator')),
                 cover=meta.get('cover') if isinstance(meta.get('cover'), dict) else None,
-                maps_entry=_lookup_maps_entry(maps_data, bid, 'book'),
-                book_key=f'book_{dir_name}',
+                maps_entry=_lookup_maps_entry(maps_data, bid, kind),
+                book_key=f'{key_prefix}_{dir_name}',
                 origin='official',
-                dir_prefix='books',
+                dir_prefix=dir_prefix,
                 dir_name=dir_name,
                 published=str(meta.get('published') or ''),
-            )
-            books.append(bm)
-            counts['official_books'] += 1
-
-    # 2. Official adventures (data/adventures.json + data/adventure/adventure-*.json)
-    advs_json_path = source_root / 'data/adventures.json'
-    official_adv_ids: set[str] = set()
-    if advs_json_path.is_file():
-        advs_raw = _load_json(advs_json_path).get('adventure', [])
-        for meta in advs_raw:
-            if not isinstance(meta, dict):
-                continue
-            aid = str(meta.get('id') or '').strip()
-            if not aid:
-                continue
-            official_adv_ids.add(aid.lower())
-            data_file = source_root / f'data/adventure/adventure-{aid.lower()}.json'
-            if data_file.is_file():
-                data_chapters = [c for c in (_load_json(data_file).get('data') or []) if isinstance(c, dict)]
-            else:
-                data_chapters = []
-                warnings.append({
-                    'code': 'missing_official_adventure_file',
-                    'book_id': aid,
-                    'path': f'data/adventure/adventure-{aid.lower()}.json',
-                })
-            src = str(meta.get('source') or aid).strip()
-            dir_name = _safe_official_dir(aid, used_official_adv_dirs)
-            contents = [c for c in (meta.get('contents') or []) if isinstance(c, dict)]
-            if len(contents) != len(data_chapters):
-                warnings.append({
-                    'code': 'contents_chapter_count_mismatch',
-                    'package_id': 'official',
-                    'kind': 'adventure',
-                    'book_id': aid,
-                    'contents_count': len(contents),
-                    'data_count': len(data_chapters),
-                })
-            bm = BookMeta(
-                book_id=aid,
-                title=_strip_tags_plain(meta.get('name') or meta.get('ENG_name') or aid),
-                title_en=_strip_tags_plain(meta.get('ENG_name') or ''),
-                source_code=src,
-                package_id='official',
-                kind='adventure',
-                group=str(meta.get('group') or ''),
-                edition=_resolve_edition(meta, src, official_sources, official_casefold, is_official=True),
-                contents=contents,
-                data_chapters=data_chapters,
-                author=_join_str(meta.get('author')),
-                translator=_join_str(meta.get('translator')),
-                cover=meta.get('cover') if isinstance(meta.get('cover'), dict) else None,
-                maps_entry=_lookup_maps_entry(maps_data, aid, 'adventure'),
-                book_key=f'adv_{dir_name}',
-                origin='official',
-                dir_prefix='adventures',
-                dir_name=dir_name,
-                published=str(meta.get('published') or ''),
-                storyline=str(meta.get('storyline') or ''),
-                level=meta.get('level') if isinstance(meta.get('level'), dict) else None,
-            )
-            books.append(bm)
-            counts['official_adventures'] += 1
+                storyline=str(meta.get('storyline') or '') if kind == 'adventure' else '',
+                level=meta.get('level') if (kind == 'adventure' and isinstance(meta.get('level'), dict)) else None,
+            ))
+            counts[count_key] += 1
 
     # Detect placeholder/unlisted adventure data files (specifically data/adventure/adventure-fraif.json).
     adv_dir = source_root / 'data/adventure'
     if adv_dir.is_dir():
+        official_adv_ids = seen_ids_by_kind['adventure']
         for extra in sorted(adv_dir.glob('adventure-*.json')):
             stem_id = extra.stem[len('adventure-'):].lower()
             if stem_id not in official_adv_ids:
@@ -799,16 +747,34 @@ def collect_book_index(inventory: Any) -> BookIndex:
                 }
                 warnings.append(note)
                 notes.append(note)
+    return works
 
-    # 3 & 4 & 5. Brew books, brew adventures, and standalone site books/comics.
+
+def _collect_package_works(
+    inventory: Any,
+    source_root: Path,
+    official_sources: dict[str, Any],
+    official_casefold: dict[str, str],
+    maps_data: dict[str, Any],
+    warnings: list[dict[str, Any]],
+    counts: dict[str, int],
+) -> list[BookMeta]:
+    """Collect brew and site books/adventures from inventory packages, docs, and toImport."""
     packages = list(inventory.packages or [])
     package_docs = inventory.package_docs or {}
     seen_package_ids: set[str] = set()
     seen_site_files: set[str] = set()
+    used_brew_book_dirs: set[str] = set()
+    used_brew_adv_dirs: set[str] = set()
 
     brew_books_list: list[BookMeta] = []
     brew_advs_list: list[BookMeta] = []
     site_books_list: list[BookMeta] = []
+
+    kind_specs = (
+        ('book', 'book', 'bookData', used_brew_book_dirs, 'brew-books', 'sbook', 'bbook', site_books_list, 'site_books', brew_books_list, 'brew_books'),
+        ('adventure', 'adventure', 'adventureData', used_brew_adv_dirs, 'brew-adventures', 'sadv', 'badv', site_books_list, 'site_adventures', brew_advs_list, 'brew_adventures'),
+    )
 
     def ingest_package(pkg_id: str, pkg_record: dict[str, Any], doc: dict[str, Any], origin: str) -> None:
         if not isinstance(doc, dict):
@@ -820,124 +786,66 @@ def collect_book_index(inventory: Any) -> BookIndex:
             or pkg_record.get('file')
             or pkg_id
         )
+        doc_meta = doc.get('_meta') if isinstance(doc.get('_meta'), dict) else {'edition': pkg_edition}
 
-        # Books paired strictly by id.
-        raw_books = doc.get('book') if isinstance(doc.get('book'), list) else []
-        raw_book_data = doc.get('bookData') if isinstance(doc.get('bookData'), list) else []
-        if raw_books or raw_book_data:
+        for kind, meta_key, data_key, used_dirs, dir_prefix, site_prefix, brew_prefix, site_out, site_count, brew_out, brew_count in kind_specs:
+            raw_items = doc.get(meta_key) if isinstance(doc.get(meta_key), list) else []
+            raw_data = doc.get(data_key) if isinstance(doc.get(data_key), list) else []
+            if not (raw_items or raw_data):
+                continue
             for meta, data_chapters in _pair_by_id(
-                raw_books, raw_book_data, kind='book', package_id=pkg_id, warnings=warnings
+                raw_items, raw_data, kind=kind, package_id=pkg_id, warnings=warnings
             ):
                 bid = str(meta.get('id') or '').strip()
                 if not bid:
                     continue
                 src = str(meta.get('source') or bid).strip()
-                dir_name = _safe_brew_dir(pkg_id, bid, used_brew_book_dirs)
+                dir_name = _safe_brew_dir(pkg_id, bid, used_dirs)
                 contents = [c for c in (meta.get('contents') or []) if isinstance(c, dict)]
-                if len(contents) != len(data_chapters):
-                    warnings.append({
-                        'code': 'contents_chapter_count_mismatch',
-                        'package_id': pkg_id,
-                        'kind': 'book',
-                        'book_id': bid,
-                        'contents_count': len(contents),
-                        'data_count': len(data_chapters),
-                    })
-                key_prefix = 'sbook' if origin == 'site' else 'bbook'
+                _append_contents_mismatch_warning(
+                    warnings,
+                    package_id=pkg_id,
+                    kind=kind,
+                    book_id=bid,
+                    contents=contents,
+                    data_chapters=data_chapters,
+                )
+                key_prefix = site_prefix if origin == 'site' else brew_prefix
                 bm = BookMeta(
                     book_id=bid,
                     title=_strip_tags_plain(meta.get('name') or meta.get('ENG_name') or bid),
                     title_en=_strip_tags_plain(meta.get('ENG_name') or ''),
                     source_code=src,
                     package_id=pkg_id,
-                    kind='book',
+                    kind=kind,
                     group=str(meta.get('group') or ('site' if origin == 'site' else 'homebrew')),
                     edition=_resolve_edition(
                         meta, src, official_sources, official_casefold,
-                        pkg_meta=doc.get('_meta') if isinstance(doc.get('_meta'), dict) else {'edition': pkg_edition},
-                        is_official=False,
+                        pkg_meta=doc_meta, is_official=False,
                     ) or pkg_edition,
                     contents=contents,
                     data_chapters=data_chapters,
                     author=_join_str(meta.get('author')) or pkg_author,
                     translator=_join_str(meta.get('translator')) or pkg_translator,
                     cover=meta.get('cover') if isinstance(meta.get('cover'), dict) else None,
-                    maps_entry=_lookup_maps_entry(maps_data, bid, 'book') if origin == 'official' else None,
+                    maps_entry=_lookup_maps_entry(maps_data, bid, kind) if (kind == 'book' and origin == 'official') else None,
                     book_key=f'{key_prefix}_{dir_name}',
                     origin=origin,
-                    dir_prefix='brew-books',
+                    dir_prefix=dir_prefix,
                     dir_name=dir_name,
                     published=str(meta.get('published') or ''),
+                    storyline=str(meta.get('storyline') or '') if kind == 'adventure' else '',
+                    level=meta.get('level') if (kind == 'adventure' and isinstance(meta.get('level'), dict)) else None,
                     package_name=pkg_name,
                     ours=ours,
                 )
                 if origin == 'site':
-                    site_books_list.append(bm)
-                    counts['site_books'] += 1
+                    site_out.append(bm)
+                    counts[site_count] += 1
                 else:
-                    brew_books_list.append(bm)
-                    counts['brew_books'] += 1
+                    brew_out.append(bm)
+                    counts[brew_count] += 1
 
-        # Adventures paired strictly by id.
-        raw_advs = doc.get('adventure') if isinstance(doc.get('adventure'), list) else []
-        raw_adv_data = doc.get('adventureData') if isinstance(doc.get('adventureData'), list) else []
-        if raw_advs or raw_adv_data:
-            for meta, data_chapters in _pair_by_id(
-                raw_advs, raw_adv_data, kind='adventure', package_id=pkg_id, warnings=warnings
-            ):
-                aid = str(meta.get('id') or '').strip()
-                if not aid:
-                    continue
-                src = str(meta.get('source') or aid).strip()
-                dir_name = _safe_brew_dir(pkg_id, aid, used_brew_adv_dirs)
-                contents = [c for c in (meta.get('contents') or []) if isinstance(c, dict)]
-                if len(contents) != len(data_chapters):
-                    warnings.append({
-                        'code': 'contents_chapter_count_mismatch',
-                        'package_id': pkg_id,
-                        'kind': 'adventure',
-                        'book_id': aid,
-                        'contents_count': len(contents),
-                        'data_count': len(data_chapters),
-                    })
-                key_prefix = 'sadv' if origin == 'site' else 'badv'
-                bm = BookMeta(
-                    book_id=aid,
-                    title=_strip_tags_plain(meta.get('name') or meta.get('ENG_name') or aid),
-                    title_en=_strip_tags_plain(meta.get('ENG_name') or ''),
-                    source_code=src,
-                    package_id=pkg_id,
-                    kind='adventure',
-                    group=str(meta.get('group') or ('site' if origin == 'site' else 'homebrew')),
-                    edition=_resolve_edition(
-                        meta, src, official_sources, official_casefold,
-                        pkg_meta=doc.get('_meta') if isinstance(doc.get('_meta'), dict) else {'edition': pkg_edition},
-                        is_official=False,
-                    ) or pkg_edition,
-                    contents=contents,
-                    data_chapters=data_chapters,
-                    author=_join_str(meta.get('author')) or pkg_author,
-                    translator=_join_str(meta.get('translator')) or pkg_translator,
-                    cover=meta.get('cover') if isinstance(meta.get('cover'), dict) else None,
-                    maps_entry=None,
-                    book_key=f'{key_prefix}_{dir_name}',
-                    origin=origin,
-                    dir_prefix='brew-adventures',
-                    dir_name=dir_name,
-                    published=str(meta.get('published') or ''),
-                    storyline=str(meta.get('storyline') or ''),
-                    level=meta.get('level') if isinstance(meta.get('level'), dict) else None,
-                    package_name=pkg_name,
-                    ours=ours,
-                )
-                if origin == 'site':
-                    site_books_list.append(bm)
-                    counts['site_adventures'] += 1
-                else:
-                    brew_advs_list.append(bm)
-                    counts['brew_adventures'] += 1
-
-    # Iterate packages in deterministic order.
     for pkg in packages:
         if not isinstance(pkg, dict):
             continue
@@ -960,7 +868,6 @@ def collect_book_index(inventory: Any) -> BookIndex:
                     seen_site_files.add(Path(candidate).name)
         ingest_package(pkg_id, pkg, doc, origin)
 
-    # Catch any package_docs entries not listed in `inventory.packages`.
     for doc_key in sorted(package_docs):
         if doc_key in seen_package_ids:
             continue
@@ -976,7 +883,6 @@ def collect_book_index(inventory: Any) -> BookIndex:
             seen_site_files.add(Path(doc_key.removeprefix('site:')).name)
         ingest_package(pkg_id, {'package_id': pkg_id, 'id': doc_key}, doc, origin)
 
-    # Fallback check for standalone site imports listed in `homebrew/index.json['toImport']`.
     hb_index_path = source_root / 'homebrew/index.json'
     if hb_index_path.is_file():
         hb_index = _load_json(hb_index_path)
@@ -995,17 +901,41 @@ def collect_book_index(inventory: Any) -> BookIndex:
                 continue
             seen_package_ids.add(pkg_id)
             seen_site_files.add(base_name)
-            doc = _load_json(site_file)
-            ingest_package(pkg_id, {'package_id': pkg_id, 'file': fname, 'ours': True}, doc, 'site')
+            ingest_package(pkg_id, {'package_id': pkg_id, 'file': fname, 'ours': True}, _load_json(site_file), 'site')
 
-    # Sort non-official lists deterministically (ours first, then title/id/package_id).
     brew_books_list.sort(key=lambda b: (not b.ours, b.title, b.book_id.casefold(), b.package_id))
     brew_advs_list.sort(key=lambda b: (not b.ours, b.title, b.book_id.casefold(), b.package_id))
     site_books_list.sort(key=lambda b: (b.title, b.book_id.casefold(), b.package_id))
+    return [*brew_books_list, *brew_advs_list, *site_books_list]
 
-    books.extend(brew_books_list)
-    books.extend(brew_advs_list)
-    books.extend(site_books_list)
+
+def collect_book_index(inventory: Any) -> BookIndex:
+    """Phase 1: Collect all official, brew, and site books/adventures + build `anchor_lookup`."""
+    source_root = Path(inventory.source_root).resolve()
+    official_sources = inventory.official_sources or {}
+    official_casefold = inventory.official_source_casefold or {}
+    maps_data = _load_maps_lookup(inventory, source_root)
+
+    warnings: list[dict[str, Any]] = []
+    notes: list[dict[str, Any]] = []
+    counts = {
+        'official_books': 0,
+        'official_adventures': 0,
+        'brew_books': 0,
+        'brew_adventures': 0,
+        'site_books': 0,
+        'site_adventures': 0,
+        'total': 0,
+    }
+
+    books = [
+        *_collect_official_works(
+            source_root, official_sources, official_casefold, maps_data, warnings, notes, counts,
+        ),
+        *_collect_package_works(
+            inventory, source_root, official_sources, official_casefold, maps_data, warnings, counts,
+        ),
+    ]
     counts['total'] = len(books)
 
     # Precompute chapter paths, deterministic `sec-...` anchors, and `anchor_lookup`.

@@ -239,6 +239,306 @@ def _check_inventory(inv_data: dict[str, Any] | None, invariants: list[dict[str,
     }
 
 
+def _audit_entries_rows(
+    conn: sqlite3.Connection,
+    source_ids: set[str],
+    source_meta: dict[str, dict[str, Any]],
+    package_ids: set[str],
+    invariants: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Scan all `entries` rows, validate IDs/types/provenance/JSON/booleans, and collect distributions."""
+    entry_id_failures: list[str] = []
+    type_failures: list[str] = []
+    provenance_failures: list[str] = []
+    bool_failures: list[str] = []
+    json_parse_failures: list[str] = []
+
+    entry_ids: set[str] = set()
+    expected_quickref: dict[str, set[tuple[str, str]]] = {}
+    null_bool_fields: dict[str, set[str]] = {}
+
+    by_type: Counter[str] = Counter()
+    by_raw_kind: Counter[str] = Counter()
+    by_ruleset: Counter[str] = Counter()
+    by_origin: Counter[str] = Counter()
+    by_package: Counter[str] = Counter()
+    by_source: Counter[str] = Counter()
+    by_copy_status: Counter[str] = Counter()
+    conflict_entries = 0
+    conflict_field_counts: Counter[str] = Counter()
+    unknown_bool_counts: Counter[str] = Counter()
+    copy_non_ok_samples: list[dict[str, Any]] = []
+
+    cursor = conn.execute(
+        'SELECT id, type, raw_kind, name, ruleset, legacy, package_id, source_id, '
+        'copy_status, fields_json, quickref_json, conflicts_json FROM entries'
+    )
+    for row in cursor:
+        eid = row['id']
+        etype = row['type']
+        rkind = row['raw_kind']
+        pkg_id = row['package_id']
+        src_id = row['source_id']
+        ruleset = row['ruleset']
+        cstatus = row['copy_status'] or 'ok'
+
+        if not isinstance(eid, str) or not eid.startswith('o5e_'):
+            entry_id_failures.append(f'非法条目 ID：{eid!r}')
+        elif eid in entry_ids:
+            entry_id_failures.append(f'重复条目 ID：{eid}')
+        else:
+            entry_ids.add(eid)
+
+        if etype not in TYPES:
+            type_failures.append(f'{eid}: 未知类型 {etype!r}')
+
+        if not isinstance(src_id, str) or not src_id or src_id not in source_ids:
+            provenance_failures.append(f'{eid}: 无效或缺失 source_id={src_id!r}')
+        if not isinstance(pkg_id, str) or not pkg_id or pkg_id not in package_ids:
+            provenance_failures.append(f'{eid}: 无效或缺失 package_id={pkg_id!r}')
+
+        by_type[etype] += 1
+        by_raw_kind[rkind or ''] += 1
+        by_ruleset[ruleset or ''] += 1
+        src_info = source_meta.get(src_id)
+        by_origin[(src_info['origin'] if src_info else '') or '未知'] += 1
+        by_package[pkg_id or ''] += 1
+        by_source[src_id or ''] += 1
+        by_copy_status[cstatus] += 1
+
+        if cstatus != 'ok' and len(copy_non_ok_samples) < 20:
+            copy_non_ok_samples.append({
+                'id': eid,
+                'name': row['name'],
+                'type': etype,
+                'source_id': src_id,
+                'copy_status': cstatus,
+            })
+
+        try:
+            fields = json.loads(row['fields_json']) if row['fields_json'] else {}
+            quickref = json.loads(row['quickref_json']) if row['quickref_json'] else {}
+            conflicts = json.loads(row['conflicts_json']) if row['conflicts_json'] else []
+        except Exception as exc:
+            json_parse_failures.append(f'{eid}: JSON 解析失败: {exc}')
+            continue
+
+        if isinstance(conflicts, list) and conflicts:
+            conflict_entries += 1
+            for cf in conflicts:
+                conflict_field_counts[str(cf)] += 1
+
+        if not isinstance(fields, dict):
+            json_parse_failures.append(f'{eid}: fields_json 非对象')
+            fields = {}
+        if not isinstance(quickref, dict):
+            json_parse_failures.append(f'{eid}: quickref_json 非对象')
+            quickref = {}
+
+        qr_pairs: set[tuple[str, str]] = set()
+        for qk, qvals in quickref.items():
+            if isinstance(qvals, list):
+                for qv in qvals:
+                    qr_pairs.add((str(qk), str(qv)))
+            elif qvals is not None:
+                qr_pairs.add((str(qk), str(qvals)))
+        expected_quickref[eid] = qr_pairs
+
+        entry_null_bools: set[str] = set()
+        mat_raw = fields.get('material')
+        has_material_token = mat_raw in {'M', 'M*', '×'} or (
+            isinstance(mat_raw, list) and any(x in {'M', 'M*', '×'} for x in mat_raw)
+        )
+        for bf in BOOL_FIELDS:
+            fval = fields.get(bf)
+            qval = quickref.get(bf)
+            if bf in fields and fval is None:
+                entry_null_bools.add(bf)
+                if qval is not None and qval != [UNKNOWN]:
+                    bool_failures.append(f'{eid}: {bf}=None 但 quickref={qval!r}（禁止强制为 false）')
+            elif bf not in fields:
+                if not (bf == 'special_material' and has_material_token):
+                    entry_null_bools.add(bf)
+                    if qval is not None and qval != [UNKNOWN]:
+                        bool_failures.append(f'{eid}: 缺失字段 {bf} 但 quickref={qval!r}')
+            if qval == [UNKNOWN]:
+                unknown_bool_counts[bf] += 1
+
+            if cstatus != 'ok':
+                if etype == 'creature' and bf in {'legendary_actions', 'lair_actions'} and (
+                    fval is False or qval == ['false']
+                ):
+                    bool_failures.append(f'{eid} ({cstatus}): 生物布尔字段 {bf} 被推断为 False')
+                elif etype == 'magic_item' and bf == 'attunement' and (
+                    fval is False or qval == ['false']
+                ):
+                    bool_failures.append(f'{eid} ({cstatus}): 魔法物品同调在未解析基类时被推断为 False')
+                elif etype == 'spell' and bf in {'concentration', 'ritual', 'verbal', 'somatic', 'material', 'special_material'}:
+                    if bf == 'ritual' and fval is False and not fields.get('casting_time'):
+                        bool_failures.append(f'{eid} ({cstatus}): 残缺法术 {bf} 被推断为 False')
+                    elif bf == 'concentration' and (fval is False or qval == ['false']):
+                        bool_failures.append(f'{eid} ({cstatus}): 残缺法术 {bf} 被推断为 False')
+        if entry_null_bools:
+            null_bool_fields[eid] = entry_null_bools
+
+    _add_invariant(
+        invariants,
+        key='entries_ids_unique',
+        title='条目 ID 唯一且符合 o5e_* 前缀',
+        ok=len(entry_ids) > 0 and len(entry_id_failures) == 0,
+        detail=f'共 {len(entry_ids)} 条条目，异常 {len(entry_id_failures)} 处',
+        failures=entry_id_failures if entry_id_failures else ([] if entry_ids else ['entries 表为空']),
+    )
+    _add_invariant(
+        invariants,
+        key='entries_valid_types',
+        title='条目类型均属于 TYPES 词汇表',
+        ok=len(type_failures) == 0,
+        detail=f'覆盖 {len(by_type)}/{len(TYPES)} 种类型，无效类型 {len(type_failures)} 处',
+        failures=type_failures,
+    )
+    _add_invariant(
+        invariants,
+        key='entries_valid_provenance',
+        title='条目来源与内容包引用完整',
+        ok=len(provenance_failures) == 0,
+        detail=f'来源 {len(source_ids)} 个，内容包 {len(package_ids)} 个，断链 {len(provenance_failures)} 处',
+        failures=provenance_failures,
+    )
+    _add_invariant(
+        invariants,
+        key='entries_json_valid',
+        title='条目结构化 JSON 字段可解析',
+        ok=len(json_parse_failures) == 0,
+        detail=f'JSON 解析异常 {len(json_parse_failures)} 处',
+        failures=json_parse_failures,
+    )
+
+    return {
+        'entry_ids': entry_ids,
+        'expected_quickref': expected_quickref,
+        'null_bool_fields': null_bool_fields,
+        'bool_failures': bool_failures,
+        'by_type': by_type,
+        'by_raw_kind': by_raw_kind,
+        'by_ruleset': by_ruleset,
+        'by_origin': by_origin,
+        'by_package': by_package,
+        'by_source': by_source,
+        'by_copy_status': by_copy_status,
+        'conflict_entries': conflict_entries,
+        'conflict_field_counts': conflict_field_counts,
+        'unknown_bool_counts': unknown_bool_counts,
+        'copy_non_ok_samples': copy_non_ok_samples,
+    }
+
+
+def _audit_facets_and_relations(
+    conn: sqlite3.Connection,
+    *,
+    entry_ids: set[str],
+    expected_quickref: dict[str, set[tuple[str, str]]],
+    null_bool_fields: dict[str, set[str]],
+    bool_failures: list[str],
+    invariants: list[dict[str, Any]],
+) -> tuple[int, int, int, int, int]:
+    """Verify entry_facets parity, unknown booleans, and relational integrity."""
+    facet_cols = {r[1] for r in conn.execute('PRAGMA table_info(entry_facets)')}
+    if {'facet_key', 'facet_value'} <= facet_cols:
+        fk_col, fv_col = 'facet_key', 'facet_value'
+    else:
+        fk_col, fv_col = 'field', 'value'
+
+    actual_quickref: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    dangling_facet_ids: list[str] = []
+    facet_rows_count = 0
+    for row in conn.execute(f'SELECT entry_id, {fk_col}, {fv_col} FROM entry_facets'):
+        facet_rows_count += 1
+        eid = row[0]
+        fk = str(row[1])
+        fv = str(row[2])
+        if eid not in entry_ids:
+            if len(dangling_facet_ids) < 25:
+                dangling_facet_ids.append(f'孤立 entry_facets: entry_id={eid!r} ({fk}={fv})')
+            continue
+        if fk in COMMON_FACET_KEYS:
+            continue
+        actual_quickref[eid].add((fk, fv))
+        if fk in BOOL_FIELDS and fv == 'false' and fk in null_bool_fields.get(eid, ()):
+            if len(bool_failures) < 25:
+                bool_failures.append(f'{eid}: entry_facets 将未提取布尔 {fk} 存为 false')
+
+    parity_failures: list[str] = list(dangling_facet_ids)
+    for eid, exp_set in expected_quickref.items():
+        act_set = actual_quickref.get(eid, set())
+        if exp_set != act_set:
+            missing_in_facets = sorted(exp_set - act_set)
+            extra_in_facets = sorted(act_set - exp_set)
+            if len(parity_failures) < 25:
+                parity_failures.append(
+                    f'{eid}: quickref 与 entry_facets 不一致 '
+                    f'(缺 {missing_in_facets[:3]}, 多 {extra_in_facets[:3]})'
+                )
+
+    _add_invariant(
+        invariants,
+        key='entries_unknown_booleans',
+        title='未提取布尔字段严禁强制为 False',
+        ok=len(bool_failures) == 0,
+        detail=f'检测到 {len(bool_failures)} 处未提取布尔强制为 false 的违规',
+        failures=bool_failures,
+    )
+    _add_invariant(
+        invariants,
+        key='quickref_facets_parity',
+        title='quickref_json 与 entry_facets 严格一致',
+        ok=len(parity_failures) == 0,
+        detail=f'核对 {len(entry_ids)} 条目与 {facet_rows_count} 行分面索引，不一致 {len(parity_failures)} 处',
+        failures=parity_failures,
+    )
+
+    rel_count = conn.execute('SELECT count(*) FROM relations').fetchone()[0]
+    ig_count = conn.execute('SELECT count(*) FROM identity_groups').fetchone()[0]
+    im_count = conn.execute('SELECT count(*) FROM identity_members').fetchone()[0]
+    bs_count = conn.execute('SELECT count(*) FROM book_search').fetchone()[0]
+
+    rel_failures: list[str] = []
+    dangling_im = conn.execute(
+        'SELECT im.entry_id, im.group_id FROM identity_members im '
+        'LEFT JOIN entries e ON e.id = im.entry_id '
+        'LEFT JOIN identity_groups g ON g.group_id = im.group_id '
+        'WHERE e.id IS NULL OR g.group_id IS NULL LIMIT 25'
+    ).fetchall()
+    for r in dangling_im:
+        rel_failures.append(f'identity_members 断链: entry_id={r[0]!r}, group_id={r[1]!r}')
+
+    dangling_rel_src = conn.execute(
+        'SELECT r.source_id, r.type, r.target_id FROM relations r '
+        'LEFT JOIN entries e ON e.id = r.source_id '
+        'WHERE e.id IS NULL LIMIT 25'
+    ).fetchall()
+    for r in dangling_rel_src:
+        rel_failures.append(f'relations 源条目不存在: source_id={r[0]!r}, type={r[1]!r}')
+
+    dangling_rel_tgt = conn.execute(
+        "SELECT r.source_id, r.type, r.target_id FROM relations r "
+        "LEFT JOIN entries e ON e.id = r.target_id "
+        "WHERE r.target_id LIKE 'o5e_%' AND e.id IS NULL LIMIT 25"
+    ).fetchall()
+    for r in dangling_rel_tgt:
+        rel_failures.append(f'relations 目标条目不存在: {r[0]} -[{r[1]}]-> {r[2]}')
+
+    _add_invariant(
+        invariants,
+        key='sqlite_relations_integrity',
+        title='关系与叠放群组引用完整',
+        ok=len(rel_failures) == 0,
+        detail=f'relations={rel_count}，identity_groups={ig_count}，identity_members={im_count}，断链 {len(rel_failures)} 处',
+        failures=rel_failures,
+    )
+    return facet_rows_count, rel_count, ig_count, im_count, bs_count
+
+
 def _check_sqlite(
     db_path: Path,
     invariants: list[dict[str, Any]],
@@ -291,275 +591,23 @@ def _check_sqlite(
         package_ids = {r['id'] for r in package_rows}
         package_meta = {r['id']: dict(r) for r in package_rows}
 
-        entry_id_failures: list[str] = []
-        type_failures: list[str] = []
-        provenance_failures: list[str] = []
-        bool_failures: list[str] = []
-        json_parse_failures: list[str] = []
+        entry_audit = _audit_entries_rows(conn, source_ids, source_meta, package_ids, invariants)
+        entry_ids = entry_audit['entry_ids']
+        by_type = entry_audit['by_type']
+        by_package = entry_audit['by_package']
+        by_source = entry_audit['by_source']
 
-        entry_ids: set[str] = set()
-        expected_quickref: dict[str, set[tuple[str, str]]] = {}
-        null_bool_fields: dict[str, set[str]] = {}
-
-        by_type: Counter[str] = Counter()
-        by_raw_kind: Counter[str] = Counter()
-        by_ruleset: Counter[str] = Counter()
-        by_origin: Counter[str] = Counter()
-        by_package: Counter[str] = Counter()
-        by_source: Counter[str] = Counter()
-        by_copy_status: Counter[str] = Counter()
-        conflict_entries = 0
-        conflict_field_counts: Counter[str] = Counter()
-        unknown_bool_counts: Counter[str] = Counter()
-        copy_non_ok_samples: list[dict[str, Any]] = []
-
-        cursor = conn.execute(
-            'SELECT id, type, raw_kind, name, ruleset, legacy, package_id, source_id, '
-            'copy_status, fields_json, quickref_json, conflicts_json FROM entries'
-        )
-        for row in cursor:
-            eid = row['id']
-            etype = row['type']
-            rkind = row['raw_kind']
-            pkg_id = row['package_id']
-            src_id = row['source_id']
-            ruleset = row['ruleset']
-            cstatus = row['copy_status'] or 'ok'
-
-            if not isinstance(eid, str) or not eid.startswith('o5e_'):
-                entry_id_failures.append(f'非法条目 ID：{eid!r}')
-            elif eid in entry_ids:
-                entry_id_failures.append(f'重复条目 ID：{eid}')
-            else:
-                entry_ids.add(eid)
-
-            if etype not in TYPES:
-                type_failures.append(f'{eid}: 未知类型 {etype!r}')
-
-            if not isinstance(src_id, str) or not src_id or src_id not in source_ids:
-                provenance_failures.append(f'{eid}: 无效或缺失 source_id={src_id!r}')
-            if not isinstance(pkg_id, str) or not pkg_id or pkg_id not in package_ids:
-                provenance_failures.append(f'{eid}: 无效或缺失 package_id={pkg_id!r}')
-
-            by_type[etype] += 1
-            by_raw_kind[rkind or ''] += 1
-            by_ruleset[ruleset or ''] += 1
-            src_info = source_meta.get(src_id)
-            by_origin[(src_info['origin'] if src_info else '') or '未知'] += 1
-            by_package[pkg_id or ''] += 1
-            by_source[src_id or ''] += 1
-            by_copy_status[cstatus] += 1
-
-            if cstatus != 'ok' and len(copy_non_ok_samples) < 20:
-                copy_non_ok_samples.append({
-                    'id': eid,
-                    'name': row['name'],
-                    'type': etype,
-                    'source_id': src_id,
-                    'copy_status': cstatus,
-                })
-
-            try:
-                fields = json.loads(row['fields_json']) if row['fields_json'] else {}
-                quickref = json.loads(row['quickref_json']) if row['quickref_json'] else {}
-                conflicts = json.loads(row['conflicts_json']) if row['conflicts_json'] else []
-            except Exception as exc:
-                json_parse_failures.append(f'{eid}: JSON 解析失败: {exc}')
-                continue
-
-            if isinstance(conflicts, list) and conflicts:
-                conflict_entries += 1
-                for cf in conflicts:
-                    conflict_field_counts[str(cf)] += 1
-
-            if not isinstance(fields, dict):
-                json_parse_failures.append(f'{eid}: fields_json 非对象')
-                fields = {}
-            if not isinstance(quickref, dict):
-                json_parse_failures.append(f'{eid}: quickref_json 非对象')
-                quickref = {}
-
-            # Record expected quickref pairs for entry_facets parity check
-            qr_pairs: set[tuple[str, str]] = set()
-            for qk, qvals in quickref.items():
-                if isinstance(qvals, list):
-                    for qv in qvals:
-                        qr_pairs.add((str(qk), str(qv)))
-                elif qvals is not None:
-                    qr_pairs.add((str(qk), str(qvals)))
-            expected_quickref[eid] = qr_pairs
-
-            # Strict boolean unknown check: never coerce missing/None booleans to False / 'false'
-            entry_null_bools: set[str] = set()
-            mat_raw = fields.get('material')
-            has_material_token = mat_raw in {'M', 'M*', '×'} or (
-                isinstance(mat_raw, list) and any(x in {'M', 'M*', '×'} for x in mat_raw)
-            )
-            for bf in BOOL_FIELDS:
-                fval = fields.get(bf)
-                qval = quickref.get(bf)
-                if bf in fields and fval is None:
-                    entry_null_bools.add(bf)
-                    if qval is not None and qval != [UNKNOWN]:
-                        bool_failures.append(f'{eid}: {bf}=None 但 quickref={qval!r}（禁止强制为 false）')
-                elif bf not in fields:
-                    if not (bf == 'special_material' and has_material_token):
-                        entry_null_bools.add(bf)
-                        if qval is not None and qval != [UNKNOWN]:
-                            bool_failures.append(f'{eid}: 缺失字段 {bf} 但 quickref={qval!r}')
-                if qval == [UNKNOWN]:
-                    unknown_bool_counts[bf] += 1
-
-                # When copy_status != 'ok', absence-inferred False must never appear on 5etools omit-when-false fields
-                if cstatus != 'ok':
-                    if etype == 'creature' and bf in {'legendary_actions', 'lair_actions'} and (
-                        fval is False or qval == ['false']
-                    ):
-                        bool_failures.append(f'{eid} ({cstatus}): 生物布尔字段 {bf} 被推断为 False')
-                    elif etype == 'magic_item' and bf == 'attunement' and (
-                        fval is False or qval == ['false']
-                    ):
-                        bool_failures.append(f'{eid} ({cstatus}): 魔法物品同调在未解析基类时被推断为 False')
-                    elif etype == 'spell' and bf in {'concentration', 'ritual', 'verbal', 'somatic', 'material', 'special_material'}:
-                        if bf == 'ritual' and fval is False and not fields.get('casting_time'):
-                            bool_failures.append(f'{eid} ({cstatus}): 残缺法术 {bf} 被推断为 False')
-                        elif bf == 'concentration' and (fval is False or qval == ['false']):
-                            bool_failures.append(f'{eid} ({cstatus}): 残缺法术 {bf} 被推断为 False')
-            if entry_null_bools:
-                null_bool_fields[eid] = entry_null_bools
-
-        _add_invariant(
-            invariants,
-            key='entries_ids_unique',
-            title='条目 ID 唯一且符合 o5e_* 前缀',
-            ok=len(entry_ids) > 0 and len(entry_id_failures) == 0,
-            detail=f'共 {len(entry_ids)} 条条目，异常 {len(entry_id_failures)} 处',
-            failures=entry_id_failures if entry_id_failures else ([] if entry_ids else ['entries 表为空']),
-        )
-        _add_invariant(
-            invariants,
-            key='entries_valid_types',
-            title='条目类型均属于 TYPES 词汇表',
-            ok=len(type_failures) == 0,
-            detail=f'覆盖 {len(by_type)}/{len(TYPES)} 种类型，无效类型 {len(type_failures)} 处',
-            failures=type_failures,
-        )
-        _add_invariant(
-            invariants,
-            key='entries_valid_provenance',
-            title='条目来源与内容包引用完整',
-            ok=len(provenance_failures) == 0,
-            detail=f'来源 {len(source_ids)} 个，内容包 {len(package_ids)} 个，断链 {len(provenance_failures)} 处',
-            failures=provenance_failures,
-        )
-        _add_invariant(
-            invariants,
-            key='entries_json_valid',
-            title='条目结构化 JSON 字段可解析',
-            ok=len(json_parse_failures) == 0,
-            detail=f'JSON 解析异常 {len(json_parse_failures)} 处',
-            failures=json_parse_failures,
-        )
-
-        # Check entry_facets parity with quickref_json and unknown boolean safety
-        facet_cols = {r[1] for r in conn.execute('PRAGMA table_info(entry_facets)')}
-        if {'facet_key', 'facet_value'} <= facet_cols:
-            fk_col, fv_col = 'facet_key', 'facet_value'
-        else:
-            fk_col, fv_col = 'field', 'value'
-
-        actual_quickref: dict[str, set[tuple[str, str]]] = defaultdict(set)
-        dangling_facet_ids: list[str] = []
-        facet_rows_count = 0
-        for row in conn.execute(f'SELECT entry_id, {fk_col}, {fv_col} FROM entry_facets'):
-            facet_rows_count += 1
-            eid = row[0]
-            fk = str(row[1])
-            fv = str(row[2])
-            if eid not in entry_ids:
-                if len(dangling_facet_ids) < 25:
-                    dangling_facet_ids.append(f'孤立 entry_facets: entry_id={eid!r} ({fk}={fv})')
-                continue
-            if fk in COMMON_FACET_KEYS:
-                continue
-            actual_quickref[eid].add((fk, fv))
-            if fk in BOOL_FIELDS and fv == 'false' and fk in null_bool_fields.get(eid, ()):
-                if len(bool_failures) < 25:
-                    bool_failures.append(f'{eid}: entry_facets 将未提取布尔 {fk} 存为 false')
-
-        parity_failures: list[str] = list(dangling_facet_ids)
-        for eid, exp_set in expected_quickref.items():
-            act_set = actual_quickref.get(eid, set())
-            if exp_set != act_set:
-                missing_in_facets = sorted(exp_set - act_set)
-                extra_in_facets = sorted(act_set - exp_set)
-                if len(parity_failures) < 25:
-                    parity_failures.append(
-                        f'{eid}: quickref 与 entry_facets 不一致 '
-                        f'(缺 {missing_in_facets[:3]}, 多 {extra_in_facets[:3]})'
-                    )
-
-        _add_invariant(
-            invariants,
-            key='entries_unknown_booleans',
-            title='未提取布尔字段严禁强制为 False',
-            ok=len(bool_failures) == 0,
-            detail=f'检测到 {len(bool_failures)} 处未提取布尔强制为 false 的违规',
-            failures=bool_failures,
-        )
-        _add_invariant(
-            invariants,
-            key='quickref_facets_parity',
-            title='quickref_json 与 entry_facets 严格一致',
-            ok=len(parity_failures) == 0,
-            detail=f'核对 {len(entry_ids)} 条目与 {facet_rows_count} 行分面索引，不一致 {len(parity_failures)} 处',
-            failures=parity_failures,
-        )
-
-        # Relational integrity checks (identity_groups / identity_members / relations)
-        rel_count = conn.execute('SELECT count(*) FROM relations').fetchone()[0]
-        ig_count = conn.execute('SELECT count(*) FROM identity_groups').fetchone()[0]
-        im_count = conn.execute('SELECT count(*) FROM identity_members').fetchone()[0]
-        bs_count = conn.execute('SELECT count(*) FROM book_search').fetchone()[0]
-
-        rel_failures: list[str] = []
-        dangling_im = conn.execute(
-            'SELECT im.entry_id, im.group_id FROM identity_members im '
-            'LEFT JOIN entries e ON e.id = im.entry_id '
-            'LEFT JOIN identity_groups g ON g.group_id = im.group_id '
-            'WHERE e.id IS NULL OR g.group_id IS NULL LIMIT 25'
-        ).fetchall()
-        for r in dangling_im:
-            rel_failures.append(f'identity_members 断链: entry_id={r[0]!r}, group_id={r[1]!r}')
-
-        dangling_rel_src = conn.execute(
-            'SELECT r.source_id, r.type, r.target_id FROM relations r '
-            'LEFT JOIN entries e ON e.id = r.source_id '
-            'WHERE e.id IS NULL LIMIT 25'
-        ).fetchall()
-        for r in dangling_rel_src:
-            rel_failures.append(f'relations 源条目不存在: source_id={r[0]!r}, type={r[1]!r}')
-
-        dangling_rel_tgt = conn.execute(
-            "SELECT r.source_id, r.type, r.target_id FROM relations r "
-            "LEFT JOIN entries e ON e.id = r.target_id "
-            "WHERE r.target_id LIKE 'o5e_%' AND e.id IS NULL LIMIT 25"
-        ).fetchall()
-        for r in dangling_rel_tgt:
-            rel_failures.append(f'relations 目标条目不存在: {r[0]} -[{r[1]}]-> {r[2]}')
-
-        _add_invariant(
-            invariants,
-            key='sqlite_relations_integrity',
-            title='关系与叠放群组引用完整',
-            ok=len(rel_failures) == 0,
-            detail=f'relations={rel_count}，identity_groups={ig_count}，identity_members={im_count}，断链 {len(rel_failures)} 处',
-            failures=rel_failures,
+        facet_rows_count, rel_count, ig_count, im_count, bs_count = _audit_facets_and_relations(
+            conn,
+            entry_ids=entry_ids,
+            expected_quickref=entry_audit['expected_quickref'],
+            null_bool_fields=entry_audit['null_bool_fields'],
+            bool_failures=entry_audit['bool_failures'],
+            invariants=invariants,
         )
 
         book_page_paths = {r[0] for r in conn.execute('SELECT page_path FROM book_pages')}
 
-        # Top packages and sources for reporting
         top_packages = [
             {
                 'id': pid,
@@ -598,14 +646,14 @@ def _check_sqlite(
                 'book_search': bs_count,
             },
             'by_type': {t: by_type[t] for t in TYPE_ORDER if by_type[t]},
-            'by_raw_kind': dict(by_raw_kind.most_common()),
-            'by_ruleset': dict(by_ruleset.most_common()),
-            'by_origin': dict(by_origin.most_common()),
-            'by_copy_status': dict(by_copy_status.most_common()),
-            'copy_non_ok_samples': copy_non_ok_samples,
-            'conflict_entries': conflict_entries,
-            'conflict_fields': dict(conflict_field_counts.most_common()),
-            'unknown_booleans': dict(unknown_bool_counts.most_common()),
+            'by_raw_kind': dict(entry_audit['by_raw_kind'].most_common()),
+            'by_ruleset': dict(entry_audit['by_ruleset'].most_common()),
+            'by_origin': dict(entry_audit['by_origin'].most_common()),
+            'by_copy_status': dict(entry_audit['by_copy_status'].most_common()),
+            'copy_non_ok_samples': entry_audit['copy_non_ok_samples'],
+            'conflict_entries': entry_audit['conflict_entries'],
+            'conflict_fields': dict(entry_audit['conflict_field_counts'].most_common()),
+            'unknown_booleans': dict(entry_audit['unknown_bool_counts'].most_common()),
             'top_packages': top_packages,
             'top_sources': top_sources,
         }, book_page_paths
@@ -942,28 +990,22 @@ def _md_escape(val: Any) -> str:
     return str(val).replace('|', '\\|').replace('\n', ' ')
 
 
-def render_markdown(report: dict[str, Any]) -> str:
-    """Render the structured audit report as readable Chinese Markdown."""
-    lines: list[str] = []
+def _md_append_header_and_invariants(lines: list[str], report: dict[str, Any]) -> None:
     manifest = report.get('manifest') or {}
     inv = report.get('inventory') or {}
     snap = inv.get('snapshot_info') or {}
-    cat = report.get('catalog') or {}
-    cat_counts = cat.get('counts') or {}
-    recon = report.get('reconciliation') or {}
-    reader = report.get('reader') or {}
-    attr = report.get('attribution') or {}
     invariants = report.get('invariants') or []
 
     status_badge = '通过（全部不变量满足）' if report.get('ok') else f'失败（{report.get("failed_count", 0)} 项不变量未通过）'
-
-    lines.append('# our5etools 数据集构建审计报告')
-    lines.append('')
-    lines.append(f'- **审计结论**：{status_badge}')
-    lines.append(f'- **资料库标识**：`{manifest.get("collection", "")}`')
-    lines.append(f'- **数据目录**：`{report.get("data_dir", "")}`')
-    lines.append(f'- **快照标识**：`{manifest.get("snapshot") or snap.get("input_sha256", "")}`')
-    lines.append(f'- **源仓库提交**：`{manifest.get("git_commit") or snap.get("git_commit", "")}`')
+    lines.extend([
+        '# our5etools 数据集构建审计报告',
+        '',
+        f'- **审计结论**：{status_badge}',
+        f'- **资料库标识**：`{manifest.get("collection", "")}`',
+        f'- **数据目录**：`{report.get("data_dir", "")}`',
+        f'- **快照标识**：`{manifest.get("snapshot") or snap.get("input_sha256", "")}`',
+        f'- **源仓库提交**：`{manifest.get("git_commit") or snap.get("git_commit", "")}`',
+    ])
     if snap.get('app') or snap.get('version') or snap.get('data_date'):
         lines.append(
             f'- **上游版本**：{snap.get("app", "our5etools")} {snap.get("version", "")} '
@@ -971,13 +1013,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     if manifest.get('built_at'):
         lines.append(f'- **构建时间**：`{manifest["built_at"]}`')
-    lines.append('')
-
-    # 1. Invariants table
-    lines.append('## 1. 严格不变量核查')
-    lines.append('')
-    lines.append('| 核查项 | 状态 | 详情 |')
-    lines.append('| --- | --- | --- |')
+    lines.extend([
+        '',
+        '## 1. 严格不变量核查',
+        '',
+        '| 核查项 | 状态 | 详情 |',
+        '| --- | --- | --- |',
+    ])
     for item in invariants:
         mark = '通过' if item['ok'] else '**失败**'
         lines.append(f'| {_md_escape(item["title"])} | {mark} | {_md_escape(item["detail"])} |')
@@ -985,27 +1027,30 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     failed_items = [i for i in invariants if not i['ok']]
     if failed_items:
-        lines.append('### 失败样例')
-        lines.append('')
+        lines.extend(['### 失败样例', ''])
         for item in failed_items:
             lines.append(f'- **{item["title"]}**（共 {item["failure_count"]} 处）：')
             for f in item.get('failures', [])[:15]:
                 lines.append(f'  - `{f}`')
         lines.append('')
 
-    # 2. Repository file inventory & disposition
-    lines.append('## 2. 仓库文件盘点与处置')
-    lines.append('')
-    lines.append(
+
+def _md_append_inventory_and_reconciliation(
+    lines: list[str],
+    inv: dict[str, Any],
+    recon: dict[str, Any],
+) -> None:
+    lines.extend([
+        '## 2. 仓库文件盘点与处置',
+        '',
         f'共盘点 **{inv.get("total_files", 0):,}** 个非忽略文件，总计 **{_fmt_bytes(inv.get("total_bytes", 0))}**。'
-        '所有文件均具有明确的去向与处置理由。'
-    )
-    lines.append('')
+        '所有文件均具有明确的去向与处置理由。',
+        '',
+    ])
     by_disp = inv.get('by_disposition') or {}
     bytes_by_disp = inv.get('bytes_by_disposition') or {}
     if by_disp:
-        lines.append('| 处置类别 | 说明 | 文件数 | 体积 |')
-        lines.append('| --- | --- | ---: | ---: |')
+        lines.extend(['| 处置类别 | 说明 | 文件数 | 体积 |', '| --- | --- | ---: | ---: |'])
         for disp, cnt in sorted(by_disp.items(), key=lambda kv: (-kv[1], kv[0])):
             label = DISPOSITION_LABELS.get(disp, disp)
             sz = _fmt_bytes(bytes_by_disp.get(disp, 0))
@@ -1014,27 +1059,27 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     checks = inv.get('checks') or {}
     if checks:
-        lines.append(
+        lines.extend([
             f'- 配方与书籍清单一致性：`books_recipe_keys_match={checks.get("books_recipe_keys_match")}`；'
             f'缺失分片文件 `{len(checks.get("missing_shard_files") or [])}`；'
             f'缺失分片键 `{len(checks.get("missing_shard_keys") or [])}`；'
             f'缺失站点独立包 `{len(checks.get("missing_site_packages") or [])}`；'
             f'包内计数差异 `{len(checks.get("count_mismatches") or [])}`；'
-            f'重复原始记录键 `{len(checks.get("duplicate_raw_records") or [])}`。'
-        )
-        lines.append('')
+            f'重复原始记录键 `{len(checks.get("duplicate_raw_records") or [])}`。',
+            '',
+        ])
 
-    # 3. Reconciliation vs __api/stats.json and __api/books.json
-    lines.append('## 3. 输入/输出对账（对比 `__api/stats.json` 与 `__api/books.json`）')
-    lines.append('')
+    lines.extend(['## 3. 输入/输出对账（对比 `__api/stats.json` 与 `__api/books.json`）', ''])
     api_stats = recon.get('api_stats') or {}
     observed = recon.get('observed') or {}
     stats_diff = recon.get('stats_diff') or {}
     if api_stats:
-        lines.append('### 3.1 `__api/stats.json` 核心实体对账')
-        lines.append('')
-        lines.append('| 分组 | 类别 | `__api/stats.json` | 本次实测 | 差值 |')
-        lines.append('| --- | --- | ---: | ---: | ---: |')
+        lines.extend([
+            '### 3.1 `__api/stats.json` 核心实体对账',
+            '',
+            '| 分组 | 类别 | `__api/stats.json` | 本次实测 | 差值 |',
+            '| --- | --- | ---: | ---: | ---: |',
+        ])
         for scope in ('official', 'brew', 'ours'):
             scope_api = api_stats.get(scope) if isinstance(api_stats.get(scope), dict) else {}
             scope_obs = observed.get(scope) if isinstance(observed.get(scope), dict) else {}
@@ -1055,8 +1100,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     api_books = recon.get('api_books') or {}
     books_diff = recon.get('books_diff') or {}
     if api_books or books_diff:
-        lines.append('### 3.2 `__api/books.json` 与书籍/模组对账')
-        lines.append('')
+        lines.extend(['### 3.2 `__api/books.json` 与书籍/模组对账', ''])
         if api_books:
             lines.append(
                 f'- `__api/books.json`：共 `{api_books.get("total_packages", api_books.get("total", "-"))}` 个社区扩展包'
@@ -1068,30 +1112,31 @@ def render_markdown(report: dict[str, Any]) -> str:
                 lines.append(f'- `{k}`：{v}')
         lines.append('')
 
-    # 4. Catalog distribution
-    lines.append('## 4. 目录分布统计')
-    lines.append('')
+
+def _md_append_catalog_and_quality(
+    lines: list[str],
+    cat: dict[str, Any],
+    cat_counts: dict[str, Any],
+    recon: dict[str, Any],
+) -> None:
     total_entries = cat_counts.get('entries', 0)
-    lines.append(
+    lines.extend([
+        '## 4. 目录分布统计',
+        '',
         f'- **条目总数**：**{total_entries:,}**（来源 `{cat_counts.get("sources", 0):,}`，'
         f'内容包 `{cat_counts.get("packages", 0):,}`，关系 `{cat_counts.get("relations", 0):,}`，'
         f'同源叠放群组 `{cat_counts.get("identity_groups", 0):,}`，'
-        f'分面索引 `{cat_counts.get("entry_facets", 0):,}` 行）'
-    )
-    lines.append(
+        f'分面索引 `{cat_counts.get("entry_facets", 0):,}` 行）',
         f'- **规则版本分布**：'
-        + '，'.join(f'`{k}` {v:,}' for k, v in (cat.get('by_ruleset') or {}).items())
-    )
-    lines.append(
+        + '，'.join(f'`{k}` {v:,}' for k, v in (cat.get('by_ruleset') or {}).items()),
         f'- **来源性质分布**：'
-        + '，'.join(f'{k} {v:,}' for k, v in (cat.get('by_origin') or {}).items())
-    )
-    lines.append('')
-
-    lines.append('### 4.1 按条目类型分布')
-    lines.append('')
-    lines.append('| 类型标识 | 中文名 | 条目数 | 占比 |')
-    lines.append('| --- | --- | ---: | ---: |')
+        + '，'.join(f'{k} {v:,}' for k, v in (cat.get('by_origin') or {}).items()),
+        '',
+        '### 4.1 按条目类型分布',
+        '',
+        '| 类型标识 | 中文名 | 条目数 | 占比 |',
+        '| --- | --- | ---: | ---: |',
+    ])
     for t, cnt in (cat.get('by_type') or {}).items():
         pct = f'{(cnt / total_entries * 100):.2f}%' if total_entries else '0.00%'
         lines.append(f'| `{t}` | {TYPES.get(t, t)} | {cnt:,} | {pct} |')
@@ -1099,10 +1144,12 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     top_pkgs = cat.get('top_packages') or []
     if top_pkgs:
-        lines.append('### 4.2 主要内容包分布（前 20）')
-        lines.append('')
-        lines.append('| 内容包 ID | 名称 | 来源性质 | 条目数 | 书籍数 |')
-        lines.append('| --- | --- | --- | ---: | ---: |')
+        lines.extend([
+            '### 4.2 主要内容包分布（前 20）',
+            '',
+            '| 内容包 ID | 名称 | 来源性质 | 条目数 | 书籍数 |',
+            '| --- | --- | --- | ---: | ---: |',
+        ])
         for p in top_pkgs[:20]:
             lines.append(
                 f'| `{_md_escape(p["id"])}` | {_md_escape(p["name"])} | {_md_escape(p["origin"])} | '
@@ -1112,10 +1159,12 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     top_srcs = cat.get('top_sources') or []
     if top_srcs:
-        lines.append('### 4.3 主要来源分布（前 20）')
-        lines.append('')
-        lines.append('| 来源 ID | 缩写 | 名称 | 规则版本 | 条目数 |')
-        lines.append('| --- | --- | --- | --- | ---: |')
+        lines.extend([
+            '### 4.3 主要来源分布（前 20）',
+            '',
+            '| 来源 ID | 缩写 | 名称 | 规则版本 | 条目数 |',
+            '| --- | --- | --- | --- | ---: |',
+        ])
         for s in top_srcs[:20]:
             lines.append(
                 f'| `{_md_escape(s["id"])}` | `{_md_escape(s["short_name"])}` | {_md_escape(s["name"])} | '
@@ -1123,13 +1172,14 @@ def render_markdown(report: dict[str, Any]) -> str:
             )
         lines.append('')
 
-    # 5. Semantic resolution & quality diagnostics
-    lines.append('## 5. 语义解析与字段质量诊断')
-    lines.append('')
-    lines.append('### 5.1 `_copy` 解析状态')
-    lines.append('')
-    lines.append('| 解析状态 | 说明 | 条目数 |')
-    lines.append('| --- | --- | ---: |')
+    lines.extend([
+        '## 5. 语义解析与字段质量诊断',
+        '',
+        '### 5.1 `_copy` 解析状态',
+        '',
+        '| 解析状态 | 说明 | 条目数 |',
+        '| --- | --- | ---: |',
+    ])
     for st, cnt in (cat.get('by_copy_status') or {}).items():
         lines.append(f'| `{st}` | {COPY_STATUS_LABELS.get(st, st)} | {cnt:,} |')
     lines.append('')
@@ -1151,9 +1201,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     if fluff:
         orphan_count = fluff.get('orphan_count', len(fluff.get('orphans') or []) if isinstance(fluff, dict) else 0)
         lines.append(f'- **背景与插画关联 (`*Fluff`)**：孤立 Fluff `{orphan_count}` 条。')
-    lines.append(
-        f'- **字段冲突**：共 `{cat.get("conflict_entries", 0)}` 条目存在字段冲突。'
-    )
+    lines.append(f'- **字段冲突**：共 `{cat.get("conflict_entries", 0)}` 条目存在字段冲突。')
     unknown_bools = cat.get('unknown_booleans') or {}
     if unknown_bools:
         lines.append(
@@ -1164,19 +1212,41 @@ def render_markdown(report: dict[str, Any]) -> str:
 
     non_ok_samples = cat.get('copy_non_ok_samples') or []
     if non_ok_samples:
-        lines.append('#### 非 `ok` `_copy` 样例（最多 15 条）')
-        lines.append('')
-        lines.append('| 条目 ID | 名称 | 类型 | 来源 | 状态 |')
-        lines.append('| --- | --- | --- | --- | --- |')
+        lines.extend([
+            '#### 非 `ok` `_copy` 样例（最多 15 条）',
+            '',
+            '| 条目 ID | 名称 | 类型 | 来源 | 状态 |',
+            '| --- | --- | --- | --- | --- |',
+        ])
         for s in non_ok_samples[:15]:
             lines.append(
                 f'| `{s["id"]}` | {_md_escape(s["name"])} | `{s["type"]}` | `{s["source_id"]}` | `{s["copy_status"]}` |'
             )
         lines.append('')
 
-    # 6. Rendering, links & media diagnostics
-    lines.append('## 6. 渲染、交叉链接与媒体诊断')
-    lines.append('')
+
+def _md_append_link_samples(lines: list[str], heading: str, items: list[Any]) -> None:
+    if not items:
+        return
+    lines.append(heading)
+    for item in items[:15]:
+        if isinstance(item, dict):
+            lines.append(f'  - `{item.get("raw") or item.get("tag")}` × {item.get("count", 1)}')
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            lines.append(f'  - `{item[0]}` × {item[1]}')
+        else:
+            lines.append(f'  - `{item}`')
+
+
+def _md_append_media_reader_and_attribution(
+    lines: list[str],
+    report: dict[str, Any],
+    cat_counts: dict[str, Any],
+    recon: dict[str, Any],
+    reader: dict[str, Any],
+    attr: dict[str, Any],
+) -> None:
+    lines.extend(['## 6. 渲染、交叉链接与媒体诊断', ''])
     links = recon.get('links') or {}
     if links:
         res_n = links.get('resolved', 0)
@@ -1188,26 +1258,8 @@ def render_markdown(report: dict[str, Any]) -> str:
             f'- **`{{@...}}` 链接统计**：总计 **{tot_n:,}**，已解析 **{res_n:,}**（{rate}），'
             f'歧义 **{amb_n:,}**，未解析 **{unres_n:,}**。'
         )
-        top_unres = links.get('top_unresolved') or []
-        if top_unres:
-            lines.append('- **高频未解析链接样例（前 15）**：')
-            for item in top_unres[:15]:
-                if isinstance(item, dict):
-                    lines.append(f'  - `{item.get("raw") or item.get("tag")}` × {item.get("count", 1)}')
-                elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                    lines.append(f'  - `{item[0]}` × {item[1]}')
-                else:
-                    lines.append(f'  - `{item}`')
-        top_amb = links.get('top_ambiguous') or []
-        if top_amb:
-            lines.append('- **高频歧义链接样例（前 15）**：')
-            for item in top_amb[:15]:
-                if isinstance(item, dict):
-                    lines.append(f'  - `{item.get("raw") or item.get("tag")}` × {item.get("count", 1)}')
-                elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                    lines.append(f'  - `{item[0]}` × {item[1]}')
-                else:
-                    lines.append(f'  - `{item}`')
+        _md_append_link_samples(lines, '- **高频未解析链接样例（前 15）**：', links.get('top_unresolved') or [])
+        _md_append_link_samples(lines, '- **高频歧义链接样例（前 15）**：', links.get('top_ambiguous') or [])
 
     unk_tags = recon.get('unknown_tags') or {}
     unsup_blocks = recon.get('unsupported_blocks') or {}
@@ -1238,17 +1290,16 @@ def render_markdown(report: dict[str, Any]) -> str:
         )
     lines.append('')
 
-    # 7. Reader & book catalog
-    lines.append('## 7. 阅读器与书籍目录核对')
-    lines.append('')
     mr = reader.get('manifest_reader') or {}
-    lines.append(
+    lines.extend([
+        '## 7. 阅读器与书籍目录核对',
+        '',
         f'- **索引版本**：`schema={reader.get("schema")}`；'
         f'TOC 节点 **{reader.get("nodes_count", 0):,}**；'
         f'章节 HTML 页面 **{reader.get("pages_count", 0):,}**；'
         f'条目正文定位 **{reader.get("entry_locations_count", 0):,}**；'
-        f'全文搜索索引 **{cat_counts.get("book_search", 0):,}** 行。'
-    )
+        f'全文搜索索引 **{cat_counts.get("book_search", 0):,}** 行。',
+    ])
     if mr:
         lines.append(
             f'- **书籍构建摘要**：已绑定定义 `{mr.get("bound_definitions", "-")}`，'
@@ -1262,15 +1313,14 @@ def render_markdown(report: dict[str, Any]) -> str:
             lines.append(f'  - 告警：{warn}')
     lines.append('')
 
-    # 8. Source attribution and media notices
-    lines.append('## 8. 来源署名与资源说明')
-    lines.append('')
     attr_pkgs = attr.get('packages') or []
     attr_srcs = attr.get('sources') or []
     resource_notes = attr.get('resource_notes', attr.get('non_redistributable')) or []
-    lines.append(
-        f'- **署名登记**：内容包 `{len(attr_pkgs)}` 项，独立来源 `{len(attr_srcs)}` 项。'
-    )
+    lines.extend([
+        '## 8. 来源署名与资源说明',
+        '',
+        f'- **署名登记**：内容包 `{len(attr_pkgs)}` 项，独立来源 `{len(attr_srcs)}` 项。',
+    ])
     if isinstance(resource_notes, list) and resource_notes:
         lines.append(f'- **资源说明**（共 `{len(resource_notes)}` 项）')
         for item in resource_notes[:30]:
@@ -1287,6 +1337,21 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append('- **资源说明**：未在 `attribution.json` 中登记额外项。')
     lines.append('')
 
+
+def render_markdown(report: dict[str, Any]) -> str:
+    """Render the structured audit report as readable Chinese Markdown."""
+    lines: list[str] = []
+    inv = report.get('inventory') or {}
+    cat = report.get('catalog') or {}
+    cat_counts = cat.get('counts') or {}
+    recon = report.get('reconciliation') or {}
+    reader = report.get('reader') or {}
+    attr = report.get('attribution') or {}
+
+    _md_append_header_and_invariants(lines, report)
+    _md_append_inventory_and_reconciliation(lines, inv, recon)
+    _md_append_catalog_and_quality(lines, cat, cat_counts, recon)
+    _md_append_media_reader_and_attribution(lines, report, cat_counts, recon, reader, attr)
     return '\n'.join(lines)
 
 

@@ -1364,6 +1364,637 @@ def _resolve_item_type_and_subtypes(
 # Main extraction entry point
 # ---------------------------------------------------------------------------
 
+def _extract_spell_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, can_infer_false: bool, fields: dict[str, Any],
+) -> None:
+    lvl = rec.get('level')
+    if lvl is not None:
+        fields['spell_level'] = str(lvl)
+
+    school_raw = rec.get('school')
+    if isinstance(school_raw, str) and school_raw.strip():
+        fields['school'] = _normalize_school(school_raw, ctx)
+
+    cls_list: list[str] = []
+    ctx_classes = ctx.get('spell_classes') or ctx.get('classes')
+    if isinstance(ctx_classes, list):
+        for c in ctx_classes:
+            if isinstance(c, str) and c.strip():
+                cls_list.append(_normalize_class_name(c))
+    raw_classes = rec.get('classes')
+    if isinstance(raw_classes, dict):
+        for list_key in ('fromClassList', 'fromClassListVariant'):
+            for c_obj in raw_classes.get(list_key) or []:
+                if isinstance(c_obj, dict) and isinstance(c_obj.get('name'), str):
+                    cls_list.append(_normalize_class_name(c_obj['name']))
+    cls_list = list(dict.fromkeys(cls_list))
+    if cls_list:
+        fields['spell_classes'] = cls_list
+
+    ct_buckets, ct_detail = _format_casting_time(rec.get('time'))
+    if ct_buckets:
+        fields['casting_time'] = ct_buckets[0] if len(ct_buckets) == 1 else ct_buckets
+    if ct_detail:
+        fields['casting_time_detail'] = ct_detail
+
+    duration = rec.get('duration')
+    has_duration = isinstance(duration, list) and len(duration) > 0
+    if has_duration:
+        has_conc = any(isinstance(d, dict) and bool(d.get('concentration')) for d in duration)
+        fields['concentration'] = True if has_conc else (False if can_infer_false else None)
+    else:
+        fields['concentration'] = None
+
+    meta = rec.get('meta')
+    explicit_ritual = isinstance(meta, dict) and meta.get('ritual') is True
+    explicit_not_ritual = isinstance(meta, dict) and meta.get('ritual') is False
+    has_core_spell = (
+        rec.get('level') is not None
+        and bool(rec.get('school'))
+        and bool(rec.get('time'))
+        and has_duration
+    )
+    if explicit_ritual:
+        fields['ritual'] = True
+    elif explicit_not_ritual or (can_infer_false and has_core_spell):
+        fields['ritual'] = False
+    else:
+        fields['ritual'] = None
+
+    comps = rec.get('components')
+    if isinstance(comps, dict) and len(comps) > 0:
+        v_val, s_val, m_val = comps.get('v'), comps.get('s'), comps.get('m')
+        fields['verbal'] = True if v_val is True else (False if (v_val is False or can_infer_false) else None)
+        fields['somatic'] = True if s_val is True else (False if (s_val is False or can_infer_false) else None)
+        if m_val is not None and m_val is not False:
+            fields['material'] = True
+            if isinstance(m_val, dict):
+                if isinstance(m_val.get('text'), str) and m_val['text'].strip():
+                    fields['material_detail'] = m_val['text'].strip()
+                has_special = bool(m_val.get('cost')) or bool(m_val.get('consume'))
+                fields['special_material'] = True if has_special else (False if can_infer_false else None)
+            elif isinstance(m_val, str) and m_val.strip():
+                fields['material_detail'] = m_val.strip()
+                fields['special_material'] = False if can_infer_false else None
+            else:
+                fields['special_material'] = False if can_infer_false else None
+        elif m_val is False or can_infer_false:
+            fields['material'] = False
+            fields['special_material'] = NA
+        else:
+            fields['material'] = None
+            fields['special_material'] = None
+    else:
+        fields['verbal'] = fields['somatic'] = fields['material'] = fields['special_material'] = None
+
+
+def _extract_creature_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, can_infer_false: bool, fields: dict[str, Any],
+) -> None:
+    sizes = _extract_sizes(rec.get('size'))
+    if sizes:
+        fields['size'] = sizes[0] if len(sizes) == 1 else sizes
+
+    raw_type = rec.get('type')
+    ctypes: list[str] = []
+    ctags: list[str] = []
+    if isinstance(raw_type, str) and raw_type.strip():
+        ctypes.append(_normalize_creature_type(raw_type))
+    elif isinstance(raw_type, dict):
+        inner = raw_type.get('type')
+        if isinstance(inner, str) and inner.strip():
+            ctypes.append(_normalize_creature_type(inner))
+        elif isinstance(inner, dict) and isinstance(inner.get('choose'), list):
+            for ch in inner['choose']:
+                if isinstance(ch, str) and ch.strip():
+                    ctypes.append(_normalize_creature_type(ch))
+        for tg in raw_type.get('tags') or []:
+            if isinstance(tg, str) and tg.strip():
+                ctags.append(tg.strip())
+            elif isinstance(tg, dict) and isinstance(tg.get('tag'), str):
+                prefix = tg.get('prefix')
+                ctags.append(f'{prefix} {tg["tag"]}'.strip() if prefix else tg['tag'])
+        if raw_type.get('swarmSize'):
+            ctags.append('集群')
+    ctypes = list(dict.fromkeys(ctypes))
+    if ctypes:
+        fields['creature_type'] = ctypes[0] if len(ctypes) == 1 else ctypes
+    if ctags:
+        fields['creature_tags'] = list(dict.fromkeys(ctags))
+
+    for key, extractor_fn in (('cr', _extract_cr), ('ac', _extract_ac), ('hp', _extract_hp)):
+        val = extractor_fn(rec.get(key))
+        if val is not None:
+            fields[key] = val
+
+    has_statblock = any(rec.get(k) is not None for k in ('cr', 'ac', 'hp', 'str', 'dex', 'con'))
+    has_leg = bool(rec.get('legendary')) or bool(rec.get('legendaryActions')) or bool(rec.get('legendaryActionsLair'))
+    fields['legendary_actions'] = True if has_leg else (False if (can_infer_false and has_statblock) else None)
+
+    ctx_lair = ctx.get('has_lair_actions')
+    lg_obj = ctx.get('legendary_group')
+    if isinstance(ctx_lair, bool):
+        fields['lair_actions'] = ctx_lair if (ctx_lair or can_infer_false) else None
+    elif isinstance(lg_obj, dict):
+        has_lair = bool(lg_obj.get('lairActions'))
+        fields['lair_actions'] = True if has_lair else (False if can_infer_false else None)
+    elif rec.get('lairActions') or rec.get('legendaryActionsLair') or (isinstance(rec.get('cr'), dict) and rec['cr'].get('lair')):
+        fields['lair_actions'] = True
+    elif rec.get('legendaryGroup'):
+        fields['lair_actions'] = None
+    elif can_infer_false and has_statblock:
+        fields['lair_actions'] = False
+    else:
+        fields['lair_actions'] = None
+
+    ctx_audio = ctx.get('has_local_audio')
+    fields['has_local_audio'] = ctx_audio if isinstance(ctx_audio, bool) else None
+
+
+def _extract_magic_item_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, can_infer_false: bool, fields: dict[str, Any],
+) -> None:
+    inherits = rec.get('inherits') if isinstance(rec.get('inherits'), dict) else {}
+    effective = {**inherits, **{k: v for k, v in rec.items() if v is not None}}
+
+    raw_rarity = effective.get('rarity')
+    if isinstance(raw_rarity, str) and raw_rarity.strip():
+        fields['rarity'] = _normalize_rarity(raw_rarity)
+
+    primary, subtypes = _resolve_item_type_and_subtypes(raw_kind, rec, effective, ctx)
+    if primary:
+        fields['item_type'] = primary
+    if subtypes:
+        fields['item_subtypes'] = subtypes
+
+    tier_val = effective.get('tier')
+    if isinstance(tier_val, str) and tier_val.strip():
+        fields['item_tier'] = {'minor': '次要', 'major': '主要'}.get(tier_val.strip().casefold(), tier_val.strip())
+
+    req_attune = effective.get('reqAttune')
+    has_item_body = (
+        raw_rarity is not None
+        or bool(effective.get('entries'))
+        or bool(effective.get('wondrous'))
+        or bool(effective.get('type'))
+        or bool(inherits)
+    )
+    if req_attune is True:
+        fields['attunement'] = True
+    elif req_attune is False:
+        fields['attunement'] = False
+    elif isinstance(req_attune, str) and req_attune.strip():
+        fields['attunement'] = True
+        req_text = req_attune.strip()
+        fields['attunement_requirements'] = '可选' if req_text.casefold() == 'optional' else req_text
+    elif can_infer_false and has_item_body:
+        fields['attunement'] = False
+    else:
+        fields['attunement'] = None
+
+
+def _extract_equipment_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, _can_infer_false: bool, fields: dict[str, Any],
+) -> None:
+    primary, subtypes = _resolve_item_type_and_subtypes(raw_kind, rec, rec, ctx)
+    if primary:
+        fields['item_type'] = primary
+    if subtypes:
+        fields['item_subtypes'] = subtypes
+
+    price = _format_money_cp(rec.get('value'))
+    if price is not None:
+        fields['price'] = price
+    weight = _format_weight(rec.get('weight'))
+    if weight is not None:
+        fields['weight'] = weight
+
+    dmg1, dmg2, dmg_type = rec.get('dmg1'), rec.get('dmg2'), rec.get('dmgType')
+    if isinstance(dmg1, str) and dmg1.strip():
+        dice = f'{dmg1.strip()}/{dmg2.strip()}' if isinstance(dmg2, str) and dmg2.strip() else dmg1.strip()
+        dt = DMG_TYPE_TO_CN.get(str(dmg_type).strip().upper(), str(dmg_type).strip()) if dmg_type else ''
+        fields['damage'] = f'{dice} {dt}'.strip()
+
+    if rec.get('ac') is not None:
+        fields['ac'] = str(rec['ac'])
+
+    raw_mastery = rec.get('mastery')
+    if isinstance(raw_mastery, list) and raw_mastery:
+        masteries: list[str] = []
+        for m in raw_mastery:
+            if isinstance(m, str) and m.strip():
+                masteries.append(_strip_source_suffix(m))
+            elif isinstance(m, dict) and isinstance(m.get('uid'), str):
+                masteries.append(_strip_source_suffix(m['uid']))
+        masteries = list(dict.fromkeys(masteries))
+        if masteries:
+            fields['mastery'] = masteries[0] if len(masteries) == 1 else masteries
+
+
+def _extract_poison_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    pts = rec.get('poisonTypes')
+    if isinstance(pts, list) and pts:
+        mapped = list(dict.fromkeys(
+            POISON_TYPE_TO_CN.get(str(p).strip().casefold(), POISON_TYPE_TO_CN.get(str(p).strip(), str(p).strip()))
+            for p in pts if str(p).strip()
+        ))
+        if mapped:
+            fields['poison_type'] = mapped[0] if len(mapped) == 1 else mapped
+    price = _format_money_cp(rec.get('value'))
+    if price is not None:
+        fields['price'] = price
+
+
+def _extract_class_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    hd = rec.get('hd')
+    if isinstance(hd, dict) and hd.get('faces'):
+        fields['hit_die'] = f"d{hd['faces']}"
+    sca = rec.get('spellcastingAbility')
+    if isinstance(sca, str) and sca.strip():
+        fields['spellcasting_ability'] = _normalize_ability(sca)
+    cp = rec.get('casterProgression')
+    if isinstance(cp, str) and cp.strip():
+        fields['caster_progression'] = CASTER_PROGRESSION_TO_CN.get(cp.strip(), cp.strip())
+    profs = rec.get('proficiency')
+    if isinstance(profs, list) and profs:
+        fields['saving_throws'] = [_normalize_ability(str(p)) for p in profs if isinstance(p, str) and p.strip()]
+
+
+def _extract_subclass_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    owner = ctx.get('owner_class') or rec.get('className')
+    if isinstance(owner, str) and owner.strip():
+        fields['owner_class'] = _normalize_class_name(owner)
+    sca = rec.get('spellcastingAbility')
+    if isinstance(sca, str) and sca.strip():
+        fields['spellcasting_ability'] = _normalize_ability(sca)
+    cp = rec.get('casterProgression')
+    if isinstance(cp, str) and cp.strip():
+        fields['caster_progression'] = CASTER_PROGRESSION_TO_CN.get(cp.strip(), cp.strip())
+
+
+def _extract_class_feature_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    owner = ctx.get('owner_class') or rec.get('className')
+    owner_sub = ctx.get('owner_subclass') or rec.get('subclassShortName')
+    if raw_kind == 'classFeature':
+        fields['feature_kind'] = '职业特性'
+    elif raw_kind == 'subclassFeature':
+        fields['feature_kind'] = '子职特性'
+    elif raw_kind == 'optionalfeature':
+        custom_opt = ctx.get('optional_feature_types') or ctx.get('optionalFeatureTypes') or {}
+        fts = rec.get('featureType')
+        if isinstance(fts, str):
+            fts = [fts]
+        kinds: list[str] = []
+        inferred_classes: list[str] = []
+        if isinstance(fts, list):
+            for ft in fts:
+                if not isinstance(ft, str) or not ft.strip():
+                    continue
+                code = ft.strip()
+                label = (custom_opt.get(code) if isinstance(custom_opt, dict) else None) or OPT_FEATURE_TYPE_TO_CN.get(code, code)
+                kinds.append(str(label))
+                if not owner and code in OPT_FEATURE_OWNER_CLASS:
+                    inferred_classes.append(OPT_FEATURE_OWNER_CLASS[code])
+        kinds = list(dict.fromkeys(kinds))
+        fields['feature_kind'] = (kinds[0] if len(kinds) == 1 else kinds) if kinds else '可选特性'
+        inferred_classes = list(dict.fromkeys(inferred_classes))
+        if not owner and len(inferred_classes) == 1:
+            owner = inferred_classes[0]
+    else:
+        fields['feature_kind'] = '职业特性'
+
+    if isinstance(owner, str) and owner.strip():
+        fields['owner_class'] = _normalize_class_name(owner)
+    if isinstance(owner_sub, str) and owner_sub.strip():
+        fields['owner_subclass'] = owner_sub.strip()
+
+    lvl = rec.get('level')
+    if lvl is None and isinstance(rec.get('prerequisite'), list):
+        for p in rec['prerequisite']:
+            if isinstance(p, dict) and p.get('level') is not None:
+                lv = p['level']
+                if isinstance(lv, int):
+                    lvl = lv
+                    break
+                if isinstance(lv, dict) and isinstance(lv.get('level'), int):
+                    lvl = lv['level']
+                    break
+    if lvl is not None:
+        fields['level'] = str(lvl)
+
+
+def _extract_species_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    sizes = _extract_sizes(rec.get('size'))
+    if sizes:
+        fields['size'] = sizes[0] if len(sizes) == 1 else sizes
+    dv = rec.get('darkvision')
+    if isinstance(dv, (int, float)) and not isinstance(dv, bool) and dv > 0:
+        fields['darkvision'] = f'{int(dv)}尺'
+    elif isinstance(dv, str) and dv.strip():
+        fields['darkvision'] = dv.strip()
+    speed = _format_speed(rec.get('speed'))
+    if speed:
+        fields['speed'] = speed
+    if raw_kind == 'subrace' and isinstance(rec.get('raceName'), str) and rec['raceName'].strip():
+        fields['parent_species'] = rec['raceName'].strip()
+
+
+def _extract_background_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    feats_raw = rec.get('feats')
+    granted: list[str] = []
+    if isinstance(feats_raw, list):
+        for f_obj in feats_raw:
+            if isinstance(f_obj, dict):
+                for k, v in f_obj.items():
+                    if not v:
+                        continue
+                    granted.append('任意专长' if k == 'any' else ('自选类别专长' if k == 'anyFromCategory' else _strip_source_suffix(k)))
+    granted = list(dict.fromkeys(granted))
+    if granted:
+        fields['granted_feat'] = granted[0] if len(granted) == 1 else granted
+
+    skills_raw = rec.get('skillProficiencies')
+    skills: list[str] = []
+    if isinstance(skills_raw, list):
+        for s_obj in skills_raw:
+            if isinstance(s_obj, dict):
+                for k, v in s_obj.items():
+                    if k not in {'choose', 'any'} and v is True:
+                        skills.append(_normalize_skill(k))
+        if not skills and any(isinstance(s_obj, dict) and ('choose' in s_obj or 'any' in s_obj) for s_obj in skills_raw):
+            skills.append('自选')
+    skills = list(dict.fromkeys(skills))
+    if skills:
+        fields['skills'] = skills
+
+
+def _extract_feat_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    custom_fc = ctx.get('feat_categories') or ctx.get('featCategories') or {}
+    cat_raw = rec.get('category')
+    if cat_raw is not None:
+        cats_in = cat_raw if isinstance(cat_raw, list) else [cat_raw]
+        cats_out = list(dict.fromkeys(
+            str((custom_fc.get(c.strip()) if isinstance(custom_fc, dict) else None) or FEAT_CATEGORY_TO_CN.get(c.strip(), c.strip()))
+            for c in cats_in if isinstance(c, str) and c.strip()
+        ))
+        if cats_out:
+            fields['feat_category'] = cats_out[0] if len(cats_out) == 1 else cats_out
+    prereq = _format_prerequisite(rec.get('prerequisite'))
+    if prereq:
+        fields['prerequisite'] = prereq
+
+
+def _extract_psionic_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    custom_psi = ctx.get('psionic_types') or ctx.get('psionicTypes') or {}
+    pt = rec.get('type')
+    if isinstance(pt, str) and pt.strip():
+        code = pt.strip()
+        hit = custom_psi.get(code) if isinstance(custom_psi, dict) else None
+        if isinstance(hit, dict):
+            fields['psionic_type'] = str(hit.get('full') or hit.get('short') or code)
+        elif isinstance(hit, str) and hit.strip():
+            fields['psionic_type'] = hit.strip()
+        else:
+            fields['psionic_type'] = PSIONIC_TYPE_TO_CN.get(code, code)
+    order = rec.get('order')
+    if isinstance(order, str) and order.strip() and order.strip().casefold() != 'none':
+        fields['psionic_order'] = order.strip()
+
+
+def _extract_vehicle_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    if raw_kind == 'vehicleUpgrade':
+        custom_vut = ctx.get('vehicle_upgrade_types') or ctx.get('vehicleUpgradeTypes') or {}
+        uts = rec.get('upgradeType')
+        if isinstance(uts, str):
+            uts = [uts]
+        vtypes = list(dict.fromkeys(
+            str((custom_vut.get(ut.strip()) if isinstance(custom_vut, dict) else None) or VEHICLE_UPGRADE_TYPE_TO_CN.get(ut.strip(), ut.strip()))
+            for ut in (uts if isinstance(uts, list) else []) if isinstance(ut, str) and ut.strip()
+        ))
+        fields['vehicle_type'] = (vtypes[0] if len(vtypes) == 1 else vtypes) if vtypes else '载具升级'
+    else:
+        vt = rec.get('vehicleType')
+        if isinstance(vt, str) and vt.strip():
+            fields['vehicle_type'] = VEHICLE_TYPE_TO_CN.get(vt.strip(), vt.strip())
+    sizes = _extract_sizes(rec.get('size'))
+    if sizes:
+        fields['size'] = sizes[0] if len(sizes) == 1 else sizes
+    if rec.get('capCrew') is not None:
+        fields['crew'] = str(rec['capCrew'])
+    if rec.get('capPassenger') is not None:
+        fields['passengers'] = str(rec['capPassenger'])
+
+
+def _extract_facility_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    ft = rec.get('facilityType')
+    if isinstance(ft, str) and ft.strip():
+        fields['facility_kind'] = FACILITY_KIND_TO_CN.get(ft.strip().casefold(), ft.strip())
+    if rec.get('level') is not None:
+        fields['level'] = str(rec['level'])
+
+
+def _extract_object_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    sizes = _extract_sizes(rec.get('size'))
+    if sizes:
+        fields['size'] = sizes[0] if len(sizes) == 1 else sizes
+    ot = rec.get('objectType')
+    if isinstance(ot, str) and ot.strip():
+        fields['object_type'] = OBJECT_TYPE_TO_CN.get(ot.strip(), ot.strip())
+    for key, extractor_fn in (('ac', _extract_ac), ('hp', _extract_hp)):
+        val = extractor_fn(rec.get(key))
+        if val is not None:
+            fields[key] = val
+
+
+def _extract_deck_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    dset = ctx.get('deck_set') or (rec.get('set') if raw_kind == 'card' else rec.get('name'))
+    if isinstance(dset, str) and dset.strip():
+        fields['deck_set'] = dset.strip()
+    cc = ctx.get('card_count')
+    if cc is not None:
+        fields['card_count'] = str(cc)
+    elif raw_kind == 'deck' and isinstance(rec.get('cards'), list):
+        fields['card_count'] = str(sum(c['count'] if isinstance(c, dict) and isinstance(c.get('count'), int) else 1 for c in rec['cards']))
+
+
+def _extract_recipe_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    if raw_kind == 'crochetPattern':
+        pt = rec.get('patternType')
+        if isinstance(pt, list) and pt:
+            fields['dish_types'] = [str(x) for x in pt if str(x).strip()]
+        elif isinstance(pt, str) and pt.strip():
+            fields['dish_types'] = [pt.strip()]
+        else:
+            fields['dish_types'] = ['钩织图样']
+        return
+    dt = rec.get('dishTypes')
+    if isinstance(dt, list) and dt:
+        fields['dish_types'] = list(dict.fromkeys(str(x).strip() for x in dt if str(x).strip()))
+    diet = rec.get('diet')
+    if isinstance(diet, str) and diet.strip():
+        fields['diet'] = DIET_TO_CN.get(diet.strip().upper(), diet.strip())
+
+
+def _extract_reward_fields(
+    rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    if raw_kind == 'charoption':
+        custom_co = ctx.get('char_option_types') or ctx.get('charOption') or {}
+        ots = rec.get('optionType')
+        if isinstance(ots, str):
+            ots = [ots]
+        kinds = list(dict.fromkeys(
+            str((custom_co.get(ot.strip()) if isinstance(custom_co, dict) else None) or CHAR_OPTION_TYPE_TO_CN.get(ot.strip(), ot.strip()))
+            for ot in (ots if isinstance(ots, list) else []) if isinstance(ot, str) and ot.strip()
+        ))
+        fields['reward_kind'] = (kinds[0] if len(kinds) == 1 else kinds) if kinds else '角色创建选项'
+    elif raw_kind == 'cult':
+        ct = rec.get('type')
+        fields['reward_kind'] = CULT_TYPE_TO_CN.get(str(ct).strip(), f'邪教（{ct}）') if ct else '邪教'
+    elif raw_kind == 'boon':
+        bt = rec.get('type')
+        fields['reward_kind'] = '恶魔恩赐' if bt == 'Demonic' else (str(bt) if bt else '恩赐')
+    else:
+        rt = rec.get('type')
+        if isinstance(rt, str) and rt.strip():
+            fields['reward_kind'] = REWARD_TYPE_TO_CN.get(rt.strip(), rt.strip())
+
+
+def _extract_deity_fields(
+    rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any],
+) -> None:
+    pan = rec.get('pantheon')
+    if isinstance(pan, str) and pan.strip():
+        fields['pantheon'] = pan.strip()
+    align = _format_alignment(rec.get('alignment'))
+    if align:
+        fields['alignment'] = align
+    doms = rec.get('domains')
+    if isinstance(doms, list) and doms:
+        fields['domains'] = list(dict.fromkeys(str(d).strip() for d in doms if str(d).strip()))
+
+
+def _extract_trap_or_hazard_fields(
+    field_key: str, rec: dict[str, Any], fields: dict[str, Any],
+) -> None:
+    th = rec.get('trapHazType')
+    if isinstance(th, str) and th.strip():
+        fields[field_key] = TRAP_HAZARD_TYPE_TO_CN.get(th.strip(), th.strip())
+
+
+def _extract_trap_fields(rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any]) -> None:
+    _extract_trap_or_hazard_fields('trap_kind', rec, fields)
+
+
+def _extract_hazard_fields(rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any]) -> None:
+    _extract_trap_or_hazard_fields('hazard_kind', rec, fields)
+
+
+def _extract_table_fields(_rec: dict[str, Any], _ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any]) -> None:
+    fields['table_kind'] = TABLE_KIND_TO_CN.get(raw_kind, '随机表')
+
+
+def _extract_condition_fields(_rec: dict[str, Any], _ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any]) -> None:
+    fields['condition_kind'] = '持续状态' if raw_kind == 'status' else '状态'
+
+
+def _extract_action_fields(rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any]) -> None:
+    at_buckets, _ = _format_casting_time(rec.get('time'))
+    if at_buckets:
+        fields['action_time'] = at_buckets[0] if len(at_buckets) == 1 else at_buckets
+
+
+def _extract_skill_fields(rec: dict[str, Any], _ctx: dict[str, Any], _rk: str, _inf: bool, fields: dict[str, Any]) -> None:
+    ab = rec.get('ability')
+    if isinstance(ab, str) and ab.strip():
+        fields['ability'] = _normalize_ability(ab)
+
+
+def _extract_language_fields(rec: dict[str, Any], _ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any]) -> None:
+    if raw_kind == 'languageScript':
+        fields['language_type'] = '文字'
+    else:
+        lt = rec.get('type')
+        if isinstance(lt, str) and lt.strip():
+            fields['language_type'] = LANGUAGE_TYPE_TO_CN.get(lt.strip().casefold(), lt.strip())
+    sc = rec.get('script')
+    if isinstance(sc, str) and sc.strip():
+        fields['script'] = '无' if sc.strip().casefold() == 'none' else sc.strip()
+
+
+def _extract_rule_fields(_rec: dict[str, Any], _ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any]) -> None:
+    fields['rule_kind'] = RULE_KIND_TO_CN.get(raw_kind, '规则')
+
+
+def _extract_book_fields(rec: dict[str, Any], ctx: dict[str, Any], raw_kind: str, _inf: bool, fields: dict[str, Any]) -> None:
+    bk = ctx.get('book_kind')
+    fields['book_kind'] = bk.strip() if isinstance(bk, str) and bk.strip() else ('模组' if raw_kind == 'adventure' else '规则书')
+    bg = rec.get('group')
+    if isinstance(bg, str) and bg.strip():
+        fields['book_group'] = BOOK_GROUP_TO_CN.get(bg.strip(), bg.strip())
+    pub = rec.get('published')
+    if isinstance(pub, str) and pub.strip():
+        fields['published'] = pub.strip()
+
+
+_FIELD_EXTRACTORS = {
+    'spell': _extract_spell_fields,
+    'creature': _extract_creature_fields,
+    'magic_item': _extract_magic_item_fields,
+    'equipment': _extract_equipment_fields,
+    'poison': _extract_poison_fields,
+    'class': _extract_class_fields,
+    'subclass': _extract_subclass_fields,
+    'class_feature': _extract_class_feature_fields,
+    'species': _extract_species_fields,
+    'background': _extract_background_fields,
+    'feat': _extract_feat_fields,
+    'psionic': _extract_psionic_fields,
+    'vehicle': _extract_vehicle_fields,
+    'facility': _extract_facility_fields,
+    'object': _extract_object_fields,
+    'deck': _extract_deck_fields,
+    'recipe': _extract_recipe_fields,
+    'reward': _extract_reward_fields,
+    'deity': _extract_deity_fields,
+    'trap': _extract_trap_fields,
+    'hazard': _extract_hazard_fields,
+    'table': _extract_table_fields,
+    'condition': _extract_condition_fields,
+    'action': _extract_action_fields,
+    'skill': _extract_skill_fields,
+    'language': _extract_language_fields,
+    'rule': _extract_rule_fields,
+    'book': _extract_book_fields,
+}
+
+
 def extract_fields(
     raw_kind: str,
     entry_type: str,
@@ -1386,615 +2017,9 @@ def extract_fields(
     fields: dict[str, Any] = {}
     conflicts: list[str] = []
 
-    if entry_type == 'spell':
-        lvl = rec.get('level')
-        if lvl is not None:
-            fields['spell_level'] = str(lvl)
-
-        school_raw = rec.get('school')
-        if isinstance(school_raw, str) and school_raw.strip():
-            fields['school'] = _normalize_school(school_raw, ctx)
-
-        # Spell classes from resolved_context and/or embedded item.classes
-        cls_list: list[str] = []
-        ctx_classes = ctx.get('spell_classes') or ctx.get('classes')
-        if isinstance(ctx_classes, list):
-            for c in ctx_classes:
-                if isinstance(c, str) and c.strip():
-                    cls_list.append(_normalize_class_name(c))
-        raw_classes = rec.get('classes')
-        if isinstance(raw_classes, dict):
-            for list_key in ('fromClassList', 'fromClassListVariant'):
-                for c_obj in raw_classes.get(list_key) or []:
-                    if isinstance(c_obj, dict) and isinstance(c_obj.get('name'), str):
-                        cls_list.append(_normalize_class_name(c_obj['name']))
-        cls_list = list(dict.fromkeys(cls_list))
-        if cls_list:
-            fields['spell_classes'] = cls_list
-
-        ct_buckets, ct_detail = _format_casting_time(rec.get('time'))
-        if ct_buckets:
-            fields['casting_time'] = ct_buckets[0] if len(ct_buckets) == 1 else ct_buckets
-        if ct_detail:
-            fields['casting_time_detail'] = ct_detail
-
-        # Duration -> concentration
-        duration = rec.get('duration')
-        has_duration = isinstance(duration, list) and len(duration) > 0
-        if has_duration:
-            has_conc = any(isinstance(d, dict) and bool(d.get('concentration')) for d in duration)
-            if has_conc:
-                fields['concentration'] = True
-            elif can_infer_false:
-                fields['concentration'] = False
-            else:
-                fields['concentration'] = None
-        else:
-            fields['concentration'] = None
-
-        # Meta -> ritual
-        meta = rec.get('meta')
-        explicit_ritual = isinstance(meta, dict) and meta.get('ritual') is True
-        explicit_not_ritual = isinstance(meta, dict) and meta.get('ritual') is False
-        has_core_spell = (
-            rec.get('level') is not None
-            and bool(rec.get('school'))
-            and bool(rec.get('time'))
-            and has_duration
-        )
-        if explicit_ritual:
-            fields['ritual'] = True
-        elif explicit_not_ritual:
-            fields['ritual'] = False
-        elif can_infer_false and has_core_spell:
-            fields['ritual'] = False
-        else:
-            fields['ritual'] = None
-
-        # Components -> verbal, somatic, material, special_material
-        comps = rec.get('components')
-        if isinstance(comps, dict) and len(comps) > 0:
-            v_val = comps.get('v')
-            s_val = comps.get('s')
-            m_val = comps.get('m')
-            if v_val is True:
-                fields['verbal'] = True
-            elif v_val is False or can_infer_false:
-                fields['verbal'] = False
-            else:
-                fields['verbal'] = None
-
-            if s_val is True:
-                fields['somatic'] = True
-            elif s_val is False or can_infer_false:
-                fields['somatic'] = False
-            else:
-                fields['somatic'] = None
-
-            if m_val is not None and m_val is not False:
-                fields['material'] = True
-                if isinstance(m_val, dict):
-                    if isinstance(m_val.get('text'), str) and m_val['text'].strip():
-                        fields['material_detail'] = m_val['text'].strip()
-                    has_special = bool(m_val.get('cost')) or bool(m_val.get('consume'))
-                    if has_special:
-                        fields['special_material'] = True
-                    elif can_infer_false:
-                        fields['special_material'] = False
-                    else:
-                        fields['special_material'] = None
-                elif isinstance(m_val, str) and m_val.strip():
-                    fields['material_detail'] = m_val.strip()
-                    fields['special_material'] = False if can_infer_false else None
-                else:
-                    fields['special_material'] = False if can_infer_false else None
-            elif m_val is False or can_infer_false:
-                fields['material'] = False
-                fields['special_material'] = NA
-            else:
-                fields['material'] = None
-                fields['special_material'] = None
-        else:
-            fields['verbal'] = None
-            fields['somatic'] = None
-            fields['material'] = None
-            fields['special_material'] = None
-
-    elif entry_type == 'creature':
-        sizes = _extract_sizes(rec.get('size'))
-        if sizes:
-            fields['size'] = sizes[0] if len(sizes) == 1 else sizes
-
-        raw_type = rec.get('type')
-        ctypes: list[str] = []
-        ctags: list[str] = []
-        if isinstance(raw_type, str) and raw_type.strip():
-            ctypes.append(_normalize_creature_type(raw_type))
-        elif isinstance(raw_type, dict):
-            inner = raw_type.get('type')
-            if isinstance(inner, str) and inner.strip():
-                ctypes.append(_normalize_creature_type(inner))
-            elif isinstance(inner, dict) and isinstance(inner.get('choose'), list):
-                for ch in inner['choose']:
-                    if isinstance(ch, str) and ch.strip():
-                        ctypes.append(_normalize_creature_type(ch))
-            for tg in raw_type.get('tags') or []:
-                if isinstance(tg, str) and tg.strip():
-                    ctags.append(tg.strip())
-                elif isinstance(tg, dict) and isinstance(tg.get('tag'), str):
-                    prefix = tg.get('prefix')
-                    ctags.append(f'{prefix} {tg["tag"]}'.strip() if prefix else tg['tag'])
-            if raw_type.get('swarmSize'):
-                ctags.append('集群')
-        ctypes = list(dict.fromkeys(ctypes))
-        if ctypes:
-            fields['creature_type'] = ctypes[0] if len(ctypes) == 1 else ctypes
-        if ctags:
-            fields['creature_tags'] = list(dict.fromkeys(ctags))
-
-        cr = _extract_cr(rec.get('cr'))
-        if cr is not None:
-            fields['cr'] = cr
-        ac = _extract_ac(rec.get('ac'))
-        if ac is not None:
-            fields['ac'] = ac
-        hp = _extract_hp(rec.get('hp'))
-        if hp is not None:
-            fields['hp'] = hp
-
-        has_statblock = any(rec.get(k) is not None for k in ('cr', 'ac', 'hp', 'str', 'dex', 'con'))
-
-        # legendary_actions
-        has_leg = bool(rec.get('legendary')) or bool(rec.get('legendaryActions')) or bool(rec.get('legendaryActionsLair'))
-        if has_leg:
-            fields['legendary_actions'] = True
-        elif can_infer_false and has_statblock:
-            fields['legendary_actions'] = False
-        else:
-            fields['legendary_actions'] = None
-
-        # lair_actions
-        ctx_lair = ctx.get('has_lair_actions')
-        lg_obj = ctx.get('legendary_group')
-        if isinstance(ctx_lair, bool):
-            fields['lair_actions'] = ctx_lair if (ctx_lair or can_infer_false) else None
-        elif isinstance(lg_obj, dict):
-            has_lair = bool(lg_obj.get('lairActions'))
-            fields['lair_actions'] = True if has_lair else (False if can_infer_false else None)
-        elif rec.get('lairActions') or rec.get('legendaryActionsLair') or (isinstance(rec.get('cr'), dict) and rec['cr'].get('lair')):
-            fields['lair_actions'] = True
-        elif rec.get('legendaryGroup'):
-            # LegendaryGroup exists but was not resolved in context -> unknown
-            fields['lair_actions'] = None
-        elif can_infer_false and has_statblock:
-            fields['lair_actions'] = False
-        else:
-            fields['lair_actions'] = None
-
-        # has_local_audio
-        ctx_audio = ctx.get('has_local_audio')
-        if isinstance(ctx_audio, bool):
-            fields['has_local_audio'] = ctx_audio
-        else:
-            fields['has_local_audio'] = None
-
-    elif entry_type == 'magic_item':
-        inherits = rec.get('inherits') if isinstance(rec.get('inherits'), dict) else {}
-        effective = {**inherits, **{k: v for k, v in rec.items() if v is not None}}
-
-        raw_rarity = effective.get('rarity')
-        if isinstance(raw_rarity, str) and raw_rarity.strip():
-            fields['rarity'] = _normalize_rarity(raw_rarity)
-
-        primary, subtypes = _resolve_item_type_and_subtypes(raw_kind, rec, effective, ctx)
-        if primary:
-            fields['item_type'] = primary
-        if subtypes:
-            fields['item_subtypes'] = subtypes
-
-        tier_val = effective.get('tier')
-        if isinstance(tier_val, str) and tier_val.strip():
-            fields['item_tier'] = {'minor': '次要', 'major': '主要'}.get(tier_val.strip().casefold(), tier_val.strip())
-
-        req_attune = effective.get('reqAttune')
-        has_item_body = (
-            raw_rarity is not None
-            or bool(effective.get('entries'))
-            or bool(effective.get('wondrous'))
-            or bool(effective.get('type'))
-            or bool(inherits)
-        )
-        if req_attune is True:
-            fields['attunement'] = True
-        elif req_attune is False:
-            fields['attunement'] = False
-        elif isinstance(req_attune, str) and req_attune.strip():
-            fields['attunement'] = True
-            req_text = req_attune.strip()
-            fields['attunement_requirements'] = '可选' if req_text.casefold() == 'optional' else req_text
-        elif can_infer_false and has_item_body:
-            fields['attunement'] = False
-        else:
-            fields['attunement'] = None
-
-    elif entry_type == 'equipment':
-        primary, subtypes = _resolve_item_type_and_subtypes(raw_kind, rec, rec, ctx)
-        if primary:
-            fields['item_type'] = primary
-        if subtypes:
-            fields['item_subtypes'] = subtypes
-
-        price = _format_money_cp(rec.get('value'))
-        if price is not None:
-            fields['price'] = price
-        weight = _format_weight(rec.get('weight'))
-        if weight is not None:
-            fields['weight'] = weight
-
-        dmg1 = rec.get('dmg1')
-        dmg2 = rec.get('dmg2')
-        dmg_type = rec.get('dmgType')
-        if isinstance(dmg1, str) and dmg1.strip():
-            dice = f'{dmg1.strip()}/{dmg2.strip()}' if isinstance(dmg2, str) and dmg2.strip() else dmg1.strip()
-            dt = DMG_TYPE_TO_CN.get(str(dmg_type).strip().upper(), str(dmg_type).strip()) if dmg_type else ''
-            fields['damage'] = f'{dice} {dt}'.strip()
-
-        if rec.get('ac') is not None:
-            fields['ac'] = str(rec['ac'])
-
-        raw_mastery = rec.get('mastery')
-        if isinstance(raw_mastery, list) and raw_mastery:
-            masteries: list[str] = []
-            for m in raw_mastery:
-                if isinstance(m, str) and m.strip():
-                    masteries.append(_strip_source_suffix(m))
-                elif isinstance(m, dict) and isinstance(m.get('uid'), str):
-                    masteries.append(_strip_source_suffix(m['uid']))
-            masteries = list(dict.fromkeys(masteries))
-            if masteries:
-                fields['mastery'] = masteries[0] if len(masteries) == 1 else masteries
-
-    elif entry_type == 'poison':
-        pts = rec.get('poisonTypes')
-        if isinstance(pts, list) and pts:
-            mapped = [POISON_TYPE_TO_CN.get(str(p).strip().casefold(), POISON_TYPE_TO_CN.get(str(p).strip(), str(p).strip())) for p in pts if str(p).strip()]
-            mapped = list(dict.fromkeys(mapped))
-            if mapped:
-                fields['poison_type'] = mapped[0] if len(mapped) == 1 else mapped
-        price = _format_money_cp(rec.get('value'))
-        if price is not None:
-            fields['price'] = price
-
-    elif entry_type == 'class':
-        hd = rec.get('hd')
-        if isinstance(hd, dict) and hd.get('faces'):
-            fields['hit_die'] = f"d{hd['faces']}"
-        sca = rec.get('spellcastingAbility')
-        if isinstance(sca, str) and sca.strip():
-            fields['spellcasting_ability'] = _normalize_ability(sca)
-        cp = rec.get('casterProgression')
-        if isinstance(cp, str) and cp.strip():
-            fields['caster_progression'] = CASTER_PROGRESSION_TO_CN.get(cp.strip(), cp.strip())
-        profs = rec.get('proficiency')
-        if isinstance(profs, list) and profs:
-            fields['saving_throws'] = [_normalize_ability(str(p)) for p in profs if isinstance(p, str) and p.strip()]
-
-    elif entry_type == 'subclass':
-        owner = ctx.get('owner_class') or rec.get('className')
-        if isinstance(owner, str) and owner.strip():
-            fields['owner_class'] = _normalize_class_name(owner)
-        sca = rec.get('spellcastingAbility')
-        if isinstance(sca, str) and sca.strip():
-            fields['spellcasting_ability'] = _normalize_ability(sca)
-        cp = rec.get('casterProgression')
-        if isinstance(cp, str) and cp.strip():
-            fields['caster_progression'] = CASTER_PROGRESSION_TO_CN.get(cp.strip(), cp.strip())
-
-    elif entry_type == 'class_feature':
-        owner = ctx.get('owner_class') or rec.get('className')
-        owner_sub = ctx.get('owner_subclass') or rec.get('subclassShortName')
-        if raw_kind == 'classFeature':
-            fields['feature_kind'] = '职业特性'
-        elif raw_kind == 'subclassFeature':
-            fields['feature_kind'] = '子职特性'
-        elif raw_kind == 'optionalfeature':
-            custom_opt = ctx.get('optional_feature_types') or ctx.get('optionalFeatureTypes') or {}
-            fts = rec.get('featureType')
-            if isinstance(fts, str):
-                fts = [fts]
-            kinds: list[str] = []
-            inferred_classes: list[str] = []
-            if isinstance(fts, list):
-                for ft in fts:
-                    if not isinstance(ft, str) or not ft.strip():
-                        continue
-                    code = ft.strip()
-                    label = (custom_opt.get(code) if isinstance(custom_opt, dict) else None) or OPT_FEATURE_TYPE_TO_CN.get(code, code)
-                    kinds.append(str(label))
-                    if not owner and code in OPT_FEATURE_OWNER_CLASS:
-                        inferred_classes.append(OPT_FEATURE_OWNER_CLASS[code])
-            kinds = list(dict.fromkeys(kinds))
-            fields['feature_kind'] = (kinds[0] if len(kinds) == 1 else kinds) if kinds else '可选特性'
-            inferred_classes = list(dict.fromkeys(inferred_classes))
-            if not owner and len(inferred_classes) == 1:
-                owner = inferred_classes[0]
-        else:
-            fields['feature_kind'] = '职业特性'
-
-        if isinstance(owner, str) and owner.strip():
-            fields['owner_class'] = _normalize_class_name(owner)
-        if isinstance(owner_sub, str) and owner_sub.strip():
-            fields['owner_subclass'] = owner_sub.strip()
-
-        lvl = rec.get('level')
-        if lvl is None and isinstance(rec.get('prerequisite'), list):
-            for p in rec['prerequisite']:
-                if isinstance(p, dict) and p.get('level') is not None:
-                    lv = p['level']
-                    if isinstance(lv, int):
-                        lvl = lv
-                        break
-                    if isinstance(lv, dict) and isinstance(lv.get('level'), int):
-                        lvl = lv['level']
-                        break
-        if lvl is not None:
-            fields['level'] = str(lvl)
-
-    elif entry_type == 'species':
-        sizes = _extract_sizes(rec.get('size'))
-        if sizes:
-            fields['size'] = sizes[0] if len(sizes) == 1 else sizes
-        dv = rec.get('darkvision')
-        if isinstance(dv, (int, float)) and not isinstance(dv, bool) and dv > 0:
-            fields['darkvision'] = f'{int(dv)}尺'
-        elif isinstance(dv, str) and dv.strip():
-            fields['darkvision'] = dv.strip()
-        speed = _format_speed(rec.get('speed'))
-        if speed:
-            fields['speed'] = speed
-        if raw_kind == 'subrace' and isinstance(rec.get('raceName'), str) and rec['raceName'].strip():
-            fields['parent_species'] = rec['raceName'].strip()
-
-    elif entry_type == 'background':
-        feats_raw = rec.get('feats')
-        granted: list[str] = []
-        if isinstance(feats_raw, list):
-            for f_obj in feats_raw:
-                if isinstance(f_obj, dict):
-                    for k, v in f_obj.items():
-                        if not v:
-                            continue
-                        if k == 'any':
-                            granted.append('任意专长')
-                        elif k == 'anyFromCategory':
-                            granted.append('自选类别专长')
-                        else:
-                            granted.append(_strip_source_suffix(k))
-        granted = list(dict.fromkeys(granted))
-        if granted:
-            fields['granted_feat'] = granted[0] if len(granted) == 1 else granted
-
-        skills_raw = rec.get('skillProficiencies')
-        skills: list[str] = []
-        if isinstance(skills_raw, list):
-            for s_obj in skills_raw:
-                if isinstance(s_obj, dict):
-                    for k, v in s_obj.items():
-                        if k in {'choose', 'any'}:
-                            continue
-                        if v is True:
-                            skills.append(_normalize_skill(k))
-            if not skills and any(isinstance(s_obj, dict) and ('choose' in s_obj or 'any' in s_obj) for s_obj in skills_raw):
-                skills.append('自选')
-        skills = list(dict.fromkeys(skills))
-        if skills:
-            fields['skills'] = skills
-
-    elif entry_type == 'feat':
-        custom_fc = ctx.get('feat_categories') or ctx.get('featCategories') or {}
-        cat_raw = rec.get('category')
-        if cat_raw is not None:
-            cats_in = cat_raw if isinstance(cat_raw, list) else [cat_raw]
-            cats_out: list[str] = []
-            for c in cats_in:
-                if not isinstance(c, str) or not c.strip():
-                    continue
-                code = c.strip()
-                label = (custom_fc.get(code) if isinstance(custom_fc, dict) else None) or FEAT_CATEGORY_TO_CN.get(code, code)
-                cats_out.append(str(label))
-            cats_out = list(dict.fromkeys(cats_out))
-            if cats_out:
-                fields['feat_category'] = cats_out[0] if len(cats_out) == 1 else cats_out
-        prereq = _format_prerequisite(rec.get('prerequisite'))
-        if prereq:
-            fields['prerequisite'] = prereq
-
-    elif entry_type == 'psionic':
-        custom_psi = ctx.get('psionic_types') or ctx.get('psionicTypes') or {}
-        pt = rec.get('type')
-        if isinstance(pt, str) and pt.strip():
-            code = pt.strip()
-            hit = custom_psi.get(code) if isinstance(custom_psi, dict) else None
-            if isinstance(hit, dict):
-                fields['psionic_type'] = str(hit.get('full') or hit.get('short') or code)
-            elif isinstance(hit, str) and hit.strip():
-                fields['psionic_type'] = hit.strip()
-            else:
-                fields['psionic_type'] = PSIONIC_TYPE_TO_CN.get(code, code)
-        order = rec.get('order')
-        if isinstance(order, str) and order.strip() and order.strip().casefold() != 'none':
-            fields['psionic_order'] = order.strip()
-
-    elif entry_type == 'vehicle':
-        if raw_kind == 'vehicleUpgrade':
-            custom_vut = ctx.get('vehicle_upgrade_types') or ctx.get('vehicleUpgradeTypes') or {}
-            uts = rec.get('upgradeType')
-            if isinstance(uts, str):
-                uts = [uts]
-            vtypes: list[str] = []
-            if isinstance(uts, list):
-                for ut in uts:
-                    if isinstance(ut, str) and ut.strip():
-                        code = ut.strip()
-                        label = (custom_vut.get(code) if isinstance(custom_vut, dict) else None) or VEHICLE_UPGRADE_TYPE_TO_CN.get(code, code)
-                        vtypes.append(str(label))
-            vtypes = list(dict.fromkeys(vtypes))
-            fields['vehicle_type'] = (vtypes[0] if len(vtypes) == 1 else vtypes) if vtypes else '载具升级'
-        else:
-            vt = rec.get('vehicleType')
-            if isinstance(vt, str) and vt.strip():
-                fields['vehicle_type'] = VEHICLE_TYPE_TO_CN.get(vt.strip(), vt.strip())
-        sizes = _extract_sizes(rec.get('size'))
-        if sizes:
-            fields['size'] = sizes[0] if len(sizes) == 1 else sizes
-        if rec.get('capCrew') is not None:
-            fields['crew'] = str(rec['capCrew'])
-        if rec.get('capPassenger') is not None:
-            fields['passengers'] = str(rec['capPassenger'])
-
-    elif entry_type == 'facility':
-        ft = rec.get('facilityType')
-        if isinstance(ft, str) and ft.strip():
-            fields['facility_kind'] = FACILITY_KIND_TO_CN.get(ft.strip().casefold(), ft.strip())
-        if rec.get('level') is not None:
-            fields['level'] = str(rec['level'])
-
-    elif entry_type == 'object':
-        sizes = _extract_sizes(rec.get('size'))
-        if sizes:
-            fields['size'] = sizes[0] if len(sizes) == 1 else sizes
-        ot = rec.get('objectType')
-        if isinstance(ot, str) and ot.strip():
-            fields['object_type'] = OBJECT_TYPE_TO_CN.get(ot.strip(), ot.strip())
-        ac = _extract_ac(rec.get('ac'))
-        if ac is not None:
-            fields['ac'] = ac
-        hp = _extract_hp(rec.get('hp'))
-        if hp is not None:
-            fields['hp'] = hp
-
-    elif entry_type == 'deck':
-        dset = ctx.get('deck_set') or (rec.get('set') if raw_kind == 'card' else rec.get('name'))
-        if isinstance(dset, str) and dset.strip():
-            fields['deck_set'] = dset.strip()
-        cc = ctx.get('card_count')
-        if cc is not None:
-            fields['card_count'] = str(cc)
-        elif raw_kind == 'deck' and isinstance(rec.get('cards'), list):
-            total = 0
-            for c in rec['cards']:
-                if isinstance(c, dict) and isinstance(c.get('count'), int):
-                    total += c['count']
-                else:
-                    total += 1
-            fields['card_count'] = str(total)
-
-    elif entry_type == 'recipe':
-        if raw_kind == 'crochetPattern':
-            pt = rec.get('patternType')
-            if isinstance(pt, list) and pt:
-                fields['dish_types'] = [str(x) for x in pt if str(x).strip()]
-            elif isinstance(pt, str) and pt.strip():
-                fields['dish_types'] = [pt.strip()]
-            else:
-                fields['dish_types'] = ['钩织图样']
-        else:
-            dt = rec.get('dishTypes')
-            if isinstance(dt, list) and dt:
-                fields['dish_types'] = list(dict.fromkeys(str(x).strip() for x in dt if str(x).strip()))
-            diet = rec.get('diet')
-            if isinstance(diet, str) and diet.strip():
-                fields['diet'] = DIET_TO_CN.get(diet.strip().upper(), diet.strip())
-
-    elif entry_type == 'reward':
-        if raw_kind == 'charoption':
-            custom_co = ctx.get('char_option_types') or ctx.get('charOption') or {}
-            ots = rec.get('optionType')
-            if isinstance(ots, str):
-                ots = [ots]
-            kinds = []
-            if isinstance(ots, list):
-                for ot in ots:
-                    if isinstance(ot, str) and ot.strip():
-                        code = ot.strip()
-                        label = (custom_co.get(code) if isinstance(custom_co, dict) else None) or CHAR_OPTION_TYPE_TO_CN.get(code, code)
-                        kinds.append(str(label))
-            kinds = list(dict.fromkeys(kinds))
-            fields['reward_kind'] = (kinds[0] if len(kinds) == 1 else kinds) if kinds else '角色创建选项'
-        elif raw_kind == 'cult':
-            ct = rec.get('type')
-            fields['reward_kind'] = CULT_TYPE_TO_CN.get(str(ct).strip(), f'邪教（{ct}）') if ct else '邪教'
-        elif raw_kind == 'boon':
-            bt = rec.get('type')
-            fields['reward_kind'] = '恶魔恩赐' if bt == 'Demonic' else (str(bt) if bt else '恩赐')
-        else:
-            rt = rec.get('type')
-            if isinstance(rt, str) and rt.strip():
-                fields['reward_kind'] = REWARD_TYPE_TO_CN.get(rt.strip(), rt.strip())
-
-    elif entry_type == 'deity':
-        pan = rec.get('pantheon')
-        if isinstance(pan, str) and pan.strip():
-            fields['pantheon'] = pan.strip()
-        align = _format_alignment(rec.get('alignment'))
-        if align:
-            fields['alignment'] = align
-        doms = rec.get('domains')
-        if isinstance(doms, list) and doms:
-            fields['domains'] = list(dict.fromkeys(str(d).strip() for d in doms if str(d).strip()))
-
-    elif entry_type == 'trap':
-        th = rec.get('trapHazType')
-        if isinstance(th, str) and th.strip():
-            fields['trap_kind'] = TRAP_HAZARD_TYPE_TO_CN.get(th.strip(), th.strip())
-
-    elif entry_type == 'hazard':
-        th = rec.get('trapHazType')
-        if isinstance(th, str) and th.strip():
-            fields['hazard_kind'] = TRAP_HAZARD_TYPE_TO_CN.get(th.strip(), th.strip())
-
-    elif entry_type == 'table':
-        fields['table_kind'] = TABLE_KIND_TO_CN.get(raw_kind, '随机表')
-
-    elif entry_type == 'condition':
-        fields['condition_kind'] = '持续状态' if raw_kind == 'status' else '状态'
-
-    elif entry_type == 'action':
-        at_buckets, _ = _format_casting_time(rec.get('time'))
-        if at_buckets:
-            fields['action_time'] = at_buckets[0] if len(at_buckets) == 1 else at_buckets
-
-    elif entry_type == 'skill':
-        ab = rec.get('ability')
-        if isinstance(ab, str) and ab.strip():
-            fields['ability'] = _normalize_ability(ab)
-
-    elif entry_type == 'language':
-        if raw_kind == 'languageScript':
-            fields['language_type'] = '文字'
-        else:
-            lt = rec.get('type')
-            if isinstance(lt, str) and lt.strip():
-                fields['language_type'] = LANGUAGE_TYPE_TO_CN.get(lt.strip().casefold(), lt.strip())
-        sc = rec.get('script')
-        if isinstance(sc, str) and sc.strip():
-            fields['script'] = '无' if sc.strip().casefold() == 'none' else sc.strip()
-
-    elif entry_type == 'rule':
-        fields['rule_kind'] = RULE_KIND_TO_CN.get(raw_kind, '规则')
-
-    elif entry_type == 'book':
-        bk = ctx.get('book_kind')
-        if isinstance(bk, str) and bk.strip():
-            fields['book_kind'] = bk.strip()
-        else:
-            fields['book_kind'] = '模组' if raw_kind == 'adventure' else '规则书'
-        bg = rec.get('group')
-        if isinstance(bg, str) and bg.strip():
-            fields['book_group'] = BOOK_GROUP_TO_CN.get(bg.strip(), bg.strip())
-        pub = rec.get('published')
-        if isinstance(pub, str) and pub.strip():
-            fields['published'] = pub.strip()
+    extractor = _FIELD_EXTRACTORS.get(entry_type)
+    if extractor is not None:
+        extractor(rec, ctx, raw_kind, can_infer_false, fields)
 
     # Common provenance / curation facets from resolved_context
     if isinstance(ctx.get('package_kind'), str) and ctx['package_kind'].strip():

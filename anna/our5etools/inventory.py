@@ -643,32 +643,8 @@ def _merge_package_sources(
     return [by_json[code] for code in order]
 
 
-def load_inventory(source_root: Path) -> Inventory:
-    """Scan, validate, and reconstruct a complete Inventory from an our5etools snapshot."""
-    root = Path(source_root).expanduser().resolve()
-
-    # 1. Validate required root layout
-    data_dir = root / 'data'
-    books_api_path = root / '__api/books.json'
-    recipes_all_path = root / 'homebrew/_recipes/all.json'
-    if not data_dir.is_dir():
-        raise FileNotFoundError(f'Missing required official data directory: {data_dir}')
-    if not books_api_path.is_file():
-        raise FileNotFoundError(f'Missing required brew catalog: {books_api_path}')
-    if not recipes_all_path.is_file():
-        raise FileNotFoundError(f'Missing required homebrew recipe index: {recipes_all_path}')
-
-    # 2. Load site brew declarations from homebrew/index.json['toImport']
-    homebrew_index_path = root / 'homebrew/index.json'
-    site_brew_relnames: list[str] = []
-    if homebrew_index_path.is_file():
-        hb_index = _read_json_bytes(homebrew_index_path)
-        for name in hb_index.get('toImport') or []:
-            checked = _checked_relative(str(name))
-            site_brew_relnames.append(checked.as_posix())
-    site_brew_paths = {f'homebrew/{name}' for name in site_brew_relnames}
-
-    # 3. Parse official sources from __ours/assets.json['/js/parser.js'] (fallback: js/parser.js)
+def _load_official_parser_sources(root: Path) -> tuple[dict[str, dict[str, Any]], dict[str, str], list[str]]:
+    """Parse official source definitions from assets bundle or disk parser.js."""
     assets_path = root / '__ours/assets.json'
     parser_js_text = ''
     if assets_path.is_file():
@@ -679,9 +655,11 @@ def load_inventory(source_root: Path) -> Inventory:
         disk_parser = root / 'js/parser.js'
         if disk_parser.is_file():
             parser_js_text = disk_parser.read_text(encoding='utf-8')
-    official_sources, official_source_casefold, parser_warnings = parse_official_sources(parser_js_text)
+    return parse_official_sources(parser_js_text)
 
-    # 4. Enumerate every file under source_root (skipping .git/, resource-export/, symlinks)
+
+def _scan_source_files(root: Path, site_brew_paths: set[str]) -> dict[str, Any]:
+    """Walk non-ignored files under `source_root`, hash bytes, and index official docs & media."""
     file_records: list[dict] = []
     media_files: dict[str, dict] = {}
     official_docs: list[dict] = []
@@ -726,18 +704,15 @@ def load_inventory(source_root: Path) -> Inventory:
             'reason': reason,
         })
 
-        # Index official JSON documents
         if disposition in {'entity_data', 'fluff_data', 'book_data', 'adventure_data'}:
-            doc = json.loads(raw_bytes)
             official_docs.append({
                 'path': posix,
                 'disposition': disposition,
                 'role': role,
                 'package_id': 'official',
-                'data': doc,
+                'data': json.loads(raw_bytes),
             })
 
-        # Index all local audio / font / image files
         ext = rel.suffix.lower()
         if disposition == 'local_media' or ext in (AUDIO_EXTS | FONT_EXTS | IMAGE_EXTS):
             if ext in AUDIO_EXTS:
@@ -759,58 +734,27 @@ def load_inventory(source_root: Path) -> Inventory:
                 media_record['audio_subpath'] = posix.removeprefix('audio/')
             media_files[posix] = media_record
 
-    # 5. Build snapshot_info
-    status_api_path = root / '__api/status.json'
-    stats_api_path = root / '__api/stats.json'
-    status_api = _read_json_bytes(status_api_path) if status_api_path.is_file() else {}
-    stats_api = _read_json_bytes(stats_api_path) if stats_api_path.is_file() else {}
-
-    snapshot_info: dict[str, Any] = {
-        'root': str(root),
-        'git_commit': _git_commit(root),
-        'app': status_api.get('app'),
-        'version': status_api.get('version'),
-        'build': status_api.get('build'),
-        'ready': status_api.get('ready'),
-        'brew_built': status_api.get('brew_built'),
-        'data_date': status_api.get('data_date'),
-        'brew_books': status_api.get('brew_books'),
-        'our_books': status_api.get('ourBooks'),
-        'status_api': status_api,
-        'stats_api': stats_api,
+    return {
+        'file_records': file_records,
+        'media_files': media_files,
+        'official_docs': official_docs,
+        'disposition_counts': disposition_counts,
+        'media_counts': media_counts,
+        'skipped_symlinks': skipped_symlinks,
         'input_sha256': input_hasher.hexdigest(),
-        'file_count': len(file_records),
+        'file_sha_map': file_sha_map,
     }
 
-    # 6. Load ratings & tiers
-    tiers_path = root / '__api/tiers.json'
-    api_ratings_path = root / '__api/ratings.json'
-    ours_ratings_path = root / '__ours/ratings.json'
-    tiers: dict[str, str] = _read_json_bytes(tiers_path) if tiers_path.is_file() else {}
-    api_ratings = _read_json_bytes(api_ratings_path) if api_ratings_path.is_file() else {}
-    ours_ratings = _read_json_bytes(ours_ratings_path) if ours_ratings_path.is_file() else {}
-    ratings = {
-        'tiers': tiers,
-        'api_ratings': api_ratings,
-        'ours_ratings': ours_ratings,
-        'ratings_base_matches_ours': (
-            api_ratings.get('base') == ours_ratings
-            if isinstance(api_ratings, dict) and 'base' in api_ratings
-            else None
-        ),
-    }
 
-    # 7. Load generated_lookups
-    generated_lookups: dict[str, Any] = {}
-    missing_generated_lookups: list[str] = []
-    for rel_lookup in GENERATED_LOOKUP_PATHS:
-        lookup_path = root / rel_lookup
-        if lookup_path.is_file():
-            generated_lookups[rel_lookup] = _read_json_bytes(lookup_path)
-        else:
-            missing_generated_lookups.append(rel_lookup)
-
-    # 8. Reconstruct all 321 brew packages + site packages
+def _reconstruct_packages(
+    root: Path,
+    books_api_path: Path,
+    recipes_all_path: Path,
+    site_brew_relnames: list[str],
+    tiers: dict[str, str],
+    file_sha_map: dict[str, str],
+) -> dict[str, Any]:
+    """Reconstruct sharded brew packages and standalone site packages with integrity diagnostics."""
     api_books_list: list[dict] = _read_json_bytes(books_api_path)
     books_by_id: dict[str, dict] = {str(b['id']): b for b in api_books_list}
     recipe_all: dict[str, Any] = _read_json_bytes(recipes_all_path)
@@ -837,9 +781,75 @@ def load_inventory(source_root: Path) -> Inventory:
     package_docs: dict[str, dict] = {}
     known_brew_sources_casefold: set[str] = set()
 
-    # Follow __api/books.json order for determinism, plus any extra recipe keys if present.
-    ordered_book_ids = [str(b['id']) for b in api_books_list] + missing_in_books
+    def _register_package(
+        *,
+        package_id: str,
+        kind: str,
+        book_id: str,
+        rel_file: str,
+        virtual_path: str,
+        doc: dict[str, Any],
+        book_sources: Any,
+        sha: Any,
+        ours: bool,
+        edition: Any,
+        groups: list[Any],
+        expected_counts: dict[str, int] | None,
+        counts_match: bool,
+        shard_refs: list[str],
+        shard_files: list[str],
+    ) -> None:
+        meta = doc.get('_meta') if isinstance(doc.get('_meta'), dict) else {}
+        actual_counts = {
+            k: len(v)
+            for k, v in doc.items()
+            if k != '_meta' and isinstance(v, list)
+        }
+        merged_sources = _merge_package_sources(book_sources, meta.get('sources'), tiers)
+        for src in merged_sources:
+            if src.get('json'):
+                known_brew_sources_casefold.add(str(src['json']).casefold())
 
+        deps = meta.get('dependencies') if isinstance(meta.get('dependencies'), dict) else {}
+        incs = meta.get('includes') if isinstance(meta.get('includes'), dict) else {}
+        if deps:
+            declared_dependencies.append({'package_id': package_id, 'book_id': book_id, 'dependencies': deps})
+        if incs:
+            declared_includes.append({'package_id': package_id, 'book_id': book_id, 'includes': incs})
+
+        kdups, edups = _detect_package_duplicates(package_id, doc)
+        duplicate_raw_records.extend(kdups)
+        exact_duplicate_raw_records.extend(edups)
+
+        pkg_tiers = {
+            str(s['json']): tiers[str(s['json'])]
+            for s in merged_sources
+            if s.get('json') and str(s['json']) in tiers
+        }
+        packages.append({
+            'package_id': package_id,
+            'kind': kind,
+            'book_id': book_id,
+            'file': rel_file,
+            'virtual_path': virtual_path,
+            'sha': sha,
+            'ours': ours,
+            'edition': edition,
+            'groups': groups,
+            'sources': merged_sources,
+            'tiers': pkg_tiers,
+            'expected_counts': expected_counts,
+            'actual_counts': actual_counts,
+            'counts_match': counts_match,
+            'shard_refs': shard_refs,
+            'shard_files': shard_files,
+            'meta': meta,
+            'dependencies': deps,
+            'includes': incs,
+        })
+        package_docs[package_id] = doc
+
+    ordered_book_ids = [str(b['id']) for b in api_books_list] + missing_in_books
     for book_id in ordered_book_ids:
         book_meta = books_by_id.get(book_id) or {'id': book_id, 'file': book_id}
         refs = recipe_docs.get(book_id) or []
@@ -847,36 +857,26 @@ def load_inventory(source_root: Path) -> Inventory:
 
         doc: dict[str, Any] = {}
         used_shards: set[str] = set()
-
         for ref in refs:
             raw_pack = recipe_packs.get(ref)
             if not raw_pack:
                 missing_shard_keys.append({
-                    'package_id': package_id,
-                    'book_id': book_id,
-                    'ref': ref,
-                    'shard': None,
-                    'reason': 'ref_not_in_packs_map',
+                    'package_id': package_id, 'book_id': book_id, 'ref': ref,
+                    'shard': None, 'reason': 'ref_not_in_packs_map',
                 })
                 continue
             try:
                 shard_rel = _checked_relative(raw_pack.removeprefix('/'))
             except ValueError as exc:
                 invalid_shard_paths.append({
-                    'package_id': package_id,
-                    'book_id': book_id,
-                    'ref': ref,
-                    'raw_pack': raw_pack,
-                    'error': str(exc),
+                    'package_id': package_id, 'book_id': book_id, 'ref': ref,
+                    'raw_pack': raw_pack, 'error': str(exc),
                 })
                 continue
             if shard_rel.parts[:2] != ('homebrew', '_data'):
                 invalid_shard_paths.append({
-                    'package_id': package_id,
-                    'book_id': book_id,
-                    'ref': ref,
-                    'raw_pack': raw_pack,
-                    'error': 'Shard outside homebrew/_data/',
+                    'package_id': package_id, 'book_id': book_id, 'ref': ref,
+                    'raw_pack': raw_pack, 'error': 'Shard outside homebrew/_data/',
                 })
                 continue
 
@@ -893,11 +893,8 @@ def load_inventory(source_root: Path) -> Inventory:
             shard_data = loaded_shards[shard_posix]
             if ref not in shard_data:
                 missing_shard_keys.append({
-                    'package_id': package_id,
-                    'book_id': book_id,
-                    'ref': ref,
-                    'shard': shard_posix,
-                    'reason': 'key_missing_in_shard',
+                    'package_id': package_id, 'book_id': book_id, 'ref': ref,
+                    'shard': shard_posix, 'reason': 'key_missing_in_shard',
                 })
                 continue
 
@@ -909,11 +906,7 @@ def load_inventory(source_root: Path) -> Inventory:
 
         meta = doc.get('_meta') if isinstance(doc.get('_meta'), dict) else {}
         expected_counts = dict(book_meta.get('counts') or {})
-        actual_counts = {
-            k: len(v)
-            for k, v in doc.items()
-            if k != '_meta' and isinstance(v, list)
-        }
+        actual_counts = {k: len(v) for k, v in doc.items() if k != '_meta' and isinstance(v, list)}
         counts_match = (actual_counts == expected_counts)
         if not counts_match:
             diffs = {
@@ -921,62 +914,27 @@ def load_inventory(source_root: Path) -> Inventory:
                 for k in sorted(set(expected_counts) | set(actual_counts))
                 if expected_counts.get(k, 0) != actual_counts.get(k, 0)
             }
-            count_mismatches.append({
-                'package_id': package_id,
-                'book_id': book_id,
-                'diffs': diffs,
-            })
-
-        merged_sources = _merge_package_sources(
-            book_meta.get('sources'),
-            meta.get('sources'),
-            tiers,
-        )
-        for src in merged_sources:
-            if src.get('json'):
-                known_brew_sources_casefold.add(str(src['json']).casefold())
-
-        deps = meta.get('dependencies') if isinstance(meta.get('dependencies'), dict) else {}
-        incs = meta.get('includes') if isinstance(meta.get('includes'), dict) else {}
-        if deps:
-            declared_dependencies.append({'package_id': package_id, 'book_id': book_id, 'dependencies': deps})
-        if incs:
-            declared_includes.append({'package_id': package_id, 'book_id': book_id, 'includes': incs})
-
-        kdups, edups = _detect_package_duplicates(package_id, doc)
-        duplicate_raw_records.extend(kdups)
-        exact_duplicate_raw_records.extend(edups)
+            count_mismatches.append({'package_id': package_id, 'book_id': book_id, 'diffs': diffs})
 
         rel_file = str(book_meta.get('file') or book_id)
-        pkg_tiers = {
-            str(s['json']): tiers[str(s['json'])]
-            for s in merged_sources
-            if s.get('json') and str(s['json']) in tiers
-        }
-        packages.append({
-            'package_id': package_id,
-            'kind': 'brew',
-            'book_id': book_id,
-            'file': rel_file,
-            'virtual_path': f'homebrew/{rel_file}',
-            'sha': book_meta.get('sha'),
-            'ours': bool(book_meta.get('ours', False)),
-            'edition': book_meta.get('edition') or meta.get('edition'),
-            'groups': list(book_meta.get('groups') or []),
-            'sources': merged_sources,
-            'tiers': pkg_tiers,
-            'expected_counts': expected_counts,
-            'actual_counts': actual_counts,
-            'counts_match': counts_match,
-            'shard_refs': list(refs),
-            'shard_files': sorted(used_shards),
-            'meta': meta,
-            'dependencies': deps,
-            'includes': incs,
-        })
-        package_docs[package_id] = doc
+        _register_package(
+            package_id=package_id,
+            kind='brew',
+            book_id=book_id,
+            rel_file=rel_file,
+            virtual_path=f'homebrew/{rel_file}',
+            doc=doc,
+            book_sources=book_meta.get('sources'),
+            sha=book_meta.get('sha'),
+            ours=bool(book_meta.get('ours', False)),
+            edition=book_meta.get('edition') or meta.get('edition'),
+            groups=list(book_meta.get('groups') or []),
+            expected_counts=expected_counts,
+            counts_match=counts_match,
+            shard_refs=list(refs),
+            shard_files=sorted(used_shards),
+        )
 
-    # Site packages from homebrew/index.json['toImport']
     missing_site_packages: list[str] = []
     site_package_count = 0
     for relname in site_brew_relnames:
@@ -986,60 +944,126 @@ def load_inventory(source_root: Path) -> Inventory:
             missing_site_packages.append(rel_posix)
             continue
         doc = _read_json_bytes(abs_site)
-        package_id = f'site:{rel_posix}'
         meta = doc.get('_meta') if isinstance(doc.get('_meta'), dict) else {}
-        merged_sources = _merge_package_sources(None, meta.get('sources'), tiers)
-        for src in merged_sources:
-            if src.get('json'):
-                known_brew_sources_casefold.add(str(src['json']).casefold())
-
-        actual_counts = {
-            k: len(v)
-            for k, v in doc.items()
-            if k != '_meta' and isinstance(v, list)
-        }
-        deps = meta.get('dependencies') if isinstance(meta.get('dependencies'), dict) else {}
-        incs = meta.get('includes') if isinstance(meta.get('includes'), dict) else {}
-        if deps:
-            declared_dependencies.append({'package_id': package_id, 'book_id': relname, 'dependencies': deps})
-        if incs:
-            declared_includes.append({'package_id': package_id, 'book_id': relname, 'includes': incs})
-
-        kdups, edups = _detect_package_duplicates(package_id, doc)
-        duplicate_raw_records.extend(kdups)
-        exact_duplicate_raw_records.extend(edups)
-
-        pkg_tiers = {
-            str(s['json']): tiers[str(s['json'])]
-            for s in merged_sources
-            if s.get('json') and str(s['json']) in tiers
-        }
-        packages.append({
-            'package_id': package_id,
-            'kind': 'site',
-            'book_id': relname,
-            'file': relname,
-            'virtual_path': rel_posix,
-            'sha': file_sha_map.get(rel_posix),
-            'ours': True,
-            'edition': meta.get('edition'),
-            'groups': [],
-            'sources': merged_sources,
-            'tiers': pkg_tiers,
-            'expected_counts': None,
-            'actual_counts': actual_counts,
-            'counts_match': True,
-            'shard_refs': [],
-            'shard_files': [rel_posix],
-            'meta': meta,
-            'dependencies': deps,
-            'includes': incs,
-        })
-        package_docs[package_id] = doc
+        _register_package(
+            package_id=f'site:{rel_posix}',
+            kind='site',
+            book_id=relname,
+            rel_file=relname,
+            virtual_path=rel_posix,
+            doc=doc,
+            book_sources=None,
+            sha=file_sha_map.get(rel_posix),
+            ours=True,
+            edition=meta.get('edition'),
+            groups=[],
+            expected_counts=None,
+            counts_match=True,
+            shard_refs=[],
+            shard_files=[rel_posix],
+        )
         site_package_count += 1
 
-    # 9. Resolve _meta.dependencies & _meta.includes targets against official + brew/site sources
-    all_known_sources = set(official_source_casefold.keys()) | known_brew_sources_casefold
+    return {
+        'packages': packages,
+        'package_docs': package_docs,
+        'known_brew_sources_casefold': known_brew_sources_casefold,
+        'books_recipe_keys_match': books_recipe_keys_match,
+        'missing_in_recipes': missing_in_recipes,
+        'missing_in_books': missing_in_books,
+        'missing_shard_files': sorted(missing_shard_files),
+        'missing_shard_keys': missing_shard_keys,
+        'invalid_shard_paths': invalid_shard_paths,
+        'missing_site_packages': missing_site_packages,
+        'count_mismatches': count_mismatches,
+        'declared_dependencies': declared_dependencies,
+        'declared_includes': declared_includes,
+        'duplicate_raw_records': duplicate_raw_records,
+        'exact_duplicate_raw_records': exact_duplicate_raw_records,
+        'site_package_count': site_package_count,
+    }
+
+
+def load_inventory(source_root: Path) -> Inventory:
+    """Scan, validate, and reconstruct a complete Inventory from an our5etools snapshot."""
+    root = Path(source_root).expanduser().resolve()
+
+    data_dir = root / 'data'
+    books_api_path = root / '__api/books.json'
+    recipes_all_path = root / 'homebrew/_recipes/all.json'
+    if not data_dir.is_dir():
+        raise FileNotFoundError(f'Missing required official data directory: {data_dir}')
+    if not books_api_path.is_file():
+        raise FileNotFoundError(f'Missing required brew catalog: {books_api_path}')
+    if not recipes_all_path.is_file():
+        raise FileNotFoundError(f'Missing required homebrew recipe index: {recipes_all_path}')
+
+    homebrew_index_path = root / 'homebrew/index.json'
+    site_brew_relnames: list[str] = []
+    if homebrew_index_path.is_file():
+        hb_index = _read_json_bytes(homebrew_index_path)
+        for name in hb_index.get('toImport') or []:
+            checked = _checked_relative(str(name))
+            site_brew_relnames.append(checked.as_posix())
+    site_brew_paths = {f'homebrew/{name}' for name in site_brew_relnames}
+
+    official_sources, official_source_casefold, parser_warnings = _load_official_parser_sources(root)
+    scan = _scan_source_files(root, site_brew_paths)
+    file_records = scan['file_records']
+
+    status_api_path = root / '__api/status.json'
+    stats_api_path = root / '__api/stats.json'
+    status_api = _read_json_bytes(status_api_path) if status_api_path.is_file() else {}
+    stats_api = _read_json_bytes(stats_api_path) if stats_api_path.is_file() else {}
+
+    snapshot_info: dict[str, Any] = {
+        'root': str(root),
+        'git_commit': _git_commit(root),
+        'app': status_api.get('app'),
+        'version': status_api.get('version'),
+        'build': status_api.get('build'),
+        'ready': status_api.get('ready'),
+        'brew_built': status_api.get('brew_built'),
+        'data_date': status_api.get('data_date'),
+        'brew_books': status_api.get('brew_books'),
+        'our_books': status_api.get('ourBooks'),
+        'status_api': status_api,
+        'stats_api': stats_api,
+        'input_sha256': scan['input_sha256'],
+        'file_count': len(file_records),
+    }
+
+    tiers_path = root / '__api/tiers.json'
+    api_ratings_path = root / '__api/ratings.json'
+    ours_ratings_path = root / '__ours/ratings.json'
+    tiers: dict[str, str] = _read_json_bytes(tiers_path) if tiers_path.is_file() else {}
+    api_ratings = _read_json_bytes(api_ratings_path) if api_ratings_path.is_file() else {}
+    ours_ratings = _read_json_bytes(ours_ratings_path) if ours_ratings_path.is_file() else {}
+    ratings = {
+        'tiers': tiers,
+        'api_ratings': api_ratings,
+        'ours_ratings': ours_ratings,
+        'ratings_base_matches_ours': (
+            api_ratings.get('base') == ours_ratings
+            if isinstance(api_ratings, dict) and 'base' in api_ratings
+            else None
+        ),
+    }
+
+    generated_lookups: dict[str, Any] = {}
+    missing_generated_lookups: list[str] = []
+    for rel_lookup in GENERATED_LOOKUP_PATHS:
+        lookup_path = root / rel_lookup
+        if lookup_path.is_file():
+            generated_lookups[rel_lookup] = _read_json_bytes(lookup_path)
+        else:
+            missing_generated_lookups.append(rel_lookup)
+
+    pkg_data = _reconstruct_packages(
+        root, books_api_path, recipes_all_path, site_brew_relnames, tiers, scan['file_sha_map'],
+    )
+    packages = pkg_data['packages']
+    all_known_sources = set(official_source_casefold.keys()) | pkg_data['known_brew_sources_casefold']
 
     def _find_unresolved(records: list[dict], field: str) -> list[dict]:
         unresolved: list[dict] = []
@@ -1058,33 +1082,30 @@ def load_inventory(source_root: Path) -> Inventory:
                         })
         return unresolved
 
-    unresolved_dependencies = _find_unresolved(declared_dependencies, 'dependencies')
-    unresolved_includes = _find_unresolved(declared_includes, 'includes')
-
-    brew_package_count = sum(1 for p in packages if p['kind'] == 'brew')
-
+    declared_dependencies = pkg_data['declared_dependencies']
+    declared_includes = pkg_data['declared_includes']
     checks: dict[str, Any] = {
-        'books_recipe_keys_match': books_recipe_keys_match,
-        'missing_in_recipes': missing_in_recipes,
-        'missing_in_books': missing_in_books,
-        'missing_shard_files': sorted(missing_shard_files),
-        'missing_shard_keys': missing_shard_keys,
-        'invalid_shard_paths': invalid_shard_paths,
-        'missing_site_packages': missing_site_packages,
-        'count_mismatches': count_mismatches,
+        'books_recipe_keys_match': pkg_data['books_recipe_keys_match'],
+        'missing_in_recipes': pkg_data['missing_in_recipes'],
+        'missing_in_books': pkg_data['missing_in_books'],
+        'missing_shard_files': pkg_data['missing_shard_files'],
+        'missing_shard_keys': pkg_data['missing_shard_keys'],
+        'invalid_shard_paths': pkg_data['invalid_shard_paths'],
+        'missing_site_packages': pkg_data['missing_site_packages'],
+        'count_mismatches': pkg_data['count_mismatches'],
         'dependencies': declared_dependencies,
         'includes': declared_includes,
-        'unresolved_dependencies': unresolved_dependencies,
-        'unresolved_includes': unresolved_includes,
-        'duplicate_raw_records': duplicate_raw_records,
-        'exact_duplicate_raw_records': exact_duplicate_raw_records,
-        'disposition_counts': dict(sorted(disposition_counts.items())),
-        'media_counts': dict(sorted(media_counts.items())),
+        'unresolved_dependencies': _find_unresolved(declared_dependencies, 'dependencies'),
+        'unresolved_includes': _find_unresolved(declared_includes, 'includes'),
+        'duplicate_raw_records': pkg_data['duplicate_raw_records'],
+        'exact_duplicate_raw_records': pkg_data['exact_duplicate_raw_records'],
+        'disposition_counts': dict(sorted(scan['disposition_counts'].items())),
+        'media_counts': dict(sorted(scan['media_counts'].items())),
         'official_source_count': len(official_sources),
-        'official_doc_count': len(official_docs),
-        'brew_package_count': brew_package_count,
-        'site_package_count': site_package_count,
-        'skipped_symlinks': skipped_symlinks,
+        'official_doc_count': len(scan['official_docs']),
+        'brew_package_count': sum(1 for p in packages if p['kind'] == 'brew'),
+        'site_package_count': pkg_data['site_package_count'],
+        'skipped_symlinks': scan['skipped_symlinks'],
         'missing_generated_lookups': missing_generated_lookups,
         'parser_warnings': parser_warnings,
     }
@@ -1095,11 +1116,11 @@ def load_inventory(source_root: Path) -> Inventory:
         file_records=file_records,
         official_sources=official_sources,
         official_source_casefold=official_source_casefold,
-        official_docs=official_docs,
+        official_docs=scan['official_docs'],
         generated_lookups=generated_lookups,
         packages=packages,
-        package_docs=package_docs,
+        package_docs=pkg_data['package_docs'],
         ratings=ratings,
-        media_files=media_files,
+        media_files=scan['media_files'],
         checks=checks,
     )

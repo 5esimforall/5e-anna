@@ -17,7 +17,7 @@ import sys
 import time
 from typing import Any
 
-from anna.paths import OUR5ETOOLS, OUR5ETOOLS_DATA, PROJECT
+from anna.paths import OUR5ETOOLS, OUR5ETOOLS_DATA, PROJECT, WEB
 from anna.our5etools import books, inventory, render, semantics, types
 from anna.our5etools.vocab import parse_cr_number
 
@@ -31,269 +31,6 @@ _RULESET_PRIORITY: dict[str, int] = {
     '5e': 1,
     '待核': 2,
 }
-
-_OUR5ETOOLS_BOOK_CSS = """\
-/* Our5etools Stella Reader stylesheet (light & dark themes). */
-:root {
-  --o5e-bg: #fbfaf7;
-  --o5e-surface: #ffffff;
-  --o5e-surface-alt: #f4f1ea;
-  --o5e-border: #ddd6c7;
-  --o5e-text: #1f2328;
-  --o5e-muted: #5f6670;
-  --o5e-accent: #8c2d19;
-  --o5e-link: #1f5ea8;
-  --o5e-inset-bg: #f6f1e4;
-  --o5e-readaloud-bg: #eef4f8;
-  --o5e-readaloud-border: #4a789c;
-  --o5e-warn-bg: #fff5e6;
-  --o5e-warn-border: #c97a16;
-  --o5e-code-bg: #f0ede6;
-}
-
-:root[data-webhelp-theme="dark"] {
-  --o5e-bg: #17191d;
-  --o5e-surface: #1f2228;
-  --o5e-surface-alt: #262a31;
-  --o5e-border: #363c46;
-  --o5e-text: #e6e8ec;
-  --o5e-muted: #9aa3b2;
-  --o5e-accent: #e07a5f;
-  --o5e-link: #7ab3f0;
-  --o5e-inset-bg: #25221d;
-  --o5e-readaloud-bg: #1c252e;
-  --o5e-readaloud-border: #5c8db5;
-  --o5e-warn-bg: #2d2417;
-  --o5e-warn-border: #d48c2f;
-  --o5e-code-bg: #2b3038;
-}
-
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--o5e-bg);
-  color: var(--o5e-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-  line-height: 1.72;
-  font-size: 15px;
-}
-
-.o5e-chapter {
-  max-width: 920px;
-  margin: 0 auto;
-  padding: 20px 24px 64px;
-}
-
-.o5e-chapter-header {
-  border-bottom: 2px solid var(--o5e-accent);
-  padding-bottom: 12px;
-  margin-bottom: 20px;
-}
-
-.o5e-book-kicker {
-  font-size: 12px;
-  color: var(--o5e-muted);
-  margin-bottom: 4px;
-}
-
-.o5e-chapter-title {
-  margin: 0 0 6px;
-  font-size: 1.65em;
-  line-height: 1.3;
-  color: var(--o5e-accent);
-}
-
-.o5e-chapter-subtitle {
-  margin: 0 0 8px;
-  font-size: 0.95em;
-  color: var(--o5e-muted);
-}
-
-.o5e-chapter-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.o5e-pill {
-  display: inline-block;
-  font-size: 12px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: var(--o5e-surface-alt);
-  border: 1px solid var(--o5e-border);
-  color: var(--o5e-muted);
-}
-
-.o5e-heading {
-  color: var(--o5e-accent);
-  margin: 1.4em 0 0.5em;
-  line-height: 1.35;
-}
-
-.o5e-chapter-body p {
-  margin: 0.55em 0;
-}
-
-.o5e-list {
-  margin: 0.5em 0 0.8em;
-  padding-left: 1.5em;
-}
-
-.o5e-item-name {
-  font-weight: 600;
-}
-
-.o5e-inset, .o5e-quote, .o5e-statblock {
-  margin: 1em 0;
-  padding: 12px 16px;
-  border-radius: 6px;
-  background: var(--o5e-inset-bg);
-  border: 1px solid var(--o5e-border);
-  border-left: 4px solid var(--o5e-accent);
-}
-
-.o5e-inset-readaloud {
-  background: var(--o5e-readaloud-bg);
-  border-left-color: var(--o5e-readaloud-border);
-}
-
-.o5e-inset-title, .o5e-statblock-title {
-  font-weight: 700;
-  margin-bottom: 6px;
-  color: var(--o5e-accent);
-}
-
-.o5e-table-wrap {
-  overflow-x: auto;
-  margin: 1em 0;
-}
-
-.o5e-chapter table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.92em;
-  background: var(--o5e-surface);
-}
-
-.o5e-chapter th, .o5e-chapter td {
-  padding: 6px 10px;
-  border: 1px solid var(--o5e-border);
-  text-align: left;
-  vertical-align: top;
-}
-
-.o5e-chapter th {
-  background: var(--o5e-surface-alt);
-  font-weight: 600;
-}
-
-.o5e-chapter tbody tr:nth-child(even) {
-  background: var(--o5e-surface-alt);
-}
-
-.o5e-figure {
-  margin: 1em 0;
-  padding: 10px 12px;
-  border: 1px solid var(--o5e-border);
-  border-radius: 6px;
-  background: var(--o5e-surface);
-  text-align: center;
-}
-
-.o5e-figure img {
-  max-width: 100%;
-  height: auto;
-  border-radius: 4px;
-}
-
-.o5e-figure figcaption {
-  font-size: 0.88em;
-  color: var(--o5e-muted);
-  margin-top: 6px;
-}
-
-.o5e-media-remote {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  margin: 0.45em 0;
-  background: transparent;
-  border: 1px dashed var(--o5e-border);
-  border-radius: 5px;
-  text-align: left;
-  color: var(--o5e-muted);
-  font-size: 12px;
-}
-
-.o5e-media-badge {
-  display: inline-block;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--o5e-muted);
-}
-
-.o5e-figure.o5e-img-failed img {
-  display: none;
-}
-
-.o5e-media-fallback-note[hidden] {
-  display: none;
-}
-
-.o5e-figure.o5e-img-failed .o5e-media-fallback-note {
-  display: inline-block;
-  font-size: 12px;
-  color: var(--o5e-muted);
-}
-
-.o5e-maps-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-  margin-top: 12px;
-}
-
-button.ref {
-  appearance: none;
-  background: transparent;
-  border: 0;
-  padding: 0;
-  font: inherit;
-  color: var(--o5e-link);
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  cursor: pointer;
-}
-
-button.ref:hover {
-  text-decoration-style: solid;
-}
-
-a.ref-book, a.ref-filter, a.o5e-ext-link, a.o5e-media-link {
-  color: var(--o5e-link);
-}
-
-.ref-unresolved {
-  border-bottom: 1px dashed var(--o5e-muted);
-}
-
-code {
-  background: var(--o5e-code-bg);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-
-hr.o5e-hr {
-  border: 0;
-  border-top: 1px solid var(--o5e-border);
-  margin: 1.4em 0;
-}
-"""
-
 
 def _parse_cr_num(fields: dict[str, Any], raw_data: dict[str, Any]) -> float | None:
     """Parse numeric Challenge Rating from extracted fields or raw monster data."""
@@ -791,6 +528,909 @@ def _compute_observed_api_stats(corpus: semantics.ResolvedCorpus) -> dict[str, A
     }
 
 
+def _build_reader_bundle(
+    *,
+    book_index: books.BookIndex,
+    corpus: semantics.ResolvedCorpus,
+    reader_dir: Path,
+    resolver: render.LinkResolver,
+    media_checker: Any,
+    entry_index_by_book_chapter: dict[tuple[str, int], list[str]],
+    snapshot: str,
+    col_key: str,
+    page_base: str,
+    media_base: str,
+) -> dict[str, Any]:
+    """Render reader HTML chapters, static assets, TOC bindings, and anna-reader.json."""
+    books_result = books.build_reader_pages(
+        book_index,
+        reader_dir,
+        resolver=resolver,
+        media_checker=media_checker,
+        entry_index_by_book_chapter=entry_index_by_book_chapter,
+        snapshot=snapshot,
+        collection=col_key,
+        content_base=page_base,
+        media_base=media_base,
+    )
+    remote_media_map: dict[str, list[str]] = {
+        str(k): list(v)
+        for k, v in (books_result.get('remote_media_map') or {}).items()
+        if k and v
+    }
+    assets_dir = reader_dir / 'anna-assets'
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    for src_path, dest_name in (
+        (WEB / 'book' / 'our5etools-book.css', 'our5etools-book.css'),
+        (WEB / 'book' / 'links.js', 'links.js'),
+        (WEB / 'book' / 'topic.js', 'topic.js'),
+        (WEB / 'link-labels.js', 'link-labels.js'),
+    ):
+        if src_path.is_file():
+            shutil.copyfile(src_path, assets_dir / dest_name)
+
+    nodes: list[dict[str, Any]] = books_result['nodes']
+    pages_meta: dict[str, dict[str, Any]] = books_result['pages_meta']
+    search_rows: list[tuple[str, str, str, str, str]] = books_result['search_rows']
+    books_report: dict[str, Any] = books_result['report']
+
+    node_by_id = {n['id']: n for n in nodes}
+    book_root_ids: set[str] = {f'n_{b.book_key}' for b in book_index.books}
+
+    def _ancestor_root(nid: str) -> str:
+        cur = nid
+        while cur:
+            if cur in book_root_ids:
+                return cur
+            node = node_by_id.get(cur)
+            if not node:
+                break
+            cur = node.get('parent_id') or ''
+        return ''
+
+    page_to_node: dict[str, tuple[str, str]] = {}
+    for n in nodes:
+        p = n.get('path') or ''
+        if p and not n.get('fragment') and p not in page_to_node:
+            page_to_node[p] = (_ancestor_root(n['id']), n['id'])
+
+    src_by_pkg_code: dict[tuple[str, str], str] = {}
+    src_by_code: dict[str, str] = {}
+    for sid, sdict in corpus.sources.items():
+        code_cf = str(sdict.get('code') or '').casefold()
+        pkg = str(sdict.get('package_id') or '')
+        if code_cf:
+            src_by_pkg_code[(pkg, code_cf)] = sid
+            src_by_code.setdefault(code_cf, sid)
+
+    roots_payload: list[dict[str, Any]] = []
+    book_first_location: dict[tuple[str, str, str], dict[str, Any]] = {}
+    books_count_by_package: Counter[str] = Counter()
+
+    for b in book_index.books:
+        root_id = f'n_{b.book_key}'
+        first_page = b.chapter_paths[0] if b.chapter_paths else ''
+        first_node = page_to_node.get(first_page, (root_id, root_id))[1] if first_page else root_id
+        sid = (
+            src_by_pkg_code.get((b.package_id, (b.source_code or '').casefold()))
+            or src_by_code.get((b.source_code or '').casefold())
+            or f'src:{b.source_code}'
+        )
+        roots_payload.append({
+            'id': root_id,
+            'label': b.title,
+            'title': b.title,
+            'title_en': b.title_en,
+            'book_id': b.book_id,
+            'book_key': b.book_key,
+            'kind': b.kind,
+            'source_code': b.source_code,
+            'source_id': sid,
+            'package_id': b.package_id,
+            'origin': b.origin,
+            'edition': b.edition,
+            'ours': b.ours,
+            'first_page': first_page,
+            'page_count': len(b.chapter_paths),
+        })
+        books_count_by_package[b.package_id] += 1
+        if first_page:
+            loc = {
+                'path': first_page,
+                'fragment': '',
+                'root': root_id,
+                'node_id': first_node,
+                'book_id': b.book_id,
+                'title': b.title,
+                'locatable': True,
+            }
+            book_first_location[(b.package_id, b.kind, (b.book_id or '').casefold())] = loc
+            book_first_location.setdefault((b.package_id, b.kind, (b.source_code or '').casefold()), loc)
+
+    entry_locations: dict[str, dict[str, Any]] = {}
+    for page_path, pmeta in pages_meta.items():
+        root_id, ch_node_id = page_to_node.get(page_path, ('', ''))
+        for drec in pmeta.get('definitions') or []:
+            eid = drec.get('id')
+            if not eid or eid in entry_locations:
+                continue
+            entry_locations[eid] = {
+                'path': page_path,
+                'fragment': drec.get('fragment') or f'anna-{eid}',
+                'root': root_id,
+                'node_id': ch_node_id,
+                'book_id': pmeta.get('book_id') or '',
+                'title': pmeta.get('title') or '',
+                'locatable': bool(drec.get('locatable', True)),
+            }
+
+    for e in corpus.entries:
+        if e['id'] in entry_locations or e.get('type') != 'book':
+            continue
+        raw = e.get('data') or {}
+        bkind = 'adventure' if e.get('raw_kind') == 'adventure' else 'book'
+        bid_cf = str(raw.get('id') or e.get('source_code') or '').casefold()
+        loc = (
+            book_first_location.get((e['package_id'], bkind, bid_cf))
+            or book_first_location.get((e['package_id'], bkind, str(e.get('source_code') or '').casefold()))
+        )
+        if loc:
+            entry_locations[e['id']] = dict(loc)
+
+    default_page = next((n['path'] for n in nodes if n.get('status') == 'present' and n.get('path')), '')
+    reader_json = {
+        'schema': READER_SCHEMA,
+        'snapshot': snapshot,
+        'collection': col_key,
+        'page_base': page_base,
+        'media_base': media_base,
+        'default_page': default_page,
+        'presentation_resources': [dict(res) for res in books.PRESENTATION_RESOURCES],
+        'roots': roots_payload,
+        'nodes': nodes,
+        'pages': pages_meta,
+        'entry_locations': entry_locations,
+    }
+    _write_json(reader_dir / 'anna-reader.json', reader_json, compact=True)
+    return {
+        'remote_media_map': remote_media_map,
+        'pages_meta': pages_meta,
+        'search_rows': search_rows,
+        'books_report': books_report,
+        'page_to_node': page_to_node,
+        'src_by_pkg_code': src_by_pkg_code,
+        'src_by_code': src_by_code,
+        'books_count_by_package': books_count_by_package,
+        'entry_locations': entry_locations,
+        'default_page': default_page,
+        'roots_count': len(roots_payload),
+    }
+
+
+def _populate_catalog_sqlite(
+    *,
+    db_path: Path,
+    corpus: semantics.ResolvedCorpus,
+    resolver: render.LinkResolver,
+    media_checker: Any,
+    media_base: str,
+    relations_by_entry: dict[str, list[dict[str, Any]]],
+    rating_index: dict[str, list[dict[str, Any]]],
+    copied_from_map: dict[str, dict[str, str]],
+    entry_index: dict[str, dict[str, Any]],
+    reader_bundle: dict[str, Any],
+    col_key: str,
+    snapshot: str,
+    built_at: str,
+    source: Path,
+) -> dict[str, Any]:
+    """Render entry details and populate all tables and indexes in catalog.sqlite."""
+    remote_media_map = reader_bundle['remote_media_map']
+    pages_meta = reader_bundle['pages_meta']
+    search_rows = reader_bundle['search_rows']
+    page_to_node = reader_bundle['page_to_node']
+    src_by_pkg_code = reader_bundle['src_by_pkg_code']
+    src_by_code = reader_bundle['src_by_code']
+    books_count_by_package = reader_bundle['books_count_by_package']
+    entry_locations = reader_bundle['entry_locations']
+
+    db = sqlite3.connect(db_path)
+    db.execute('PRAGMA synchronous = OFF')
+    db.execute('PRAGMA journal_mode = MEMORY')
+    db.execute('PRAGMA temp_store = MEMORY')
+    _create_sqlite_schema(db)
+
+    by_type: Counter[str] = Counter()
+    by_package: Counter[str] = Counter()
+    by_source: Counter[str] = Counter()
+    by_ruleset: Counter[str] = Counter()
+    by_origin: Counter[str] = Counter()
+    by_raw_kind: Counter[str] = Counter()
+    copy_status_counts: Counter[str] = Counter()
+
+    resolved_entity_links = 0
+    resolved_book_links = 0
+    resolved_filter_links = 0
+    ambiguous_links = 0
+    unresolved_links = 0
+    unresolved_counter: Counter[tuple[str, str, str]] = Counter()
+    ambiguous_counter: Counter[tuple[str, str, str]] = Counter()
+    unknown_tags_counter: Counter[str] = Counter()
+    unsupported_blocks_counter: Counter[str] = Counter()
+
+    referenced_local_media: set[str] = set()
+    referenced_remote_media: set[str] = set()
+    referenced_missing_local_media: set[str] = set()
+
+    entry_rows: list[tuple[Any, ...]] = []
+    entry_source_rows: list[tuple[str, str]] = []
+    entry_facet_rows: list[tuple[str, str, str]] = []
+    legacy_map: dict[str, str] = {}
+
+    for entry in corpus.entries:
+        eid = entry['id']
+        etype = entry['type']
+        raw_kind = entry['raw_kind']
+        pkg_id = entry['package_id']
+        src_id = entry['source_id']
+        src_code = entry['source_code']
+        pkg_meta = corpus.packages.get(pkg_id) or {}
+        src_meta = corpus.sources.get(src_id) or {}
+        raw_data = entry.get('data') or {}
+
+        rendered = render.render_entry_detail(
+            entry,
+            resolver,
+            media_checker,
+            relations_by_entry.get(eid, ()),
+            media_prefix=media_base,
+        )
+        layout_html: str = rendered.get('html') or ''
+        body_text: str = rendered.get('body_text') or ''
+        media_summary: dict[str, list[str]] = rendered.get('media_summary') or {
+            'local_media': [],
+            'remote_media': [],
+            'missing_local_media': [],
+        }
+
+        resolved_entity_links += layout_html.count('class="ref" data-entry="o5e_')
+        resolved_book_links += layout_html.count('class="ref-book"')
+        resolved_filter_links += layout_html.count('class="ref-filter"')
+
+        for ev in rendered.get('link_events') or ():
+            st = ev.get('status')
+            key = (str(ev.get('tag') or ''), str(ev.get('name') or ''), str(ev.get('source') or ''))
+            if st == 'ambiguous':
+                ambiguous_links += 1
+                ambiguous_counter[key] += 1
+            else:
+                unresolved_links += 1
+                unresolved_counter[key] += 1
+
+        for ut in rendered.get('unknown_tags') or ():
+            unknown_tags_counter[str(ut)] += 1
+        for us in rendered.get('unsupported_structures') or ():
+            unsupported_blocks_counter[str(us)] += 1
+
+        referenced_local_media.update(media_summary.get('local_media') or ())
+        referenced_remote_media.update(media_summary.get('remote_media') or ())
+        referenced_missing_local_media.update(media_summary.get('missing_local_media') or ())
+        for r_rel, r_urls in (rendered.get('remote_media_map') or {}).items():
+            bucket = remote_media_map.setdefault(r_rel, [])
+            for u in r_urls:
+                if u and u not in bucket:
+                    bucket.append(u)
+
+        fields = entry.get('fields') or {}
+        quickref = entry.get('quickref') or {}
+        conflicts = entry.get('field_conflicts') or []
+        legacy = _compute_legacy(entry, src_meta)
+        legacy_map[eid] = legacy
+        cr_num = _parse_cr_num(fields, raw_data) if etype == 'creature' else None
+
+        name = str(entry.get('name') or '')
+        name_zh = str(entry.get('name_zh') or name)
+        name_en = str(entry.get('name_en') or '')
+        sort_name = types.name_key(name or name_en)
+        name_parts = list(dict.fromkeys(p for p in (name, name_zh, name_en) if p))
+        search_name = ' '.join(name_parts).lower()
+        search_body = body_text.lower()
+
+        rating = _lookup_entry_rating(entry, rating_index)
+        provenance = {
+            'collection': col_key,
+            'package_id': pkg_id,
+            'package_name': pkg_meta.get('name') or pkg_id,
+            'origin': entry.get('origin') or src_meta.get('origin') or pkg_meta.get('origin') or '',
+            'package_kind': entry.get('package_kind') or pkg_meta.get('package_kind') or '',
+            'ours': bool(entry.get('ours') or pkg_meta.get('ours')),
+            'authors': list(src_meta.get('authors') or pkg_meta.get('authors') or []),
+            'translators': list(src_meta.get('translators') or pkg_meta.get('translators') or []),
+            'tier': entry.get('tier') or src_meta.get('tier'),
+            'rating': rating,
+            'source_id': src_id,
+            'source_code': src_code,
+            'source_name': entry.get('source_name') or src_meta.get('name') or src_code,
+            'source_short': entry.get('source_short') or src_meta.get('short_label') or src_code,
+            'edition': src_meta.get('edition') or pkg_meta.get('edition'),
+            'ruleset': entry.get('ruleset') or '待核',
+            'copy_status': entry.get('copy_status') or 'ok',
+            'copy_warnings': list(entry.get('copy_warnings') or []),
+            'copied_from': copied_from_map.get(eid),
+            'is_version': bool(entry.get('is_version')),
+            'version_base_id': entry.get('version_base_id'),
+            'license_note': src_meta.get('license_note'),
+            'media_summary': media_summary,
+            'reader_location': entry_locations.get(eid),
+            'relpath': entry.get('relpath') or '',
+        }
+
+        entry_rows.append((
+            eid, etype, raw_kind, name, name_zh, name_en, sort_name,
+            entry.get('ruleset') or '待核', legacy, pkg_id, src_id, src_code,
+            str(entry.get('owner_class') or ''), str(entry.get('owner_subclass') or ''),
+            entry.get('owner_level'), entry.get('copy_status') or 'ok', cr_num,
+            json.dumps(fields, ensure_ascii=False, separators=(',', ':')),
+            json.dumps(quickref, ensure_ascii=False, separators=(',', ':')),
+            json.dumps(conflicts, ensure_ascii=False, separators=(',', ':')),
+            json.dumps(provenance, ensure_ascii=False, separators=(',', ':')),
+            layout_html, body_text, search_name, search_body,
+        ))
+        entry_source_rows.append((eid, src_id))
+
+        seen_facets: set[tuple[str, str]] = set()
+        for fkey, fvals in quickref.items():
+            if not isinstance(fvals, (list, tuple)):
+                fvals = [fvals]
+            for fval in fvals:
+                pair = (str(fkey), str(fval))
+                if pair not in seen_facets:
+                    seen_facets.add(pair)
+                    entry_facet_rows.append((eid, pair[0], pair[1]))
+        for common_key, common_val in (
+            ('ruleset', entry.get('ruleset') or '待核'),
+            ('origin', provenance['origin']),
+            ('source', src_id),
+            ('package', pkg_id),
+            ('legacy', legacy),
+            ('copy_status', entry.get('copy_status') or 'ok'),
+        ):
+            if common_val:
+                pair = (common_key, str(common_val))
+                if pair not in seen_facets:
+                    seen_facets.add(pair)
+                    entry_facet_rows.append((eid, pair[0], pair[1]))
+
+        by_type[etype] += 1
+        by_package[pkg_id] += 1
+        by_source[src_id] += 1
+        by_ruleset[entry.get('ruleset') or '待核'] += 1
+        by_origin[provenance['origin']] += 1
+        by_raw_kind[raw_kind] += 1
+        copy_status_counts[entry.get('copy_status') or 'ok'] += 1
+
+    db.executemany(
+        """
+        INSERT INTO entries (
+            id, type, raw_kind, name, name_zh, name_en, sort_name, ruleset, legacy,
+            package_id, source_id, source_code, owner_class, owner_subclass, owner_level,
+            copy_status, cr_num, fields_json, quickref_json, conflicts_json, provenance_json,
+            layout_html, body_text, search_name, search_body
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        entry_rows,
+    )
+    db.executemany('INSERT OR IGNORE INTO entry_sources (entry_id, source_id) VALUES (?,?)', entry_source_rows)
+    db.executemany(
+        'INSERT OR IGNORE INTO entry_facets (entry_id, facet_key, facet_value) VALUES (?,?,?)',
+        entry_facet_rows,
+    )
+
+    source_rows = []
+    for sid, sdict in sorted(corpus.sources.items()):
+        s_payload = dict(sdict)
+        s_payload['entry_count'] = by_source.get(sid, 0)
+        source_rows.append((
+            sid,
+            str(sdict.get('package_id') or ''),
+            str(sdict.get('origin') or ''),
+            str(sdict.get('ruleset') or '待核'),
+            str(sdict.get('short_label') or sdict.get('code') or sid),
+            str(sdict.get('name') or sdict.get('code') or sid),
+            json.dumps(s_payload, ensure_ascii=False, separators=(',', ':')),
+        ))
+    db.executemany(
+        'INSERT INTO sources (id, package_id, origin, ruleset, short_name, name, data_json) VALUES (?,?,?,?,?,?,?)',
+        source_rows,
+    )
+
+    package_rows = []
+    for pid, pdict in sorted(corpus.packages.items()):
+        p_payload = dict(pdict)
+        ecount = by_package.get(pid, 0)
+        bcount = books_count_by_package.get(pid, 0)
+        p_payload['entry_count'] = ecount
+        p_payload['book_count'] = bcount
+        package_rows.append((
+            pid,
+            str(pdict.get('name') or pid),
+            str(pdict.get('origin') or ''),
+            1 if pdict.get('ours') else 0,
+            ecount,
+            bcount,
+            json.dumps(p_payload, ensure_ascii=False, separators=(',', ':')),
+        ))
+    db.executemany(
+        'INSERT INTO packages (id, name, origin, ours, entry_count, book_count, data_json) VALUES (?,?,?,?,?,?,?)',
+        package_rows,
+    )
+
+    group_rows = []
+    member_rows = []
+    seen_member_ids: set[str] = set()
+    for grp in corpus.identity_groups:
+        gid = grp['id']
+        mids = [m for m in grp.get('member_ids') or [] if m in entry_index]
+        if len(mids) < 2:
+            continue
+        primary_id = _pick_group_primary(mids, entry_index, legacy_map)
+        group_rows.append((
+            gid,
+            str(grp.get('type') or ''),
+            str(grp.get('package_id') or ''),
+            str(grp.get('name') or ''),
+            str(grp.get('name_en') or ''),
+            primary_id,
+            json.dumps(mids, ensure_ascii=False, separators=(',', ':')),
+        ))
+        for mid in mids:
+            if mid not in seen_member_ids:
+                seen_member_ids.add(mid)
+                member_rows.append((mid, gid, 1 if mid == primary_id else 0))
+
+    db.executemany(
+        'INSERT INTO identity_groups (group_id, type, package_id, name, name_en, primary_id, member_ids_json) VALUES (?,?,?,?,?,?,?)',
+        group_rows,
+    )
+    db.executemany(
+        'INSERT OR IGNORE INTO identity_members (entry_id, group_id, is_primary) VALUES (?,?,?)',
+        member_rows,
+    )
+
+    relation_rows = []
+    for rel in corpus.relations:
+        meta_extra = {k: v for k, v in rel.items() if k not in {'source_id', 'type', 'target_id'}}
+        relation_rows.append((
+            str(rel.get('source_id') or ''),
+            str(rel.get('type') or ''),
+            str(rel.get('target_id') or ''),
+            json.dumps(meta_extra, ensure_ascii=False, separators=(',', ':')),
+        ))
+    db.executemany(
+        'INSERT INTO relations (source_id, type, target_id, meta_json) VALUES (?,?,?,?)',
+        relation_rows,
+    )
+
+    book_page_rows = []
+    for page_path, pmeta in sorted(pages_meta.items()):
+        root_id, node_id = page_to_node.get(page_path, ('', ''))
+        pkg_id = str(pmeta.get('package_id') or '')
+        src_code = str(pmeta.get('source_code') or '')
+        sid = (
+            src_by_pkg_code.get((pkg_id, src_code.casefold()))
+            or src_by_code.get(src_code.casefold())
+            or f'src:{src_code}'
+        )
+        book_page_rows.append((
+            page_path, root_id, str(pmeta.get('book_id') or ''),
+            str(pmeta.get('kind') or 'book'), pkg_id, sid,
+            str(pmeta.get('title') or ''), node_id,
+        ))
+    db.executemany(
+        'INSERT INTO book_pages (page_path, root_id, book_id, kind, package_id, source_id, title, node_id) VALUES (?,?,?,?,?,?,?,?)',
+        book_page_rows,
+    )
+
+    book_search_rows = [
+        (root_id, page_path, node_id, title, scope_label, plain_text)
+        for page_path, title, scope_label, plain_text, _sha in search_rows
+        for root_id, node_id in (page_to_node.get(page_path, ('', '')),)
+    ]
+    db.executemany(
+        'INSERT INTO book_search (root_id, page_path, node_id, title, scope_label, snippet_text) VALUES (?,?,?,?,?,?)',
+        book_search_rows,
+    )
+
+    db.executemany(
+        'INSERT INTO metadata (key, value) VALUES (?,?)',
+        [
+            ('schema', str(MANIFEST_SCHEMA)),
+            ('reader_schema', str(READER_SCHEMA)),
+            ('snapshot', snapshot),
+            ('built_at', built_at),
+            ('source_root', str(source)),
+            ('collection', col_key),
+        ],
+    )
+
+    _create_sqlite_indexes(db)
+    db.execute('ANALYZE')
+    db.commit()
+    db.execute('PRAGMA journal_mode = DELETE')
+    db.close()
+
+    return {
+        'by_type': by_type,
+        'by_package': by_package,
+        'by_source': by_source,
+        'by_ruleset': by_ruleset,
+        'by_origin': by_origin,
+        'by_raw_kind': by_raw_kind,
+        'copy_status_counts': copy_status_counts,
+        'resolved_entity_links': resolved_entity_links,
+        'resolved_book_links': resolved_book_links,
+        'resolved_filter_links': resolved_filter_links,
+        'ambiguous_links': ambiguous_links,
+        'unresolved_links': unresolved_links,
+        'unresolved_counter': unresolved_counter,
+        'ambiguous_counter': ambiguous_counter,
+        'unknown_tags_counter': unknown_tags_counter,
+        'unsupported_blocks_counter': unsupported_blocks_counter,
+        'referenced_local_media': referenced_local_media,
+        'referenced_remote_media': referenced_remote_media,
+        'referenced_missing_local_media': referenced_missing_local_media,
+        'group_count': len(group_rows),
+        'entry_facet_count': len(entry_facet_rows),
+    }
+
+
+def _write_output_manifests(
+    *,
+    stage: Path,
+    source: Path,
+    db_path: Path,
+    reader_dir: Path,
+    inv: inventory.Inventory,
+    corpus: semantics.ResolvedCorpus,
+    book_index: books.BookIndex,
+    reader_bundle: dict[str, Any],
+    sqlite_stats: dict[str, Any],
+    staged_media_set: set[str],
+    preserved_cached_media: int,
+    bundled_img_dir_files: int,
+    prev_summary: dict[str, Any] | None,
+    col_key: str,
+    page_base: str,
+    media_base: str,
+    snapshot: str,
+    built_at: str,
+    t_start: float,
+) -> tuple[dict[str, int], dict[str, Any]]:
+    """Write inventory, reconciliation, attribution, summary, remotes, and manifest JSON files."""
+    remote_media_map = reader_bundle['remote_media_map']
+    pages_meta = reader_bundle['pages_meta']
+    books_report = reader_bundle['books_report']
+    books_count_by_package = reader_bundle['books_count_by_package']
+    entry_locations = reader_bundle['entry_locations']
+    default_page = reader_bundle['default_page']
+    roots_count = reader_bundle['roots_count']
+
+    by_type = sqlite_stats['by_type']
+    by_package = sqlite_stats['by_package']
+    by_source = sqlite_stats['by_source']
+    by_ruleset = sqlite_stats['by_ruleset']
+    by_origin = sqlite_stats['by_origin']
+    by_raw_kind = sqlite_stats['by_raw_kind']
+    copy_status_counts = sqlite_stats['copy_status_counts']
+    resolved_entity_links = sqlite_stats['resolved_entity_links']
+    resolved_book_links = sqlite_stats['resolved_book_links']
+    resolved_filter_links = sqlite_stats['resolved_filter_links']
+    ambiguous_links = sqlite_stats['ambiguous_links']
+    unresolved_links = sqlite_stats['unresolved_links']
+    unresolved_counter = sqlite_stats['unresolved_counter']
+    ambiguous_counter = sqlite_stats['ambiguous_counter']
+    unknown_tags_counter = sqlite_stats['unknown_tags_counter']
+    unsupported_blocks_counter = sqlite_stats['unsupported_blocks_counter']
+    referenced_local_media = sqlite_stats['referenced_local_media']
+    referenced_remote_media = sqlite_stats['referenced_remote_media']
+    referenced_missing_local_media = sqlite_stats['referenced_missing_local_media']
+
+    counts_summary = {
+        'entries': len(corpus.entries),
+        'sources': len(corpus.sources),
+        'packages': len(corpus.packages),
+        'brew_packages': inv.checks['brew_package_count'],
+        'site_packages': inv.checks['site_package_count'],
+        'relations': len(corpus.relations),
+        'identity_groups': sqlite_stats['group_count'],
+        'entry_facets': sqlite_stats['entry_facet_count'],
+        'books_total': len(book_index.books),
+        'book_pages': len(pages_meta),
+        'chapters_written': books_report['chapters_written'],
+        'toc_nodes': books_report['toc_nodes'],
+        'entry_locations': len(entry_locations),
+        'files': len(inv.file_records),
+        'local_media_files': len(inv.media_files),
+        'bundled_media_files': len(staged_media_set),
+        'preserved_cached_media': preserved_cached_media,
+        'bundled_img_dir_files': bundled_img_dir_files,
+        'remote_media_keys': len(remote_media_map),
+    }
+
+    delta = _compute_delta(prev_summary, counts_summary, dict(by_type))
+
+    inventory_payload = {
+        'collection': col_key,
+        'snapshot_info': inv.snapshot_info,
+        'checks': inv.checks,
+        'total_files': len(inv.file_records),
+        'by_disposition': dict(inv.checks['disposition_counts']),
+        'files': inv.file_records,
+    }
+    inv_sha = _write_json(stage / 'inventory.json', inventory_payload)
+
+    api_stats = inv.snapshot_info.get('stats_api') or {}
+    observed_stats = _compute_observed_api_stats(corpus)
+    stats_diff: dict[str, dict[str, dict[str, int]]] = {}
+    for bucket in ('official', 'brew', 'ours'):
+        api_b = api_stats.get(bucket) if isinstance(api_stats.get(bucket), dict) else {}
+        obs_b = observed_stats.get(bucket) or {}
+        bdiff = {}
+        for k in sorted(set(api_b) | set(obs_b)):
+            av = int(api_b.get(k, 0))
+            ov = int(obs_b.get(k, 0))
+            if av != ov:
+                bdiff[k] = {'api': av, 'observed': ov, 'delta': ov - av}
+        stats_diff[bucket] = bdiff
+
+    api_books_summary = {
+        'total': len([p for p in inv.packages if p['kind'] == 'brew']),
+        'ours': sum(1 for p in inv.packages if p['kind'] == 'brew' and p['ours']),
+        'community': sum(1 for p in inv.packages if p['kind'] == 'brew' and not p['ours']),
+        'site_to_import': inv.checks['site_package_count'],
+        'books_recipe_keys_match': inv.checks['books_recipe_keys_match'],
+        'count_mismatches': inv.checks['count_mismatches'],
+    }
+
+    total_resolved_links = resolved_entity_links + resolved_book_links
+    reconciliation_payload = {
+        'collection': col_key,
+        'api_stats': api_stats,
+        'api_books': api_books_summary,
+        'observed': observed_stats,
+        'stats_diff': stats_diff,
+        'books_diff': {
+            'count_mismatches': inv.checks['count_mismatches'],
+            'reader_counts': books_report['counts'],
+            'reader_warnings': books_report['warnings'],
+            'reader_notes': books_report['notes'],
+        },
+        'copy_resolution': {
+            'summary': corpus.diagnostics.get('copy_summary') or {},
+            'by_status': dict(sorted(copy_status_counts.items())),
+            'missing_base': corpus.diagnostics.get('copy_missing_base') or [],
+            'ambiguous_base': corpus.diagnostics.get('copy_ambiguous_base') or [],
+            'cycles': corpus.diagnostics.get('copy_cycles') or [],
+            'mod_warnings': corpus.diagnostics.get('copy_mod_warnings') or [],
+        },
+        'variants': {
+            'version_count': corpus.diagnostics.get('version_count', 0),
+            'version_warnings': corpus.diagnostics.get('version_warnings') or [],
+        },
+        'subraces': {
+            'orphan_subraces': corpus.diagnostics.get('orphan_subraces') or [],
+        },
+        'fluff': {
+            'attached_count': sum(1 for e in corpus.entries if e.get('fluff')),
+            'orphan_fluff_count': len(corpus.diagnostics.get('orphan_fluff') or []),
+            'orphan_fluff_samples': (corpus.diagnostics.get('orphan_fluff') or [])[:50],
+        },
+        'links': {
+            'resolved': total_resolved_links,
+            'resolved_entity': resolved_entity_links,
+            'resolved_book': resolved_book_links,
+            'resolved_filter': resolved_filter_links,
+            'reader_bound_references': books_report['bound_references'],
+            'reader_bound_definitions': books_report['bound_definitions'],
+            'reader_binding_mismatches': books_report['binding_mismatches'],
+            'ambiguous': ambiguous_links,
+            'unresolved': unresolved_links,
+            'total': total_resolved_links + ambiguous_links + unresolved_links,
+            'top_unresolved': [
+                {'tag': t, 'name': n, 'source': s, 'count': c}
+                for (t, n, s), c in unresolved_counter.most_common(50)
+            ],
+            'top_ambiguous': [
+                {'tag': t, 'name': n, 'source': s, 'count': c}
+                for (t, n, s), c in ambiguous_counter.most_common(50)
+            ],
+        },
+        'unknown_tags': [
+            {'tag': tag, 'count': cnt}
+            for tag, cnt in unknown_tags_counter.most_common()
+        ],
+        'unsupported_blocks': [
+            {'type': btype, 'count': cnt}
+            for btype, cnt in unsupported_blocks_counter.most_common()
+        ],
+        'media': {
+            'local': len(referenced_local_media),
+            'remote': len(referenced_remote_media),
+            'missing_local': len(referenced_missing_local_media),
+            'missing_local_audio': len(corpus.diagnostics.get('missing_local_audio') or []),
+            'indexed_media_counts': dict(inv.checks['media_counts']),
+            'local_samples': sorted(referenced_local_media)[:30],
+            'remote_samples': sorted(referenced_remote_media)[:30],
+            'missing_local_samples': sorted(referenced_missing_local_media)[:30],
+        },
+        'reprints': {
+            'unresolved_reprints_count': len(corpus.diagnostics.get('unresolved_reprints') or []),
+            'unresolved_reprints_samples': (corpus.diagnostics.get('unresolved_reprints') or [])[:30],
+        },
+        'duplicates': {
+            'inventory_natural_key_duplicates': len(inv.checks['duplicate_raw_records']),
+            'inventory_exact_duplicates': len(inv.checks['exact_duplicate_raw_records']),
+            'semantic_duplicate_identity_keys': len(corpus.diagnostics.get('duplicate_identity_keys') or []),
+        },
+    }
+    recon_sha = _write_json(stage / 'reconciliation.json', reconciliation_payload)
+
+    resource_notes: list[dict[str, Any]] = [
+        {
+            'kind': 'remote_images_and_audio',
+            'count': len(referenced_remote_media),
+            'bundled': False,
+            'reason': 'Referenced remote images/audio are not bundled offline in this repository and remain external links.',
+            'samples': sorted(referenced_remote_media)[:20],
+        },
+        {
+            'kind': 'local_fonts',
+            'count': inv.checks['media_counts'].get('font', 0),
+            'bundled': True,
+            'license_file': '__ours/fonts/OFL.txt' if (source / '__ours/fonts/OFL.txt').is_file() else None,
+            'reason': 'Bundled font notices are provided by the source mirror.',
+            'paths': sorted(p for p, m in inv.media_files.items() if m['kind'] == 'font')[:25],
+        },
+        {
+            'kind': 'official_and_partnered_rules',
+            'count': by_origin.get('官方', 0) + by_origin.get('合作', 0),
+            'bundled': True,
+            'reason': 'Wizards of the Coast and partner publishers are identified in the source records.',
+        },
+        {
+            'kind': 'community_homebrew_packages',
+            'count': len(inv.packages),
+            'bundled': True,
+            'reason': 'Community and site homebrew packages retain original authors, translators, URLs, and _meta license notes.',
+        },
+    ]
+
+    attribution_packages = [
+        {
+            'id': pid,
+            'name': p.get('name'),
+            'kind': p.get('kind'),
+            'origin': p.get('origin'),
+            'ours': bool(p.get('ours')),
+            'authors': p.get('authors') or [],
+            'translators': p.get('translators') or [],
+            'url': p.get('url'),
+            'version': p.get('version'),
+            'entry_count': by_package.get(pid, 0),
+            'book_count': books_count_by_package.get(pid, 0),
+        }
+        for pid, p in sorted(corpus.packages.items())
+    ]
+    attribution_sources = [
+        {
+            'id': sid,
+            'code': s.get('code'),
+            'name': s.get('name'),
+            'package_id': s.get('package_id'),
+            'origin': s.get('origin'),
+            'ours': bool(s.get('ours')),
+            'authors': s.get('authors') or [],
+            'translators': s.get('translators') or [],
+            'tier': s.get('tier'),
+            'edition': s.get('edition'),
+            'license_note': s.get('license_note'),
+            'entry_count': by_source.get(sid, 0),
+        }
+        for sid, s in sorted(corpus.sources.items())
+    ]
+    attribution_payload = {
+        'collection': col_key,
+        'snapshot': snapshot,
+        'source_root': str(source),
+        'packages': attribution_packages,
+        'sources': attribution_sources,
+        'resource_notes': resource_notes,
+    }
+    attr_sha = _write_json(stage / 'attribution.json', attribution_payload)
+
+    summary_payload = {
+        'schema': MANIFEST_SCHEMA,
+        'collection': col_key,
+        'snapshot': snapshot,
+        'built_at': built_at,
+        'counts': counts_summary,
+        'by_type': dict(sorted(by_type.items())),
+        'by_package': dict(sorted(by_package.items())),
+        'by_source': dict(sorted(by_source.items())),
+        'by_ruleset': dict(sorted(by_ruleset.items())),
+        'by_origin': dict(sorted(by_origin.items())),
+        'by_raw_kind': dict(sorted(by_raw_kind.items())),
+        'copy_status': dict(sorted(copy_status_counts.items())),
+        'delta': delta,
+    }
+    remotes_payload = {
+        'schema': MANIFEST_SCHEMA,
+        'snapshot': snapshot,
+        'entries': {k: list(v) for k, v in sorted(remote_media_map.items())},
+    }
+    remotes_sha = _write_json(stage / 'media-remotes.json', remotes_payload, compact=True)
+    summary_sha = _write_json(stage / 'summary.json', summary_payload)
+
+    db_sha = hashlib.sha256(db_path.read_bytes()).hexdigest()
+    reader_json_sha = hashlib.sha256((reader_dir / 'anna-reader.json').read_bytes()).hexdigest()
+
+    manifest_payload = {
+        'schema': MANIFEST_SCHEMA,
+        'snapshot': snapshot,
+        'collection': col_key,
+        'source_root': str(source),
+        'git_commit': inv.snapshot_info['git_commit'],
+        'input_sha256': inv.snapshot_info['input_sha256'],
+        'built_at': built_at,
+        'elapsed_seconds': round(time.perf_counter() - t_start, 2),
+        'counts': counts_summary,
+        'delta': delta,
+        'reader': {
+            'schema': READER_SCHEMA,
+            'snapshot': snapshot,
+            'collection': col_key,
+            'page_base': page_base,
+            'media_base': media_base,
+            'default_page': default_page,
+            'books_total': len(book_index.books),
+            'chapters_written': books_report['chapters_written'],
+            'toc_nodes': books_report['toc_nodes'],
+            'roots': roots_count,
+            'pages': len(pages_meta),
+            'bound_definitions': books_report['bound_definitions'],
+            'bound_references': books_report['bound_references'],
+            'binding_mismatches': books_report['binding_mismatches'],
+        },
+        'checks': {
+            'books_recipe_keys_match': inv.checks['books_recipe_keys_match'],
+            'missing_shard_files': len(inv.checks['missing_shard_files']),
+            'missing_shard_keys': len(inv.checks['missing_shard_keys']),
+            'invalid_shard_paths': len(inv.checks['invalid_shard_paths']),
+            'missing_site_packages': len(inv.checks['missing_site_packages']),
+            'missing_generated_lookups': len(inv.checks['missing_generated_lookups']),
+            'parser_warnings': len(inv.checks['parser_warnings']),
+            'copy_missing_base': len(corpus.diagnostics.get('copy_missing_base') or []),
+            'copy_ambiguous_base': len(corpus.diagnostics.get('copy_ambiguous_base') or []),
+            'copy_cycles': len(corpus.diagnostics.get('copy_cycles') or []),
+            'copy_mod_warnings': len(corpus.diagnostics.get('copy_mod_warnings') or []),
+            'reader_binding_mismatches': books_report['binding_mismatches'],
+            'unknown_tags': len(unknown_tags_counter),
+            'unsupported_blocks': len(unsupported_blocks_counter),
+        },
+        'files': {
+            'catalog.sqlite': db_sha,
+            'reader/anna-reader.json': reader_json_sha,
+            'media-remotes.json': remotes_sha,
+            'summary.json': summary_sha,
+            'inventory.json': inv_sha,
+            'reconciliation.json': recon_sha,
+            'attribution.json': attr_sha,
+        },
+    }
+    _write_json(stage / 'manifest.json', manifest_payload)
+    return counts_summary, manifest_payload
+
+
 def build(
     source: Path = OUR5ETOOLS,
     output: Path = OUR5ETOOLS_DATA,
@@ -920,821 +1560,84 @@ def build(
         # 4. Build Stella reader HTML chapters & assets in stage/reader
         _log('[our5etools.build] Rendering Stella reader chapters...')
         reader_dir = stage / 'reader'
-        books_result = books.build_reader_pages(
-            book_index,
-            reader_dir,
+        reader_bundle = _build_reader_bundle(
+            book_index=book_index,
+            corpus=corpus,
+            reader_dir=reader_dir,
             resolver=resolver,
             media_checker=media_checker,
             entry_index_by_book_chapter=entry_index_by_book_chapter,
             snapshot=snapshot,
-            collection=col_key,
-            content_base=page_base,
+            col_key=col_key,
+            page_base=page_base,
             media_base=media_base,
         )
-        remote_media_map: dict[str, list[str]] = {
-            str(k): list(v)
-            for k, v in (books_result.get('remote_media_map') or {}).items()
-            if k and v
-        }
-        assets_dir = reader_dir / 'anna-assets'
-        assets_dir.mkdir(parents=True, exist_ok=True)
-        (assets_dir / 'our5etools-book.css').write_text(_OUR5ETOOLS_BOOK_CSS, encoding='utf-8')
-        for src_rel, dest_name in (
-            ('web/book/links.js', 'links.js'),
-            ('web/book/topic.js', 'topic.js'),
-            ('web/link-labels.js', 'link-labels.js'),
-        ):
-            src_asset = PROJECT / src_rel
-            if src_asset.is_file():
-                shutil.copyfile(src_asset, assets_dir / dest_name)
-
-        nodes: list[dict[str, Any]] = books_result['nodes']
-        pages_meta: dict[str, dict[str, Any]] = books_result['pages_meta']
-        search_rows: list[tuple[str, str, str, str, str]] = books_result['search_rows']
-        books_report: dict[str, Any] = books_result['report']
-
-        # Map page_path -> (root_id, node_id) and build roots + entry_locations
-        node_by_id = {n['id']: n for n in nodes}
-        book_root_ids: set[str] = {f'n_{b.book_key}' for b in book_index.books}
-
-        def _ancestor_root(nid: str) -> str:
-            cur = nid
-            while cur:
-                if cur in book_root_ids:
-                    return cur
-                node = node_by_id.get(cur)
-                if not node:
-                    break
-                cur = node.get('parent_id') or ''
-            return ''
-
-        page_to_node: dict[str, tuple[str, str]] = {}
-        for n in nodes:
-            p = n.get('path') or ''
-            if p and not n.get('fragment') and p not in page_to_node:
-                page_to_node[p] = (_ancestor_root(n['id']), n['id'])
-
-        # Map (package_id, source_code_cf) -> source_id for book_pages
-        src_by_pkg_code: dict[tuple[str, str], str] = {}
-        src_by_code: dict[str, str] = {}
-        for sid, sdict in corpus.sources.items():
-            code_cf = str(sdict.get('code') or '').casefold()
-            pkg = str(sdict.get('package_id') or '')
-            if code_cf:
-                src_by_pkg_code[(pkg, code_cf)] = sid
-                src_by_code.setdefault(code_cf, sid)
-
-        roots_payload: list[dict[str, Any]] = []
-        book_first_location: dict[tuple[str, str, str], dict[str, Any]] = {}
-        books_count_by_package: Counter[str] = Counter()
-
-        for b in book_index.books:
-            root_id = f'n_{b.book_key}'
-            first_page = b.chapter_paths[0] if b.chapter_paths else ''
-            first_node = page_to_node.get(first_page, (root_id, root_id))[1] if first_page else root_id
-            sid = (
-                src_by_pkg_code.get((b.package_id, (b.source_code or '').casefold()))
-                or src_by_code.get((b.source_code or '').casefold())
-                or f'src:{b.source_code}'
-            )
-            roots_payload.append({
-                'id': root_id,
-                'label': b.title,
-                'title': b.title,
-                'title_en': b.title_en,
-                'book_id': b.book_id,
-                'book_key': b.book_key,
-                'kind': b.kind,
-                'source_code': b.source_code,
-                'source_id': sid,
-                'package_id': b.package_id,
-                'origin': b.origin,
-                'edition': b.edition,
-                'ours': b.ours,
-                'first_page': first_page,
-                'page_count': len(b.chapter_paths),
-            })
-            books_count_by_package[b.package_id] += 1
-            if first_page:
-                loc = {
-                    'path': first_page,
-                    'fragment': '',
-                    'root': root_id,
-                    'node_id': first_node,
-                    'book_id': b.book_id,
-                    'title': b.title,
-                    'locatable': True,
-                }
-                book_first_location[(b.package_id, b.kind, (b.book_id or '').casefold())] = loc
-                book_first_location.setdefault((b.package_id, b.kind, (b.source_code or '').casefold()), loc)
-
-        entry_locations: dict[str, dict[str, Any]] = {}
-        for page_path, pmeta in pages_meta.items():
-            root_id, ch_node_id = page_to_node.get(page_path, ('', ''))
-            for drec in pmeta.get('definitions') or []:
-                eid = drec.get('id')
-                if not eid or eid in entry_locations:
-                    continue
-                entry_locations[eid] = {
-                    'path': page_path,
-                    'fragment': drec.get('fragment') or f'anna-{eid}',
-                    'root': root_id,
-                    'node_id': ch_node_id,
-                    'book_id': pmeta.get('book_id') or '',
-                    'title': pmeta.get('title') or '',
-                    'locatable': bool(drec.get('locatable', True)),
-                }
-
-        # Also wire book/adventure catalog entries directly to their book's first chapter.
-        for e in corpus.entries:
-            if e['id'] in entry_locations or e.get('type') != 'book':
-                continue
-            raw = e.get('data') or {}
-            bkind = 'adventure' if e.get('raw_kind') == 'adventure' else 'book'
-            bid_cf = str(raw.get('id') or e.get('source_code') or '').casefold()
-            loc = (
-                book_first_location.get((e['package_id'], bkind, bid_cf))
-                or book_first_location.get((e['package_id'], bkind, str(e.get('source_code') or '').casefold()))
-            )
-            if loc:
-                entry_locations[e['id']] = dict(loc)
-
-        default_page = next((n['path'] for n in nodes if n.get('status') == 'present' and n.get('path')), '')
-        reader_json = {
-            'schema': READER_SCHEMA,
-            'snapshot': snapshot,
-            'collection': col_key,
-            'page_base': page_base,
-            'media_base': media_base,
-            'default_page': default_page,
-            'presentation_resources': [dict(res) for res in books.PRESENTATION_RESOURCES],
-            'roots': roots_payload,
-            'nodes': nodes,
-            'pages': pages_meta,
-            'entry_locations': entry_locations,
-        }
-        _write_json(reader_dir / 'anna-reader.json', reader_json, compact=True)
+        remote_media_map = reader_bundle['remote_media_map']
+        pages_meta = reader_bundle['pages_meta']
+        books_report = reader_bundle['books_report']
 
         # 5. Render all entries & populate catalog.sqlite
         _log(f'[our5etools.build] Rendering {len(corpus.entries)} entries and writing catalog.sqlite...')
         db_path = stage / 'catalog.sqlite'
-        db = sqlite3.connect(db_path)
-        db.execute('PRAGMA synchronous = OFF')
-        db.execute('PRAGMA journal_mode = MEMORY')
-        db.execute('PRAGMA temp_store = MEMORY')
-        _create_sqlite_schema(db)
-
-        by_type: Counter[str] = Counter()
-        by_package: Counter[str] = Counter()
-        by_source: Counter[str] = Counter()
-        by_ruleset: Counter[str] = Counter()
-        by_origin: Counter[str] = Counter()
-        by_raw_kind: Counter[str] = Counter()
-        copy_status_counts: Counter[str] = Counter()
-
-        resolved_entity_links = 0
-        resolved_book_links = 0
-        resolved_filter_links = 0
-        ambiguous_links = 0
-        unresolved_links = 0
-        unresolved_counter: Counter[tuple[str, str, str]] = Counter()
-        ambiguous_counter: Counter[tuple[str, str, str]] = Counter()
-        unknown_tags_counter: Counter[str] = Counter()
-        unsupported_blocks_counter: Counter[str] = Counter()
-
-        referenced_local_media: set[str] = set()
-        referenced_remote_media: set[str] = set()
-        referenced_missing_local_media: set[str] = set()
-
-        entry_rows: list[tuple[Any, ...]] = []
-        entry_source_rows: list[tuple[str, str]] = []
-        entry_facet_rows: list[tuple[str, str, str]] = []
-        legacy_map: dict[str, str] = {}
-
-        for entry in corpus.entries:
-            eid = entry['id']
-            etype = entry['type']
-            raw_kind = entry['raw_kind']
-            pkg_id = entry['package_id']
-            src_id = entry['source_id']
-            src_code = entry['source_code']
-            pkg_meta = corpus.packages.get(pkg_id) or {}
-            src_meta = corpus.sources.get(src_id) or {}
-            raw_data = entry.get('data') or {}
-
-            rendered = render.render_entry_detail(
-                entry,
-                resolver,
-                media_checker,
-                relations_by_entry.get(eid, ()),
-                media_prefix=media_base,
-            )
-            layout_html: str = rendered.get('html') or ''
-            body_text: str = rendered.get('body_text') or ''
-            media_summary: dict[str, list[str]] = rendered.get('media_summary') or {
-                'local_media': [],
-                'remote_media': [],
-                'missing_local_media': [],
-            }
-
-            resolved_entity_links += layout_html.count('class="ref" data-entry="o5e_')
-            resolved_book_links += layout_html.count('class="ref-book"')
-            resolved_filter_links += layout_html.count('class="ref-filter"')
-
-            for ev in rendered.get('link_events') or ():
-                st = ev.get('status')
-                key = (str(ev.get('tag') or ''), str(ev.get('name') or ''), str(ev.get('source') or ''))
-                if st == 'ambiguous':
-                    ambiguous_links += 1
-                    ambiguous_counter[key] += 1
-                else:
-                    unresolved_links += 1
-                    unresolved_counter[key] += 1
-
-            for ut in rendered.get('unknown_tags') or ():
-                unknown_tags_counter[str(ut)] += 1
-            for us in rendered.get('unsupported_structures') or ():
-                unsupported_blocks_counter[str(us)] += 1
-
-            referenced_local_media.update(media_summary.get('local_media') or ())
-            referenced_remote_media.update(media_summary.get('remote_media') or ())
-            referenced_missing_local_media.update(media_summary.get('missing_local_media') or ())
-            for r_rel, r_urls in (rendered.get('remote_media_map') or {}).items():
-                bucket = remote_media_map.setdefault(r_rel, [])
-                for u in r_urls:
-                    if u and u not in bucket:
-                        bucket.append(u)
-
-            fields = entry.get('fields') or {}
-            quickref = entry.get('quickref') or {}
-            conflicts = entry.get('field_conflicts') or []
-            legacy = _compute_legacy(entry, src_meta)
-            legacy_map[eid] = legacy
-            cr_num = _parse_cr_num(fields, raw_data) if etype == 'creature' else None
-
-            name = str(entry.get('name') or '')
-            name_zh = str(entry.get('name_zh') or name)
-            name_en = str(entry.get('name_en') or '')
-            sort_name = types.name_key(name or name_en)
-            name_parts = list(dict.fromkeys(p for p in (name, name_zh, name_en) if p))
-            search_name = ' '.join(name_parts).lower()
-            search_body = body_text.lower()
-
-            rating = _lookup_entry_rating(entry, rating_index)
-            provenance = {
-                'collection': col_key,
-                'package_id': pkg_id,
-                'package_name': pkg_meta.get('name') or pkg_id,
-                'origin': entry.get('origin') or src_meta.get('origin') or pkg_meta.get('origin') or '',
-                'package_kind': entry.get('package_kind') or pkg_meta.get('package_kind') or '',
-                'ours': bool(entry.get('ours') or pkg_meta.get('ours')),
-                'authors': list(src_meta.get('authors') or pkg_meta.get('authors') or []),
-                'translators': list(src_meta.get('translators') or pkg_meta.get('translators') or []),
-                'tier': entry.get('tier') or src_meta.get('tier'),
-                'rating': rating,
-                'source_id': src_id,
-                'source_code': src_code,
-                'source_name': entry.get('source_name') or src_meta.get('name') or src_code,
-                'source_short': entry.get('source_short') or src_meta.get('short_label') or src_code,
-                'edition': src_meta.get('edition') or pkg_meta.get('edition'),
-                'ruleset': entry.get('ruleset') or '待核',
-                'copy_status': entry.get('copy_status') or 'ok',
-                'copy_warnings': list(entry.get('copy_warnings') or []),
-                'copied_from': copied_from_map.get(eid),
-                'is_version': bool(entry.get('is_version')),
-                'version_base_id': entry.get('version_base_id'),
-                'license_note': src_meta.get('license_note'),
-                'media_summary': media_summary,
-                'reader_location': entry_locations.get(eid),
-                'relpath': entry.get('relpath') or '',
-            }
-
-            entry_rows.append((
-                eid,
-                etype,
-                raw_kind,
-                name,
-                name_zh,
-                name_en,
-                sort_name,
-                entry.get('ruleset') or '待核',
-                legacy,
-                pkg_id,
-                src_id,
-                src_code,
-                str(entry.get('owner_class') or ''),
-                str(entry.get('owner_subclass') or ''),
-                entry.get('owner_level'),
-                entry.get('copy_status') or 'ok',
-                cr_num,
-                json.dumps(fields, ensure_ascii=False, separators=(',', ':')),
-                json.dumps(quickref, ensure_ascii=False, separators=(',', ':')),
-                json.dumps(conflicts, ensure_ascii=False, separators=(',', ':')),
-                json.dumps(provenance, ensure_ascii=False, separators=(',', ':')),
-                layout_html,
-                body_text,
-                search_name,
-                search_body,
-            ))
-
-            entry_source_rows.append((eid, src_id))
-
-            # Pre-expand exact quickref[k] tokens + common facets into entry_facets.
-            seen_facets: set[tuple[str, str]] = set()
-            for fkey, fvals in quickref.items():
-                if not isinstance(fvals, (list, tuple)):
-                    fvals = [fvals]
-                for fval in fvals:
-                    pair = (str(fkey), str(fval))
-                    if pair not in seen_facets:
-                        seen_facets.add(pair)
-                        entry_facet_rows.append((eid, pair[0], pair[1]))
-            for common_key, common_val in (
-                ('ruleset', entry.get('ruleset') or '待核'),
-                ('origin', provenance['origin']),
-                ('source', src_id),
-                ('package', pkg_id),
-                ('legacy', legacy),
-                ('copy_status', entry.get('copy_status') or 'ok'),
-            ):
-                if common_val:
-                    pair = (common_key, str(common_val))
-                    if pair not in seen_facets:
-                        seen_facets.add(pair)
-                        entry_facet_rows.append((eid, pair[0], pair[1]))
-
-            by_type[etype] += 1
-            by_package[pkg_id] += 1
-            by_source[src_id] += 1
-            by_ruleset[entry.get('ruleset') or '待核'] += 1
-            by_origin[provenance['origin']] += 1
-            by_raw_kind[raw_kind] += 1
-            copy_status_counts[entry.get('copy_status') or 'ok'] += 1
-
-        db.executemany(
-            """
-            INSERT INTO entries (
-                id, type, raw_kind, name, name_zh, name_en, sort_name, ruleset, legacy,
-                package_id, source_id, source_code, owner_class, owner_subclass, owner_level,
-                copy_status, cr_num, fields_json, quickref_json, conflicts_json, provenance_json,
-                layout_html, body_text, search_name, search_body
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """,
-            entry_rows,
+        sqlite_stats = _populate_catalog_sqlite(
+            db_path=db_path,
+            corpus=corpus,
+            resolver=resolver,
+            media_checker=media_checker,
+            media_base=media_base,
+            relations_by_entry=relations_by_entry,
+            rating_index=rating_index,
+            copied_from_map=copied_from_map,
+            entry_index=entry_index,
+            reader_bundle=reader_bundle,
+            col_key=col_key,
+            snapshot=snapshot,
+            built_at=built_at,
+            source=source,
         )
-        db.executemany('INSERT OR IGNORE INTO entry_sources (entry_id, source_id) VALUES (?,?)', entry_source_rows)
-        db.executemany(
-            'INSERT OR IGNORE INTO entry_facets (entry_id, facet_key, facet_value) VALUES (?,?,?)',
-            entry_facet_rows,
-        )
-
-        # Populate sources table
-        source_rows = []
-        for sid, sdict in sorted(corpus.sources.items()):
-            s_payload = dict(sdict)
-            s_payload['entry_count'] = by_source.get(sid, 0)
-            source_rows.append((
-                sid,
-                str(sdict.get('package_id') or ''),
-                str(sdict.get('origin') or ''),
-                str(sdict.get('ruleset') or '待核'),
-                str(sdict.get('short_label') or sdict.get('code') or sid),
-                str(sdict.get('name') or sdict.get('code') or sid),
-                json.dumps(s_payload, ensure_ascii=False, separators=(',', ':')),
-            ))
-        db.executemany(
-            'INSERT INTO sources (id, package_id, origin, ruleset, short_name, name, data_json) VALUES (?,?,?,?,?,?,?)',
-            source_rows,
-        )
-
-        # Populate packages table
-        package_rows = []
-        for pid, pdict in sorted(corpus.packages.items()):
-            p_payload = dict(pdict)
-            ecount = by_package.get(pid, 0)
-            bcount = books_count_by_package.get(pid, 0)
-            p_payload['entry_count'] = ecount
-            p_payload['book_count'] = bcount
-            package_rows.append((
-                pid,
-                str(pdict.get('name') or pid),
-                str(pdict.get('origin') or ''),
-                1 if pdict.get('ours') else 0,
-                ecount,
-                bcount,
-                json.dumps(p_payload, ensure_ascii=False, separators=(',', ':')),
-            ))
-        db.executemany(
-            'INSERT INTO packages (id, name, origin, ours, entry_count, book_count, data_json) VALUES (?,?,?,?,?,?,?)',
-            package_rows,
-        )
-
-        # Populate identity_groups & identity_members
-        group_rows = []
-        member_rows = []
-        seen_member_ids: set[str] = set()
-        for grp in corpus.identity_groups:
-            gid = grp['id']
-            mids = [m for m in grp.get('member_ids') or [] if m in entry_index]
-            if len(mids) < 2:
-                continue
-            primary_id = _pick_group_primary(mids, entry_index, legacy_map)
-            group_rows.append((
-                gid,
-                str(grp.get('type') or ''),
-                str(grp.get('package_id') or ''),
-                str(grp.get('name') or ''),
-                str(grp.get('name_en') or ''),
-                primary_id,
-                json.dumps(mids, ensure_ascii=False, separators=(',', ':')),
-            ))
-            for mid in mids:
-                if mid not in seen_member_ids:
-                    seen_member_ids.add(mid)
-                    member_rows.append((mid, gid, 1 if mid == primary_id else 0))
-
-        db.executemany(
-            'INSERT INTO identity_groups (group_id, type, package_id, name, name_en, primary_id, member_ids_json) VALUES (?,?,?,?,?,?,?)',
-            group_rows,
-        )
-        db.executemany(
-            'INSERT OR IGNORE INTO identity_members (entry_id, group_id, is_primary) VALUES (?,?,?)',
-            member_rows,
-        )
-
-        # Populate relations
-        relation_rows = []
-        for rel in corpus.relations:
-            meta_extra = {k: v for k, v in rel.items() if k not in {'source_id', 'type', 'target_id'}}
-            relation_rows.append((
-                str(rel.get('source_id') or ''),
-                str(rel.get('type') or ''),
-                str(rel.get('target_id') or ''),
-                json.dumps(meta_extra, ensure_ascii=False, separators=(',', ':')),
-            ))
-        db.executemany(
-            'INSERT INTO relations (source_id, type, target_id, meta_json) VALUES (?,?,?,?)',
-            relation_rows,
-        )
-
-        # Populate book_pages & book_search
-        book_page_rows = []
-        for page_path, pmeta in sorted(pages_meta.items()):
-            root_id, node_id = page_to_node.get(page_path, ('', ''))
-            pkg_id = str(pmeta.get('package_id') or '')
-            src_code = str(pmeta.get('source_code') or '')
-            sid = (
-                src_by_pkg_code.get((pkg_id, src_code.casefold()))
-                or src_by_code.get(src_code.casefold())
-                or f'src:{src_code}'
-            )
-            book_page_rows.append((
-                page_path,
-                root_id,
-                str(pmeta.get('book_id') or ''),
-                str(pmeta.get('kind') or 'book'),
-                pkg_id,
-                sid,
-                str(pmeta.get('title') or ''),
-                node_id,
-            ))
-        db.executemany(
-            'INSERT INTO book_pages (page_path, root_id, book_id, kind, package_id, source_id, title, node_id) VALUES (?,?,?,?,?,?,?,?)',
-            book_page_rows,
-        )
-
-        book_search_rows = []
-        for page_path, title, scope_label, plain_text, _sha in search_rows:
-            root_id, node_id = page_to_node.get(page_path, ('', ''))
-            book_search_rows.append((
-                root_id,
-                page_path,
-                node_id,
-                title,
-                scope_label,
-                plain_text,
-            ))
-        db.executemany(
-            'INSERT INTO book_search (root_id, page_path, node_id, title, scope_label, snippet_text) VALUES (?,?,?,?,?,?)',
-            book_search_rows,
-        )
-
-        # Metadata table
-        db.executemany(
-            'INSERT INTO metadata (key, value) VALUES (?,?)',
-            [
-                ('schema', str(MANIFEST_SCHEMA)),
-                ('reader_schema', str(READER_SCHEMA)),
-                ('snapshot', snapshot),
-                ('built_at', built_at),
-                ('source_root', str(source)),
-                ('collection', col_key),
-            ],
-        )
-
-        _create_sqlite_indexes(db)
-        db.execute('ANALYZE')
-        db.commit()
-        db.execute('PRAGMA journal_mode = DELETE')
-        db.close()
+        by_type = sqlite_stats['by_type']
+        by_package = sqlite_stats['by_package']
+        by_source = sqlite_stats['by_source']
+        by_ruleset = sqlite_stats['by_ruleset']
+        by_origin = sqlite_stats['by_origin']
+        by_raw_kind = sqlite_stats['by_raw_kind']
+        copy_status_counts = sqlite_stats['copy_status_counts']
+        resolved_entity_links = sqlite_stats['resolved_entity_links']
+        resolved_book_links = sqlite_stats['resolved_book_links']
+        resolved_filter_links = sqlite_stats['resolved_filter_links']
+        ambiguous_links = sqlite_stats['ambiguous_links']
+        unresolved_links = sqlite_stats['unresolved_links']
+        unresolved_counter = sqlite_stats['unresolved_counter']
+        ambiguous_counter = sqlite_stats['ambiguous_counter']
+        unknown_tags_counter = sqlite_stats['unknown_tags_counter']
+        unsupported_blocks_counter = sqlite_stats['unsupported_blocks_counter']
+        referenced_local_media = sqlite_stats['referenced_local_media']
+        referenced_remote_media = sqlite_stats['referenced_remote_media']
+        referenced_missing_local_media = sqlite_stats['referenced_missing_local_media']
 
         # 6. Write inventory.json, reconciliation.json, attribution.json, summary.json, manifest.json
         _log('[our5etools.build] Writing report & manifest JSON artifacts...')
-        counts_summary = {
-            'entries': len(corpus.entries),
-            'sources': len(corpus.sources),
-            'packages': len(corpus.packages),
-            'brew_packages': inv.checks['brew_package_count'],
-            'site_packages': inv.checks['site_package_count'],
-            'relations': len(corpus.relations),
-            'identity_groups': len(group_rows),
-            'entry_facets': len(entry_facet_rows),
-            'books_total': len(book_index.books),
-            'book_pages': len(pages_meta),
-            'chapters_written': books_report['chapters_written'],
-            'toc_nodes': books_report['toc_nodes'],
-            'entry_locations': len(entry_locations),
-            'files': len(inv.file_records),
-            'local_media_files': len(inv.media_files),
-            'bundled_media_files': len(staged_media_set),
-            'preserved_cached_media': preserved_cached_media,
-            'bundled_img_dir_files': bundled_img_dir_files,
-            'remote_media_keys': len(remote_media_map),
-        }
-
-        delta = _compute_delta(prev_summary, counts_summary, dict(by_type))
-
-        inventory_payload = {
-            'collection': col_key,
-            'snapshot_info': inv.snapshot_info,
-            'checks': inv.checks,
-            'total_files': len(inv.file_records),
-            'by_disposition': dict(inv.checks['disposition_counts']),
-            'files': inv.file_records,
-        }
-        inv_sha = _write_json(stage / 'inventory.json', inventory_payload)
-
-        api_stats = inv.snapshot_info.get('stats_api') or {}
-        observed_stats = _compute_observed_api_stats(corpus)
-        stats_diff: dict[str, dict[str, dict[str, int]]] = {}
-        for bucket in ('official', 'brew', 'ours'):
-            api_b = api_stats.get(bucket) if isinstance(api_stats.get(bucket), dict) else {}
-            obs_b = observed_stats.get(bucket) or {}
-            bdiff = {}
-            for k in sorted(set(api_b) | set(obs_b)):
-                av = int(api_b.get(k, 0))
-                ov = int(obs_b.get(k, 0))
-                if av != ov:
-                    bdiff[k] = {'api': av, 'observed': ov, 'delta': ov - av}
-            stats_diff[bucket] = bdiff
-
-        api_books_summary = {
-            'total': len([p for p in inv.packages if p['kind'] == 'brew']),
-            'ours': sum(1 for p in inv.packages if p['kind'] == 'brew' and p['ours']),
-            'community': sum(1 for p in inv.packages if p['kind'] == 'brew' and not p['ours']),
-            'site_to_import': inv.checks['site_package_count'],
-            'books_recipe_keys_match': inv.checks['books_recipe_keys_match'],
-            'count_mismatches': inv.checks['count_mismatches'],
-        }
-
-        total_resolved_links = resolved_entity_links + resolved_book_links
-        reconciliation_payload = {
-            'collection': col_key,
-            'api_stats': api_stats,
-            'api_books': api_books_summary,
-            'observed': observed_stats,
-            'stats_diff': stats_diff,
-            'books_diff': {
-                'count_mismatches': inv.checks['count_mismatches'],
-                'reader_counts': books_report['counts'],
-                'reader_warnings': books_report['warnings'],
-                'reader_notes': books_report['notes'],
-            },
-            'copy_resolution': {
-                'summary': corpus.diagnostics.get('copy_summary') or {},
-                'by_status': dict(sorted(copy_status_counts.items())),
-                'missing_base': corpus.diagnostics.get('copy_missing_base') or [],
-                'ambiguous_base': corpus.diagnostics.get('copy_ambiguous_base') or [],
-                'cycles': corpus.diagnostics.get('copy_cycles') or [],
-                'mod_warnings': corpus.diagnostics.get('copy_mod_warnings') or [],
-            },
-            'variants': {
-                'version_count': corpus.diagnostics.get('version_count', 0),
-                'version_warnings': corpus.diagnostics.get('version_warnings') or [],
-            },
-            'subraces': {
-                'orphan_subraces': corpus.diagnostics.get('orphan_subraces') or [],
-            },
-            'fluff': {
-                'attached_count': sum(1 for e in corpus.entries if e.get('fluff')),
-                'orphan_fluff_count': len(corpus.diagnostics.get('orphan_fluff') or []),
-                'orphan_fluff_samples': (corpus.diagnostics.get('orphan_fluff') or [])[:50],
-            },
-            'links': {
-                'resolved': total_resolved_links,
-                'resolved_entity': resolved_entity_links,
-                'resolved_book': resolved_book_links,
-                'resolved_filter': resolved_filter_links,
-                'reader_bound_references': books_report['bound_references'],
-                'reader_bound_definitions': books_report['bound_definitions'],
-                'reader_binding_mismatches': books_report['binding_mismatches'],
-                'ambiguous': ambiguous_links,
-                'unresolved': unresolved_links,
-                'total': total_resolved_links + ambiguous_links + unresolved_links,
-                'top_unresolved': [
-                    {'tag': t, 'name': n, 'source': s, 'count': c}
-                    for (t, n, s), c in unresolved_counter.most_common(50)
-                ],
-                'top_ambiguous': [
-                    {'tag': t, 'name': n, 'source': s, 'count': c}
-                    for (t, n, s), c in ambiguous_counter.most_common(50)
-                ],
-            },
-            'unknown_tags': [
-                {'tag': tag, 'count': cnt}
-                for tag, cnt in unknown_tags_counter.most_common()
-            ],
-            'unsupported_blocks': [
-                {'type': btype, 'count': cnt}
-                for btype, cnt in unsupported_blocks_counter.most_common()
-            ],
-            'media': {
-                'local': len(referenced_local_media),
-                'remote': len(referenced_remote_media),
-                'missing_local': len(referenced_missing_local_media),
-                'missing_local_audio': len(corpus.diagnostics.get('missing_local_audio') or []),
-                'indexed_media_counts': dict(inv.checks['media_counts']),
-                'local_samples': sorted(referenced_local_media)[:30],
-                'remote_samples': sorted(referenced_remote_media)[:30],
-                'missing_local_samples': sorted(referenced_missing_local_media)[:30],
-            },
-            'reprints': {
-                'unresolved_reprints_count': len(corpus.diagnostics.get('unresolved_reprints') or []),
-                'unresolved_reprints_samples': (corpus.diagnostics.get('unresolved_reprints') or [])[:30],
-            },
-            'duplicates': {
-                'inventory_natural_key_duplicates': len(inv.checks['duplicate_raw_records']),
-                'inventory_exact_duplicates': len(inv.checks['exact_duplicate_raw_records']),
-                'semantic_duplicate_identity_keys': len(corpus.diagnostics.get('duplicate_identity_keys') or []),
-            },
-        }
-        recon_sha = _write_json(stage / 'reconciliation.json', reconciliation_payload)
-
-        # Build attribution.json
-        resource_notes: list[dict[str, Any]] = [
-            {
-                'kind': 'remote_images_and_audio',
-                'count': len(referenced_remote_media),
-                'bundled': False,
-                'reason': 'Referenced remote images/audio are not bundled offline in this repository and remain external links.',
-                'samples': sorted(referenced_remote_media)[:20],
-            },
-            {
-                'kind': 'local_fonts',
-                'count': inv.checks['media_counts'].get('font', 0),
-                'bundled': True,
-                'license_file': '__ours/fonts/OFL.txt' if (source / '__ours/fonts/OFL.txt').is_file() else None,
-                'reason': 'Bundled font notices are provided by the source mirror.',
-                'paths': sorted(p for p, m in inv.media_files.items() if m['kind'] == 'font')[:25],
-            },
-            {
-                'kind': 'official_and_partnered_rules',
-                'count': by_origin.get('官方', 0) + by_origin.get('合作', 0),
-                'bundled': True,
-                'reason': 'Wizards of the Coast and partner publishers are identified in the source records.',
-            },
-            {
-                'kind': 'community_homebrew_packages',
-                'count': len(inv.packages),
-                'bundled': True,
-                'reason': 'Community and site homebrew packages retain original authors, translators, URLs, and _meta license notes.',
-            },
-        ]
-
-        attribution_packages = [
-            {
-                'id': pid,
-                'name': p.get('name'),
-                'kind': p.get('kind'),
-                'origin': p.get('origin'),
-                'ours': bool(p.get('ours')),
-                'authors': p.get('authors') or [],
-                'translators': p.get('translators') or [],
-                'url': p.get('url'),
-                'version': p.get('version'),
-                'entry_count': by_package.get(pid, 0),
-                'book_count': books_count_by_package.get(pid, 0),
-            }
-            for pid, p in sorted(corpus.packages.items())
-        ]
-        attribution_sources = [
-            {
-                'id': sid,
-                'code': s.get('code'),
-                'name': s.get('name'),
-                'package_id': s.get('package_id'),
-                'origin': s.get('origin'),
-                'ours': bool(s.get('ours')),
-                'authors': s.get('authors') or [],
-                'translators': s.get('translators') or [],
-                'tier': s.get('tier'),
-                'edition': s.get('edition'),
-                'license_note': s.get('license_note'),
-                'entry_count': by_source.get(sid, 0),
-            }
-            for sid, s in sorted(corpus.sources.items())
-        ]
-        attribution_payload = {
-            'collection': col_key,
-            'snapshot': snapshot,
-            'source_root': str(source),
-            'packages': attribution_packages,
-            'sources': attribution_sources,
-            'resource_notes': resource_notes,
-        }
-        attr_sha = _write_json(stage / 'attribution.json', attribution_payload)
-
-        summary_payload = {
-            'schema': MANIFEST_SCHEMA,
-            'collection': col_key,
-            'snapshot': snapshot,
-            'built_at': built_at,
-            'counts': counts_summary,
-            'by_type': dict(sorted(by_type.items())),
-            'by_package': dict(sorted(by_package.items())),
-            'by_source': dict(sorted(by_source.items())),
-            'by_ruleset': dict(sorted(by_ruleset.items())),
-            'by_origin': dict(sorted(by_origin.items())),
-            'by_raw_kind': dict(sorted(by_raw_kind.items())),
-            'copy_status': dict(sorted(copy_status_counts.items())),
-            'delta': delta,
-        }
-        remotes_payload = {
-            'schema': MANIFEST_SCHEMA,
-            'snapshot': snapshot,
-            'entries': {k: list(v) for k, v in sorted(remote_media_map.items())},
-        }
-        remotes_sha = _write_json(stage / 'media-remotes.json', remotes_payload, compact=True)
-
-        summary_sha = _write_json(stage / 'summary.json', summary_payload)
-
-        db_sha = hashlib.sha256(db_path.read_bytes()).hexdigest()
-        reader_json_sha = hashlib.sha256((reader_dir / 'anna-reader.json').read_bytes()).hexdigest()
-
-        manifest_payload = {
-            'schema': MANIFEST_SCHEMA,
-            'snapshot': snapshot,
-            'collection': col_key,
-            'source_root': str(source),
-            'git_commit': inv.snapshot_info['git_commit'],
-            'input_sha256': inv.snapshot_info['input_sha256'],
-            'built_at': built_at,
-            'elapsed_seconds': round(time.perf_counter() - t_start, 2),
-            'counts': counts_summary,
-            'delta': delta,
-            'reader': {
-                'schema': READER_SCHEMA,
-                'snapshot': snapshot,
-                'collection': col_key,
-                'page_base': page_base,
-                'media_base': media_base,
-                'default_page': default_page,
-                'books_total': len(book_index.books),
-                'chapters_written': books_report['chapters_written'],
-                'toc_nodes': books_report['toc_nodes'],
-                'roots': len(roots_payload),
-                'pages': len(pages_meta),
-                'bound_definitions': books_report['bound_definitions'],
-                'bound_references': books_report['bound_references'],
-                'binding_mismatches': books_report['binding_mismatches'],
-            },
-            'checks': {
-                'books_recipe_keys_match': inv.checks['books_recipe_keys_match'],
-                'missing_shard_files': len(inv.checks['missing_shard_files']),
-                'missing_shard_keys': len(inv.checks['missing_shard_keys']),
-                'invalid_shard_paths': len(inv.checks['invalid_shard_paths']),
-                'missing_site_packages': len(inv.checks['missing_site_packages']),
-                'missing_generated_lookups': len(inv.checks['missing_generated_lookups']),
-                'parser_warnings': len(inv.checks['parser_warnings']),
-                'copy_missing_base': len(corpus.diagnostics.get('copy_missing_base') or []),
-                'copy_ambiguous_base': len(corpus.diagnostics.get('copy_ambiguous_base') or []),
-                'copy_cycles': len(corpus.diagnostics.get('copy_cycles') or []),
-                'copy_mod_warnings': len(corpus.diagnostics.get('copy_mod_warnings') or []),
-                'reader_binding_mismatches': books_report['binding_mismatches'],
-                'unknown_tags': len(unknown_tags_counter),
-                'unsupported_blocks': len(unsupported_blocks_counter),
-            },
-            'files': {
-                'catalog.sqlite': db_sha,
-                'reader/anna-reader.json': reader_json_sha,
-                'media-remotes.json': remotes_sha,
-                'summary.json': summary_sha,
-                'inventory.json': inv_sha,
-                'reconciliation.json': recon_sha,
-                'attribution.json': attr_sha,
-            },
-        }
-        _write_json(stage / 'manifest.json', manifest_payload)
+        counts_summary, manifest_payload = _write_output_manifests(
+            stage=stage,
+            source=source,
+            db_path=db_path,
+            reader_dir=reader_dir,
+            inv=inv,
+            corpus=corpus,
+            book_index=book_index,
+            reader_bundle=reader_bundle,
+            sqlite_stats=sqlite_stats,
+            staged_media_set=staged_media_set,
+            preserved_cached_media=preserved_cached_media,
+            bundled_img_dir_files=bundled_img_dir_files,
+            prev_summary=prev_summary,
+            col_key=col_key,
+            page_base=page_base,
+            media_base=media_base,
+            snapshot=snapshot,
+            built_at=built_at,
+            t_start=t_start,
+        )
 
         # 7. Validate staged output BEFORE touching final <output>
         _log('[our5etools.build] Validating staged artifacts...')

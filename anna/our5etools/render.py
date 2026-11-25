@@ -1234,6 +1234,40 @@ def _resolve_template_expr(expr: str, ctx: RenderContext) -> str:
     return render_inline(rendered, ctx) if ('{@' in rendered) else escape_html(rendered)
 
 
+_INLINE_WRAP_TAGS: dict[str, tuple[str, str]] = {
+    'b': ('<strong>', '</strong>'),
+    'bold': ('<strong>', '</strong>'),
+    'i': ('<em>', '</em>'),
+    'italic': ('<em>', '</em>'),
+    'u': ('<u>', '</u>'),
+    'underline': ('<u>', '</u>'),
+    'u2': ('<u class="o5e-u2">', '</u>'),
+    'underlineDouble': ('<u class="o5e-u2">', '</u>'),
+    's': ('<s>', '</s>'),
+    'strike': ('<s>', '</s>'),
+    's2': ('<s class="o5e-s2">', '</s>'),
+    'strikeDouble': ('<s class="o5e-s2">', '</s>'),
+    'sup': ('<sup>', '</sup>'),
+    'sub': ('<sub>', '</sub>'),
+    'note': ('<span class="o5e-note">', '</span>'),
+    'highlight': ('<mark class="o5e-highlight">', '</mark>'),
+    'comic': ('<span class="o5e-comic">', '</span>'),
+    'comicH1': ('<span class="o5e-comic o5e-comic-h1">', '</span>'),
+    'comicH2': ('<span class="o5e-comic o5e-comic-h2">', '</span>'),
+    'comicH3': ('<span class="o5e-comic o5e-comic-h3">', '</span>'),
+    'comicH4': ('<span class="o5e-comic o5e-comic-h4">', '</span>'),
+    'comicNote': ('<span class="o5e-comic-note">', '</span>'),
+}
+
+_STATIC_INLINE_TAGS: dict[str, str] = {
+    'h': '<em>命中：</em> ',
+    'm': '<em>未命中：</em> ',
+    'hom': '<em>命中或未命中：</em> ',
+    'actTrigger': '<em>触发：</em>',
+    'actResponse': '<em>响应：</em>',
+}
+
+
 def _render_tag(raw_token: str, ctx: RenderContext) -> str:
     # Handle {=...} template expressions from magicvariant/recipe fields.
     if raw_token.startswith('{=') and raw_token.endswith('}'):
@@ -1282,44 +1316,23 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         return f'<a class="ref-filter" href="{escape_html(href)}">{display_html}</a>' if href else display_html
 
     # 4. Formatting & Styling tags.
-    if tag in ('b', 'bold'):
-        return f'<strong>{render_inline(payload, ctx)}</strong>'
-    if tag in ('i', 'italic'):
-        return f'<em>{render_inline(payload, ctx)}</em>'
-    if tag in ('u', 'underline'):
-        return f'<u>{render_inline(payload, ctx)}</u>'
-    if tag in ('u2', 'underlineDouble'):
-        return f'<u class="o5e-u2">{render_inline(payload, ctx)}</u>'
-    if tag in ('s', 'strike'):
-        return f'<s>{render_inline(payload, ctx)}</s>'
-    if tag in ('s2', 'strikeDouble'):
-        return f'<s class="o5e-s2">{render_inline(payload, ctx)}</s>'
-    if tag == 'sup':
-        return f'<sup>{render_inline(payload, ctx)}</sup>'
-    if tag == 'sub':
-        return f'<sub>{render_inline(payload, ctx)}</sub>'
-    if tag == 'code':
-        return f'<code>{escape_html(payload)}</code>'
-    if tag == 'kbd':
-        return f'<kbd>{escape_html(payload)}</kbd>'
-    if tag == 'note':
-        return f'<span class="o5e-note">{render_inline(payload, ctx)}</span>'
-    if tag == 'highlight':
-        return f'<mark class="o5e-highlight">{render_inline(payload, ctx)}</mark>'
+    if tag in _INLINE_WRAP_TAGS:
+        open_tag, close_tag = _INLINE_WRAP_TAGS[tag]
+        return f'{open_tag}{render_inline(payload, ctx)}{close_tag}'
+    if tag in ('code', 'kbd'):
+        return f'<{tag}>{escape_html(payload)}</{tag}>'
     if tag == 'tip':
         parts = split_tag_by_pipe(payload)
         display = parts[0] if len(parts) > 0 else ''
         tip_text = parts[1] if len(parts) > 1 else ''
-        if tip_text:
-            return f'<span class="o5e-tip" title="{escape_html(tip_text)}">{render_inline(display, ctx)}</span>'
-        return f'<span class="o5e-tip">{render_inline(display, ctx)}</span>'
+        title_attr = f' title="{escape_html(tip_text)}"' if tip_text else ''
+        return f'<span class="o5e-tip"{title_attr}>{render_inline(display, ctx)}</span>'
     if tag == 'color':
         parts = split_tag_by_pipe(payload)
         display = parts[0] if len(parts) > 0 else ''
         color = _sanitize_color(parts[1]) if len(parts) > 1 else None
-        if color:
-            return f'<span class="o5e-color" style="color: {escape_html(color)}">{render_inline(display, ctx)}</span>'
-        return f'<span class="o5e-color">{render_inline(display, ctx)}</span>'
+        style_attr = f' style="color: {escape_html(color)}"' if color else ''
+        return f'<span class="o5e-color"{style_attr}>{render_inline(display, ctx)}</span>'
     if tag == 'style':
         parts = split_tag_by_pipe(payload)
         display = parts[0] if len(parts) > 0 else ''
@@ -1360,13 +1373,6 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         tip = f'自制修订（原文本：{old_text}）' if old_text else '自制补充内容'
         shown = new_text or old_text
         return f'<span class="o5e-homebrew" title="{escape_html(tip)}">{render_inline(shown, ctx)}</span>'
-    if tag == 'comic':
-        return f'<span class="o5e-comic">{render_inline(payload, ctx)}</span>'
-    if tag in ('comicH1', 'comicH2', 'comicH3', 'comicH4'):
-        lvl = tag[-1]
-        return f'<span class="o5e-comic o5e-comic-h{lvl}">{render_inline(payload, ctx)}</span>'
-    if tag == 'comicNote':
-        return f'<span class="o5e-comic-note">{render_inline(payload, ctx)}</span>'
 
     # 5. Mechanic, roll, and combat action tags.
     if tag in ('dice', 'autodice', 'damage'):
@@ -1416,14 +1422,10 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         range_str = '6' if num in ('', '6') else f'{num}–6'
         text_out = f'充能 {range_str}' if 'm' in flags else f'(充能 {range_str})'
         return f'<span class="o5e-recharge">{escape_html(text_out)}</span>'
+    if tag in _STATIC_INLINE_TAGS:
+        return _STATIC_INLINE_TAGS[tag]
     if tag in ('atk', 'atkr'):
         return f'<em>{escape_html(_format_attack_tag(payload, is_roll=(tag == "atkr")))}</em>'
-    if tag == 'h':
-        return '<em>命中：</em> '
-    if tag == 'm':
-        return '<em>未命中：</em> '
-    if tag == 'hom':
-        return '<em>命中或未命中：</em> '
     if tag == 'actSave':
         abv = payload.strip().lower()
         ab_zh = ABILITY_ABV_ZH.get(abv, payload.strip())
@@ -1443,10 +1445,6 @@ def _render_tag(raw_token: str, ctx: RenderContext) -> str:
         return '<em>成功：</em>'
     if tag == 'actSaveSuccessOrFail':
         return '<em>失败或成功：</em>'
-    if tag == 'actTrigger':
-        return '<em>触发：</em>'
-    if tag == 'actResponse':
-        return '<em>响应：</em>'
     if tag == 'ability':
         parts = [p.strip() for p in split_tag_by_pipe(payload)]
         head = parts[0] if len(parts) > 0 else ''
@@ -1961,6 +1959,34 @@ def _render_unknown_dict_values(mapping: Mapping[str, Any], ctx: RenderContext) 
     return ''.join(parts)
 
 
+_SIMPLE_CONTAINER_BLOCKS: dict[str, tuple[str, str]] = {
+    'inset': ('aside', 'o5e-inset'),
+    'insetReadaloud': ('blockquote', 'o5e-readaloud'),
+    'variant': ('aside', 'o5e-variant'),
+    'variantInner': ('div', 'o5e-variantInner'),
+    'variantSub': ('div', 'o5e-variantSub'),
+    'flowBlock': ('div', 'o5e-flow-block'),
+}
+
+_REF_BLOCK_SPECS: dict[str, tuple[str, str]] = {
+    'refClassFeature': ('classFeature', 'classFeature'),
+    'refSubclassFeature': ('subclassFeature', 'subclassFeature'),
+    'refOptionalfeature': ('optfeature', 'optionalfeature'),
+    'refFeat': ('feat', 'feat'),
+}
+
+
+def _render_simple_container(tag_wrap: str, cls: str, block: Mapping[str, Any], ctx: RenderContext) -> str:
+    parts = [f'<{tag_wrap} class="{cls}">']
+    if block.get('name'):
+        htag = _heading_tag(ctx.heading_depth)
+        parts.append(f'<{htag}>{render_inline(block["name"], ctx)}</{htag}>')
+    if block.get('entries'):
+        parts.append(render_blocks(block['entries'], ctx=ctx, heading_depth=ctx.heading_depth + 1))
+    parts.append(f'</{tag_wrap}>')
+    return ''.join(parts)
+
+
 def render_block(block: Any, ctx: RenderContext) -> str:
     """Render one 5etools block (string, dict, or list) into sanitized HTML."""
     if block is None:
@@ -2055,25 +2081,9 @@ def render_block(block: Any, ctx: RenderContext) -> str:
     if btype in ('cell', 'cellHeader'):
         return _render_cell_value(block, ctx)
 
-    if btype == 'inset':
-        parts = ['<aside class="o5e-inset">']
-        if block.get('name'):
-            htag = _heading_tag(ctx.heading_depth)
-            parts.append(f'<{htag}>{render_inline(block["name"], ctx)}</{htag}>')
-        if block.get('entries'):
-            parts.append(render_blocks(block['entries'], ctx=ctx, heading_depth=ctx.heading_depth + 1))
-        parts.append('</aside>')
-        return ''.join(parts)
-
-    if btype == 'insetReadaloud':
-        parts = ['<blockquote class="o5e-readaloud">']
-        if block.get('name'):
-            htag = _heading_tag(ctx.heading_depth)
-            parts.append(f'<{htag}>{render_inline(block["name"], ctx)}</{htag}>')
-        if block.get('entries'):
-            parts.append(render_blocks(block['entries'], ctx=ctx, heading_depth=ctx.heading_depth + 1))
-        parts.append('</blockquote>')
-        return ''.join(parts)
+    if btype in _SIMPLE_CONTAINER_BLOCKS:
+        tag_wrap, cls = _SIMPLE_CONTAINER_BLOCKS[btype]
+        return _render_simple_container(tag_wrap, cls, block, ctx)
 
     if btype == 'quote':
         parts = ['<blockquote class="o5e-quote">']
@@ -2132,28 +2142,12 @@ def render_block(block: Any, ctx: RenderContext) -> str:
         parts.append('</div>')
         return ''.join(parts)
 
-    if btype in ('variant', 'variantInner', 'variantSub'):
-        cls = f'o5e-{btype}'
-        tag_wrap = 'aside' if btype == 'variant' else 'div'
-        parts = [f'<{tag_wrap} class="{cls}">']
-        if block.get('name'):
-            htag = _heading_tag(ctx.heading_depth)
-            parts.append(f'<{htag}>{render_inline(block["name"], ctx)}</{htag}>')
-        if block.get('entries'):
-            parts.append(render_blocks(block['entries'], ctx=ctx, heading_depth=ctx.heading_depth + 1))
-        parts.append(f'</{tag_wrap}>')
-        return ''.join(parts)
-
-    if btype == 'abilityDc':
+    if btype in ('abilityDc', 'abilityAttackMod'):
         name = str(block.get('name') or '')
         attrs = [ABILITY_ABV_ZH.get(str(a).lower(), str(a)) for a in (block.get('attributes') or ())]
         attr_str = ' 或 '.join(attrs) if attrs else '施法'
-        return f'<p class="o5e-ability-dc"><strong>{escape_html(name)}豁免 DC</strong> = 8 + 熟练加值 + {escape_html(attr_str)}调整值</p>'
-
-    if btype == 'abilityAttackMod':
-        name = str(block.get('name') or '')
-        attrs = [ABILITY_ABV_ZH.get(str(a).lower(), str(a)) for a in (block.get('attributes') or ())]
-        attr_str = ' 或 '.join(attrs) if attrs else '施法'
+        if btype == 'abilityDc':
+            return f'<p class="o5e-ability-dc"><strong>{escape_html(name)}豁免 DC</strong> = 8 + 熟练加值 + {escape_html(attr_str)}调整值</p>'
         return f'<p class="o5e-ability-atk"><strong>{escape_html(name)}攻击调整值</strong> = 熟练加值 + {escape_html(attr_str)}调整值</p>'
 
     if btype == 'abilityGeneric':
@@ -2167,14 +2161,9 @@ def render_block(block: Any, ctx: RenderContext) -> str:
     if btype == 'spellcasting':
         return _render_spellcasting_block(block, ctx)
 
-    if btype == 'refClassFeature':
-        return _render_ref_block('classFeature', block.get('classFeature'), ctx)
-    if btype == 'refSubclassFeature':
-        return _render_ref_block('subclassFeature', block.get('subclassFeature'), ctx)
-    if btype == 'refOptionalfeature':
-        return _render_ref_block('optfeature', block.get('optionalfeature'), ctx)
-    if btype == 'refFeat':
-        return _render_ref_block('feat', block.get('feat'), ctx)
+    if btype in _REF_BLOCK_SPECS:
+        ref_tag, ref_field = _REF_BLOCK_SPECS[btype]
+        return _render_ref_block(ref_tag, block.get(ref_field), ctx)
 
     if btype == 'optfeature':
         parts = ['<section class="o5e-optfeature">']
@@ -2193,16 +2182,6 @@ def render_block(block: Any, ctx: RenderContext) -> str:
         inner = ''.join(render_block(b, ctx) for b in blocks)
         return f'<div class="o5e-flowchart">{inner}</div>'
 
-    if btype == 'flowBlock':
-        parts = ['<div class="o5e-flow-block">']
-        if block.get('name'):
-            htag = _heading_tag(ctx.heading_depth)
-            parts.append(f'<{htag}>{render_inline(block["name"], ctx)}</{htag}>')
-        if block.get('entries'):
-            parts.append(render_blocks(block['entries'], ctx=ctx, heading_depth=ctx.heading_depth + 1))
-        parts.append('</div>')
-        return ''.join(parts)
-
     if btype == 'homebrew':
         parts = ['<div class="o5e-homebrew-block">']
         if block.get('movedTo'):
@@ -2218,21 +2197,13 @@ def render_block(block: Any, ctx: RenderContext) -> str:
             return ''
         return f'<div class="o5e-wrapper">{render_blocks(items, ctx=ctx, heading_depth=ctx.heading_depth)}</div>'
 
-    if btype == 'inline':
+    if btype in ('inline', 'inlineBlock'):
         entries = block.get('entries') if isinstance(block.get('entries'), list) else []
         inner = ''.join(
             render_inline(it, ctx) if isinstance(it, str) else render_block(it, ctx)
             for it in entries
         )
-        return f'<span class="o5e-inline">{inner}</span>'
-
-    if btype == 'inlineBlock':
-        entries = block.get('entries') if isinstance(block.get('entries'), list) else []
-        inner = ''.join(
-            render_inline(it, ctx) if isinstance(it, str) else render_block(it, ctx)
-            for it in entries
-        )
-        return f'<div class="o5e-inline-block">{inner}</div>'
+        return f'<span class="o5e-inline">{inner}</span>' if btype == 'inline' else f'<div class="o5e-inline-block">{inner}</div>'
 
     if btype == 'dice':
         return _render_dice_block(block)

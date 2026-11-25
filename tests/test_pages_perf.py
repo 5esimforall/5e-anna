@@ -1045,11 +1045,14 @@ class Phase4LazyReaderAndRequestOrderTests(unittest.TestCase):
         self.assertIn('export function warm()', pages_js)
         self.assertIn('pages-entries.js', pages_js)
         kit_js = (paths.PROJECT / 'web' / 'kit.js').read_text(encoding='utf-8')
-        self.assertIn('request, warm', kit_js)
+        self.assertIn('request, warm, warmWhenIdle', kit_js)
+        self.assertIn('requestIdleCallback', kit_js)
         worker_js = (paths.PROJECT / 'web' / 'pages-worker.js').read_text(encoding='utf-8')
         self.assertIn("data.type === 'warm'", worker_js)
         app_js = (paths.PROJECT / 'web' / 'app.js').read_text(encoding='utf-8')
-        self.assertIn('annaKit.warm()', app_js)
+        self.assertIn('annaKit.warmWhenIdle()', app_js)
+        tour_js = (paths.PROJECT / 'web' / 'tour.js').read_text(encoding='utf-8')
+        self.assertIn('annaKit.warmWhenIdle()', tour_js)
 
 
 class Phase5StaticEntryBucketsAndVersionsTests(unittest.TestCase):

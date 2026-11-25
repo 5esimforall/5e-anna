@@ -143,13 +143,7 @@ class PublishedSite:
         return self.tour.subclass_records()
 
     def handle(self, path):
-        url = urlsplit(path)
-        request = WorkerRequest(self.registry)
-        if url.path in READER_ROUTES:
-            request.serve_reader(url, curation_path=self.curation)
-        else:
-            request.serve_query(url)
-        return request.response
+        return WorkerRequest(self.registry).dispatch(path, curation_path=self.curation)
 
 
 class WorkerRequest(CapturedResponse, AnnaHandler):

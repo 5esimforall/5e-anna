@@ -164,18 +164,22 @@ class AnnaServer(ThreadingHTTPServer):
         self.our5etools_lazy_media = bool(our5etools_lazy_media)
         self.fivetools_data = Path(fivetools_data).resolve() if fivetools_data else None
         self.fivetools_lazy_media = bool(our5etools_lazy_media if fivetools_lazy_media is None else fivetools_lazy_media)
-        managed_keys = set()
-        if self.our5etools_data is not None:
-            managed_keys.add('our5etools')
-        if self.fivetools_data is not None:
-            managed_keys.add('5etools')
+        self._managed_specs = {
+            'our5etools': (self.our5etools_data, self.our5etools_lazy_media, _try_load_our5etools),
+            '5etools': (self.fivetools_data, self.fivetools_lazy_media, _try_load_fivetools),
+        }
+        managed_keys = {key for key, (data_dir, _, _) in self._managed_specs.items() if data_dir is not None}
         self._base_additional_collections = tuple(
             c for c in self.additional_collections if c.key not in managed_keys
         )
-        self._loaded_our5etools = next((c for c in self.additional_collections if c.key == 'our5etools'), None)
-        self._loaded_fivetools = next((c for c in self.additional_collections if c.key == '5etools'), None)
-        self._our5etools_signature = self._manifest_signature(self.our5etools_data)
-        self._fivetools_signature = self._manifest_signature(self.fivetools_data)
+        self._managed_collections = {
+            key: next((c for c in self.additional_collections if c.key == key), None)
+            for key in self._managed_specs
+        }
+        self._managed_signatures = {
+            key: self._manifest_signature(data_dir)
+            for key, (data_dir, _, _) in self._managed_specs.items()
+        }
         # Reject invalid registrations before opening a listener.
         CollectionRegistry(BookCatalog(bundle.db, bundle.source), self.additional_collections)
         self.watch = watch
@@ -200,32 +204,19 @@ class AnnaServer(ThreadingHTTPServer):
             return None
 
     def _rebuild_additional_collections(self):
-        extra = [c for c in (self._loaded_our5etools, self._loaded_fivetools) if c is not None]
+        extra = [self._managed_collections[k] for k in ('our5etools', '5etools') if self._managed_collections.get(k) is not None]
         self.additional_collections = (*self._base_additional_collections, *extra)
 
-    def reload_our5etools(self):
-        if not self.our5etools_data:
+    def reload_managed(self, key):
+        data_dir, lazy_media, loader = self._managed_specs[key]
+        if not data_dir:
             return
         try:
-            self._loaded_our5etools = _try_load_our5etools(
-                self.our5etools_data, lazy_media=self.our5etools_lazy_media,
-            )
+            self._managed_collections[key] = loader(data_dir, lazy_media=lazy_media)
             self._rebuild_additional_collections()
-            self._our5etools_signature = self._manifest_signature(self.our5etools_data)
+            self._managed_signatures[key] = self._manifest_signature(data_dir)
         except Exception as exc:
-            print('[anna] our5etools reload failed: ' + (str(exc) or type(exc).__name__), file=sys.stderr, flush=True)
-
-    def reload_fivetools(self):
-        if not self.fivetools_data:
-            return
-        try:
-            self._loaded_fivetools = _try_load_fivetools(
-                self.fivetools_data, lazy_media=self.fivetools_lazy_media,
-            )
-            self._rebuild_additional_collections()
-            self._fivetools_signature = self._manifest_signature(self.fivetools_data)
-        except Exception as exc:
-            print('[anna] 5etools reload failed: ' + (str(exc) or type(exc).__name__), file=sys.stderr, flush=True)
+            print(f'[anna] {key} reload failed: ' + (str(exc) or type(exc).__name__), file=sys.stderr, flush=True)
 
     def bundle_intact(self, bundle=None):
         """Whether the files on disk still match a loaded bundle, so a stale mix is never served."""
@@ -254,30 +245,21 @@ class AnnaServer(ThreadingHTTPServer):
         # book, so reload on it alone: waiting for both signatures would validate a half-built pair
         # and report an error during every normal build. Requests still check both files.
         seen = None
-        seen_o5e = self._our5etools_signature
-        attempted_o5e = self._our5etools_signature
-        seen_5e = self._fivetools_signature
-        attempted_5e = self._fivetools_signature
+        seen_managed = dict(self._managed_signatures)
+        attempted_managed = dict(self._managed_signatures)
         manifest = Path(self.bundle.book) / 'anna-manifest.json'
         while not self.watch_stop.wait(.5):
-            if self.our5etools_data is not None:
-                cur_o5e = self._manifest_signature(self.our5etools_data)
-                if cur_o5e == self._our5etools_signature:
-                    seen_o5e = cur_o5e
-                elif cur_o5e != seen_o5e:
-                    seen_o5e = cur_o5e
-                elif cur_o5e != attempted_o5e:
-                    attempted_o5e = cur_o5e
-                    self.reload_our5etools()
-            if self.fivetools_data is not None:
-                cur_5e = self._manifest_signature(self.fivetools_data)
-                if cur_5e == self._fivetools_signature:
-                    seen_5e = cur_5e
-                elif cur_5e != seen_5e:
-                    seen_5e = cur_5e
-                elif cur_5e != attempted_5e:
-                    attempted_5e = cur_5e
-                    self.reload_fivetools()
+            for key, (data_dir, _, _) in self._managed_specs.items():
+                if data_dir is None:
+                    continue
+                cur = self._manifest_signature(data_dir)
+                if cur == self._managed_signatures[key]:
+                    seen_managed[key] = cur
+                elif cur != seen_managed[key]:
+                    seen_managed[key] = cur
+                elif cur != attempted_managed[key]:
+                    attempted_managed[key] = cur
+                    self.reload_managed(key)
             try:
                 current = signature(manifest)
             except OSError:
@@ -349,26 +331,17 @@ class AnnaHandler(serve.Handler):
         raw = getattr(col, 'media_base', None) or f'/{col.key}-media/'
         return raw if raw.endswith('/') else (raw + '/')
 
-    def _match_collection_book_route(self, req_path):
+    def _match_collection_route(self, req_path, kind):
+        base_getter = self._collection_book_base if kind == 'book' else self._collection_media_base
+        reserved_bases = ('/our5etools-book/', '/5etools-book/') if kind == 'book' else ('/our5etools-media/', '/5etools-media/')
         for col in self.additional_collections:
             if col.reader is not None:
-                base = self._collection_book_base(col)
+                base = base_getter(col)
                 if req_path.startswith(base):
                     return col.reader, base, '/' + req_path[len(base):]
-        for reserved_base in ('/our5etools-book/', '/5etools-book/'):
+        for reserved_base in reserved_bases:
             if req_path.startswith(reserved_base):
                 return None, reserved_base, '/' + req_path[len(reserved_base):]
-        return None
-
-    def _match_collection_media_route(self, req_path):
-        for col in self.additional_collections:
-            if col.reader is not None:
-                base = self._collection_media_base(col)
-                if req_path.startswith(base):
-                    return col.reader, '/' + req_path[len(base):]
-        for reserved_base in ('/our5etools-media/', '/5etools-media/'):
-            if req_path.startswith(reserved_base):
-                return None, '/' + req_path[len(reserved_base):]
         return None
 
     def _is_external_book_path(self, req_path):
@@ -378,6 +351,32 @@ class AnnaHandler(serve.Handler):
             col.reader is not None and req_path.startswith(self._collection_book_base(col))
             for col in self.additional_collections
         )
+
+    def _try_serve_static_cache(self, req_path, page_path, cache_prefix, cache_mod, html_name, mark_main, mark_scopes):
+        if req_path != page_path and not (req_path.startswith(cache_prefix) and req_path.endswith('.json')):
+            return False
+        if self.server.bundle_intact(self.current):
+            registry = self.collection_registry()
+            cache = cache_mod.local_cache(registry)
+            scope_names, scope_payloads = cache_mod.local_scope_caches(registry)
+        else:
+            cache = None
+            scope_names, scope_payloads = {}, {}
+        if req_path != page_path:
+            if cache and req_path == '/' + cache[0]:
+                self.send(cache[1])
+            elif (scoped := scope_payloads.get(req_path[1:])) is not None:
+                self.send(scoped)
+            else:
+                self.send_error(404)
+            return True
+        if cache:
+            body = mark_main((serve.WEB / html_name).read_bytes(), cache[0])
+            if scope_names:
+                body = mark_scopes(body, scope_names)
+            self.send(body, 'text/html; charset=utf-8')
+            return True
+        return False
 
     def _send_file(self, resolved, content_type, *, etag=None, cache_control='private, no-cache', support_range=False):
         try:
@@ -498,66 +497,28 @@ class AnnaHandler(serve.Handler):
 
     def do_GET(self):
         self.current = self.server.bundle
-        if self.headers.get('Host', '') not in {f'127.0.0.1:{self.server.server_port}', f'localhost:{self.server.server_port}'}:
+        if not self.host_allowed():
             self.send({'code': 'invalid_host'}, status=403)
             return
         url = urlsplit(self.path)
-        if url.path == '/' or url.path.startswith('/home.') and url.path.endswith('.json'):
-            if self.server.bundle_intact(self.current):
-                registry = self.collection_registry()
-                cache = home.local_cache(registry)
-                scope_names, scope_payloads = home.local_scope_caches(registry)
-            else:
-                cache = None
-                scope_names, scope_payloads = {}, {}
-            if url.path != '/':
-                if cache and url.path == '/' + cache[0]:
-                    self.send(cache[1])
-                elif (scoped := scope_payloads.get(url.path[1:])) is not None:
-                    self.send(scoped)
-                else:
-                    self.send_error(404)
-                return
-            if cache:
-                html = home.mark_home((serve.WEB / 'index.html').read_bytes(), cache[0])
-                if scope_names:
-                    html = home.mark_home_scopes(html, scope_names)
-                self.send(html, 'text/html; charset=utf-8')
-                return
-        if url.path == '/tour' or url.path.startswith('/tour.') and url.path.endswith('.json'):
-            if self.server.bundle_intact(self.current):
-                registry = self.collection_registry()
-                cache = tour_cache.local_cache(registry)
-                scope_names, scope_payloads = tour_cache.local_scope_caches(registry)
-            else:
-                cache = None
-                scope_names, scope_payloads = {}, {}
-            if url.path != '/tour':
-                if cache and url.path == '/' + cache[0]:
-                    self.send(cache[1])
-                elif (scoped := scope_payloads.get(url.path[1:])) is not None:
-                    self.send(scoped)
-                else:
-                    self.send_error(404)
-                return
-            if cache:
-                html = tour_cache.mark_tour((serve.WEB / 'tour.html').read_bytes(), cache[0])
-                if scope_names:
-                    html = tour_cache.mark_tour_scopes(html, scope_names)
-                self.send(html, 'text/html; charset=utf-8')
+        for page_path, cache_prefix, cache_mod, html_name, mark_main, mark_scopes in (
+            ('/', '/home.', home, 'index.html', home.mark_home, home.mark_home_scopes),
+            ('/tour', '/tour.', tour_cache, 'tour.html', tour_cache.mark_tour, tour_cache.mark_tour_scopes),
+        ):
+            if self._try_serve_static_cache(url.path, page_path, cache_prefix, cache_mod, html_name, mark_main, mark_scopes):
                 return
         if url.path.startswith('/book/'):
             self.serve_book(url.path[len('/book'):])
             return
-        if matched_book := self._match_collection_book_route(url.path):
+        if matched_book := self._match_collection_route(url.path, 'book'):
             reader, book_base, rel = matched_book
             if reader is None:
                 self.send_error(404)
             else:
                 self.serve_our5etools_book(rel, reader=reader, book_base=book_base)
             return
-        if matched_media := self._match_collection_media_route(url.path):
-            reader, rel = matched_media
+        if matched_media := self._match_collection_route(url.path, 'media'):
+            reader, _, rel = matched_media
             if reader is None:
                 self.send_error(404)
             else:
@@ -567,6 +528,15 @@ class AnnaHandler(serve.Handler):
             super().do_GET()
             return
         self.serve_reader(url)
+
+    def dispatch(self, path, *, curation_path=None):
+        """Invoke reader or query handlers synchronously when wrapped by CapturedResponse."""
+        url = urlsplit(path)
+        if url.path in READER_ROUTES:
+            self.serve_reader(url, curation_path=curation_path)
+        else:
+            self.serve_query(url)
+        return self.response
 
     def serve_reader(self, url, *, curation_path=None):
         params = parse_qs(url.query, keep_blank_values=True)
@@ -656,27 +626,8 @@ class AnnaHandler(serve.Handler):
             return
         # Open the already-validated literal path. SimpleHTTPRequestHandler's path
         # translator would decode '%' a second time and could select a different file.
-        try:
-            with resolved.open('rb') as file:
-                etag = '"' + bundle.manifest['outputs'][relative] + '"'
-                cached = self.headers.get('If-None-Match', '').split(',')
-                if any(tag.strip() in {etag, 'W/' + etag, '*'} for tag in cached):
-                    self.send_response(304)
-                    self.send_header('ETag', etag)
-                    self.resource_response = True
-                    self.send_header('Cache-Control', 'private, no-cache')
-                    self.end_headers()
-                    return
-                self.resource_response = True
-                self.send_response(200)
-                self.send_header('ETag', etag)
-                self.send_header('Cache-Control', 'private, no-cache')
-                self.send_header('Content-Type', mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream')
-                self.send_header('Content-Length', str(resolved.stat().st_size))
-                self.end_headers()
-                shutil.copyfileobj(file, self.wfile)
-        except FileNotFoundError:
-            self.send_error(404)
+        content_type = mimetypes.guess_type(str(resolved))[0] or 'application/octet-stream'
+        self._send_file(resolved, content_type, etag='"' + bundle.manifest['outputs'][relative] + '"')
 
     def do_HEAD(self):
         self.send_error(405)

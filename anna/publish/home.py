@@ -3,12 +3,10 @@ import argparse
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from urllib.parse import urlsplit
-
 from anna.paths import BOOK, FIVETOOLS_DATA, OUR5ETOOLS_DATA, WEB
 from anna.presentation.catalog import DB
 from anna.server import tour_cache
-from anna.server.app import AnnaHandler, Bundle, READER_ROUTES, _try_load_fivetools, _try_load_our5etools, validate_bundle
+from anna.server.app import AnnaHandler, Bundle, _try_load_fivetools, _try_load_our5etools, validate_bundle
 from anna.server.home import (
     LOCAL_CACHE, LOCAL_SCOPES_CACHE, encode_home, encode_local_scopes,
 )
@@ -16,13 +14,7 @@ from anna.server.query import CapturedResponse, QueryRequest
 
 
 class _LocalCacheRequest(CapturedResponse, AnnaHandler):
-    def handle_path(self, path):
-        url = urlsplit(path)
-        if url.path in READER_ROUTES:
-            self.serve_reader(url)
-        else:
-            self.serve_query(url)
-        return self.response
+    pass
 
 
 def _write_atomic(target: Path, payload: bytes) -> None:
@@ -33,6 +25,15 @@ def _write_atomic(target: Path, payload: bytes) -> None:
         temporary.replace(target)
 
 
+def _write_cache_pair(handle, ready_keys, cache_path: Path, scopes_path: Path, encode_fn, encode_scopes_fn) -> None:
+    _write_atomic(cache_path, encode_fn(handle))
+    scopes_payload = encode_scopes_fn(handle, ready_keys)
+    if scopes_payload is not None:
+        _write_atomic(scopes_path, scopes_payload)
+    else:
+        scopes_path.unlink(missing_ok=True)
+
+
 def build_local(our5etools_data, fivetools_data, *, web=WEB, lazy_media=False):
     if not (BOOK / 'anna-manifest.json').is_file():
         return  # Building the companion library can run before the default library exists.
@@ -41,22 +42,16 @@ def build_local(our5etools_data, fivetools_data, *, web=WEB, lazy_media=False):
     collections = (_try_load_our5etools(our5etools_data, lazy_media=lazy_media),
                    _try_load_fivetools(fivetools_data, lazy_media=lazy_media))
     registry = bundle.registry(tuple(c for c in collections if c is not None))
+    ready_keys = registry.ready()
 
-    handle = QueryRequest(registry).handle_path
-    _write_atomic(LOCAL_CACHE, encode_home(handle))
-    scopes_payload = encode_local_scopes(handle, registry.ready())
-    if scopes_payload is not None:
-        _write_atomic(LOCAL_SCOPES_CACHE, scopes_payload)
-    else:
-        LOCAL_SCOPES_CACHE.unlink(missing_ok=True)
-
-    tour_handle = _LocalCacheRequest(registry).handle_path
-    _write_atomic(tour_cache.LOCAL_CACHE, tour_cache.encode_tour(tour_handle))
-    tour_scopes_payload = tour_cache.encode_local_scopes(tour_handle, registry.ready())
-    if tour_scopes_payload is not None:
-        _write_atomic(tour_cache.LOCAL_SCOPES_CACHE, tour_scopes_payload)
-    else:
-        tour_cache.LOCAL_SCOPES_CACHE.unlink(missing_ok=True)
+    _write_cache_pair(
+        QueryRequest(registry).handle_path, ready_keys,
+        LOCAL_CACHE, LOCAL_SCOPES_CACHE, encode_home, encode_local_scopes,
+    )
+    _write_cache_pair(
+        _LocalCacheRequest(registry).dispatch, ready_keys,
+        tour_cache.LOCAL_CACHE, tour_cache.LOCAL_SCOPES_CACHE, tour_cache.encode_tour, tour_cache.encode_local_scopes,
+    )
 
 
 if __name__ == '__main__':

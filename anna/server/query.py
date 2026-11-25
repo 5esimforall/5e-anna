@@ -12,12 +12,43 @@ from anna.presentation.library import Library, describe_works, parse_scope
 
 WEB = paths.PROJECT / 'web'
 
+STATIC_FILES = {
+    '/': ('index.html', 'text/html; charset=utf-8'),
+    '/read': ('reader.html', 'text/html; charset=utf-8'),
+    '/tour': ('tour.html', 'text/html; charset=utf-8'),
+    '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
+    '/detail.js': ('detail.js', 'text/javascript; charset=utf-8'),
+    '/link-labels.js': ('link-labels.js', 'text/javascript; charset=utf-8'),
+    '/style.css': ('style.css', 'text/css; charset=utf-8'),
+    '/favicon.ico': ('favicon.ico', 'image/x-icon'),
+    '/anna-logo.png': ('anna-logo.png', 'image/png'),
+    '/stella-logo.png': ('stella-logo.png', 'image/png'),
+    '/stella-favicon.ico': ('stella-favicon.ico', 'image/x-icon'),
+    **{
+        f'/{name}.js': (f'{name}.js', 'text/javascript; charset=utf-8')
+        for name in ('theme', 'kit', 'cache-util', 'motion', 'menu', 'topbar', 'workspace', 'companions', 'library', 'differences', 'home', 'tour-cache')
+    },
+    **{
+        f'/{stem}.{ext}': (f'{stem}.{ext}', kind)
+        for stem in ('tour', 'reader')
+        for ext, kind in (('js', 'text/javascript; charset=utf-8'), ('css', 'text/css; charset=utf-8'))
+    },
+    **{f'/reader-{name}.js': (f'reader-{name}.js', 'text/javascript; charset=utf-8') for name in ('labels', 'model', 'flow')},
+    **{f'/favicon-{size}.png': (f'favicon-{size}.png', 'image/png') for size in (16, 32, 48)},
+}
+
 
 class Handler(BaseHTTPRequestHandler):
     db_path=catalog.DB
     db_signature=None
     source_root=paths.WEB
     additional_collections=()
+
+    def host_allowed(self):
+        return self.headers.get('Host', '') in {
+            f'127.0.0.1:{self.server.server_port}',
+            f'localhost:{self.server.server_port}',
+        }
 
     def collection_registry(self):
         """The collections this server answers for; the query-only server has no linked book to read or tour."""
@@ -47,24 +78,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers(); self.wfile.write(body)
     def do_GET(self):
         # Reject DNS-rebinding hosts; never expose local data to a remote origin.
-        if self.headers.get('Host','') not in {f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'}:
+        if not self.host_allowed():
             self.send({'error':'仅限本机访问'},status=403); return
         url=urlsplit(self.path)
-        static={'/link-labels.js':('link-labels.js','text/javascript; charset=utf-8'),'/':('index.html','text/html; charset=utf-8'),'/app.js':('app.js','text/javascript; charset=utf-8'),'/detail.js':('detail.js','text/javascript; charset=utf-8'),'/style.css':('style.css','text/css; charset=utf-8')}
-        static['/favicon.ico']=('favicon.ico','image/x-icon')
-        static['/anna-logo.png']=('anna-logo.png','image/png')
-        static.update({f'/{name}.js':(f'{name}.js','text/javascript; charset=utf-8') for name in ('theme','kit','cache-util','motion','menu','topbar','workspace','companions','library','differences','home','tour-cache')})
-        static['/read']=('reader.html','text/html; charset=utf-8')
-        static['/tour']=('tour.html','text/html; charset=utf-8')
-        static.update({f'/tour.{ext}':(f'tour.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
-        static['/stella-logo.png']=('stella-logo.png','image/png')
-        static['/stella-favicon.ico']=('stella-favicon.ico','image/x-icon')
-        static.update({f'/reader.{ext}':(f'reader.{ext}',kind) for ext,kind in [('js','text/javascript; charset=utf-8'),('css','text/css; charset=utf-8')]})
-        static.update({f'/reader-{name}.js':(f'reader-{name}.js','text/javascript; charset=utf-8') for name in ('labels','model','flow')})
-        static.update({f'/favicon-{size}.png':(f'favicon-{size}.png','image/png') for size in (16,32,48)})
-        if url.path in static:
+        if url.path in STATIC_FILES:
             try:
-                file,kind=static[url.path]
+                file,kind=STATIC_FILES[url.path]
                 self.send((WEB/file).read_bytes(),kind)
             except (BrokenPipeError,ConnectionResetError):
                 pass
